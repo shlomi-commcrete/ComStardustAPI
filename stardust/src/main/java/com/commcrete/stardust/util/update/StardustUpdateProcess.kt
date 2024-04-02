@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.provider.ContactsContract.Data
+import com.commcrete.stardust.R
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
@@ -12,7 +13,6 @@ import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustUpdateData
 import com.commcrete.stardust.stardust.model.StardustUpdateDataParser
-import com.example.mylibrary.R
 import java.nio.ByteBuffer
 import java.util.zip.CRC32
 

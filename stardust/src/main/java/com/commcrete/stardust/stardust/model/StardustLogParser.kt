@@ -1,6 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
-import com.example.mylibrary.R
+import com.commcrete.stardust.R
 import java.util.Date
 
 class StardustLogParser : StardustParser() {

@@ -5,7 +5,6 @@ import android.content.Context
 import androidx.annotation.RequiresPermission
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.ustadmobile.codec2.Codec2
 import java.io.File
 
 
@@ -50,10 +49,10 @@ object RecorderUtils {
 
     }
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){
-        MODE700(Codec2.CODEC2_MODE_700C , 4400 , 4 ),
-        MODE2400(Codec2.CODEC2_MODE_2400 , 6000 , 8),
-        MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
-        MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
+//        MODE700(Codec2.CODEC2_MODE_700C , 4400 , 4 ),
+//        MODE2400(Codec2.CODEC2_MODE_2400 , 6000 , 8),
+//        MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
+//        MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
     }
     private fun createFile(context: Context, chatID: String, userId: String) : File{
         ts = System.currentTimeMillis()

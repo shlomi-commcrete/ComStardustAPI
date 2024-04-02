@@ -4,12 +4,12 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.media.MediaRecorder
 import android.preference.PreferenceManager
+import com.commcrete.stardust.R
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
-import com.example.mylibrary.R
 import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
 
