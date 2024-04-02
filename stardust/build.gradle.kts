@@ -88,3 +88,18 @@ dependencies {
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
 }
+
+
+afterEvaluate {
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+
+                groupId = "com.commcrete.stardust"
+                artifactId = "stardust"
+                version = "0.0.5"
+            }
+        }
+    }
+}
