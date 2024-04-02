@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+
+    <color name="commcrete_blue">#1E91D9</color>
+    <color name="commcrete_orange">#D96B0B</color>
+
+    <color name="textError">@android:color/holo_red_dark</color>
+</resources>

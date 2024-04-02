@@ -1,0 +1,15 @@
+{
+  "frequencyHRSatelliteTXBytes": 1650.993125,
+  "frequencyHRRadioTXBytes": 455.175,
+  "frequencyLRSatelliteTXBytes": 1650.993125,
+  "powerLOTX": 14,
+  "powerHRTX": 14,
+  "powerLRTX": 14,
+  "frequencyHRSatelliteRXBytes": 1549.493125,
+  "frequencyHRRadioRXBytes": 455.175,
+  "frequencyLRSatelliteRXBytes": 1549.493125,
+  "powerLORX": 7,
+  "uartPortPreference": 0,
+  "bittelTypePreference": 1,
+  "bittelServer": 0
+}

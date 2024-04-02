@@ -1,0 +1,136 @@
+{
+  "chats": [
+    {
+      "d97bbae7": {
+        "chat_name": "PC",
+        "bittelId": "00330051"
+      }
+    },
+    {
+      "10000002": {
+        "chat_name": "Shlomke",
+        "bittelId": "00160030"
+      }
+    },
+    {
+      "00000002": {
+        "chat_name": "Group",
+        "bittelId": "00000002"
+      }
+    },
+    {
+      "10000003": {
+        "chat_name": "user3",
+        "bittelId": "10000303"
+      }
+    },
+    {
+      "10000004": {
+        "chat_name": "Ohad",
+        "bittelId": "10000404"
+      }
+    },
+    {
+      "10000005": {
+        "chat_name": "Micho",
+        "bittelId": "10000505"
+      }
+    },
+    {
+      "10000006": {
+        "chat_name": "Itzik",
+        "bittelId": "10000606"
+      }
+    },
+    {
+      "10000007": {
+        "chat_name": "Josh",
+        "bittelId": "10000707"
+      }
+    },
+    {
+      "10000008": {
+        "chat_name": "Rafi",
+        "bittelId": "10000808"
+      }
+    },
+    {
+      "10000009": {
+        "chat_name": "Yohai",
+        "bittelId": "10000909"
+      }
+    },
+    {
+      "10000010": {
+        "chat_name": "User 10",
+        "bittelId": "10000910"
+      }
+    },
+    {
+      "10000011": {
+        "chat_name": "User 11",
+        "bittelId": "10000911"
+      }
+    },
+    {
+      "10000012": {
+        "chat_name": "User 12",
+        "bittelId": "10000912"
+      }
+    },
+    {
+      "10000013": {
+        "chat_name": "User 13",
+        "bittelId": "10000913"
+      }
+    },
+    {
+      "8046003f": {
+        "chat_name": "Tzuriel Bittel",
+        "bittelId": "8046003f"
+      }
+    },
+    {
+      "400c8018": {
+        "chat_name": "HQ",
+        "bittelId": "400c8018"
+      }
+    },
+    {
+      "500c8018": {
+        "chat_name": "Tzuriel",
+        "bittelId": "500c8018"
+      }
+    },
+    {
+      "80360052": {
+        "chat_name": "Itzik Bittel",
+        "bittelId": "80360052"
+      }
+    },
+    {
+      "8047003f": {
+        "chat_name": "Micho Bittel",
+        "bittelId": "8047003f"
+      }
+    },
+    {
+      "80350052": {
+        "chat_name": "Yohai Bittel",
+        "bittelId": "80350052"
+      }
+    },
+    {
+      "8033004e": {
+        "chat_name": "Ohad Bittel",
+        "bittelId": "8033004e"
+      }
+    },
+    {
+      "803D0050": {
+        "chat_name": "Shlomi Bittel",
+        "bittelId": "8031004e"
+      }
+    }
+  ]
+}
