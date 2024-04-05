@@ -87,6 +87,9 @@ dependencies {
 
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+
+
 }
 
 
@@ -98,7 +101,7 @@ afterEvaluate {
 
                 groupId = "com.commcrete.stardust"
                 artifactId = "stardust"
-                version = "0.0.5"
+                version = "0.0.6"
             }
         }
     }
