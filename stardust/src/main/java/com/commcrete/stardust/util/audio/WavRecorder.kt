@@ -21,6 +21,8 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.ustadmobile.codec2.Codec2Decoder
+import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.FileNotFoundException
@@ -136,6 +138,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
         val data = arrayListOf<Byte>()
         val dataPrint = arrayListOf<Byte>()
+        val codec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
 
         while (isRecording) {
             // gets the voice output from microphone to byte format
@@ -155,33 +158,33 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                         // You can write it to a file, stream it, or process it further as needed
                     }
                 }
-//                val codec2Encoder = Codec2Encoder(RecorderUtils.CodecValues.MODE700.mode)
-//                val charArray = CharArray(RecorderUtils.CodecValues.MODE700.charNumOutput)
-//                codec2Encoder.encode(sData, charArray)
-//                val byteaArray = charsToBytes(charArray)
-//                byteaArray?.let {
-//                    logByteArray("logByteArrayInputRecorder", it)
-//                    for (byte in byteaArray)
-//                        dataPrint.add(byte)
-//                }
-//                val byteBuffer = codec2Decoder.readFrame(byteaArray)
-//                val bDataCodec = byteBuffer.array()
-//                logByteArray("logByteArrayOutputRecorder", bDataCodec)
-//                for (byte in bDataCodec)
-//                    data.add(byte)
+                val codec2Encoder = Codec2Encoder(RecorderUtils.CodecValues.MODE700.mode)
+                val charArray = CharArray(RecorderUtils.CodecValues.MODE700.charNumOutput)
+                codec2Encoder.encode(sData, charArray)
+                val byteaArray = charsToBytes(charArray)
+                byteaArray?.let {
+                    logByteArray("logByteArrayInputRecorder", it)
+                    for (byte in byteaArray)
+                        dataPrint.add(byte)
+                }
+                val byteBuffer = codec2Decoder.readFrame(byteaArray)
+                val bDataCodec = byteBuffer.array()
+                logByteArray("logByteArrayOutputRecorder", bDataCodec)
+                for (byte in bDataCodec)
+                    data.add(byte)
 
 
-//                if(BleManager.isNetworkEnabled()){
-//                    handleBlePackage(byteaArray)
-//                }
-//                else if (BleManager.isBluetoothEnabled()) {
-////                    send to BLE
-//                    handleBlePackage(byteaArray)
-//                }else {
-//                    Scopes.getMainCoroutine().launch {
-////                        viewModel?.error?.value = "Unable To Send Message - No Connection"
-//                    }
-//                }
+                if(BleManager.isNetworkEnabled()){
+                    handleBlePackage(byteaArray)
+                }
+                else if (BleManager.isBluetoothEnabled()) {
+//                    send to BLE
+                    handleBlePackage(byteaArray)
+                }else {
+                    Scopes.getMainCoroutine().launch {
+//                        viewModel?.error?.value = "Unable To Send Message - No Connection"
+                    }
+                }
             } catch (e: IOException) {
                 e.printStackTrace()
             }

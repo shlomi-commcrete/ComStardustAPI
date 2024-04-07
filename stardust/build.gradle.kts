@@ -87,8 +87,7 @@ dependencies {
 
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
-
-
+    implementation ("com.github.shlomi-commcrete:TestNewLib4:0.0.14")
 }
 
 

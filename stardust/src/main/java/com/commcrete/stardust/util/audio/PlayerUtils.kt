@@ -27,6 +27,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
 import com.google.android.exoplayer2.upstream.RawResourceDataSource
+import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
 import java.io.*
 import java.util.Date
@@ -56,7 +57,7 @@ object PlayerUtils : BleMediaConnector() {
             ts = ""
             fileToWrite = null
             StardustPackageUtils.packageLiveData.value = null
-//            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
+            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
 
             track?.flush()
             track?.release()
@@ -69,7 +70,7 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-//    var mCodec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
+    var mCodec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
 
 
     val destinationLiveData : MutableLiveData<String> = MutableLiveData()
@@ -320,11 +321,11 @@ object PlayerUtils : BleMediaConnector() {
     private fun handleBittelAudioMessage(audioData: List<Int>?): String? {
         audioData?.let {
             val byteaArray = intArrayToByteArray(it.toMutableList())
-//            val byteBuffer = mCodec2Decoder.readFrame(byteaArray)
-//            val bDataCodec = byteBuffer.array()
+            val byteBuffer = mCodec2Decoder.readFrame(byteaArray)
+            val bDataCodec = byteBuffer.array()
             val data = arrayListOf<Byte>()
-//            for (byte in bDataCodec)
-//                data.add(byte)
+            for (byte in bDataCodec)
+                data.add(byte)
             val stringBuilder = StringBuilder()
             for (element in data) {
                 stringBuilder.append("${element},")
@@ -336,17 +337,17 @@ object PlayerUtils : BleMediaConnector() {
 
     private fun handleBittelAudioMessage(byteArray: ByteArray) : ByteArray{
         try {
-//            val byteBuffer = mCodec2Decoder.readFrame(byteArray)
-//            val bDataCodec = byteBuffer.array()
-//            logByteArray("logByteArrayOutputPlayer", bDataCodec)
+            val byteBuffer = mCodec2Decoder.readFrame(byteArray)
+            val bDataCodec = byteBuffer.array()
+            logByteArray("logByteArrayOutputPlayer", bDataCodec)
             val data = arrayListOf<Byte>()
-//            for (byte in bDataCodec) data.add(byte)
+            for (byte in bDataCodec) data.add(byte)
             return data.toByteArray()
         }catch (e : Exception) {
             e.printStackTrace()
-//            mCodec2Decoder.destroy()
-//            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-//            mCodec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
+            mCodec2Decoder.destroy()
+            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
+            mCodec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
             return byteArrayOf()
         }
     }
