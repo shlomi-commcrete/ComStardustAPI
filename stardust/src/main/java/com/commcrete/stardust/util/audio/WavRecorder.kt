@@ -21,7 +21,6 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.FileNotFoundException
@@ -137,8 +136,6 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
         val data = arrayListOf<Byte>()
         val dataPrint = arrayListOf<Byte>()
-
-        val codec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
 
         while (isRecording) {
             // gets the voice output from microphone to byte format
