@@ -34,7 +34,7 @@ object RecorderUtils {
         //Works with computer codec2
         wavRecorder = WavRecorder(DataManager.context, pttInterface)
         DataManager.getSource().let {
-            file = createFile(DataManager.context, destination, it)
+            file = createFile(DataManager.fileLocation, destination, it)
         }
 //        createFileUncoded(App.application, destinations[0])
         file?.absolutePath?.let {
@@ -55,10 +55,10 @@ object RecorderUtils {
         MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
         MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
     }
-    private fun createFile(context: Context, chatID: String, userId: String) : File{
+    private fun createFile(context: String, chatID: String, userId: String) : File{
         ts = System.currentTimeMillis()
-        val directory = File("${context.filesDir}/$chatID")
-        val newFile = File("${context.filesDir}/$chatID/$ts-$userId.pcm")
+        val directory = File("$context/$chatID")
+        val newFile = File("$context/$chatID/$ts-$userId.pcm")
         if(!directory.exists()){
             directory.mkdir()
         }

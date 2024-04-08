@@ -11,7 +11,7 @@ interface StardustAPI {
     fun startPTT (stardustAPIPackage: StardustAPIPackage)
     fun stopPTT (stardustAPIPackage: StardustAPIPackage)
     fun sendLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun init(context: Context)
+    fun init(context: Context, fileLocation : String)
     fun scanForDevice() : MutableLiveData<List<ScanResult>>
     fun connectToDevice(device: BluetoothDevice)
     fun disconnectFromDevice()

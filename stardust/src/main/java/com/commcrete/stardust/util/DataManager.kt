@@ -22,6 +22,7 @@ object DataManager : StardustAPI, PttInterface{
     private var bittelPackageHandler : StardustPackageHandler? = null
     private var pollingUtils : PollingUtils? = null
     lateinit var context : Context
+    lateinit var fileLocation : String
     private var bleScanner : BleScanner? = null
     private var source : String? = null
     private var destination : String? = null
@@ -72,8 +73,9 @@ object DataManager : StardustAPI, PttInterface{
     }
 
 
-    override fun init(context: Context) {
+    override fun init(context: Context, fileLocation : String) {
         requireContext(context)
+        requireFileLocation(fileLocation)
     }
 
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
@@ -101,6 +103,10 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun sendDataToBle(bittelPackage: StardustPackage) {
 
+    }
+
+    fun requireFileLocation (location : String) {
+        this.fileLocation = location
     }
 
     fun getBleScanner (context: Context): BleScanner {
