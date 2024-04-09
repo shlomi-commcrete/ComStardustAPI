@@ -10,8 +10,10 @@ import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.stardust.StardustPackageHandler
+import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
@@ -70,6 +72,8 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location) {
+        val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
+        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context))
     }
 
 
@@ -92,6 +96,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun disconnectFromDevice() {
+        getClientConnection(context).disconnectFromDevice()
     }
 
     override fun getSource(): String {
@@ -111,6 +116,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     fun getBleScanner (context: Context): BleScanner {
+        requireContext(context)
         if(this.bleScanner == null) {
             bleScanner = BleScanner(this.context)
         }

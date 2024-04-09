@@ -284,7 +284,7 @@ object LocationUtils  {
 
     }
 
-    private fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
+    internal fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
                              isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null) {
         // TODO: change xor check
 
