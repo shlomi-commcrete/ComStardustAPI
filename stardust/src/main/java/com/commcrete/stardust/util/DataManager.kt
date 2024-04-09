@@ -103,7 +103,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun sendDataToBle(bittelPackage: StardustPackage) {
-
+        getClientConnection(context).addMessageToQueue(bittelPackage)
     }
 
     fun requireFileLocation (location : String) {
