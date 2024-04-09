@@ -131,7 +131,9 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
-            os = FileOutputStream(path)
+            if(path.isNotEmpty()){
+                os = FileOutputStream(path)
+            }
 
         } catch (e: FileNotFoundException) {
             e.printStackTrace()

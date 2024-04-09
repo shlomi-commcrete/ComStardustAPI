@@ -36,37 +36,35 @@ object RecorderUtils {
         DataManager.getSource().let {
             file = createFile(DataManager.fileLocation, destination, it)
         }
-//        createFileUncoded(App.application, destinations[0])
-        file?.absolutePath?.let {
-            wavRecorder.startRecording(it, destination)
-        }
+        wavRecorder.startRecording(file?.absolutePath?:"", destination)
+
     } else {
-
-        //Works with computer codec2
-        file?.let {
-            wavRecorder.stopRecording(destination, it.absolutePath, DataManager.context)
-//            wavFilerecorder?.stopRecording()
-        }
-
+        wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context)
     }
+
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){
         MODE700(Codec2.CODEC2_MODE_700C , 4400 , 4 ),
         MODE2400(Codec2.CODEC2_MODE_2400 , 6000 , 8),
         MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
         MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
     }
-    private fun createFile(context: String, chatID: String, userId: String) : File{
-        ts = System.currentTimeMillis()
-        val directory = File("$context/$chatID")
-        val newFile = File("$context/$chatID/$ts-$userId.pcm")
-        if(!directory.exists()){
-            directory.mkdir()
-        }
-        if(!newFile.exists()){
-            newFile.createNewFile()
+    private fun createFile(context: String, chatID: String, userId: String) : File?{
+        try{
+            ts = System.currentTimeMillis()
+            val directory = File("$context/$chatID")
+            val newFile = File("$context/$chatID/$ts-$userId.pcm")
+            if(!directory.exists()){
+                directory.mkdir()
+            }
+            if(!newFile.exists()){
+                newFile.createNewFile()
 
+            }
+            return newFile
+        }catch (e : Exception) {
+            e.printStackTrace()
+            return null
         }
-        return newFile
     }
 
     private fun createFileWav(context: Context, chatID: String, userId: String) : File{
