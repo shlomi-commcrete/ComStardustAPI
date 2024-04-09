@@ -85,6 +85,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun connectToDevice(device: BluetoothDevice) {
+        getClientConnection(context).connectDevice(device)
         val bleScanner = getBleScanner(this.context)
         bleScanner.stopScan()
         this.bleScanner = null
