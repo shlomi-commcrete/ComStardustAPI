@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
+import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
 
@@ -35,6 +36,9 @@ internal class ClientConnection(
     private val context: Context
 ) : BleManager(context) {
 
+    companion object{
+        const val LOG_TAG = "stardust_tag"
+    }
     private val TAG = ClientConnection::class.java.simpleName
 
     private var characteristic: BluetoothGattCharacteristic? = null
@@ -104,11 +108,15 @@ internal class ClientConnection(
                 newState: Int
             ) {
                 super.onConnectionStateChange(gatt, status, newState)
+                Timber.tag("onConnectionStateChange").d("status : $status\nnewState : $newState")
                 val mtu = gatt?.requestMtu(200)
+                Timber.tag("SetMtu").d("$mtu")
                 if(status == 0 && newState == 2){
                     Handler(Looper.getMainLooper()).postDelayed({gatt?.discoverServices()} , 2000)
                 }else {
                     Scopes.getMainCoroutine().launch {
+                        Timber.tag("Bittel Disconnected").d("Status Changed")
+                        Timber.tag(LOG_TAG).d("Bittel Disconnected")
                         com.commcrete.stardust.ble.BleManager.isBleConnected = false
                         com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
                     }
@@ -158,6 +166,7 @@ internal class ClientConnection(
                 val readChar = gatt?.getService(Characteristics.getConnectChar(id))
                     ?.getCharacteristic(readUUID)
                 if(readChar!=null){
+                    Timber.tag("ClientConnection").d("has Char")
                     gatt.setCharacteristicNotification(readChar, true)
                     val desc = readChar.descriptors?.get(0)
                     desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -187,6 +196,7 @@ internal class ClientConnection(
             ) {
                 clearTimer()
                 characteristic.value?.let {
+                    Timber.tag("onCharacteristicChanged").d("without Value")
                     clearTimer()
                     StardustPackageUtils.handlePackageReceived(it)
                 }
@@ -276,6 +286,8 @@ internal class ClientConnection(
         gattConnection = null
         hasCallback = false
         Scopes.getMainCoroutine().launch {
+            Timber.tag("Bittel Disconnected").d("Called Function")
+            Timber.tag(LOG_TAG).d("Bittel Disconnected")
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             removeRSSITimer()
@@ -417,6 +429,7 @@ internal class ClientConnection(
 
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
         if(bittelPackage.isAbleToSendAgain()){
+            Timber.tag(LOG_TAG).d("Sending Package : ${bittelPackage}")
             resetTimer(bittelPackage)
             SharedPreferencesUtil.getAppUser(context)?.let {
                 val id = deviceLastDigit
