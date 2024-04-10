@@ -10,6 +10,7 @@ import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.ble.ClientConnection.Companion.LOG_TAG
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -17,6 +18,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
+import timber.log.Timber
 
 object DataManager : StardustAPI, PttInterface{
 
@@ -31,6 +33,7 @@ object DataManager : StardustAPI, PttInterface{
 
     fun requireContext (context: Context){
         this.context = context
+        Timber.plant(Timber.DebugTree())
     }
 
     internal fun getClientConnection (context: Context) : ClientConnection {
