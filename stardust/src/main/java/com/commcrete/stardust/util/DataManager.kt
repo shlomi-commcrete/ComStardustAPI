@@ -31,12 +31,17 @@ object DataManager : StardustAPI, PttInterface{
     private var source : String? = null
     private var destination : String? = null
 
+    private var hasTimber = false
+
     fun requireContext (context: Context){
         this.context = context
-        Timber.plant(Timber.DebugTree())
+        if(!hasTimber) {
+            Timber.plant(Timber.DebugTree())
+        }
     }
 
     internal fun getClientConnection (context: Context) : ClientConnection {
+        requireContext(context)
         if(clientConnection == null) {
             clientConnection = ClientConnection(context = context)
         }
@@ -47,6 +52,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     internal fun getStardustPackageHandler(context: Context): StardustPackageHandler {
+        requireContext(context)
         if(bittelPackageHandler == null){
             bittelPackageHandler = StardustPackageHandler(context, clientConnection)
         }
@@ -121,7 +127,7 @@ object DataManager : StardustAPI, PttInterface{
     fun getBleScanner (context: Context): BleScanner {
         requireContext(context)
         if(this.bleScanner == null) {
-            bleScanner = BleScanner(this.context)
+            bleScanner = BleScanner(context)
         }
         return bleScanner!!
     }
