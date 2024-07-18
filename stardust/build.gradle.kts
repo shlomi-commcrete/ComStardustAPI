@@ -87,6 +87,8 @@ dependencies {
 
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
+    implementation ("com.github.mik3y:usb-serial-for-android:3.8.0")
+
     implementation ("com.github.shlomi-commcrete:TestNewLib4:0.0.14")
 }
 

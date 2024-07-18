@@ -40,4 +40,6 @@ data class ChatContact (
     var lastUpdateTS : Long? = 0,
     @ColumnInfo(name = "isSOS")
     var isSOS : Boolean = false,
+    @ColumnInfo(name = "isSniffer")
+    var isSniffer : Boolean = false,
 ) : Parcelable

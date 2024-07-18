@@ -6,11 +6,11 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.bittell.util.bittel_package.BittelUsbManager
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
-import com.commcrete.stardust.ble.ClientConnection.Companion.LOG_TAG
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -23,6 +23,7 @@ import timber.log.Timber
 object DataManager : StardustAPI, PttInterface{
 
     private var clientConnection : ClientConnection?  = null
+    private var bittelusbManager : BittelUsbManager?  = null
     private var bittelPackageHandler : StardustPackageHandler? = null
     private var pollingUtils : PollingUtils? = null
     lateinit var context : Context
@@ -49,6 +50,18 @@ object DataManager : StardustAPI, PttInterface{
         getStardustPackageHandler(context)
 
         return clientConnection!!
+    }
+
+    internal fun getUsbManager (context: Context) : BittelUsbManager {
+        requireContext(context)
+        if(bittelusbManager == null) {
+            bittelusbManager =
+                BittelUsbManager
+            bittelusbManager?.init(context)
+        }
+
+
+        return bittelusbManager!!
     }
 
     internal fun getStardustPackageHandler(context: Context): StardustPackageHandler {

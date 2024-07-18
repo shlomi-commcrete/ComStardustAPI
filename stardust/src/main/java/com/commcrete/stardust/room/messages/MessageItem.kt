@@ -43,7 +43,12 @@ data class MessageItem (
     var messageNumber : Int = 1,
     @ColumnInfo(name = "id_number")
     var idNumber : Long = 1
-) : Parcelable
+) : Parcelable {
+    fun getTextToShow () : String {
+        return if (isLocation == true) "Location Sent" else text
+//        return text
+    }
+}
 
 enum class SeenStatus(val id: Int){
     SENT(0),

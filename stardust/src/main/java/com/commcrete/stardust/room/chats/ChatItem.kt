@@ -25,6 +25,8 @@ data class ChatItem (
     var isAudioReceived : Boolean = false,
     @ColumnInfo(name = "enable_background_ptt")
     var enableBackgroundPtt : Boolean = true,
+    @ColumnInfo(name = "isSniffer")
+    var isSniffer : Boolean = false,
     val chatContacts : String = "",
     val bittelIDS : String = "",
     val smartphoneBittelIDS : String = "",

@@ -177,6 +177,8 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
+            clientConnection?.updateBlePort()
+            clientConnection?.removeConnectionTimer()
             StardustPolygonChange.sendSaveConfig(context)
         }
     }

@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.lifecycle.Observer
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_HR
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
@@ -23,6 +24,9 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.intToByteArray
+import com.commcrete.stardust.util.BittelProtocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,7 +38,7 @@ import java.util.UUID
 
 internal class ClientConnection(
     private val context: Context
-) : BleManager(context) {
+) : BleManager(context), BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
@@ -57,11 +61,41 @@ internal class ClientConnection(
 
     private val handler : Handler = Handler(Looper.getMainLooper())
     var bittelPackage : StardustPackage? = null
+
+    private val connectionTimeout : Long = 20000
+    private val bondTimeout : Long = 40000
+
+    private val connectionHandler : Handler = Handler(Looper.getMainLooper())
+    private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
+        reconnectToDevice()
+    }
+
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
         if(mutableMessageList.isNotEmpty()){
             sendMessage(mutableMessageList[0])
         }
     }
+
+    private val bleStatusObserver = object : Observer<Boolean> {
+        override fun onChanged(isConnected: Boolean) {
+            if(!isConnected) {
+                disconnectFromDevice()
+            } else {
+                if(!com.commcrete.stardust.ble.BleManager.isBleConnected){
+                    mDevice?.let { connectDevice(it) }
+                }
+            }
+        }
+
+    }
+
+    var lastPlayedTS : Long = 0
+
+    private val bondRunnable : Runnable = kotlinx.coroutines.Runnable {
+
+        // TODO: show fail
+    }
+    private val bondHandler : Handler = Handler(Looper.getMainLooper())
 
     val handlerRSSI = Handler(Looper.getMainLooper())
 
@@ -178,6 +212,7 @@ internal class ClientConnection(
                         val mPackage = StardustPackageUtils.getStardustPackage(
                             source = "0" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
                         addMessageToQueue(mPackage)
+                        resetConnectionTimer()
                     }
                 }, 4000)
             }
@@ -234,6 +269,9 @@ internal class ClientConnection(
         }
     }
 
+    fun initBleStatus () {
+        BluetoothStateManager.bluetoothState.observeForever(bleStatusObserver)
+    }
 
     override fun log(priority: Int, message: String) {
         Log.println(priority, TAG, message)
@@ -309,6 +347,7 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         this.deviceName = deviceName
+        resetBondTimer()
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.applicationContext.registerReceiver(
@@ -347,6 +386,7 @@ internal class ClientConnection(
                                 Scopes.getMainCoroutine().launch {
                                     com.commcrete.stardust.ble.BleManager.isPaired.value = true
                                     connectDevice(device)
+                                    removeBondTimer()
                                 }
                             }
                         }
@@ -372,6 +412,16 @@ internal class ClientConnection(
             BluetoothDevice.BOND_BONDING -> "BONDING"
             BluetoothDevice.BOND_NONE -> "NOT BONDED"
             else -> "ERROR: $this"
+        }
+    }
+
+    fun removeBittelBond () {
+        mDevice?.let {
+            try {
+                it::class.java.getMethod("removeBond").invoke(it)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -429,6 +479,9 @@ internal class ClientConnection(
 
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
         if(bittelPackage.isAbleToSendAgain()){
+            if(!com.commcrete.stardust.ble.BleManager.isBluetoothEnabled() && !com.commcrete.stardust.ble.BleManager.isUSBConnected){
+                Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
+            }
             Timber.tag(LOG_TAG).d("Sending Package : ${bittelPackage}")
             resetTimer(bittelPackage)
             SharedPreferencesUtil.getAppUser(context)?.let {
@@ -459,28 +512,58 @@ internal class ClientConnection(
         if(count>3){
             return
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val write = gattConnection?.writeCharacteristic(
-                bluetoothGattCharacteristic,
-                bittelPackage.getStardustPackageToSend(),
-                WRITE_TYPE_DEFAULT
-            )
-            write?.let {
-                if(write !=0){
-                    writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
-                    if(write == 2147483647) {
-                        reconnectToDevice()
+        if(count > 0) {
+            Handler(Looper.getMainLooper()).postDelayed({
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val write = gattConnection?.writeCharacteristic(
+                        bluetoothGattCharacteristic,
+                        bittelPackage.getStardustPackageToSend(),
+                        WRITE_TYPE_DEFAULT
+                    )
+                    write?.let {
+                        if(write !=0){
+                            writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
+                            if(write == 2147483647) {
+                                reconnectToDevice()
+                            }
+                        } else {
+                            checkIfPackageDemandsAck(bittelPackage)
+                        }
                     }
                 } else {
-                    checkIfPackageDemandsAck(bittelPackage)
+                    bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                    val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
+                    write?.let {
+                        if(!it){
+                            writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
+                        }
+                    }
                 }
-            }
+            }, 500)
         } else {
-            bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
-            val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
-            write?.let {
-                if(!it){
-                    writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val write = gattConnection?.writeCharacteristic(
+                    bluetoothGattCharacteristic,
+                    bittelPackage.getStardustPackageToSend(),
+                    WRITE_TYPE_DEFAULT
+                )
+                write?.let {
+                    if(write !=0){
+                        writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
+                        if(write == 2147483647) {
+                            reconnectToDevice()
+                        }
+                    } else {
+                        checkIfPackageDemandsAck(bittelPackage)
+                    }
+                }
+            } else {
+                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
+                write?.let {
+                    if(!it){
+                        writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
+                    }
                 }
             }
         }
@@ -558,6 +641,36 @@ internal class ClientConnection(
         handler.postDelayed(runnable, StardustPackage.DELAY_TS)
     }
 
+    private fun resetBondTimer() {
+        bondHandler.removeCallbacks(bondRunnable)
+        bondHandler.removeCallbacksAndMessages(null)
+        bondHandler.postDelayed(bondRunnable, bondTimeout)
+    }
+
+    fun removeBondTimer() {
+        try {
+            bondHandler.removeCallbacks(bondRunnable)
+            bondHandler.removeCallbacksAndMessages(null)
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun resetConnectionTimer() {
+        connectionHandler.removeCallbacks(connectionRunnable)
+        connectionHandler.removeCallbacksAndMessages(null)
+        connectionHandler.postDelayed(connectionRunnable, connectionTimeout)
+    }
+
+    fun removeConnectionTimer() {
+        try {
+            connectionHandler.removeCallbacks(connectionRunnable)
+            connectionHandler.removeCallbacksAndMessages(null)
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun resetRSSITimer() {
         handlerRSSI.removeCallbacks(readRssiRunnable)
         handlerRSSI.removeCallbacksAndMessages(null)
@@ -619,6 +732,33 @@ internal class ClientConnection(
         Handler(Looper.myLooper()!!).postDelayed({
             mDevice?.let { connectDevice(it) }
         },2000)
+    }
+
+    override fun updateBlePort() {
+        SharedPreferencesUtil.getAppUser(context)?.let {
+            val src = it.appId
+            val dst = it.bittelId
+            if(src != null && dst != null) {
+                val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH.type).intToByteArray().reversedArray()
+                val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
+                val txPackage = StardustPackageUtils.getStardustPackage(
+                    source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
+                    data = data)
+                addMessageToQueue(txPackage)
+            }
+        }
+    }
+
+    override fun saveConfiguration() {
+        SharedPreferencesUtil.getAppUser(context)?.let {
+            val src = it.appId
+            val dst = it.bittelId
+            if(src != null && dst != null) {
+                val configurationSavePackage = StardustPackageUtils.getStardustPackage(
+                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+                addMessageToQueue(configurationSavePackage)
+            }
+        }
     }
 }
 

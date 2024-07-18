@@ -13,10 +13,12 @@ object BleManager {
     const val CONNECTION_TAG = "connection_tag"
 
     var isBleConnected = false
+    var isUSBConnected = false
     var isNetworkConnected = false
     var isNetworkToggleEnabled = true
     var isBluetoothToggleEnabled = true
     val bleConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isBleConnected)
+    val usbConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isUSBConnected)
     val isPaired : MutableLiveData<Boolean> = MutableLiveData(false)
     val hasBattery : MutableLiveData<Boolean> = MutableLiveData(true)
     val rssi : MutableLiveData<Int> = MutableLiveData(0)
@@ -38,6 +40,14 @@ object BleManager {
                 }
             }
         }
+    }
+
+    fun initBleConnectState (context: Context) {
+        BluetoothStateManager.initialize(context)
+    }
+
+    fun isUsbEnabled () : Boolean {
+        return isUSBConnected
     }
 
     fun isNetworkEnabled () : Boolean{
