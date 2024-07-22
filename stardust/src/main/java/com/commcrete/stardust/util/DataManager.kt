@@ -13,6 +13,10 @@ import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -143,5 +147,13 @@ object DataManager : StardustAPI, PttInterface{
             bleScanner = BleScanner(context)
         }
         return bleScanner!!
+    }
+
+    fun getChatsRepo () : ChatsRepository {
+        return ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+    }
+
+    fun getMessagesRepo () : MessagesRepository {
+        return MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao())
     }
 }
