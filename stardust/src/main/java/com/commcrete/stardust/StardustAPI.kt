@@ -4,7 +4,9 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.room.chats.ChatItem
 
 interface StardustAPI {
     fun sendMessage (stardustAPIPackage: StardustAPIPackage, text : String)
@@ -15,4 +17,6 @@ interface StardustAPI {
     fun scanForDevice() : MutableLiveData<List<ScanResult>>
     fun connectToDevice(device: BluetoothDevice)
     fun disconnectFromDevice()
+
+    fun readChats () : LiveData<List<ChatItem>>
 }

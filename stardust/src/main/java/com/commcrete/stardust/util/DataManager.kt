@@ -5,6 +5,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.BittelUsbManager
 import com.commcrete.stardust.StardustAPI
@@ -13,6 +14,7 @@ import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
+import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessagesDatabase
@@ -123,6 +125,10 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun disconnectFromDevice() {
         getClientConnection(context).disconnectFromDevice()
+    }
+
+    override fun readChats(): LiveData<List<ChatItem>> {
+        return getChatsRepo().readAllChats
     }
 
     override fun getSource(): String {
