@@ -89,6 +89,8 @@ dependencies {
 
     implementation ("com.github.mik3y:usb-serial-for-android:3.8.0")
 
+    implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.8.3")
+
     implementation ("com.github.shlomi-commcrete:TestNewLib4:0.0.14")
 }
 

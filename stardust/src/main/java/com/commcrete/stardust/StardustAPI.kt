@@ -18,5 +18,5 @@ interface StardustAPI {
     fun connectToDevice(device: BluetoothDevice)
     fun disconnectFromDevice()
 
-    suspend fun readChats () : LiveData<List<ChatItem>>
+    fun readChats () : LiveData<List<ChatItem>>
 }

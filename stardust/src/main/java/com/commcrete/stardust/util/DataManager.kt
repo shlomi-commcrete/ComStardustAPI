@@ -7,6 +7,7 @@ import android.content.Context
 import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.liveData
 import com.commcrete.bittell.util.bittel_package.BittelUsbManager
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPIPackage
@@ -24,6 +25,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 import timber.log.Timber
@@ -129,11 +131,9 @@ object DataManager : StardustAPI, PttInterface{
         getClientConnection(context).disconnectFromDevice()
     }
 
-    override suspend fun readChats(): LiveData<List<ChatItem>> {
-        val bittelUserList = GlobalScope.async {
-            return@async getChatsRepo().readAllChats
-        }
-        return bittelUserList.await()
+    override fun readChats(): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {
+        val chats = getChatsRepo().getAllChats ()
+        emit(chats)
     }
 
     override fun getSource(): String {
