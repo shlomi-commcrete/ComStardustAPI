@@ -24,6 +24,8 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
 import timber.log.Timber
 
 object DataManager : StardustAPI, PttInterface{
@@ -127,8 +129,11 @@ object DataManager : StardustAPI, PttInterface{
         getClientConnection(context).disconnectFromDevice()
     }
 
-    override fun readChats(): LiveData<List<ChatItem>> {
-        return getChatsRepo().readAllChats
+    override suspend fun readChats(): LiveData<List<ChatItem>> {
+        val bittelUserList = GlobalScope.async {
+            return@async getChatsRepo().readAllChats
+        }
+        return bittelUserList.await()
     }
 
     override fun getSource(): String {
