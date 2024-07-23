@@ -58,7 +58,7 @@ object DataManager : StardustAPI, PttInterface{
         if(!hasTimber) {
             Timber.plant(Timber.DebugTree())
         }
-        getLocationUtils(context)
+//        getLocationUtils(context)
     }
 
     internal fun getClientConnection (context: Context) : ClientConnection {
