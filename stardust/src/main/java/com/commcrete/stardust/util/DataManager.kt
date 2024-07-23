@@ -9,6 +9,11 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.liveData
 import com.commcrete.bittell.util.bittel_package.BittelUsbManager
+import com.commcrete.bittell.util.text_utils.createDataByteArray
+import com.commcrete.bittell.util.text_utils.getAsciiValue
+import com.commcrete.bittell.util.text_utils.getIsAck
+import com.commcrete.bittell.util.text_utils.getIsPartType
+import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleScanner
@@ -22,13 +27,17 @@ import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import timber.log.Timber
+import kotlin.random.Random
 
 object DataManager : StardustAPI, PttInterface{
 
@@ -95,7 +104,27 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun sendMessage(stardustAPIPackage: StardustAPIPackage, text: String) {
+        val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
+            getAsciiValue(text) ))
+        val splitData = splitMessage(data)
+        val id = Random.nextLong(Long.MAX_VALUE)
 
+        val messageNum = 1
+        // TODO: check
+        Scopes.getDefaultCoroutine().launch {
+            for (split in splitData) {
+                val mPackage = StardustPackageUtils.getStardustPackage(
+                    source = stardustAPIPackage.source , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE, data =  split)
+                mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
+                mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
+                mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
+                mPackage.messageNumber = splitData.size
+                mPackage.idNumber = id
+                mPackage.stardustControlByte.stardustDeliveryType = if (stardustAPIPackage.isLR == true) StardustControlByte.StardustDeliveryType.LR else StardustControlByte.StardustDeliveryType.HR
+                sendDataToBle(mPackage)
+                delay(if(stardustAPIPackage.isLR == true)4000 else 800)
+            }
+        }
     }
     @SuppressLint("MissingPermission")
     override fun startPTT(stardustAPIPackage: StardustAPIPackage) {
