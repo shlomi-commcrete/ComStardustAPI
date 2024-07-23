@@ -74,6 +74,11 @@ object DataManager : StardustAPI, PttInterface{
         return bittelusbManager!!
     }
 
+    internal fun getLocationUtils (context: Context) : LocationUtils {
+        LocationUtils.init(context)
+        return LocationUtils
+    }
+
     internal fun getStardustPackageHandler(context: Context): StardustPackageHandler {
         requireContext(context)
         if(bittelPackageHandler == null){

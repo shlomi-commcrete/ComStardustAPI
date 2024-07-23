@@ -9,6 +9,7 @@ import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
@@ -18,6 +19,7 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -65,7 +67,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun sendRecordEnd(){
-        setMinData()
+//        setMinData()
         //todo Correction crash
         sendData(mutableByteListToSend.toByteArray().copyOf(), true)
         mutableByteListToSend.clear()
@@ -92,7 +94,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun syncBleDevice (context: Context) {
-        val audioManager = context.getSystemService(AudioManager::class.java)
+        val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            context.getSystemService(AudioManager::class.java)
+        } else {
+            TODO("VERSION.SDK_INT < M")
+        }
         val bleDevice = getPreferredDevice(audioManager)
         bleDevice?.let {
             recorder?.setPreferredDevice(it)
@@ -101,7 +107,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun removeSyncBleDevices (context: Context) {
-        val audioManager = context.getSystemService(AudioManager::class.java)
+        val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            context.getSystemService(AudioManager::class.java)
+        } else {
+            TODO("VERSION.SDK_INT < M")
+        }
         val bleDevice = getPreferredDevice(audioManager)
         bleDevice?.let {
             audioManager.stopBluetoothSco()
@@ -127,7 +137,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun writeAudioDataToFile(path: String) {
 
 
-        val targetGain = 1.5f // Adjust to the desired target gain level
+        val targetGain = 0.5f // Adjust to the desired target gain level
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
@@ -179,7 +189,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 if(BleManager.isNetworkEnabled()){
                     handleBlePackage(byteaArray)
                 }
-                else if (BleManager.isBluetoothEnabled()) {
+                else if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
 //                    send to BLE
                     handleBlePackage(byteaArray)
                 }else {
@@ -348,7 +358,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun sendData(byteArray: ByteArray, isLast : Boolean = false){
         if(BleManager.isNetworkEnabled()){
 //            sendToServer(byteArray, isLast)
-        }else if (BleManager.isBluetoothEnabled()) {
+        }else if (BleManager.isBluetoothEnabled()|| BleManager.isUsbEnabled()) {
             sendToBle(byteArray, isLast)
         }
     }
@@ -371,7 +381,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     ?.let { StardustPackageUtils.getCheckXor(it) }
 
             bittelPackage?.let {
-                viewModel?.sendDataToBle(it)
+                DataManager.sendDataToBle(bittelPackage)
 //                sendWithTimer(it)
             }
 
@@ -505,7 +515,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun setRecordingParams(audioSessionID : Int){
         try {
             val TAG_RECORDER = "setRecordingParams"
-            val audioManager = context.getSystemService(AudioManager::class.java)
+            val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                context.getSystemService(AudioManager::class.java)
+            } else {
+                TODO("VERSION.SDK_INT < M")
+            }
             audioManager.setParameters("noise_suppression=on")
             if (NoiseSuppressor.isAvailable() && NoiseSuppressor.create(audioSessionID) == null) {
                 NoiseSuppressor.create(audioSessionID).enabled = true
