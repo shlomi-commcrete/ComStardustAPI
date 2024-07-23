@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
+import com.commcrete.bittell.util.bittel_package.BittelUsbManager
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_HR
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
+import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
@@ -488,6 +490,14 @@ internal class ClientConnection(
                 val id = deviceLastDigit
                 val uuid = Characteristics.getWriteChar(id)
                 bittelPackage.updateRetryCounter()
+                if(com.commcrete.stardust.ble.BleManager.isUSBConnected) {
+                    BittelUsbManager.sendDataToUart(bittelPackage)
+                }else {
+                    gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
+                        ?.let {
+                            writePackage(it, bittelPackage)
+                        }
+                }
                 gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
                     ?.let {
                         writePackage(it, bittelPackage)
