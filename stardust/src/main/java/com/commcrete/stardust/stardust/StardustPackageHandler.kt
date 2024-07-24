@@ -241,9 +241,6 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun registerBittel(bittelId: String){
-        val licenses = SharedPreferencesUtil.getLicenses(context)
-        val selectedLicense = licenses?.licenses?.get(0)?._id
-        val location = LocationUtils.requestLocation()
         val savedUser = SharedPreferencesUtil.getAppUser(context)
         val deviceName = SharedPreferencesUtil.getBittelDeviceName(context)
 
