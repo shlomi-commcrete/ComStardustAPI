@@ -281,7 +281,7 @@ object SharedPreferencesUtil {
     fun setLocationInterval (context: Context, interval : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         preferences.edit().putString(KEY_LOCATION_INTERVAL, interval).apply()
-        LocationUtils.updatedLocationPullParams()
+//        LocationUtils.updatedLocationPullParams()
     }
 
     fun getLocationPriority (context: Context) : Int{
