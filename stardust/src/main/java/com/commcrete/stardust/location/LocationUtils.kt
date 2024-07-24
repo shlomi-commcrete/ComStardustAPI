@@ -51,6 +51,8 @@ object LocationUtils  {
     private var contactsDao : ContactsDao?= null
     private var contactsRepository : ContactsRepository? = null
 
+    var lastLocation : Location? = null
+
 
     fun init(context: Context){
         this.context = context
@@ -111,19 +113,19 @@ object LocationUtils  {
         ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
     }
     internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                       isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null, location: Location?){
-        if(location == null){
+                       isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null){
+        if(lastLocation == null){
             sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
         }else {
-            sendLocation(mPackage, location, clientConnection, isDemandAck,isHR,opCode)
+            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode)
         }
     }
 
-    fun getLocationForSOSMyLocation(location: Location?): Array<Int> {
-        if(location == null){
+    fun getLocationForSOSMyLocation(): Array<Int> {
+        if(lastLocation == null){
             return CoordinatesUtil().packEmptyLocation()
         }else {
-            return CoordinatesUtil().packLocation(location)
+            return CoordinatesUtil().packLocation(lastLocation!!)
         }
     }
 
