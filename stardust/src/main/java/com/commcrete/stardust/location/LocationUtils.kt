@@ -22,6 +22,7 @@ import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.room.contacts.ContactsDao
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.logs.LOG_EVENT
@@ -45,95 +46,18 @@ import kotlin.random.Random
 
 object LocationUtils  {
 
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
     private lateinit var context: Context
-    private lateinit var fragment: Fragment
 
-    private val bittelUserDoa = BittelUserDatabase.getDatabase(context).bittelUserDao()
-    private val bittelUserRepository = BittelUserRepository(bittelUserDoa)
+    private var contactsDao : ContactsDao?= null
+    private var contactsRepository : ContactsRepository? = null
 
-    val contactsDao = ContactsDatabase.getDatabase(context).contactsDao()
-    private val contactsRepository = ContactsRepository(contactsDao)
 
-    private var lastLocation : Location? = null
-
-    val listOfUserLocations : Flow<List<ChatContact>> = flow{
-        contactsRepository.readAllContacts().map {
-            emit(it)
-        }
-    }
-
-    val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(locationResult: LocationResult) {
-            val accuracy = SharedPreferencesUtil.getLocationAccuracy(context)
-            for (location in locationResult.locations) {
-                if(location.accuracy <= accuracy.toFloat()) {
-                    lastLocation = location
-                }
-            }
-        }
-    }
-
-    private val mutableMapPackages : MutableMap<String, StardustPackage> = mutableMapOf()
-    private val mutableMapScopes : MutableMap<String, Job> = mutableMapOf()
-
-    fun init(context: Context, fragment: Fragment? = null){
-        LocationUtils.context = context
-        if (fragment != null) {
-            LocationUtils.fragment = fragment
-        }
-        fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+    fun init(context: Context){
+        this.context = context
+        contactsDao = ContactsDatabase.getDatabase(this.context).contactsDao()
+        contactsDao?.let { contactsRepository = ContactsRepository(it) }
 
     }
-
-    fun hasLocationPermission(): Boolean {
-        return PermissionTracking.hasLocationPermission(context)
-    }
-
-    fun hasLocationPermissionForeground(): Boolean {
-        return PermissionTracking.hasLocationPermissionForeground(context)
-    }
-
-    private fun requestPermissions () : Boolean{
-        if (PermissionTracking.hasLocationPermission(context)){
-            return true
-        }else if (Build.VERSION.SDK_INT > Build.VERSION_CODES.O){
-            EasyPermissions.requestPermissions(
-                fragment,
-                "You will need to accept the permission in order to run the application",
-                100,
-                android.Manifest.permission.ACCESS_FINE_LOCATION,
-                android.Manifest.permission.ACCESS_COARSE_LOCATION,
-            )
-            return true
-        }else{
-            return false
-        }
-    }
-
-
-    fun saveBittelUserLocation(locationMessage: LocationMessage, isCreateNewUser : Boolean = true){
-        Scopes.getDefaultCoroutine().launch {
-            val chatContact = contactsRepository.getChatContactByBittelID(locationMessage.src)
-            if(chatContact != null) {
-                chatContact?.let {
-                    val contact = it
-                    contact.lastUpdateTS = Date().time
-                    contact.lat = locationMessage.latitude.toDouble()
-                    contact.lon = locationMessage.longitude.toDouble()
-                    contact.isSOS = false
-                    contactsRepository.addContact(contact)
-                    Scopes.getMainCoroutine().launch {
-                        Toast.makeText(context, "Location Received From : ${contact.displayName  }", Toast.LENGTH_LONG ).show()
-                    }
-                }
-            } else if(isCreateNewUser){
-                createNewContact(locationMessage)
-                saveBittelUserLocation(locationMessage, false)
-            }
-        }
-    }
-
     private fun getSenderName(senderID: String): String{
         val contactsRepository = ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao())
         return contactsRepository.getUserNameByUserId(senderID)
@@ -142,7 +66,7 @@ object LocationUtils  {
     fun saveBittelUserLocation(bittelPackage: StardustPackage, bittelLocationPackage: StardustLocationPackage, isCreateNewUser : Boolean = true,
                                isSOS : Boolean = false){
         Scopes.getDefaultCoroutine().launch {
-            val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
+            val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             if(chatContact != null) {
                 chatContact.let {
@@ -162,7 +86,7 @@ object LocationUtils  {
                     contact.lat = bittelLocationPackage.latitude.toDouble()
                     contact.lon = bittelLocationPackage.longitude.toDouble()
                     contact.isSOS = false
-                    contactsRepository.addContact(contact)
+                    contactsRepository?.addContact(contact)
                     Scopes.getMainCoroutine().launch {
                         Toast.makeText(context, "Location Received From : ${contact.displayName  }", Toast.LENGTH_LONG ).show()
                     }
@@ -171,7 +95,6 @@ object LocationUtils  {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
-                    saveLocationReceivedLog(whoSent, bittelPackage , bittelLocationPackage)
                     val pollingUtils = DataManager.getPollingUtils()
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
@@ -183,69 +106,12 @@ object LocationUtils  {
             }
         }
     }
-
-    private fun saveLocationReceivedLog(
-        whoSent: String,
-        bittelPackage: StardustPackage,
-        bittelLocationPackage: StardustLocationPackage
-    ) {
-        val location = Location("")
-        location.altitude = bittelLocationPackage.height.toDouble()
-        location.latitude = bittelLocationPackage.latitude.toDouble()
-        location.longitude = bittelLocationPackage.longitude.toDouble()
-        val logObject = LogUtils.getLogObject(src = whoSent, dst = bittelPackage.getDestAsString()
-            , event = LOG_EVENT.LOCATION_RECEIVED.type ,location = location)
-        LogUtils.saveLog(logObject, context)
-    }
-
     suspend fun createNewContact(bittelPackage: StardustPackage){
         val contact = ChatContact(displayName = bittelPackage.getSourceAsString(), number = bittelPackage.getSourceAsString(), bittelId = bittelPackage.getSourceAsString())
         ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
     }
-
-    suspend fun createNewContact(locationMessage: LocationMessage){
-        val contact = ChatContact(displayName = locationMessage.src, number = locationMessage.src, bittelId = locationMessage.src)
-        ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
-    }
-
-    fun updatedLocationPullParams () {
-        cancelLocationUpdates()
-        requestLocationUpdates()
-    }
-
-    private fun cancelLocationUpdates () {
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-    }
-    @SuppressLint("MissingPermission")
-    fun requestLocationUpdates () {
-        val inter = SharedPreferencesUtil.getLocationInterval(context)
-        val prior = SharedPreferencesUtil.getLocationPriority(context)
-        val locationRequest = LocationRequest.create().apply {
-            interval = inter.toLong()
-            fastestInterval = (interval/2)
-            priority = prior
-        }
-        fusedLocationClient.requestLocationUpdates(locationRequest, locationCallback, null)
-    }
-    @SuppressLint("MissingPermission")
-    fun requestLocation() : Location?{
-        if(!hasLocationPermissionForeground()){
-            return null
-        }else {
-            lastLocation?.let { return it }
-            fusedLocationClient.lastLocation
-                .addOnSuccessListener { location: Location? ->
-                    lastLocation = location
-                }.addOnFailureListener{ e ->
-                    e.printStackTrace()
-                }
-        }
-        return null
-    }
-
     internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                       isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null){
-        val location = requestLocation()
+                       isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null, location: Location?){
         if(location == null){
             sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
         }else {
@@ -253,8 +119,7 @@ object LocationUtils  {
         }
     }
 
-    fun getLocationForSOSMyLocation(): Array<Int> {
-        val location = requestLocation()
+    fun getLocationForSOSMyLocation(location: Location?): Array<Int> {
         if(location == null){
             return CoordinatesUtil().packEmptyLocation()
         }else {
@@ -276,12 +141,6 @@ object LocationUtils  {
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = if (isHR) StardustControlByte.StardustDeliveryType.HR else StardustControlByte.StardustDeliveryType.LR
             clientConnection.sendMessage(bittelPackageToReturn)
         }
-        Scopes.getMainCoroutine().launch {
-            if(!isLocationEnabled() && opCode == null){
-                Toast.makeText(context, "No Location services, please enable", Toast.LENGTH_LONG).show()
-            }
-        }
-
     }
 
     internal fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
@@ -314,46 +173,6 @@ object LocationUtils  {
         }
     }
 
-
-
-    fun removePulling(dest : String){
-        if(mutableMapPackages.containsKey(dest)){
-            mutableMapPackages.remove(dest)
-        }
-        if(mutableMapScopes.containsKey(dest)){
-            mutableMapScopes.get(dest)?.cancel(null)
-            mutableMapScopes.remove(dest)
-        }
-    }
-
-    internal fun addPulling(clientConnection: ClientConnection, dest : String, bittelPackage: StardustPackage) {
-        removePulling(dest)
-        mutableMapPackages.put(dest, bittelPackage)
-        mutableMapScopes.put(dest, startPulling(dest, clientConnection))
-
-
-    }
-
-    private fun startPulling(dest: String, clientConnection: ClientConnection) : Job{
-        val runnable = Scopes.getDefaultCoroutine().launch {
-            if(mutableMapPackages.containsKey(dest)){
-                val mPackage = mutableMapPackages.get(dest)
-                mPackage?.let {
-                    val delay = (it.pullTimer*1000).toLong()
-                    while (delay.toInt() != 0) {
-                        requestLocation(it,clientConnection)
-                        delay(delay)
-                    }
-                }
-            }
-        }
-        return runnable
-    }
-
-    private fun requestLocation(bittelPackage: StardustPackage, clientConnection : ClientConnection) {
-        clientConnection.sendMessage(bittelPackage)
-    }
-
     suspend fun saveLocationSent (sender : String, locationText : String, senderName : String, chatId : String, isDemandAck: Boolean = false, idNumber : Long = 0) {
         val message = MessageItem(senderID = sender, text = locationText, epochTimeMs =  Date().time ,
             senderName = senderName, chatId = chatId, isLocation = true, seen = if(chatId != "00000002") SeenStatus.SENT else SeenStatus.SEEN)
@@ -363,27 +182,8 @@ object LocationUtils  {
         MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
     }
 
-    fun isLocationEnabled() : Boolean{
-        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager?
-
-// Check if the GPS and Network providers are enabled
-
-// Check if the GPS and Network providers are enabled
-        val isGpsEnabled = locationManager!!.isProviderEnabled(LocationManager.GPS_PROVIDER)
-        val isNetworkEnabled = locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-
-        return !(!isGpsEnabled && !isNetworkEnabled)
-
-    }
-
     fun Double.getAfterDot (numAfterDot : Int): String {
         return String.format("%.${numAfterDot}f", this)
-    }
-
-    fun getRandomLocation(): Pair<Double, Double> {
-        val randomLatitude = Random.nextDouble(0.0, 90.0)
-        val randomLongitude = Random.nextDouble(0.0, 180.0)
-        return Pair(randomLatitude, randomLongitude)
     }
 }
 

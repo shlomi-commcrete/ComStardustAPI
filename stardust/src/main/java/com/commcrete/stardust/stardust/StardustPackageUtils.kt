@@ -253,6 +253,24 @@ object StardustPackageUtils {
             )
         ),
 
+        REQUEST_LAST_LOCATION (0x25,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+
+        REQUEST_GPS_SATELLITE (0x28,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+
         //Responses
         READ_CONFIGURATION_RESPONSE (0x8C,
             StardustControlByte(
@@ -342,6 +360,15 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+
+        UPDATE_PORT_RESPONSE (0x9A,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         UPDATE_POLYGON_FREQ_RESPONSE (0x9D,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
@@ -367,6 +394,22 @@ object StardustPackageUtils {
             )
         ),
 
+        RECEIVE_LAST_LOCATION (0xA5,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        RECEIVE_GPS_SATELLITE (0xA8,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         //Interrupts
         UPDATE_POLYGON_INTERRUPT (0xFA,
             StardustControlByte(
