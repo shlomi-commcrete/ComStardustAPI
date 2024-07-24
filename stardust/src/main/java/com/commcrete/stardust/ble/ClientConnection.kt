@@ -498,10 +498,6 @@ internal class ClientConnection(
                             writePackage(it, bittelPackage)
                         }
                 }
-                gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
-                    ?.let {
-                        writePackage(it, bittelPackage)
-                    }
                 if(mutableMessageList.isNotEmpty()){
                     mutableMessageList.removeAt(0)
                 }
