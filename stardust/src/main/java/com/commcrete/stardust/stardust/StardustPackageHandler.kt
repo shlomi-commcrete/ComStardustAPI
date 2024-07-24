@@ -248,7 +248,7 @@ internal class StardustPackageHandler(private val context: Context ,
         val deviceName = SharedPreferencesUtil.getBittelDeviceName(context)
 
         //Temp
-        if (BleManager.isBluetoothEnabled()) {
+        if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
             deviceName?.let { name ->
                 savedUser?.let { user ->
                     val newUser = RegisterUser(displayName = user.displayName, licenseType = "", phone = user.phone,
