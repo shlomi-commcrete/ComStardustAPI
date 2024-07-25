@@ -15,6 +15,7 @@ import com.commcrete.bittell.util.text_utils.getIsAck
 import com.commcrete.bittell.util.text_utils.getIsPartType
 import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
+import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
@@ -50,8 +51,10 @@ object DataManager : StardustAPI, PttInterface{
     private var bleScanner : BleScanner? = null
     private var source : String? = null
     private var destination : String? = null
+    private var stardustAPICallbacks : StardustAPICallbacks? = null
 
     private var hasTimber = false
+    var isPlayPttFromSdk = true
 
     fun requireContext (context: Context){
         this.context = context
@@ -143,6 +146,10 @@ object DataManager : StardustAPI, PttInterface{
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context))
     }
 
+    override fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
+
+    }
+
 
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
@@ -169,6 +176,10 @@ object DataManager : StardustAPI, PttInterface{
     override fun readChats(): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {
         val chats = getChatsRepo().getAllChats ()
         emit(chats)
+    }
+
+    override fun setCallback(stardustAPICallbacks: StardustAPICallbacks) {
+        this.stardustAPICallbacks = stardustAPICallbacks
     }
 
     override fun getSource(): String {
@@ -202,4 +213,9 @@ object DataManager : StardustAPI, PttInterface{
     fun getMessagesRepo () : MessagesRepository {
         return MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao())
     }
+
+    fun getCallbacks () : StardustAPICallbacks? {
+        return stardustAPICallbacks
+    }
+
 }

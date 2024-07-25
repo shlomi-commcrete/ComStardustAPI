@@ -7,6 +7,7 @@ import android.location.LocationManager
 import android.os.Build
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.request_objects.LocationMessage
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -101,6 +102,13 @@ object LocationUtils  {
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
                     }
+                    var location = Location(whoSent)
+                    location.latitude = bittelLocationPackage.latitude.toDouble()
+                    location.longitude = bittelLocationPackage.longitude.toDouble()
+                    location.altitude = bittelLocationPackage.height.toDouble()
+                    DataManager.getCallbacks()?.receiveLocation(
+                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
+                        location)
                 }
             } else if(isCreateNewUser) {
                 createNewContact(bittelPackage)

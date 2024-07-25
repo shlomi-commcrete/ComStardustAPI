@@ -149,13 +149,14 @@ object PlayerUtils : BleMediaConnector() {
                             track?.write(byteArray, 0, byteArray.size)
                         }
                     }
-                    Scopes.getDefaultCoroutine().launch{
-                        if(!isPlaying) {
-                            track?.play()
+                    if(DataManager.isPlayPttFromSdk) {
+                        Scopes.getDefaultCoroutine().launch{
+                            if(!isPlaying) {
+                                track?.play()
+                            }
+                            isPlaying = true
                         }
-                        isPlaying = true
                     }
-
 
 //                    track?.write(audioData, 0, bufferSizeInBytes)
                 }

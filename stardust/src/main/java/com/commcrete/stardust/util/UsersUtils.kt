@@ -1,8 +1,11 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
+import android.location.Location
 import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.bittell.util.text_utils.getCharValue
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -140,6 +143,13 @@ object UsersUtils {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = true)
                     MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
+                    var location = Location(whoSent)
+                    location.latitude = bittelSOSPackage.latitude.toDouble()
+                    location.longitude = bittelSOSPackage.longitude.toDouble()
+                    location.altitude = bittelSOSPackage.height.toDouble()
+                    DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
+                        location, bittelSOSPackage.sosType)
+
                 }
             } else if(isCreateNewUser) {
                 LocationUtils.createNewContact(bittelPackage)
@@ -159,6 +169,7 @@ object UsersUtils {
                     val chatContact = chat.user
                     chatContact?.let { contact ->
                         contact.appId?.let { appIdArray ->
+
                             var whoSent = ""
                             var displayName = contact.displayName
                             if(bittelPackage.getSourceAsString() == "00000002"){
@@ -171,11 +182,12 @@ object UsersUtils {
                                 whoSent = appIdArray[0]
                             }
                             if(appIdArray.isNotEmpty()){
-                                chat.message = Message(senderID = whoSent, text = bittelPackage.getDataAsString()?:"",
+                                val text = getCharValue(bittelPackage.getDataAsString())
+                                chat.message = Message(senderID = whoSent, text = text,
                                     seen = true)
                                 chatsRepo.addChat(chat)
                                 val messageItem =
-                                    MessageItem(senderID = whoSent, text = bittelPackage.getDataAsString()?:"", epochTimeMs = Date().time,
+                                    MessageItem(senderID = whoSent, text = text, epochTimeMs = Date().time,
                                         chatId = appIdArray[0], seen = SeenStatus.SEEN, senderName = displayName, isSOS = isSOS)
                                 saveMessageToDatabase(appIdArray[0], messageItem)
                                 val numOfUnread = chat.numOfUnseenMessages
@@ -184,6 +196,7 @@ object UsersUtils {
                                 Scopes.getMainCoroutine().launch {
                                     messageReceived.value = messageItem
                                 }
+                                DataManager.getCallbacks()?.receiveMessage(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), text)
                             }
                         }
                     }
