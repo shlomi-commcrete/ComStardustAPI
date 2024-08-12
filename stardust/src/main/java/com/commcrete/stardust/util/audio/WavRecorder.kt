@@ -19,6 +19,7 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
@@ -27,6 +28,7 @@ import com.ustadmobile.codec2.Codec2Decoder
 import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
@@ -411,7 +413,6 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 for(byte in it){
                     mutableByteListToSend.add(byte)
                     if(mutableByteListToSend.size == 77){
-                        mutableByteListToSend.add(byte)
                         sendData(mutableByteListToSend.toByteArray().copyOf())
                         mutableByteListToSend.clear()
                         numOfPackage++
@@ -423,6 +424,8 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun concatenateByteArraysWithIgnoring(byteArray1: ByteArray, byteArray2: ByteArray): ByteArray {
+        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray 1 : ${byteArray1.toHex()}")
+        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray 2 : ${byteArray2.toHex()}")
         var byteArrayToReturn = ByteArray((byteArray1.size + byteArray2.size)-1)
         var index = 0
         var insertedIndex = 0
@@ -431,11 +434,12 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             index ++
             insertedIndex ++
         }
-        val shiftRight = byteArray2[0].toInt() shr 4
+        val shiftRight = byteArray2[0].toUByte().toInt() shr 4
         byteArrayToReturn[3] = byteArrayToReturn[3] or shiftRight.toByte()
         byteArrayToReturn[4] = getBytesShift(byteArray2[0], byteArray2[1])
         byteArrayToReturn[5] = getBytesShift(byteArray2[1], byteArray2[2])
         byteArrayToReturn[6] = getBytesShift(byteArray2[2], byteArray2[3])
+        Timber.tag("concatenateByteArraysWithIgnoring").d("combined : ${byteArrayToReturn.toHex()}")
         return byteArrayToReturn
     }
 

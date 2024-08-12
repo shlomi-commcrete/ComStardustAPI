@@ -6,12 +6,15 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
+import androidx.annotation.OptIn
 import androidx.lifecycle.MutableLiveData
+import androidx.media3.common.util.UnstableApi
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
@@ -19,6 +22,7 @@ import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -29,6 +33,7 @@ import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
 import com.google.android.exoplayer2.upstream.RawResourceDataSource
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
+import timber.log.Timber
 import java.io.*
 import java.util.Date
 import kotlin.experimental.and
@@ -157,6 +162,7 @@ object PlayerUtils : BleMediaConnector() {
                             isPlaying = true
                         }
                     }
+
 
 //                    track?.write(audioData, 0, bufferSizeInBytes)
                 }
@@ -444,9 +450,53 @@ object PlayerUtils : BleMediaConnector() {
 
     }
 
+    private fun splitByteArray(input: ByteArray, chunkSize: Int): List<ByteArray> {
+        Timber.tag("receiveBeforeSplit").d("input : ${input.toHex()}")
+        val splits = mutableListOf<ByteArray>()
+        var startIndex = 0
+
+        while (startIndex < input.size) {
+            // Calculate endIndex for the current chunk
+            val endIndex = minOf(startIndex + chunkSize, input.size)
+            // Copy a portion of the array into a new array
+            val chunk = input.copyOfRange(startIndex, endIndex)
+            // Add the chunk to the result list
+            splits.add(chunk)
+            // Move the start index forward by chunkSize
+            startIndex += chunkSize
+        }
+
+        val result = mutableListOf<ByteArray>()
+        for (split in splits) {
+            Timber.tag("receiveAfterSplit").d("split : ${split.toHex()}")
+            result.addAll(splitByteArray2(split))
+        }
+        return result
+    }
+
+    private   fun splitByteArray2(combined: ByteArray): List<ByteArray> {
+        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray origin : ${combined.toHex()}")
+        val byteArray1 = ByteArray(4)
+        val byteArray2 = ByteArray(4)
+
+        // Extract byteArray1 from the first 4 bytes of the combined array
+        for (i in 0 until 4) {
+            byteArray1[i] = combined[i]
+        }
+        byteArray1[3] =  (byteArray1[3].toInt() and 0xF0).toByte()
+        // Reverse the manipulation to retrieve byteArray2
+        byteArray2[0] = ((combined[3].toUByte().toInt() shl 4) or (combined[4].toUByte().toInt() shr 4)).toByte()
+        byteArray2[1] = ((combined[4].toUByte().toInt() shl 4) or (combined[5].toUByte().toInt() shr 4)).toByte()
+        byteArray2[2] = ((combined[5].toUByte().toInt() shl 4) or (combined[6].toUByte().toInt() shr 4)).toByte()
+        byteArray2[3] = (combined[6].toUByte().toInt() shl 4).toByte() // Assuming the original bits are aligned
+        Timber.tag("receiveAfterSplit").d("byteArray 1 : ${byteArray1.toHex()}")
+        Timber.tag("receiveAfterSplit").d("byteArray 2 : ${byteArray2.toHex()}")
+        return listOf(byteArray1, byteArray2)
+    }
+
     private fun testPlayPackage(byteArray: ByteArray, dest : String){
         initAudioTrack(640)
-        var bytes = breakByteArray(byteArray)
+        var bytes = splitByteArray(byteArray, 7)
         var bytesListToPlay : MutableList<ByteArray> = mutableListOf()
         for(mByte in bytes) {
 //            logByteArray("logByteArrayInputPlayer", mByte)
@@ -528,20 +578,22 @@ object PlayerUtils : BleMediaConnector() {
             chatsRepository.updateAudioReceived(chatId, isAudioReceived)
         }
     }
-    fun playClickSound (context: Context, audioResource : Int){
+    @OptIn(UnstableApi::class)
+    fun playClickSound (context: Context, audioResource : Int, onFinished : () -> Unit = {}){
+        val mediaPlayer = MediaPlayer.create(context, audioResource)
+        mediaPlayer.setVolume(0.05f, 0.05f)
+        mediaPlayer.setOnCompletionListener {
+            onFinished()  // Call the callback when playback finishes
+            mediaPlayer.release()  // Release the media player resources immediately after playback is complete
+        }
 
-        val player = ExoPlayer.Builder(DataManager.context).build()
 
-        // Create a MediaItem from the raw resource URI
-        val rawResourceUri = RawResourceDataSource.buildRawResourceUri(audioResource)
-        val mediaItem = MediaItem.fromUri(rawResourceUri)
-
-        // Prepare the player with the media item
-        player.setMediaSource(DefaultMediaSourceFactory(DataManager.context).createMediaSource(mediaItem))
-        player.prepare()
-
-        // Start playback
-        player.playWhenReady = true
+        try {
+            mediaPlayer.start()
+        } catch (e: Exception) {
+            println("MediaPlayer start failed: ${e.message}")
+            mediaPlayer.release()
+        }
     }
 
     fun playNotificationSound(context: Context) {
