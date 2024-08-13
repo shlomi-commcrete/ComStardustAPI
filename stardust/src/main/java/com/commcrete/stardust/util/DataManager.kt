@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
+import android.content.IntentSender
 import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -24,6 +25,7 @@ import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -38,6 +40,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Date
 import kotlin.random.Random
 
 object DataManager : StardustAPI, PttInterface{
@@ -127,6 +130,18 @@ object DataManager : StardustAPI, PttInterface{
                 mPackage.stardustControlByte.stardustDeliveryType = if (stardustAPIPackage.isLR == true) StardustControlByte.StardustDeliveryType.LR else StardustControlByte.StardustDeliveryType.HR
                 sendDataToBle(mPackage)
                 delay(if(stardustAPIPackage.isLR == true)4000 else 800)
+            }
+        }
+    }
+
+    private fun saveSentMessage (text :String, userId : String, sender: String){
+        val messageItem = MessageItem(chatId = userId, text = text, epochTimeMs = Date().time, senderID = sender)
+        Scopes.getMainCoroutine().launch {
+            val chatsRepo = getChatsRepo()
+            val messagesRepository = getMessagesRepo()
+            Scopes.getDefaultCoroutine().launch{
+//                chatsRepo.addChat(chatItem)
+                messagesRepository.addContact(messageItem)
             }
         }
     }
