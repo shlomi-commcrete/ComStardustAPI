@@ -132,11 +132,12 @@ object DataManager : StardustAPI, PttInterface{
                 delay(if(stardustAPIPackage.isLR == true)4000 else 800)
             }
         }
+        saveSentMessage(text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
     }
 
     private fun saveSentMessage (text :String, userId : String, sender: String){
         val messageItem = MessageItem(chatId = userId, text = text, epochTimeMs = Date().time, senderID = sender)
-        Scopes.getMainCoroutine().launch {
+        Scopes.getDefaultCoroutine().launch {
             val chatsRepo = getChatsRepo()
             val messagesRepository = getMessagesRepo()
             Scopes.getDefaultCoroutine().launch{
