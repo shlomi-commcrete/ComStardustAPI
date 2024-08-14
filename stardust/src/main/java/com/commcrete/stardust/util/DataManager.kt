@@ -163,6 +163,13 @@ object DataManager : StardustAPI, PttInterface{
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context))
     }
 
+    override fun requestLocation(stardustAPIPackage: StardustAPIPackage) {
+        val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
+        Scopes.getDefaultCoroutine().launch {
+            sendDataToBle(stardustPackage)
+        }
+    }
+
     override fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
 
     }

@@ -15,6 +15,7 @@ interface StardustAPI {
     fun startPTT (stardustAPIPackage: StardustAPIPackage)
     fun stopPTT (stardustAPIPackage: StardustAPIPackage)
     fun sendLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun requestLocation (stardustAPIPackage: StardustAPIPackage)
     fun sendSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
     fun init(context: Context, fileLocation : String)
     fun scanForDevice() : MutableLiveData<List<ScanResult>>
