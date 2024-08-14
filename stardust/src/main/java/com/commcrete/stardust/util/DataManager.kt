@@ -149,6 +149,7 @@ object DataManager : StardustAPI, PttInterface{
     @SuppressLint("MissingPermission")
     override fun startPTT(stardustAPIPackage: StardustAPIPackage) {
         this.source = stardustAPIPackage.source
+        this.destination = stardustAPIPackage.destination
         RecorderUtils.init(this)
         RecorderUtils.onRecord(true, stardustAPIPackage.destination)
     }
