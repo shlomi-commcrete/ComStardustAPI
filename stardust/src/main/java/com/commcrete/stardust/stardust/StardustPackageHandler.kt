@@ -216,7 +216,7 @@ internal class StardustPackageHandler(private val context: Context ,
         addressesPackage?.let {
             registerBittel(addressesPackage.stardustID)
             updateBittelSmartphoneAddress(addressesPackage)
-            updateLocalBittelID ()
+//            updateLocalBittelID ()
         }
     }
 
