@@ -90,7 +90,7 @@ object DataManager : StardustAPI, PttInterface{
         return bittelusbManager!!
     }
 
-    internal fun getLocationUtils (context: Context) : LocationUtils {
+    fun getLocationUtils (context: Context) : LocationUtils {
         LocationUtils.init(context)
         return LocationUtils
     }
