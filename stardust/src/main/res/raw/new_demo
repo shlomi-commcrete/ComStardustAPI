@@ -1,0 +1,718 @@
+{
+  "demos": {
+    "office": {
+      "chats": [
+        {
+          "10000001": {
+            "chat_name": "Shlomi App Handheld 2",
+            "bittelId": "00160030",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "00000002": {
+            "chat_name": "Group",
+            "bittelId": "00000002",
+            "sniffer": false,
+            "image": "group_photo",
+            "isGroup": true
+          }
+        },
+        {
+          "10000002": {
+            "chat_name": "Shlomi App Handheld 1",
+            "bittelId": "10000303",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000003": {
+            "chat_name": "Shlomi App Hybrid",
+            "bittelId": "10000404",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000004": {
+            "chat_name": "Ohad App Vehicle",
+            "bittelId": "10000505",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000005": {
+            "chat_name": "Sagi App Vehicle 1",
+            "bittelId": "10000606",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000007": {
+            "chat_name": "Josh App Handheld",
+            "bittelId": "10000707",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "10000008": {
+            "chat_name": "Ohad App Handheld",
+            "bittelId": "10000808",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000009": {
+            "chat_name": "Ohad App Hybrid",
+            "bittelId": "10000909",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000010": {
+            "chat_name": "Sagi App Vehicle 2",
+            "bittelId": "10000910",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000011": {
+            "chat_name": "Sagi App Hybrid",
+            "bittelId": "10000910",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000020": {
+            "chat_name": "Josh private",
+            "bittelId": "10000911",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "10000006": {
+            "chat_name": "Yokhai App Handheld",
+            "bittelId": "10000912",
+            "sniffer": false,
+            "image": "image003",
+            "isGroup": false
+          }
+        },
+        {
+          "10000021": {
+            "chat_name": "Ohad Private",
+            "bittelId": "10000913",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000022": {
+            "chat_name": "Shlomi Private",
+            "bittelId": "8046003f",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000023": {
+            "chat_name": "Tzuriel Private",
+            "bittelId": "400c8018",
+            "sniffer": false,
+            "image": "image011",
+            "isGroup": false
+          }
+        },
+        {
+          "20000001": {
+            "chat_name": "HQ",
+            "bittelId": "500c8018",
+            "sniffer": false,
+            "image": "viasat",
+            "isGroup": false
+          }
+        },
+        {
+          "804d003b": {
+            "chat_name": "Ohad Bittel Hybrid",
+            "bittelId": "80360052",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "80390040": {
+            "chat_name": "Yokhai Bittel Handheld",
+            "bittelId": "8033004e",
+            "sniffer": false,
+            "image": "image003",
+            "isGroup": false
+          }
+        },
+        {
+          "80390036": {
+            "chat_name": "Sagi Bittel Vehicle 2",
+            "bittelId": "8033004e",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "8050003a": {
+            "chat_name": "Josh Bittel Handheld",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "804e003e": {
+            "chat_name": "London Exhibition Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "80390017": {
+            "chat_name": "Shlomi Bittel Hybrid",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804b003f": {
+            "chat_name": "Bittel Car 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "8039003a": {
+            "chat_name": "Ohad Bittel Vehicle",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "80390026": {
+            "chat_name": "Sagi Bittel Hybrid",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image0013",
+            "isGroup": false
+          }
+        },
+        {
+          "804b0034": {
+            "chat_name": "Josh Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "804d0041": {
+            "chat_name": "Ohad Bittel Handheld",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "804b002a": {
+            "chat_name": "Shlomi Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "80380025": {
+            "chat_name": "Tzuriel Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image011",
+            "isGroup": false
+          }
+        },
+        {
+          "804F0037": {
+            "chat_name": "Shlomi Bittel Handheld 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804C0031": {
+            "chat_name": "Shlomi Bittel Handheld 2",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804D002E": {
+            "chat_name": "Bittel Handheld 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "804B003A": {
+            "chat_name": "Sagi Bittel Vehicle 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image0013",
+            "isGroup": false
+          }
+        },
+        {
+          "804C0027": {
+            "chat_name": "Bittel Car 2",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        }
+      ]
+    },
+    "singapore": {
+      "chats": [
+        {
+          "10000001": {
+            "chat_name": "App 1",
+            "bittelId": "00160030",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "00000002": {
+            "chat_name": "Group",
+            "bittelId": "00000002",
+            "sniffer": false,
+            "isGroup": true
+          }
+        },
+        {
+          "10000002": {
+            "chat_name": "App 2",
+            "bittelId": "10000303",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "10000003": {
+            "chat_name": "App 3",
+            "bittelId": "10000404",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "10000004": {
+            "chat_name": "HQ",
+            "bittelId": "10000505",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "8050003a": {
+            "chat_name": "Bittel 1",
+            "bittelId": "10000606",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "804f003f": {
+            "chat_name": "Bittel 2",
+            "bittelId": "10000707",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "804e003e": {
+            "chat_name": "Bittel 3",
+            "bittelId": "10000808",
+            "sniffer": false,
+            "isGroup": false
+          }
+        },
+        {
+          "804d003b": {
+            "chat_name": "Bittel HQ",
+            "bittelId": "10000909",
+            "sniffer": false,
+            "isGroup": false
+          }
+        }
+      ]
+    },
+    "london": {
+      "chats": [
+        {
+          "10000001": {
+            "chat_name": "Shlomi App Handheld 2",
+            "bittelId": "00160030",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "00000002": {
+            "chat_name": "Group",
+            "bittelId": "00000002",
+            "sniffer": false,
+            "image": "group_photo",
+            "isGroup": true
+          }
+        },
+        {
+          "10000002": {
+            "chat_name": "Shlomi App Handheld 1",
+            "bittelId": "10000303",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000003": {
+            "chat_name": "Shlomi App Hybrid",
+            "bittelId": "10000404",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000004": {
+            "chat_name": "Ohad App Vehicle",
+            "bittelId": "10000505",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000005": {
+            "chat_name": "Sagi App Vehicle 1",
+            "bittelId": "10000606",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000007": {
+            "chat_name": "Josh App Handheld",
+            "bittelId": "10000707",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "10000008": {
+            "chat_name": "Ohad App Handheld",
+            "bittelId": "10000808",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000009": {
+            "chat_name": "Ohad App Hybrid",
+            "bittelId": "10000909",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000010": {
+            "chat_name": "Sagi App Vehicle 2",
+            "bittelId": "10000910",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000011": {
+            "chat_name": "Sagi App Hybrid",
+            "bittelId": "10000910",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "10000020": {
+            "chat_name": "Josh private",
+            "bittelId": "10000911",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "10000006": {
+            "chat_name": "Yokhai App Handheld",
+            "bittelId": "10000912",
+            "sniffer": false,
+            "image": "image003",
+            "isGroup": false
+          }
+        },
+        {
+          "10000021": {
+            "chat_name": "Ohad Private",
+            "bittelId": "10000913",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "10000022": {
+            "chat_name": "Shlomi Private",
+            "bittelId": "8046003f",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "10000023": {
+            "chat_name": "Tzuriel Private",
+            "bittelId": "400c8018",
+            "sniffer": false,
+            "image": "image011",
+            "isGroup": false
+          }
+        },
+        {
+          "20000001": {
+            "chat_name": "HQ",
+            "bittelId": "500c8018",
+            "sniffer": false,
+            "image": "viasat",
+            "isGroup": false
+          }
+        },
+        {
+          "804d003b": {
+            "chat_name": "Ohad Bittel Hybrid",
+            "bittelId": "80360052",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "80390040": {
+            "chat_name": "Yokhai Bittel Handheld",
+            "bittelId": "8033004e",
+            "sniffer": false,
+            "image": "image003",
+            "isGroup": false
+          }
+        },
+        {
+          "80390036": {
+            "chat_name": "Sagi Bittel Vehicle 2",
+            "bittelId": "8033004e",
+            "sniffer": false,
+            "image": "image013",
+            "isGroup": false
+          }
+        },
+        {
+          "8050003a": {
+            "chat_name": "Josh Bittel Handheld",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "804e003e": {
+            "chat_name": "London Exhibition Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "80390017": {
+            "chat_name": "Shlomi Bittel Hybrid",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804b003f": {
+            "chat_name": "Bittel Car 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "8039003a": {
+            "chat_name": "Ohad Bittel Vehicle",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "80390026": {
+            "chat_name": "Sagi Bittel Hybrid",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image0013",
+            "isGroup": false
+          }
+        },
+        {
+          "804b0034": {
+            "chat_name": "Josh Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image00123",
+            "isGroup": false
+          }
+        },
+        {
+          "804d0041": {
+            "chat_name": "Ohad Bittel Handheld",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image004",
+            "isGroup": false
+          }
+        },
+        {
+          "804b002a": {
+            "chat_name": "Shlomi Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "80380025": {
+            "chat_name": "Tzuriel Private Bittel",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image011",
+            "isGroup": false
+          }
+        },
+        {
+          "804F0037": {
+            "chat_name": "Shlomi Bittel Handheld 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804C0031": {
+            "chat_name": "Shlomi Bittel Handheld 2",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image002",
+            "isGroup": false
+          }
+        },
+        {
+          "804D002E": {
+            "chat_name": "Bittel Handheld 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        },
+        {
+          "804B003A": {
+            "chat_name": "Sagi Bittel Vehicle 1",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "image0013",
+            "isGroup": false
+          }
+        },
+        {
+          "804C0027": {
+            "chat_name": "Bittel Car 2",
+            "bittelId": "8031004e",
+            "sniffer": false,
+            "image": "",
+            "isGroup": false
+          }
+        }
+      ]
+    }
+  }
+}
