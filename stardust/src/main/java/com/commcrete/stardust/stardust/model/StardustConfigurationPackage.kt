@@ -11,8 +11,6 @@ data class StardustConfigurationPackage(
     var powerLORX : Int,
     var powerHRTX : Int,
     var powerLRTX : Int,
-    var radioHRDeduction : Float,
-    var radioLRDeduction : Float,
     var radioLODeduction : Float,
     var stardustType : StardustConfigurationParser.StardustType,
     var portType : StardustConfigurationParser.PortType,

@@ -42,4 +42,8 @@ data class ChatContact (
     var isSOS : Boolean = false,
     @ColumnInfo(name = "isSniffer")
     var isSniffer : Boolean = false,
+    @ColumnInfo(name = "is_bittel")
+    var isBittel : Boolean = false,
+    @ColumnInfo(name = "is_group")
+    var isGroup : Boolean = false,
 ) : Parcelable

@@ -42,6 +42,10 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
         return true
     }
 
+    fun getAllGroupIds() : List<String> {
+        return chatsDao.getAllGroupIds()
+    }
+
 //    suspend fun updateOnlineStatus(chatId: String, isOnline : Boolean) = chatsDao.updateOnlineStatus(chatId, isOnline)
 
 //    suspend fun updateBittelID(chatId: String, bittelID : String) = chatsDao.updateBittelID(chatId, bittelID)

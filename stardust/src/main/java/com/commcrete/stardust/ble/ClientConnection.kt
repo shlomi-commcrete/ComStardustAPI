@@ -65,11 +65,29 @@ internal class ClientConnection(
     var bittelPackage : StardustPackage? = null
 
     private val connectionTimeout : Long = 20000
-    private val bondTimeout : Long = 40000
+    private val bondTimeout : Long = 20000
+    private val pingTimeout : Long = 10000
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
         reconnectToDevice()
+    }
+
+    private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {
+        sendPing ()
+    }
+    private val pingHandler : Handler = Handler(Looper.getMainLooper())
+
+    private fun sendPing () {
+        SharedPreferencesUtil.getAppUser(context)?.let {
+            val src = it.appId
+            val dst = it.bittelId
+            if(src != null && dst != null) {
+                val versionPackage = StardustPackageUtils.getStardustPackage(
+                    source = src, destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
+                addMessageToQueue(versionPackage)
+            }
+        }
     }
 
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
@@ -211,10 +229,14 @@ internal class ClientConnection(
 
                 Handler(Looper.getMainLooper()).postDelayed({
                     SharedPreferencesUtil.getAppUser(context)?.let {
-                        val mPackage = StardustPackageUtils.getStardustPackage(
-                            source = "0" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
-                        addMessageToQueue(mPackage)
-                        resetConnectionTimer()
+                        val src = it.appId
+                        if(src != null) {
+                            val mPackage = StardustPackageUtils.getStardustPackage(
+                                source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                            addMessageToQueue(mPackage)
+                            resetConnectionTimer()
+                            resetPingTimer()
+                        }
                     }
                 }, 4000)
             }
@@ -331,6 +353,7 @@ internal class ClientConnection(
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             removeRSSITimer()
+            removePingTimer()
         }
     }
 
@@ -686,6 +709,21 @@ internal class ClientConnection(
     private fun removeRSSITimer() {
         handlerRSSI.removeCallbacks(readRssiRunnable)
         handlerRSSI.removeCallbacksAndMessages(null)
+    }
+
+    private fun resetPingTimer() {
+        pingHandler.removeCallbacks(pingRunnable)
+        pingHandler.removeCallbacksAndMessages(null)
+        pingHandler.postDelayed(pingRunnable, pingTimeout)
+    }
+
+    private fun removePingTimer() {
+        try {
+            pingHandler.removeCallbacks(pingRunnable)
+            pingHandler.removeCallbacksAndMessages(null)
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun clearTimer(){

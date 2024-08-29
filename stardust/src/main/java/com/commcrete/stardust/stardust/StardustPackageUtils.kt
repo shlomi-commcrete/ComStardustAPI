@@ -270,7 +270,38 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
-
+        REQUEST_ADD_GROUPS (0x29,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        REQUEST_REMOVE_GROUPS (0x2A,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        REQUEST_DELETE_ALL_GROUPS (0x2B,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        REQUEST_GET_ALL_GROUPS (0x2B,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         //Responses
         READ_CONFIGURATION_RESPONSE (0x8C,
             StardustControlByte(
@@ -594,6 +625,27 @@ object StardustPackageUtils {
         handlerByteArray.removeCallbacksAndMessages(null)
         handlerByteArray.postDelayed(runnableByteArray, 2000)
     }
+}
+
+fun hexStringToByteArray(hexString: String): Array<Int> {
+    val byteArray = ByteArray(4)
+    try {
+        var hex = hexString
+        while (hex.length != 8){
+            hex = "0$hex"
+        }
+
+        for (i in 3 downTo 0) {
+            val startIndex = i * 2
+            val endIndex = startIndex + 2
+            val byteValue = hex.substring(startIndex, endIndex).toInt(16)
+            byteArray[i] = byteValue.toByte()
+        }
+    }catch ( e : Exception) {
+        return byteArray.map { it.toInt() }.toTypedArray().reversedArray()
+
+    }
+    return byteArray.map { it.toInt() }.toTypedArray().reversedArray()
 }
 
 fun String.hexStringToByteArray(): ByteArray {

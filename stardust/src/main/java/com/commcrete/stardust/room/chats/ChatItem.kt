@@ -31,6 +31,12 @@ data class ChatItem (
     val bittelIDS : String = "",
     val smartphoneBittelIDS : String = "",
     val numOfUnseenMessages : Int = 0,
+    @ColumnInfo(name = "is_group")
+    val isGroup: Boolean = false,
+    @ColumnInfo(name = "is_bittel")
+    val isBittel: Boolean = false,
+    @ColumnInfo(name = "image_name")
+    val imageName: String? = "",
     @Embedded var message: Message? = null,
     @Embedded var user: User? = null,
 

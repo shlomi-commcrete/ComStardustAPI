@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust.model
 class StardustConfigurationParser : StardustParser() {
 
     companion object{
+        const val sizeLength = 1
         const val frequencyHRSatelliteTXBytesLength = 4
         const val frequencyHRRadioTXBytesLength = 4
         const val frequencyLRSatelliteTXBytesLength = 4
@@ -13,8 +14,6 @@ class StardustConfigurationParser : StardustParser() {
         const val powerLORXLength = 1
         const val powerHRTXLength = 1
         const val powerLRTXLength = 1
-        const val radioHRDeductionLength = 4
-        const val radioLRDeductionLength = 4
         const val radioLODeductionLength = 4
         const val stardustTypeLength = 1
         const val portTypeLength = 1
@@ -22,8 +21,8 @@ class StardustConfigurationParser : StardustParser() {
         const val serverByteTypeLength = 1
         const val debuIgnoreCanTrasmitLength = 1
         const val snifferModeLength = 1
-        const val StardustAddressLength = 8
-        const val appAddressLength = 8
+        const val StardustAddressLength = 4
+        const val appAddressLength = 4
         const val frequencyLOTXLength = 4
         const val frequencyLORXLength = 4
         const val frequencyLRTXLength = 4
@@ -74,6 +73,8 @@ class StardustConfigurationParser : StardustParser() {
             try {
                 val byteArray = intArrayToByteArray(intArray.toMutableList())
                 var offset = 0
+                val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
+                offset += sizeLength
                 val frequencyHRSatelliteTXBytes = cutByteArray(byteArray, frequencyHRSatelliteTXBytesLength, offset)
                 offset += frequencyHRSatelliteTXBytesLength
                 val frequencyHRRadioTXBytes = cutByteArray(byteArray, frequencyHRRadioTXBytesLength, offset)
@@ -94,10 +95,6 @@ class StardustConfigurationParser : StardustParser() {
                 offset += powerHRTXLength
                 val powerLRTX = cutByteArray(byteArray, powerLRTXLength, offset)
                 offset += powerLRTXLength
-                val radioHRDeduction = cutByteArray(byteArray, radioHRDeductionLength, offset)
-                offset += radioHRDeductionLength
-                val radioLRDeduction = cutByteArray(byteArray, radioLRDeductionLength, offset)
-                offset += radioLRDeductionLength
                 val radioLODeduction = cutByteArray(byteArray, radioLODeductionLength, offset)
                 offset += radioLODeductionLength
                 val stardustType = cutByteArray(byteArray, stardustTypeLength, offset)
@@ -157,8 +154,6 @@ class StardustConfigurationParser : StardustParser() {
                     powerLORX = byteArrayToInt(powerLORX.reversedArray()),
                     powerHRTX = byteArrayToInt(powerHRTX.reversedArray()),
                     powerLRTX = byteArrayToInt(powerLRTX.reversedArray()),
-                    radioHRDeduction = byteArrayToFloat(radioHRDeduction.reversedArray()),
-                    radioLRDeduction = byteArrayToFloat(radioLRDeduction.reversedArray()),
                     radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
                     stardustType = StardustType.values()[byteArrayToInt(stardustType)],
                     portType = getPortType(byteArrayToInt(portType)),
@@ -182,8 +177,8 @@ class StardustConfigurationParser : StardustParser() {
                     mcuTemperature = byteArrayToInt(mcuTemperature),
                     rdpLevel = StardustRDPLevel.values()[byteArrayToInt(rdpLevel)],
                     snifferMode = SnifferMode.values()[byteArrayToInt(snifferModeBytes)],
-                    appId = appIdBytes.reversedArray().toHex().substring(8,16),
-                    StardustId = StardustIdBytes.reversedArray().toHex().substring(8,16)
+                    appId = appIdBytes.reversedArray().toHex().substring(0,8),
+                    StardustId = StardustIdBytes.reversedArray().toHex().substring(0,8)
                     )
                 return StardustConfigurationPackage
             }catch (e : Exception) {

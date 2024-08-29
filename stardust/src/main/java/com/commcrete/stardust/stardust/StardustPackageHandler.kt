@@ -24,6 +24,7 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
@@ -177,6 +178,8 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
+            GroupsUtils.deleteAllGroups(context)
+            GroupsUtils.addAllGroups(context)
             clientConnection?.updateBlePort()
             clientConnection?.removeConnectionTimer()
             StardustPolygonChange.sendSaveConfig(context)

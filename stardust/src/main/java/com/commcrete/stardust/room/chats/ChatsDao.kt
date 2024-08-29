@@ -43,6 +43,9 @@ interface ChatsDao {
 //    @Query("UPDATE chats_table SET pttEnabled=:isPTTEnable WHERE  chat_id=:chatId")
 //    suspend fun updateEnablePtt(chatId: String, isPTTEnable : Boolean)
 
+    @Query("SELECT chat_id FROM chats_table WHERE is_group = 1 ")
+    fun getAllGroupIds() : List<String>
+
     @Query("SELECT * FROM chats_table WHERE appId LIKE '%'||:bittelID||'%' LIMIT 1")
     fun getChatContactByBittelID(bittelID : String) : ChatItem?
 
