@@ -6,8 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.commcrete.bittell.util.demo.DemoDataUtil
-import org.apache.poi.ss.usermodel.WorkbookFactory
-import org.apache.poi.xssf.usermodel.XSSFCell
+//import org.apache.poi.ss.usermodel.WorkbookFactory
+//import org.apache.poi.xssf.usermodel.XSSFCell
 import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
@@ -21,49 +21,49 @@ object FolderReader {
 
     private fun readExcelFile(filePath: String) : List<ExcelUser> {
         val demoList = mutableListOf<ExcelUser>()
-        try {
-            val file = File(filePath)
-            val fis = FileInputStream(file)
-            val workbook = WorkbookFactory.create(fis)
-            val sheet = workbook.getSheetAt(0)
-
-            for (row in sheet) {
-                val rowData = mutableListOf<String>()
-                var loop = 0
-                val excelUser = ExcelUser()
-                for (cell in row) {
-                    Timber.tag("readExcelFile").d(cell.toString())
-                    if(cell.toString() == "ID"){
-                        break
-                    }
-                    if(loop == 0) {
-                        excelUser.id = (cell as XSSFCell).stringCellValue
-                    }
-                    if(loop == 1) {
-                        excelUser.name = cell.toString()
-                    }
-                    if(loop == 2) {
-                        excelUser.type = cell.toString()
-                    }
-                    if(loop == 3) {
-                        excelUser.image = cell.toString()
-                    }
-                    rowData.add(cell.toString())
-                    loop++
-                }
-                if(excelUser.id.isNotEmpty()){
-                    demoList.add(excelUser)
-                }
-                // Process rowData as needed
-                Timber.tag("readExcelFile").d(rowData.toString())
-            }
-
-            workbook.close()
-            fis.close()
-
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+//        try {
+//            val file = File(filePath)
+//            val fis = FileInputStream(file)
+//            val workbook = WorkbookFactory.create(fis)
+//            val sheet = workbook.getSheetAt(0)
+//
+//            for (row in sheet) {
+//                val rowData = mutableListOf<String>()
+//                var loop = 0
+//                val excelUser = ExcelUser()
+//                for (cell in row) {
+//                    Timber.tag("readExcelFile").d(cell.toString())
+//                    if(cell.toString() == "ID"){
+//                        break
+//                    }
+//                    if(loop == 0) {
+//                        excelUser.id = (cell as XSSFCell).stringCellValue
+//                    }
+//                    if(loop == 1) {
+//                        excelUser.name = cell.toString()
+//                    }
+//                    if(loop == 2) {
+//                        excelUser.type = cell.toString()
+//                    }
+//                    if(loop == 3) {
+//                        excelUser.image = cell.toString()
+//                    }
+//                    rowData.add(cell.toString())
+//                    loop++
+//                }
+//                if(excelUser.id.isNotEmpty()){
+//                    demoList.add(excelUser)
+//                }
+//                // Process rowData as needed
+//                Timber.tag("readExcelFile").d(rowData.toString())
+//            }
+//
+//            workbook.close()
+//            fis.close()
+//
+//        } catch (e: Exception) {
+//            e.printStackTrace()
+//        }
         return demoList
     }
 
