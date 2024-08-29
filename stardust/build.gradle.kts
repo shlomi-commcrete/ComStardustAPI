@@ -96,8 +96,8 @@ dependencies {
     implementation ("com.github.shlomi-commcrete:TestNewLib4:0.0.14")
 
     //Excel
-//    implementation ("org.apache.poi:poi-ooxml:5.2.3")
-//    implementation ("org.apache.commons:commons-compress:1.21")
+    implementation ("org.apache.poi:poi-ooxml:5.2.3")
+    implementation ("org.apache.commons:commons-compress:1.21")
 }
 
 
