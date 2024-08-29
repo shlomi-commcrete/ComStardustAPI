@@ -41,7 +41,7 @@ class DemoUsers {
                     image = data.get("image").asString
                 }
                 mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
-                mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
+//                mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
                 mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
                 loop++
             }
@@ -59,7 +59,7 @@ class DemoUsers {
             var isBittel = chat.type == "bittel"
             var image = chat.image
             mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
-            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
+//            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
             mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
             loop++
         }
