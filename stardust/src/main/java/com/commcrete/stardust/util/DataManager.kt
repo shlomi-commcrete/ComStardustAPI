@@ -242,4 +242,7 @@ object DataManager : StardustAPI, PttInterface{
         return stardustAPICallbacks
     }
 
+    fun initRemoteConfig(context: Context) {
+        RemoteConfigUtils.initLocalDefaults(context)
+    }
 }
