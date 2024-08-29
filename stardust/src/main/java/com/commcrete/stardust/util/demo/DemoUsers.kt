@@ -7,6 +7,7 @@ import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.model.getSrcDestMin4Bytes
+import com.commcrete.stardust.util.FolderReader
 import com.google.gson.JsonObject
 import java.util.Date
 
@@ -27,11 +28,40 @@ class DemoUsers {
                 val bittelId = data.get("bittelId").asString
                 val name = data.get("chat_name").asString
                 val isSniffer = data.get("sniffer").asBoolean
-                mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer))
+                var isGroup = false
+                if(data.has("isGroup")){
+                    isGroup = data.get("isGroup").asBoolean
+                }
+                var isBittel = false
+                if(data.has("isBittel")){
+                    isBittel = data.get("isBittel").asBoolean
+                }
+                var image = ""
+                if(data.has("image")){
+                    image = data.get("image").asString
+                }
+                mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
                 mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
-                mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer))
+                mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
                 loop++
             }
+        }
+    }
+
+    fun initUserList (demoList : List<FolderReader.ExcelUser>, userId: String) {
+        var loop = 0
+        for (chat in demoList) {
+            val appId = chat.id
+            val bittelId = appId
+            val name = chat.name
+            val isSniffer = chat.type == "sniffer"
+            var isGroup = chat.type == "group"
+            var isBittel = chat.type == "bittel"
+            var image = chat.image
+            mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
+            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
+            mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
+            loop++
         }
     }
 
@@ -40,10 +70,12 @@ class DemoUsers {
         name: String,
         loop: Int,
         userId: String,
-        isSniffer: Boolean
+        isSniffer: Boolean,
+        isGroup: Boolean,
+        isBittel: Boolean
     ) : ChatContact {
         return ChatContact(displayName = getName(userId, appId, name), number = "$loop" , bittelId = appId, smartphoneBittelId = appId,
-            isSniffer = isSniffer)
+            isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel)
     }
 
     private fun getChatItem(
@@ -51,7 +83,10 @@ class DemoUsers {
         name: String,
         bittelId: String,
         userId: String,
-        isSniffer: Boolean
+        isSniffer: Boolean,
+        isGroup: Boolean,
+        isBittel: Boolean,
+        image: String
     ): ChatItem {
         val message = Message(senderID = appId, text = "Hi",
             seen = true)
@@ -59,7 +94,7 @@ class DemoUsers {
             phone = appId, displayName = getName(userId, appId, name) , appId = arrayOf(appId), bittelId = arrayOf(bittelId)
         )
         val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = message,
-            user = user, isSniffer = isSniffer
+            user = user, isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel, imageName = image
         )
         return chatItem
     }
