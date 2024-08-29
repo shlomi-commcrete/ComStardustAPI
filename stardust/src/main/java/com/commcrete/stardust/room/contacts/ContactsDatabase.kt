@@ -25,7 +25,7 @@ abstract class ContactsDatabase : RoomDatabase() {
                     context.applicationContext,
                     ContactsDatabase::class.java,
                     "contacts_database"
-                ).addMigrations(MIGRATION_28_29).fallbackToDestructiveMigration().build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 return instance
             }
