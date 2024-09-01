@@ -202,6 +202,12 @@ object DataManager : StardustAPI, PttInterface{
         emit(chats)
     }
 
+    override fun logout() {
+        Scopes.getDefaultCoroutine().launch {
+            UsersUtils.logout()
+        }
+    }
+
     override fun setCallback(stardustAPICallbacks: StardustAPICallbacks) {
         this.stardustAPICallbacks = stardustAPICallbacks
     }

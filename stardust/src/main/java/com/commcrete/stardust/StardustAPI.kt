@@ -23,6 +23,8 @@ interface StardustAPI {
     fun disconnectFromDevice()
     fun readChats () : LiveData<List<ChatItem>>
 
+    fun logout()
+
     // Receive from the SDK
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
 }
