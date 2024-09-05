@@ -75,6 +75,7 @@ internal class ClientConnection(
 
     private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {
         sendPing ()
+        resetPingTimer()
     }
     private val pingHandler : Handler = Handler(Looper.getMainLooper())
 
