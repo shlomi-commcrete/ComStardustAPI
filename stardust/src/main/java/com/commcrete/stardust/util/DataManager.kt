@@ -64,7 +64,6 @@ object DataManager : StardustAPI, PttInterface{
         if(!hasTimber) {
             Timber.plant(Timber.DebugTree())
         }
-//        getLocationUtils(context)
     }
 
     internal fun getClientConnection (context: Context) : ClientConnection {
@@ -171,7 +170,9 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
-
+        Scopes.getDefaultCoroutine().launch {
+            SOSUtils.sendSos(type, context = context)
+        }
     }
 
 

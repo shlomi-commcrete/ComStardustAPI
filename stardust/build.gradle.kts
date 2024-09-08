@@ -95,6 +95,9 @@ dependencies {
 
     implementation ("com.github.shlomi-commcrete:TestNewLib4:0.0.14")
 
+    implementation ("androidx.compose.material:material-icons-core:1.6.3")
+    implementation ("androidx.compose.material:material-icons-extended:1.6.3")
+
     //Excel
     implementation ("org.apache.poi:poi-ooxml:5.2.3")
 //    implementation ("org.apache.commons:commons-compress:1.21")
