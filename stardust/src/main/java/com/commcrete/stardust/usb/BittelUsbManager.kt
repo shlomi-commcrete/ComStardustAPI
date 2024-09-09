@@ -169,6 +169,11 @@ object BittelUsbManager : BittelProtocol {
         }
     }
 
+    fun reconnectToDevice () {
+        disconnect()
+        this.context?.let { checkConnectedUsbDevices(it) }
+    }
+
     fun requestPermission (device: UsbDevice) {
         if(device.productName == "FT231X USB UART"){
             val permissionIntent = PendingIntent.getBroadcast(
