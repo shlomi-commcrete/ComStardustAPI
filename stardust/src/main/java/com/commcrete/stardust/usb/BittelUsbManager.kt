@@ -44,7 +44,32 @@ object BittelUsbManager : BittelProtocol {
     fun init(context: Context) {
         this.context = context
         usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        startPollingForUsbDevices(context)
     }
+
+    fun startPollingForUsbDevices(context: Context) {
+        // Start a background coroutine to poll for connected devices
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                checkConnectedUsbDevices(context)
+                delay(5000) // Poll every 5 seconds (adjust the interval as needed)
+            }
+        }
+    }
+
+    fun checkConnectedUsbDevices(context: Context) {
+        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        val deviceList: HashMap<String, UsbDevice> = usbManager.deviceList
+
+        deviceList.values.forEach { device ->
+            if (!usbManager.hasPermission(device)) {
+                requestPermission(device)
+            } else {
+                Timber.tag("USB").d("Device already has permission: ${device.deviceName}")
+            }
+        }
+    }
+
 
     fun getConnectedDevices (context: Context) {
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
