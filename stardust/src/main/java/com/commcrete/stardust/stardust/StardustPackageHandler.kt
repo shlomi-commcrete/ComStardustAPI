@@ -234,7 +234,7 @@ internal class StardustPackageHandler(private val context: Context ,
             data.add(0)
             data.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             val mPackage = StardustPackageUtils.getStardustPackage(
-                source = addressesPackage.smartphoneID , destenation = addressesPackage.stardustID,
+                source = it , destenation = addressesPackage.stardustID,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
                 data = data.toIntArray().toTypedArray()
             )
