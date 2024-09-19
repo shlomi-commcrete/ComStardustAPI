@@ -178,10 +178,10 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            GroupsUtils.deleteAllGroups(context)
-            GroupsUtils.addAllGroups(context)
             clientConnection?.updateBlePort()
             clientConnection?.removeConnectionTimer()
+//            GroupsUtils.deleteAllGroups(context)
+            GroupsUtils.addAllGroups(context)
             StardustPolygonChange.sendSaveConfig(context)
         }
     }
