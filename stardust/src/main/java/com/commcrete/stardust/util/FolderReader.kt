@@ -127,7 +127,7 @@ object FolderReader {
     }
 
 
-    fun processFolder(uri: Uri, value: String, context: Context) {
+    fun processFolder(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
         var excel : Uri? = null
         val fileList = listFilesInFolder(context, uri)
         for (tempFileData in fileList) {
@@ -150,17 +150,17 @@ object FolderReader {
                 }
             }
         }
-        excel?.let { processExcelFile(it, value, context) }
+        excel?.let { processExcelFile(it, context, onExcelFilesSelected) }
     }
 
-    private fun processExcelFile(uri: Uri, value: String, context: Context) {
+    private fun processExcelFile(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
         val fileData = readFileFromContentUri(context, uri)
         if (fileData != null) {
             val success = saveFileToInternalStorage(context, "myFile.xlsx", fileData)
             if (success != null) {
                 // File saved successfully
                 val userList = readExcelFile(success)
-                DemoDataUtil.loadOfflineData(value,userList)
+                onExcelFilesSelected.onGetUsers(userList)
 
             } else {
                 // Error saving file
@@ -249,5 +249,9 @@ object FolderReader {
     fun isImageFile(context: Context, uri: Uri): Boolean {
         val mimeType = getMimeType(context, uri)
         return mimeType?.startsWith("image/") == true
+    }
+
+    interface OnExcelFilesSelected {
+        fun onGetUsers(userList: List<ExcelUser>)
     }
 }
