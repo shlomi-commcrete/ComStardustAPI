@@ -224,6 +224,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun updateBittelSmartphoneAddress(addressesPackage: StardustAddressesPackage) {
+        // Added fix , push the id i have in my app
         val user = SharedPreferencesUtil.getAppUser(context)
         user?.appId?.let {
             val data = arrayListOf<Int>()
