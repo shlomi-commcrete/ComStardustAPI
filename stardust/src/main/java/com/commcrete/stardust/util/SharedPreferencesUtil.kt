@@ -237,7 +237,7 @@ object SharedPreferencesUtil {
     }
 
     fun getGain(context: Context) : Float{
-        return getPreferencesInt(context, KEY_HANDLE_GAIN).toFloat()
+        return getPreferencesInt(context, KEY_HANDLE_GAIN, 100).toFloat()
     }
 
     fun getAutoGainControl(context: Context) : Boolean{
