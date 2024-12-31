@@ -295,9 +295,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handlePTT(mPackage: StardustPackage) {
-        val file = FileUtils.createFile(context, fileName = "pttTestsReceive")
-        val text = StringBuilder(mPackage.toHex()).append("\n").toString()
-        FileUtils.saveToFile(file.absolutePath, text.toByteArray())
+        PlayerUtils.saveBittelMessageToDatabase(bittelPackage = mPackage)
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
@@ -305,7 +303,6 @@ internal class StardustPackageHandler(private val context: Context ,
                 UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
             }
         }
-        PlayerUtils.saveBittelMessageToDatabase(bittelPackage = mPackage)
     }
 
     private fun handleText(mPackage: StardustPackage) {
