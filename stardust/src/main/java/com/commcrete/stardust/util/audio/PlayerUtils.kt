@@ -205,7 +205,7 @@ object PlayerUtils : BleMediaConnector() {
             .setBufferSizeInBytes(642).build()
 //        audioTrack.setVolume(2.0f)
         audioTrack.audioSessionId.let {
-            Equalizer().getEq(it, DataManager.context)
+//            Equalizer().getEq(it, DataManager.context)
             enhancer = LoudnessEnhancer(it)
             val audioPct = 5.4
             val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt() // Correct the gain calculation
@@ -464,7 +464,7 @@ object PlayerUtils : BleMediaConnector() {
             }
 
             track?.audioSessionId?.let {
-                Equalizer().getEq(it, DataManager.context)
+//                Equalizer().getEq(it, DataManager.context)
                 enhancer = LoudnessEnhancer(it)
                 val audioPct = 5.4
                 val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt()
