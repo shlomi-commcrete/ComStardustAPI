@@ -4,7 +4,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Handler
@@ -23,6 +22,7 @@ object UsbDevicePermissionHandler {
     private val devicesQueue: Queue<UsbDevice> = LinkedList()
     private var isRequestingPermission: Boolean = false
     private var currentDevice: UsbDevice? = null
+    private var context : Context? = null
     private val handler = Handler(Looper.getMainLooper())
     private val permissionTimeoutRunnable = Runnable {
         // Reset the isRequestingPermission flag after timeout
@@ -51,7 +51,7 @@ object UsbDevicePermissionHandler {
                     val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                     if (device != null) {
                         Timber.tag("UsbPermission").d("Device detached: ${device.productName}")
-                        disconnectToUnknownDevice(DataManager.context, device)
+                        context?.let { disconnectToUnknownDevice(it, device) }
                     }
                 }
 
@@ -66,7 +66,7 @@ object UsbDevicePermissionHandler {
 //                            if (permissionGranted) {
                                 // Permission granted for this device
                                 Timber.tag("UsbPermission").d("Permission granted for device: ${currentDevice?.productName}")
-                                connectToUnknownDevice(DataManager.context, currentDevice!!)
+                            context?.let { connectToUnknownDevice(it, currentDevice!!) }
                                 // Handle the connected device as needed
 //                            } else {
                                 // Permission denied
@@ -83,8 +83,9 @@ object UsbDevicePermissionHandler {
             }
         }
     }
-    fun requestPermissionsForDevices(devices: List<UsbDevice>) {
+    fun requestPermissionsForDevices(devices: List<UsbDevice>, context: Context) {
         // Add devices to the queue
+        this.context = context
         devicesQueue.addAll(devices)
         // Start requesting permission for the first device in the queue
         if (!isRequestingPermission) {
@@ -99,7 +100,7 @@ object UsbDevicePermissionHandler {
             if (currentDevice?.productName?.contains("FT231X USB UART") == true) {
                 Timber.tag("SerialInputOutputManager").d("Requesting permission for device: ${currentDevice?.productName}")
                 val permissionIntent = PendingIntent.getBroadcast(
-                    DataManager.context, 0,
+                    context, 0,
                     Intent(ACTION_USB_PERMISSION),
                     PendingIntent.FLAG_IMMUTABLE
                 )

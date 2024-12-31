@@ -1,11 +1,8 @@
 package com.commcrete.stardust.usb
 
 import android.annotation.SuppressLint
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Context.RECEIVER_EXPORTED
-import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -28,7 +25,6 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -90,7 +86,7 @@ object BittelUsbManager2 : BittelProtocol {
         disconnectAudio()
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val deviceList: HashMap<String, UsbDevice> = manager.deviceList
-        usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
+        usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList(), context)
     }
 
     private fun initDataToUsb (context: Context) {
