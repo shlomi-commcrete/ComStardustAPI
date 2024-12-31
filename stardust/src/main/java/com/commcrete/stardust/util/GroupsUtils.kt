@@ -102,4 +102,13 @@ object GroupsUtils {
         val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
         return user?.isGroup ?: false
     }
+
+
+    fun isGroup (id : String?) : Boolean {
+        if(id == null) {
+            return false
+        }
+        val user = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).getChatByBittelID(id)
+        return user?.isGroup ?: false
+    }
 }

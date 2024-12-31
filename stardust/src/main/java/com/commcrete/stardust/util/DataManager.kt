@@ -4,12 +4,10 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
-import android.content.IntentSender
 import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.liveData
-import com.commcrete.bittell.util.bittel_package.BittelUsbManager
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getIsAck
@@ -32,11 +30,10 @@ import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -46,7 +43,7 @@ import kotlin.random.Random
 object DataManager : StardustAPI, PttInterface{
 
     private var clientConnection : ClientConnection?  = null
-    private var bittelusbManager : BittelUsbManager?  = null
+    private var bittelusbManager : BittelUsbManager2?  = null
     private var bittelPackageHandler : StardustPackageHandler? = null
     private var pollingUtils : PollingUtils? = null
     lateinit var context : Context
@@ -77,11 +74,11 @@ object DataManager : StardustAPI, PttInterface{
         return clientConnection!!
     }
 
-    internal fun getUsbManager (context: Context) : BittelUsbManager {
+    internal fun getUsbManager (context: Context) : BittelUsbManager2 {
         requireContext(context)
         if(bittelusbManager == null) {
             bittelusbManager =
-                BittelUsbManager
+                BittelUsbManager2
             bittelusbManager?.init(context)
         }
 

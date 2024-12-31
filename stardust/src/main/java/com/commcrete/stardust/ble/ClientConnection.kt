@@ -14,27 +14,26 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
-import com.commcrete.bittell.util.bittel_package.BittelUsbManager
+import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_HR
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.stardust.model.intToByteArray
+import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
-import com.commcrete.stardust.stardust.model.intToByteArray
-import com.commcrete.stardust.util.BittelProtocol
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
-import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
@@ -65,7 +64,7 @@ internal class ClientConnection(
     var bittelPackage : StardustPackage? = null
 
     private val connectionTimeout : Long = 20000
-    private val bondTimeout : Long = 20000
+    private val bondTimeout : Long = 5000
     private val pingTimeout : Long = 10000
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
@@ -515,7 +514,7 @@ internal class ClientConnection(
                 val uuid = Characteristics.getWriteChar(id)
                 bittelPackage.updateRetryCounter()
                 if(com.commcrete.stardust.ble.BleManager.isUSBConnected) {
-                    BittelUsbManager.sendDataToUart(bittelPackage)
+                    BittelUsbManager2.sendDataToUart(bittelPackage)
                 }else {
                     gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
                         ?.let {
@@ -784,7 +783,7 @@ internal class ClientConnection(
             val src = it.appId
             val dst = it.bittelId
             if(src != null && dst != null) {
-                val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH.type).intToByteArray().reversedArray()
+                val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
                 val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
                 val txPackage = StardustPackageUtils.getStardustPackage(
                     source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,

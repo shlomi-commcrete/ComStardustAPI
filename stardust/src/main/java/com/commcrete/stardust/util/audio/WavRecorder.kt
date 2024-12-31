@@ -13,6 +13,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
@@ -80,13 +83,14 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
     @SuppressLint("MissingPermission")
     fun startRecording(path: String, destination: String) {
+        val audioSource = SharedPreferencesUtil.getAudioSource(DataManager.context)
         recorder = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            audioSource,
             RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
-        recorder?.audioSessionId?.let { setRecordingParams(it) }
-        syncBleDevice(context)
+        recorder?.audioSessionId?.let { setRecordingParams(it, DataManager.context) }
+//        syncBleDevice(context)
         recorder?.startRecording()
         isRecording = true
 
@@ -124,13 +128,13 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     fun stopRecording(chatID: String, path: String, context: Context) {
         Handler(Looper.getMainLooper()).postDelayed({
             recorder?.run {
-                sendRecordEnd()
                 isRecording = false
                 stop()
                 release()
                 removeSyncBleDevices (context)
                 recordingThread = null
                 recorder = null
+                sendRecordEnd()
                 savePtt(chatID, path, context)
             }
         }, 400)
@@ -139,7 +143,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun writeAudioDataToFile(path: String) {
 
 
-        val targetGain = 0.5f // Adjust to the desired target gain level
+        val targetGain = (SharedPreferencesUtil.getGain(DataManager.context)/100f)
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
@@ -346,6 +350,18 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
     }
 
+    fun updateAudioReceived(chatId: String, context: Context){
+        Scopes.getDefaultCoroutine().launch {
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            val chatItem = chatsRepo.getChatByBittelID(chatId)
+            chatItem?.let {
+                chatItem.message = Message(senderID = chatId, text = "Ptt Sent",
+                    seen = true)
+                chatsRepo.addChat(it)
+            }
+        }
+    }
+
     private fun charsToBytes(chars: CharArray?): ByteArray? {
         var byteArray : ByteArray? = null
         chars?.let {chars: CharArray ->
@@ -516,28 +532,33 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
     }
 
-    private fun setRecordingParams(audioSessionID : Int){
+    private fun setRecordingParams(audioSessionID : Int, context: Context){
         try {
-            val TAG_RECORDER = "setRecordingParams"
             val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 context.getSystemService(AudioManager::class.java)
             } else {
                 TODO("VERSION.SDK_INT < M")
             }
-            audioManager.setParameters("noise_suppression=on")
+            val isNoise = SharedPreferencesUtil.getNoiseSuppressor(context)
+            val isAGC = SharedPreferencesUtil.getAutoGainControl(context)
+            val isAcoustic = SharedPreferencesUtil.getAcousticEchoControl(context)
+            audioManager?.setParameters("noise_suppression=${if(isNoise) "on" else "off"}")
             if (NoiseSuppressor.isAvailable() && NoiseSuppressor.create(audioSessionID) == null) {
-                NoiseSuppressor.create(audioSessionID).enabled = true
-            } else {
+                var noiseSuppressor : NoiseSuppressor? = null
+                noiseSuppressor  = NoiseSuppressor.create(audioSessionID)
+                noiseSuppressor.enabled = isNoise
             }
-
-            if (AutomaticGainControl.isAvailable() && AutomaticGainControl.create(audioSessionID) == null) {
-                AutomaticGainControl.create(audioSessionID).enabled = false
-            } else {
+            audioManager?.setParameters("automatic_gain_control=${if(isAGC) "on" else "off"}")
+            if (AutomaticGainControl.isAvailable()&& AutomaticGainControl.create(audioSessionID) == null) {
+                var agc: AutomaticGainControl? = null
+                agc = AutomaticGainControl.create(audioSessionID)
+                agc?.enabled = isAGC
             }
-
+            audioManager?.setParameters("echo_cancellation=${if(isAGC) "on" else "off"}")
             if (AcousticEchoCanceler.isAvailable() && AcousticEchoCanceler.create(audioSessionID) == null) {
-                AcousticEchoCanceler.create(audioSessionID).enabled = false
-            } else {
+                var acoustic: AcousticEchoCanceler? = null
+                acoustic = AcousticEchoCanceler.create(audioSessionID)
+                acoustic.enabled = isAcoustic
             }
         }catch (e : Exception){
             e.printStackTrace()
@@ -557,7 +578,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     fun logByteArrayToBase64(bytes: ByteArray): String {
-        return Base64.getEncoder().encodeToString(bytes)
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Base64.getEncoder().encodeToString(bytes)
+        } else {
+            return ""
+        }
     }
 
     fun searchThreshold(arr: ShortArray): Int {

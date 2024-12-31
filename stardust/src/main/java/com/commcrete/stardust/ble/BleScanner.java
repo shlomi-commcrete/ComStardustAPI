@@ -93,7 +93,9 @@ public class BleScanner {
         ScanSettings.Builder scanSettingsBuilder = new ScanSettings.Builder()
                 .setReportDelay(1000)
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY);
-        scanSettingsBuilder.setLegacy(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            scanSettingsBuilder.setLegacy(true);
+        }
 
         List<ScanFilter> scanFilters = new ArrayList<>();
         scanFilters.add(new ScanFilter.Builder().build());

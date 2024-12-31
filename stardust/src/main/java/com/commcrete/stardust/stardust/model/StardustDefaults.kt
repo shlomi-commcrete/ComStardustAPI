@@ -14,7 +14,7 @@ object StardustDefaults {
         val defaults = Gson().fromJson(file, StardustDefaults::class.java)
         val json = Gson().fromJson(file, JsonObject::class.java)
         defaults.portType =  if (json.get("uartPortPreference").asInt == 0)
-        StardustConfigurationParser.PortType.BLUETOOTH else StardustConfigurationParser.PortType.USB
+        StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE else StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_USB
         defaults.stardustType = StardustConfigurationParser.StardustType.values()[json.get("stardustTypePreference").asInt]
         return defaults
     }

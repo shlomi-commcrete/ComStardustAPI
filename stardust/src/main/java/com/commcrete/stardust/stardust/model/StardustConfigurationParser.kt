@@ -45,8 +45,10 @@ class StardustConfigurationParser : StardustParser() {
 
     enum class PortType (val type : Int){
         UNDEFINED(-1),
-        BLUETOOTH(0),
-        USB(1),
+        BLUETOOTH_DISABLED_BLE(0),
+        BLUETOOTH_DISABLED_USB(1),
+        BLUETOOTH_ENABLED_BLE(2),
+        BLUETOOTH_ENABLED_USB(3),
     }
 
     enum class StardustBatteryCharge (val type : Int){

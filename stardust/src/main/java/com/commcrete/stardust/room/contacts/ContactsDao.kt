@@ -50,4 +50,8 @@ interface ContactsDao {
 
     @Query("DELETE FROM contacts_table WHERE chat_user_id=:userId")
     fun deleteContact(userId : String)
+
+    @Query("SELECT * FROM contacts_table WHERE bittel_id LIKE '%'||:userId||'%' LIMIT 1")
+    fun getChatContactByBittelId(userId : String) : ChatContact
+
 }

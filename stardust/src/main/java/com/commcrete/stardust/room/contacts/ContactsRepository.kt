@@ -33,6 +33,7 @@ class ContactsRepository (private val contactsDao: ContactsDao) {
 
     suspend fun updateChatName(chatId: String, name : String) = contactsDao.updateChatName(chatId, name)
 
+    fun  getChatContactByBittelId(userId : String) : ChatContact = contactsDao.getChatContactByBittelId(userId)
     suspend fun deleteContact (userId : String) = contactsDao.deleteContact(userId)
     suspend fun clearData () : Boolean {
         contactsDao.clearData()

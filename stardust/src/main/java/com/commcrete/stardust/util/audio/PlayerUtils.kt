@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util.audio
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -10,13 +11,21 @@ import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.util.UnstableApi
+import com.commcrete.bittell.room.sniffer.SnifferDatabase
+import com.commcrete.bittell.room.sniffer.SnifferItem
+import com.commcrete.bittell.room.sniffer.SnifferRepository
+import com.commcrete.bittell.util.sniffer.isLocalGroup
+import com.commcrete.bittell.util.sniffer.isMyId
+import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
@@ -24,6 +33,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
@@ -49,29 +59,61 @@ object PlayerUtils : BleMediaConnector() {
     private var spareBytes : ByteArray? = null
     private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
     private val chatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-
     private val handler : Handler = Handler(Looper.getMainLooper())
     val isPttReceived : MutableLiveData<String> = MutableLiveData("empty")
     var ts = ""
+    var byteArrayOutputStream = ByteArrayOutputStream()
     var isPlaying = false
+    var isFileInit = false
+    const val bufferSizeMulti = 1.0
+    val speedFactor = 1.0f // 0.9x speed
     var numOfPackagesRecieved = 0
     private val runnable : Runnable = Runnable {
         Scopes.getMainCoroutine().launch {
+            Scopes.getDefaultCoroutine().launch {
+                val file = fileToWrite
+                val fileSniffer = fileToWriteSniffer
+                file?.let {
+                    val byteArray = byteArrayOutputStream.toByteArray().copyOf()
+                    writePTTReceivedData(byteArray, it)
+                }
+                fileSniffer?.let {
+                    val byteArray = byteArrayOutputStream.toByteArray().copyOf()
+                    writePTTReceivedData(byteArray, it)
+                }
+                fileToWrite = null
+                fileToWriteSniffer = null
+                byteArrayOutputStream.reset()
+                numOfPackagesRecieved = 0
+            }
             updateAudioReceived(destination, false)
             destination = ""
+            Handler(Looper.getMainLooper()).postDelayed({
+                source = ""
+                ts = ""
+            }, 500)
             ts = ""
-            fileToWrite = null
-            StardustPackageUtils.packageLiveData.value = null
-            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-
+            isFileInit = false
             track?.flush()
             track?.release()
             enhancer?.release()
             equalizer?.release()
             track = null
             isPlaying = false
-            numOfPackagesRecieved = 0
+            if(numOfPackagesRecieved == 1) {
+                writeMinimumSilenceAndPlay(byteArrayOutputStream.toByteArray().copyOf()) {
+                    Timber.tag("WavRecorder.TAG_PTT_DEBUG").d("bufferSizeInFrames")
+                }
+                byteArrayOutputStream.reset()
+
+
+            }
+            StardustPackageUtils.packageLiveData.value = null
+            mCodec2Decoder.rawAudioOutBytesBuffer.clear()
+            Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
+//            removeSyncBleDevices ()
             isPttReceived.value = "empty"
+
         }
     }
 
@@ -80,22 +122,107 @@ object PlayerUtils : BleMediaConnector() {
 
     val destinationLiveData : MutableLiveData<String> = MutableLiveData()
     var destination : String = ""
+    var source : String = ""
     var fileToWrite : File? = null
-
+    var fileToWriteSniffer : File? = null
 
 
     var enhancer: LoudnessEnhancer? = null
     var equalizer: Equalizer? = null
     val gainIncrease = 3000  // This value is in millibels (mB). 2000 mB equals a 200% gain increase.
+    val savedUser = SharedPreferencesUtil.getAppUser(DataManager.context)
 
     private fun playAudio(context: Context, pttAudio: ByteArray, destinations: String, source: String
-    ) {
-        CoroutineScope(Dispatchers.IO).launch {
-            resetTimer()
-            setTs()
-            val file: File? = initPttInputFile(context, destinations, source)
-            file?.let { writePTTReceivedData(pttAudio, it) }
+                          , snifferContacts: List<ChatContact>?) {
+
+        if(snifferContacts != null) {
+            savedUser?.appId?.let {
+                if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
+                    && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
+                    playPTT(pttAudio, pttAudio.size )
+                }
+            }
+        }else {
             playPTT(pttAudio, pttAudio.size )
+        }
+
+        resetTimer()
+        setTs()
+        CoroutineScope(Dispatchers.Default).launch {
+            if(!isFileInit){
+                initPttInputFile(context, destinations, source, snifferContacts)
+            }
+            try {
+                if(snifferContacts != null) {
+                    savedUser?.appId?.let {
+                        if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
+                            && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
+                            byteArrayOutputStream.write(pttAudio)
+                        }
+                    }
+                }else {
+                    byteArrayOutputStream.write(pttAudio)
+                }
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
+
+    }
+
+    fun handleSnifferMessage (
+        bittelPackage: StardustPackage,
+        id: String,
+        snifferContacts: List<ChatContact>?
+    ) {
+        getPackageByFrames(bittelPackage, id, snifferContacts)
+    }
+
+    private fun writeMinimumSilenceAndPlay(
+        byteArray: ByteArray,
+        onPlaybackComplete: () -> Unit
+    ) {
+        // Step 1: Get the minimum buffer size (in frames)
+
+        val tempTrack = getTempTrack ()
+        tempTrack.play()
+        tempTrack.write(byteArray, 0, byteArray.size)
+
+        // Step 4: Start playback
+        Handler(Looper.getMainLooper()).postDelayed({
+            tempTrack.flush()
+            onPlaybackComplete()
+        },880)
+    }
+
+    @SuppressLint("NewApi")
+    private fun getTempTrack () : AudioTrack {
+        val audioTrack: AudioTrack = AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            .setAudioFormat(
+                AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(
+                    AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+            .setBufferSizeInBytes(642).build()
+//        audioTrack.setVolume(2.0f)
+        audioTrack.audioSessionId.let {
+            Equalizer().getEq(it, DataManager.context)
+            enhancer = LoudnessEnhancer(it)
+            val audioPct = 5.4
+            val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt() // Correct the gain calculation
+            //                val gainmB = 1000
+            enhancer?.setTargetGain(gainmB)
+            enhancer?.setEnabled(true)
+        }
+        return audioTrack
+    }
+
+    private fun getPackageByFrames(bittelPackage: StardustPackage, chatUserId: String?, snifferContacts: List<ChatContact>? = null){
+        bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
+            chatUserId?.let {
+                val byteArray = intArrayToByteArray(dataArray.toMutableList())
+                source = bittelPackage.getSourceAsString()
+                testPlayPackage(byteArray,it, snifferContacts)
+            }
         }
     }
 
@@ -106,15 +233,19 @@ object PlayerUtils : BleMediaConnector() {
 //        }
     }
 
+    @SuppressLint("NewApi")
     private fun syncBleDevice () {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
         val bleDevice = getPreferredDevice(audioManager)
         bleDevice?.let {
             track?.setPreferredDevice(it)
             audioManager.startBluetoothSco()
+            audioManager.setBluetoothScoOn(true)
+
         }
     }
 
+    @SuppressLint("NewApi")
     private fun removeSyncBleDevices () {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
         val bleDevice = getPreferredDevice(audioManager)
@@ -123,7 +254,8 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    private fun playStream(audioTrack: AudioTrack , audioData: ByteArray, bufferSizeInBytes: Int) {
+    @SuppressLint("NewApi")
+    private fun playStream(audioTrack: AudioTrack, audioData: ByteArray, bufferSizeInBytes: Int) {
         numOfPackagesRecieved++
 //        App.getMainCoroutine().launch {
             try {
@@ -131,41 +263,27 @@ object PlayerUtils : BleMediaConnector() {
 //                syncBleDevice ()
                 val audioAttributes = AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-                val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
-                    .setAudioAttributes(audioAttributes)
-                    .setAcceptsDelayedFocusGain(true)
-                    .setOnAudioFocusChangeListener { focusChange ->
-                        // Handle focus change (e.g., pause your audio when losing focus)
-                    }
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
 
-                val focusResult = audioManager.requestAudioFocus(focusRequest)
-                if (focusResult == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+
                     // Start playback
                     track?.notificationMarkerPosition = bufferSizeInBytes/2
                     val value = 1*40
                     val size = 1/4*320 // Specify the desired size of your byte array
                     val byteArray = ByteArray(size) { 0.toByte() }
-                    Scopes.getMainCoroutine().launch{
-                        if (audioData.size >= value) {
-                            track?.write(audioData, 0, bufferSizeInBytes)
-                            track?.write(byteArray, 0, byteArray.size)
-                        }
-                    }
-                    if(DataManager.isPlayPttFromSdk) {
-                        Scopes.getDefaultCoroutine().launch{
-                            if(!isPlaying) {
-                                track?.play()
+                    Scopes.getDefaultCoroutine().launch{
+                        track?.let {
+                            if(DataManager.isPlayPttFromSdk) {
+                                synchronized(it) {
+                                    if (audioData.size >= value) {
+                                        it.write(audioData, 0, audioData.size)
+                                    }
+
+                                }
                             }
-                            isPlaying = true
                         }
                     }
-
-
-//                    track?.write(audioData, 0, bufferSizeInBytes)
-                }
             }catch (e: IllegalStateException){
                 e.printStackTrace()
                 initAudioTrack(bufferSizeInBytes)
@@ -198,10 +316,16 @@ object PlayerUtils : BleMediaConnector() {
         dataOutputStream.close()
     }
 
-    private fun initPttInputFile(context: Context, destinations: String, source: String) : File? {
+    private suspend fun initPttInputFile(context: Context, destinations: String, source: String
+                                         , snifferContacts: List<ChatContact>?) : File? {
+
+        if(snifferContacts != null) {
+            return initPttSnifferFile(context ,destinations,  snifferContacts)
+        }
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         //Todo stuck?
         this.destination = destinations
+        val realDest = if   (GroupsUtils.isGroup(this.source)) this.source else destination
         updateAudioReceived(destination, true)
         val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
         val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/$ts-$source.pcm")
@@ -216,14 +340,77 @@ object PlayerUtils : BleMediaConnector() {
                     Scopes.getDefaultCoroutine().launch {
                         val userName = UsersUtils.getUserName(destination)
                         try {
+                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
                         }catch (e :Exception){
                             e.printStackTrace()
                         }
                         messagesRepository.savePttMessage(
                             MessageItem(senderID = destination,
-                            epochTimeMs = ts.toLong(), senderName = userName ,
-                            chatId = destination, text = "", fileLocation = file.absolutePath,
-                            isAudio = true)
+                                epochTimeMs = ts.toLong(), senderName = userName ,
+                                chatId = realDest, text = "", fileLocation = file.absolutePath,
+                                isAudio = true)
+                        )
+                    }
+                }
+                isFileInit = true
+            }
+        }
+        return file
+    }
+
+    fun initPttSnifferFile(
+        context: Context,
+        destinations: String,
+        snifferContacts: List<ChatContact>?
+    ) : File? {
+        var sniffed : MutableList<ChatContact> = mutableListOf()
+        val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations")
+        val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations/$ts.pcm")
+
+        if(directory!=null){
+            if(!directory.exists()){
+                directory.mkdir()
+            }
+            if (file != null) {
+                if(!file.exists()){
+                    file.createNewFile()
+                    fileToWriteSniffer = file
+                    Scopes.getDefaultCoroutine().launch {
+                        // TODO: Change to sniffer message
+                        try {
+                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
+                        }catch (e :Exception){
+                            e.printStackTrace()
+                        }
+
+                        val repo = SnifferRepository(SnifferDatabase.getDatabase(context).snifferDao())
+                        sniffed = mutableListOf()
+                        snifferContacts?.get(0)?.let {
+                            sniffed.add(it)
+                        }
+                        snifferContacts?.get(1)?.let {
+                            sniffed.add(it)
+                        }
+                        if(snifferContacts != null && snifferContacts[0].isGroup == true) {
+                            val tempSender = snifferContacts[0]
+                            val tempReceiver = snifferContacts[1]
+                            sniffed = mutableListOf()
+                            sniffed.add(tempReceiver)
+                            sniffed.add(tempSender)
+                        }
+                        repo.addContact(
+                            SnifferItem(
+
+                            senderID = sniffed!![0].chatUserId ?: "",
+                            receiverID = sniffed!![1].chatUserId ?: "",
+                            senderName = sniffed!![0].displayName ?: "",
+                            receiverName = sniffed!![1].displayName ?: "",
+                            epochTimeMs = ts.toLong(),
+                            chatId = destinations,
+                            text = "",
+                            fileLocation = file.absolutePath,
+                            isAudio = true
+                        )
                         )
                     }
                 }
@@ -262,21 +449,32 @@ object PlayerUtils : BleMediaConnector() {
         }
         return null
     }
+    @SuppressLint("NewApi")
     private fun initAudioTrack(bufferSizeInBytes: Int) {
 
         try {
             if(track == null){
-                track = AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+                track = AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(
+                    AudioAttributes.USAGE_MEDIA)
                     .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-                    .setAudioFormat(AudioFormat.Builder().setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                    .setAudioFormat(AudioFormat.Builder().setSampleRate((sampleRate * speedFactor).toInt()).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                    .setTransferMode(AudioTrack.MODE_STREAM) // Set to streaming mode
                     .setBufferSizeInBytes(bufferSizeInBytes).build()
+                syncBleDevice()
             }
 
-            track?.bufferSizeInFrames = 640
-            track?.setVolume(2.0f)
             track?.audioSessionId?.let {
                 Equalizer().getEq(it, DataManager.context)
+                enhancer = LoudnessEnhancer(it)
+                val audioPct = 5.4
+                val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt()
+                enhancer?.setTargetGain(gainmB)
+                enhancer?.setEnabled(true)
             }
+            Handler(Looper.getMainLooper()).postDelayed( {
+                track?.play()
+
+            }, 150)
         }catch (e : Exception){
             e.printStackTrace()
 //            return null
@@ -287,10 +485,10 @@ object PlayerUtils : BleMediaConnector() {
     private fun resetTimer(){
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
-        handler.postDelayed(runnable, 1500)
+        handler.postDelayed(runnable, 2000)
     }
 
-    private fun setTs(){
+    fun setTs(){
         if(ts.isEmpty()){
             ts = (System.currentTimeMillis()).toString()
         }
@@ -298,27 +496,23 @@ object PlayerUtils : BleMediaConnector() {
 
     fun saveBittelMessageToDatabase(bittelPackage: StardustPackage){
         Scopes.getDefaultCoroutine().launch {
+
             if(bittelPackage.getSourceAsString().isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
                 var from = bittelPackage.getSourceAsString()
-                if(from == "00000002") {
+                if(GroupsUtils.isGroup(from)) {
                     from = bittelPackage.getDestAsString()
                 }
+                getPackageByFrames(bittelPackage, from)
                 val chatItem = chatsRepo.getChatByBittelID(from)
                 chatItem?.let { chat ->
                     val chatContact = chat.user
                     chatContact?.let { contact ->
-                        val chatName = if(bittelPackage.getSourceAsString() != "00000002") contact.displayName else "${contact.displayName} to Group"
+                        val chatName = if(!GroupsUtils.isGroup(bittelPackage.getSourceAsString())) contact.displayName else "${contact.displayName} to Group"
                         val message = "PTT From : $chatName"
                         Scopes.getMainCoroutine().launch {
                             isPttReceived.value = message
                         }
-                        contact.appId?.let { appIdArray ->
-                            if(appIdArray.isNotEmpty()){
-                                getPackageByFrames(bittelPackage, appIdArray[0])
-                            }
-                        }
-
                     }
                 }
             }
@@ -376,15 +570,6 @@ object PlayerUtils : BleMediaConnector() {
             byteArray[i] = intArray[i].toByte()
         }
         return byteArray
-    }
-
-    private fun getPackageByFrames(bittelPackage: StardustPackage, chatUserId: String?){
-        bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
-            chatUserId?.let {
-                val byteArray = intArrayToByteArray(dataArray.toMutableList())
-                testPlayPackage(byteArray,it)
-            }
-        }
     }
 
 
@@ -494,6 +679,28 @@ object PlayerUtils : BleMediaConnector() {
         return listOf(byteArray1, byteArray2)
     }
 
+    private fun testPlayPackage(byteArray: ByteArray, dest : String, snifferContacts: List<ChatContact>? = null){
+        initAudioTrack((14080 * bufferSizeMulti).toInt())
+        var bytes = splitByteArray(byteArray, 7)
+        var bytesListToPlay : MutableList<ByteArray> = mutableListOf()
+        for(mByte in bytes) {
+            Timber.tag("decodedBytes").d("decodedBytes : ${byteArray.size}")
+            var decodedBytes = handleBittelAudioMessage(mByte)
+            if(!mByte.contentEquals(embpyByte)){
+                bytesListToPlay.add(decodedBytes)
+
+            }
+        }
+        val context = DataManager.context
+        SharedPreferencesUtil.getAppUser(context)?.appId?.let {
+            playAudio(context, combine(bytesListToPlay),dest,it, snifferContacts)
+        }
+
+
+    }
+
+
+
     private fun testPlayPackage(byteArray: ByteArray, dest : String){
         initAudioTrack(640)
         var bytes = splitByteArray(byteArray, 7)
@@ -506,7 +713,7 @@ object PlayerUtils : BleMediaConnector() {
             }
         }
         SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
-            playAudio(DataManager.context, combine(bytesListToPlay),dest,it)
+            playAudio(DataManager.context, combine(bytesListToPlay),dest,it, null)
         }
 
 
@@ -574,8 +781,18 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun updateAudioReceived(chatId: String, isAudioReceived : Boolean){
+        if(chatId.isEmpty()) {
+            return
+        }
         Scopes.getDefaultCoroutine().launch {
-            chatsRepository.updateAudioReceived(chatId, isAudioReceived)
+            val newChatID = if( GroupsUtils.isGroup(source)) source else chatId
+            chatsRepository.updateAudioReceived(newChatID, isAudioReceived)
+            val chatItem = chatsRepository.getChatByBittelID(newChatID)
+            chatItem?.let {
+                chatItem.message = Message(senderID = chatId, text = "Ptt Received",
+                    seen = true)
+                chatsRepository.addChat(it)
+            }
         }
     }
     @OptIn(UnstableApi::class)
@@ -590,6 +807,10 @@ object PlayerUtils : BleMediaConnector() {
 
         try {
             mediaPlayer.start()
+            Handler(Looper.getMainLooper()).postDelayed({
+                onFinished()  // Call the callback when playback finishes
+                mediaPlayer.release()  // Release the media player resources immediately after playback is complete
+            }, 300)
         } catch (e: Exception) {
             println("MediaPlayer start failed: ${e.message}")
             mediaPlayer.release()

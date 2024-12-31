@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="bluetooth">Bluetooth</string>
+
+    <string name="regular">Regular</string>
+    <string name="admin">Admin</string>
+    <string name="superUser">Super User</string>
 </resources>

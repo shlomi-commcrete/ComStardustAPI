@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
 import android.preference.PreferenceManager
 import com.commcrete.stardust.R
@@ -10,6 +11,7 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
 
@@ -58,6 +60,30 @@ object SharedPreferencesUtil {
     private const val KEY_SOS_SELECTED_2 = "sos_selected_2"
 
     private const val KEY_EQ_BAND = "eq_band_"
+
+    private const val KEY_ADMIN_MODE = "admin_mode_type"
+    private const val KEY_ADMIN_LOCAL_MODE = "admin_mode_type_name"
+
+    private const val KEY_LAST_USER = "last_user"
+
+    //Output Values
+    private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_WIRED_HEADPHONES = "Wired-Headphones"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_USB_HEADSET = "USB-Headset"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_EARPIECE = "Earpiece"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_BLUETOOTH = "Bluetooth-Device"
+
+    //Input Values
+    private const val KEY_DEFAULT_AUDIO_INPUT = "Builtin-Mic"
+    private const val KEY_DEFAULT_AUDIO_INPUT_WIRED_HEADPHONES = "Wired-Headphones"
+    private const val KEY_DEFAULT_AUDIO_INPUT_USB_HEADSET = "USB-Headset"
+    private const val KEY_DEFAULT_AUDIO_INPUT_USB_DEVICE = "USB-Device"
+    private const val KEY_DEFAULT_AUDIO_INPUT_EARPIECE = "Earpiece"
+    private const val KEY_DEFAULT_AUDIO_INPUT_BLUETOOTH = "Bluetooth-Device"
+
+    private const val KEY_OUTPUT_DEFAULT = "output_default"
+    private const val KEY_INPUT_DEFAULT = "input_default"
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -232,14 +258,14 @@ object SharedPreferencesUtil {
             audioSourceString.let {
                 when (it) {
                     KEY_RECORDING_TYPE_MIC -> return MediaRecorder.AudioSource.MIC
-                    KEY_RECORDING_TYPE_VOICE_CALL -> return MediaRecorder.AudioSource.VOICE_CALL
+//                    KEY_RECORDING_TYPE_VOICE_CALL -> return MediaRecorder.AudioSource.VOICE_CALL
                     KEY_RECORDING_TYPE_VOICE_COMMUNICATION -> return MediaRecorder.AudioSource.VOICE_COMMUNICATION
                     KEY_RECORDING_TYPE_VOICE_RECOGNITION -> return MediaRecorder.AudioSource.VOICE_RECOGNITION
-                    else -> { return MediaRecorder.AudioSource.DEFAULT }
+                    else -> { return MediaRecorder.AudioSource.MIC }
                 }
             }
         }else {
-            return MediaRecorder.AudioSource.DEFAULT
+            return MediaRecorder.AudioSource.MIC
         }
     }
 
@@ -311,11 +337,86 @@ object SharedPreferencesUtil {
     }
 
     fun getEqBand (context: Context, bandNum : Int) : Int {
-        return getPreferencesInt(context, KEY_EQ_BAND+bandNum, 0) *100
+        val default = when(bandNum) {
+            0 -> {-14}
+            1 -> {-13}
+            2 -> {0}
+            3 -> {8}
+            4 -> {-6}
+            else -> {0}
+        }
+        return getPreferencesInt(context, KEY_EQ_BAND+bandNum, default) *100
     }
-
     fun getPTTTimeout (context: Context) : Int {
         val value = getPreferencesInt(context, KEY_PTT_TIMEOUT, 45)
         return value.times(1000)
+    }
+
+    fun setLastUser (context: Context, userId : String) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_LAST_USER, userId).apply()
+    }
+
+    fun getLastUser (context: Context) : String {
+        return getPreferencesString(context, KEY_LAST_USER, "") ?: ""
+    }
+
+    fun setAdminMode (context: Context,snifferMode: StardustConfigurationParser.SnifferMode ) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putInt(KEY_ADMIN_MODE, snifferMode.type).apply()
+    }
+
+    fun getAdminMode (context: Context) : StardustConfigurationParser.SnifferMode {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val type =  preferences.getInt(KEY_ADMIN_MODE, 0)
+        return StardustConfigurationParser.SnifferMode.values()[type]
+    }
+
+    fun getAdminLocalMode (context: Context) : AdminUtils.AdminLocal {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val type =  preferences.getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
+        when (type) {
+            context.getString(R.string.regular) -> { return AdminUtils.AdminLocal.Regular}
+            context.getString(R.string.admin) -> { return AdminUtils.AdminLocal.Admin}
+            context.getString(R.string.superUser) -> { return AdminUtils.AdminLocal.SuperUser}
+        }
+        return AdminUtils.AdminLocal.Regular
+    }
+
+    fun getOutputDevice(context: Context) : Int {
+        val audioSourceString = getPreferencesString(context, KEY_OUTPUT_DEFAULT)
+        if(audioSourceString != null) {
+            audioSourceString.let {
+                when (it) {
+                    KEY_DEFAULT_AUDIO_OUTPUT -> return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    KEY_DEFAULT_AUDIO_OUTPUT_WIRED_HEADPHONES -> return AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    KEY_DEFAULT_AUDIO_OUTPUT_USB_HEADSET -> return AudioDeviceInfo.TYPE_USB_HEADSET
+                    KEY_DEFAULT_AUDIO_OUTPUT_EARPIECE -> return AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                    KEY_DEFAULT_AUDIO_OUTPUT_BLUETOOTH -> return AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    else -> { return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                }
+            }
+        }else {
+            return MediaRecorder.AudioSource.MIC
+        }
+    }
+
+    fun getInputDevice(context: Context) : Int {
+        val audioSourceString = getPreferencesString(context, KEY_INPUT_DEFAULT)
+        if(audioSourceString != null) {
+            audioSourceString.let {
+                when (it) {
+                    KEY_DEFAULT_AUDIO_INPUT -> return AudioDeviceInfo.TYPE_BUILTIN_MIC
+                    KEY_DEFAULT_AUDIO_INPUT_WIRED_HEADPHONES -> return AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    KEY_DEFAULT_AUDIO_INPUT_USB_HEADSET -> return AudioDeviceInfo.TYPE_USB_HEADSET
+                    KEY_DEFAULT_AUDIO_INPUT_USB_DEVICE -> return AudioDeviceInfo.TYPE_USB_DEVICE
+                    KEY_DEFAULT_AUDIO_INPUT_EARPIECE -> return AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                    KEY_DEFAULT_AUDIO_INPUT_BLUETOOTH -> return AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    else -> { return AudioDeviceInfo.TYPE_BUILTIN_MIC }
+                }
+            }
+        }else {
+            return MediaRecorder.AudioSource.MIC
+        }
     }
 }

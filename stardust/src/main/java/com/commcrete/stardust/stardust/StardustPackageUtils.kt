@@ -244,6 +244,13 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+        SET_ADMIN_MODE (0x22,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR)
+        ),
         GET_BITTEL_LOGS (0x23,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
@@ -409,6 +416,14 @@ object StardustPackageUtils {
             )
         ),
         GET_POLYGON_RESPONSE (0x9E,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        SET_ADMIN_MODE_RESPONSE (0x9E,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
