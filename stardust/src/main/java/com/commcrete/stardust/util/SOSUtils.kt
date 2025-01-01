@@ -11,6 +11,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 
 object SOSUtils {
 
+    //added location from user
     fun sendSos (type : Int, text : String ? = null, context: Context, location: Location) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
