@@ -35,22 +35,22 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
 
     enum class StardustAcknowledgeType (val value : Int) {
         NO_DEMAND_ACK(0),
-        DEMAND_ACK(4)
+        DEMAND_ACK(8)
     }
 
     enum class StardustPartType (val value : Int) {
         MESSAGE(0),
-        LAST(8)
+        LAST(16)
     }
 
     enum class StardustServer (val value : Int) {
         NOT_SERVER(0),
-        SERVER(16)
+        SERVER(32)
     }
 
     enum class StardustMessageType (val value : Int) {
         REGULAR(0),
-        SNIFFED(32)
+        SNIFFED(64)
     }
 
     fun getStardustControlByteFromByte(byte: Int): StardustControlByte {
