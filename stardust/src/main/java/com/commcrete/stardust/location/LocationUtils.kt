@@ -137,6 +137,14 @@ object LocationUtils  {
         }
     }
 
+    fun getLocationForSOSMyLocation(location: Location): Array<Int> {
+        if(location == null){
+            return CoordinatesUtil().packEmptyLocation()
+        }else {
+            return CoordinatesUtil().packLocation(location)
+        }
+    }
+
     private fun sendMissingLocation(mPackage: StardustPackage, clientConnection : ClientConnection, isDemandAck : Boolean = false,
                                     isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null) {
         // TODO: send Cant find location ToPreviousDevice

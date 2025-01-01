@@ -11,7 +11,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 
 object SOSUtils {
 
-    fun sendSos (type : Int, text : String ? = null, context: Context) {
+    fun sendSos (type : Int, text : String ? = null, context: Context, location: Location) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosString = "SOS"
@@ -20,7 +20,7 @@ object SOSUtils {
                 data = data.plus(if(text.isNullOrEmpty()) 12 else (12+text.length))
                 data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
                 data = data.plus(type)
-                data = data.plus(LocationUtils.getLocationForSOSMyLocation())
+                data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
                 text?.let {
                     data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
                 }
