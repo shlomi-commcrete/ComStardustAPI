@@ -118,7 +118,7 @@ internal class StardustPackageHandler(private val context: Context ,
                         handleUpdatePolygonFreq(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE -> {
-                        clientConnection?.handleAckReceived()
+                        DataManager.getClientConnection(context).handleAckReceived()
                         handleLocationReceived(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.GET_POLYGON_RESPONSE -> {
@@ -178,8 +178,8 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            clientConnection?.updateBlePort()
-            clientConnection?.removeConnectionTimer()
+            DataManager.getClientConnection(context).updateBlePort()
+            DataManager.getClientConnection(context).removeConnectionTimer()
 //            GroupsUtils.deleteAllGroups(context)
             GroupsUtils.addAllGroups(context)
             StardustPolygonChange.sendSaveConfig(context)
@@ -240,7 +240,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 data = data.toIntArray().toTypedArray()
             )
 
-            clientConnection?.addMessageToQueue(mPackage)
+            DataManager.getClientConnection(context).addMessageToQueue(mPackage)
         }
     }
 
@@ -287,7 +287,7 @@ internal class StardustPackageHandler(private val context: Context ,
         val dst = mPackage.destinationBytes
         mPackage.sourceBytes = src
         mPackage.destinationBytes = dst
-        clientConnection?.let {
+        DataManager.getClientConnection(context).let {
             LocationUtils.sendMyLocation(mPackage,
                 it, isHR = mPackage.stardustControlByte.stardustDeliveryType == StardustControlByte.StardustDeliveryType.HR
             )
@@ -325,7 +325,7 @@ internal class StardustPackageHandler(private val context: Context ,
             )
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = mPackage.stardustControlByte.stardustDeliveryType
-            clientConnection?.let {
+            DataManager.getClientConnection(context).let {
                 LocationUtils.sendMyLocation(bittelPackageToReturn, it, opCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE)
             }
 
@@ -342,7 +342,7 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun sendDataToBle(bittelPackage: StardustPackage) {
         Handler(Looper.getMainLooper()).postDelayed({
-            clientConnection?.sendMessage(bittelPackage)
+            DataManager.getClientConnection(context).sendMessage(bittelPackage)
         }, 50)
     }
 
