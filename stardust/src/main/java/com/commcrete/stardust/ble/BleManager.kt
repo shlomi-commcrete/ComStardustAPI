@@ -57,4 +57,10 @@ object BleManager {
     fun isBluetoothEnabled () : Boolean{
         return isBleConnected && isBluetoothToggleEnabled
     }
+
+    enum class ConnectionStatus {
+        USB,
+        BLE,
+        DISCONNECTED
+    }
 }

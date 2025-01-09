@@ -6,6 +6,7 @@ import android.content.Context
 import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.room.chats.ChatItem
 import java.io.File
 
@@ -35,13 +36,10 @@ interface StardustAPI {
 
 interface StardustAPICallbacks {
     fun receiveMessage (stardustAPIPackage: StardustAPIPackage, text : String)
-
     fun receiveLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
-
     fun receiveSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
-
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
-
+    fun connectionStatusChanged (connectionStatus: BleManager.ConnectionStatus)
 }
