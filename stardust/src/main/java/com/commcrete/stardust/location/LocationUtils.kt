@@ -98,7 +98,7 @@ object LocationUtils  {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
-                    val pollingUtils = DataManager.getPollingUtils()
+                    val pollingUtils = DataManager.getPollingUtils(DataManager.context)
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
                     }
