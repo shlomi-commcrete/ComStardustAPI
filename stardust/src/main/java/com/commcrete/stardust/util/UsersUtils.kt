@@ -79,7 +79,7 @@ object UsersUtils {
         return senderIdToReturn
     }
 
-    private fun createNewBittelUserSender(chatsRepo: ChatsRepository, bittelPackage: StardustPackage): ChatItem {
+    fun createNewBittelUserSender(chatsRepo: ChatsRepository, bittelPackage: StardustPackage): ChatItem {
         val chatId = bittelPackage.getSourceAsString()
         val message = Message(senderID = chatId, text = bittelPackage.getDataAsString()?:"",
             seen = true)
@@ -224,7 +224,7 @@ object UsersUtils {
         return bittelUserList.await()
     }
 
-    private fun saveMessageToDatabase(chatID : String, message: MessageItem){
+    fun saveMessageToDatabase(chatID : String, message: MessageItem){
         Scopes.getDefaultCoroutine().launch {
 //            message.senderName = getSenderName(chatID, message.senderID)
             MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)

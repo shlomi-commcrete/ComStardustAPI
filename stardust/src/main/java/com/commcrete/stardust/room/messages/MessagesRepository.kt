@@ -28,6 +28,11 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
         messagesDao.addMessage(messageItem)
     }
 
+    suspend fun saveFileMessage(messageItem: MessageItem) {
+        messagesDao.addMessage(messageItem)
+    }
+
+
     suspend fun updatePttMessage(chatID : String, messageItem: MessageItem) {
         val lastPttMessage = messagesDao.getLastPttMessage(chatID)
         if(lastPttMessage!=null){

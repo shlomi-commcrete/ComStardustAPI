@@ -31,6 +31,10 @@ data class MessageItem (
     var isAudio : Boolean? = false,
     @ColumnInfo(name = "is_location")
     var isLocation : Boolean? = false,
+    @ColumnInfo(name = "is_file")
+    var isFile : Boolean? = false,
+    @ColumnInfo(name = "is_image")
+    var isImage : Boolean? = false,
     @ColumnInfo(name = "is_audio_complete")
     var isAudioComplete : Boolean? = false,
     @ColumnInfo(name = "is_sos")

@@ -7,23 +7,27 @@ import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.room.chats.ChatItem
+import java.io.File
 
 interface StardustAPI {
 
     // Send to the SDK
-    fun sendMessage (stardustAPIPackage: StardustAPIPackage, text : String)
-    fun startPTT (stardustAPIPackage: StardustAPIPackage)
-    fun stopPTT (stardustAPIPackage: StardustAPIPackage)
-    fun sendLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun requestLocation (stardustAPIPackage: StardustAPIPackage)
-    fun sendSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
+    fun sendMessage (context: Context,stardustAPIPackage: StardustAPIPackage, text : String)
+    fun startPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
+    fun stopPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
+    fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun sendImage (context: Context,stardustAPIPackage: StardustAPIPackage, file: File)
+    fun sendFile (context: Context,stardustAPIPackage: StardustAPIPackage, file: File)
+    fun stopSendFile (context: Context,)
+    fun requestLocation (context: Context,stardustAPIPackage: StardustAPIPackage)
+    fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
     fun init(context: Context, fileLocation : String)
-    fun scanForDevice() : MutableLiveData<List<ScanResult>>
-    fun connectToDevice(device: BluetoothDevice)
-    fun disconnectFromDevice()
-    fun readChats () : LiveData<List<ChatItem>>
+    fun scanForDevice(context: Context,) : MutableLiveData<List<ScanResult>>
+    fun connectToDevice(context: Context,device: BluetoothDevice)
+    fun disconnectFromDevice(context: Context,)
+    fun readChats (context: Context,) : LiveData<List<ChatItem>>
 
-    fun logout()
+    fun logout(context: Context,)
 
     // Receive from the SDK
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
@@ -37,5 +41,7 @@ interface StardustAPICallbacks {
     fun receiveSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
 
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
+    fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
+    fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
 
 }

@@ -99,6 +99,14 @@ open class StardustParser {
                 ((bytes[2].toUInt() and 0xFFu) shl 8) or
                 (bytes[3].toUInt() and 0xFFu)
     }
+
+    fun byteArrayToUInt(byteArray: ByteArray): UInt {
+        var result = 0u // Use UInt for the result
+        for (i in byteArray.indices) {
+            result = result or ((byteArray[i].toUInt() and 0xFFu) shl (8 * i))
+        }
+        return result
+    }
 }
 fun Int.intToByteArray(): ByteArray {
     return byteArrayOf(

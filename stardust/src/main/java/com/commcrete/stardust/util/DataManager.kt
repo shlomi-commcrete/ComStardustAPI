@@ -8,6 +8,8 @@ import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.liveData
+import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
+import com.commcrete.bittell.util.demo.DemoDataUtil
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getIsAck
@@ -16,6 +18,7 @@ import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
@@ -31,16 +34,21 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
+import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
 import java.util.Date
 import kotlin.random.Random
 
+@SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface{
+
 
     private var clientConnection : ClientConnection?  = null
     private var bittelusbManager : BittelUsbManager2?  = null
@@ -87,6 +95,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     fun getLocationUtils (context: Context) : LocationUtils {
+        requireContext(context)
         LocationUtils.init(context)
         return LocationUtils
     }
@@ -99,14 +108,16 @@ object DataManager : StardustAPI, PttInterface{
         return bittelPackageHandler!!
     }
 
-    internal fun getPollingUtils () : PollingUtils{
+    internal fun getPollingUtils (context: Context) : PollingUtils{
+        requireContext(context)
         if(pollingUtils == null){
             pollingUtils = PollingUtils(context)
         }
         return pollingUtils!!
     }
 
-    override fun sendMessage(stardustAPIPackage: StardustAPIPackage, text: String) {
+    override fun sendMessage(context: Context, stardustAPIPackage: StardustAPIPackage, text: String) {
+        requireContext(context)
         val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
             getAsciiValue(text) ))
         val splitData = splitMessage(data)
@@ -128,14 +139,15 @@ object DataManager : StardustAPI, PttInterface{
                 delay(if(stardustAPIPackage.isLR == true)4000 else 800)
             }
         }
-        saveSentMessage(text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
+        saveSentMessage(context, text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
     }
 
-    private fun saveSentMessage (text :String, userId : String, sender: String){
+    private fun saveSentMessage (context: Context, text :String, userId : String, sender: String){
+        requireContext(context)
         val messageItem = MessageItem(chatId = userId, text = text, epochTimeMs = Date().time, senderID = sender)
         Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = getChatsRepo()
-            val messagesRepository = getMessagesRepo()
+            val chatsRepo = getChatsRepo(context)
+            val messagesRepository = getMessagesRepo(context)
             Scopes.getDefaultCoroutine().launch{
 //                chatsRepo.addChat(chatItem)
                 messagesRepository.addContact(messageItem)
@@ -143,30 +155,50 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
     @SuppressLint("MissingPermission")
-    override fun startPTT(stardustAPIPackage: StardustAPIPackage) {
+    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
+        requireContext(context)
         this.source = stardustAPIPackage.source
         this.destination = stardustAPIPackage.destination
         RecorderUtils.init(this)
         RecorderUtils.onRecord(true, stardustAPIPackage.destination)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(stardustAPIPackage: StardustAPIPackage) {
+    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
+        requireContext(context)
         RecorderUtils.onRecord(false, stardustAPIPackage.destination)
     }
 
-    override fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location) {
+    override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
+        requireContext(context)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context))
     }
 
-    override fun requestLocation(stardustAPIPackage: StardustAPIPackage) {
+    override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File) {
+        requireContext(context)
+        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG)
+    }
+
+    override fun sendFile(context: Context, stardustAPIPackage: StardustAPIPackage, file: File) {
+        requireContext(context)
+        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT)
+    }
+
+    override fun stopSendFile(context: Context) {
+        requireContext(context)
+        FileSendUtils.stopSendingPackages()
+    }
+
+    override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {
+        requireContext(context)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
         }
     }
 
-    override fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
+    override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
+        requireContext(context)
         Scopes.getDefaultCoroutine().launch {
             SOSUtils.sendSos(type, context = context, location = location)
         }
@@ -178,29 +210,33 @@ object DataManager : StardustAPI, PttInterface{
         requireFileLocation(fileLocation)
     }
 
-    override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
+    override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {
+        requireContext(context)
         val bleScanner = getBleScanner(this.context)
         bleScanner.startScan()
         return bleScanner.getScanResultsLiveData()
     }
 
-    override fun connectToDevice(device: BluetoothDevice) {
+    override fun connectToDevice(context: Context, device: BluetoothDevice) {
+        requireContext(context)
         getClientConnection(context).connectDevice(device)
         val bleScanner = getBleScanner(this.context)
         bleScanner.stopScan()
         this.bleScanner = null
     }
 
-    override fun disconnectFromDevice() {
+    override fun disconnectFromDevice(context: Context) {
+        requireContext(context)
         getClientConnection(context).disconnectFromDevice()
     }
 
-    override fun readChats(): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {
-        val chats = getChatsRepo().getAllChats ()
+    override fun readChats(context: Context): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {
+        val chats = getChatsRepo(context).getAllChats ()
         emit(chats)
     }
 
-    override fun logout() {
+    override fun logout(context: Context) {
+        requireContext(context)
         Scopes.getDefaultCoroutine().launch {
             UsersUtils.logout()
         }
@@ -234,19 +270,54 @@ object DataManager : StardustAPI, PttInterface{
         return bleScanner!!
     }
 
-    fun getChatsRepo () : ChatsRepository {
+    fun getBleManager (context: Context): BleManager {
+        requireContext(context)
+        return BleManager
+    }
+
+    fun getPortUtils (context: Context): PortUtils {
+        requireContext(context)
+        return PortUtils
+    }
+
+    fun getSharedPreferences (context: Context): SharedPreferencesUtil {
+        requireContext(context)
+        return SharedPreferencesUtil
+    }
+
+    fun getFolderReader (context: Context): FolderReader {
+        requireContext(context)
+        return FolderReader
+    }
+
+    fun getDataUtil (context: Context): DemoDataUtil {
+        requireContext(context)
+        return DemoDataUtil
+    }
+
+    fun getPlayerUtils (context: Context): PlayerUtils {
+        requireContext(context)
+        return PlayerUtils
+    }
+
+    fun getChatsRepo (context: Context) : ChatsRepository {
+        requireContext(context)
         return ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
     }
 
-    fun getMessagesRepo () : MessagesRepository {
+    fun getMessagesRepo (context: Context) : MessagesRepository {
+        requireContext(context)
         return MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao())
     }
+
+
 
     fun getCallbacks () : StardustAPICallbacks? {
         return stardustAPICallbacks
     }
 
     fun initRemoteConfig(context: Context) {
+        requireContext(context)
         RemoteConfigUtils.initLocalDefaults(context)
     }
 }

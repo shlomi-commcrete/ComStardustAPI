@@ -309,6 +309,14 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+        SEND_FILE (0x30,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         //Responses
         READ_CONFIGURATION_RESPONSE (0x8C,
             StardustControlByte(
@@ -327,6 +335,14 @@ object StardustPackageUtils {
             )
         ),
         PING_RESPONSE (0x8F,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        RECEIVE_FILE (0xB0,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
