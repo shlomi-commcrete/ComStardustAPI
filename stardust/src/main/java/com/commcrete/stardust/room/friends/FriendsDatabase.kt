@@ -8,7 +8,7 @@ import androidx.room.TypeConverters
 import com.commcrete.stardust.request_objects.model.user_list.User
 import com.commcrete.stardust.room.Converters
 
-@Database(entities = [User::class], version = 4, exportSchema = false)
+@Database(entities = [User::class], version = 5, exportSchema = false)
 @TypeConverters(Converters.StringArrayConverter::class, Converters.DoubleArrayConverter::class)
 abstract class FriendsDatabase : RoomDatabase() {
     abstract fun friendsDao() : FriendsDao

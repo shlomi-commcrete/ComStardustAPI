@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.commcrete.stardust.room.Converters
 
-@Database(entities = [SnifferItem::class], version = 1, exportSchema = false)
+@Database(entities = [SnifferItem::class], version = 2, exportSchema = false)
 @TypeConverters(Converters.EnumConverter::class)
 
 abstract class SnifferDatabase : RoomDatabase() {

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [ChatContact::class], version = 19, exportSchema = false)
+@Database(entities = [ChatContact::class], version = 20, exportSchema = false)
 abstract class ContactsDatabase : RoomDatabase() {
     abstract fun contactsDao() : ContactsDao
 

@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [SOSMessageItem::class], version = 1, exportSchema = false)
+@Database(entities = [SOSMessageItem::class], version = 2, exportSchema = false)
 
 abstract class SOSMessagesDatabase : RoomDatabase() {
     abstract fun messagesDao() : SOSMessagesDao
