@@ -8,6 +8,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.util.FileSendUtils
 import java.io.File
 
 interface StardustAPI {
@@ -17,8 +18,8 @@ interface StardustAPI {
     fun startPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun stopPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun sendImage (context: Context,stardustAPIPackage: StardustAPIPackage, file: File)
-    fun sendFile (context: Context,stardustAPIPackage: StardustAPIPackage, file: File)
+    fun sendImage (context: Context,stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange)
+    fun sendFile (context: Context,stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange)
     fun stopSendFile (context: Context,)
     fun requestLocation (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)

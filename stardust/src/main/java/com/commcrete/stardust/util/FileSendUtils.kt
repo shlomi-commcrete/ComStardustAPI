@@ -37,6 +37,7 @@ object FileSendUtils {
 
     private var packagesSent = 0
     private var dest : String? = null
+    private var onFileStatusChange : OnFileStatusChange? = null
 
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
@@ -49,10 +50,12 @@ object FileSendUtils {
         resetSendTimer()
     }
 
-    fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum) {
+    fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange) {
+        this.onFileStatusChange = onFileStatusChange
         isSendingInProgress.value = true
         val fileList = listOf(file)
         val numOfPackages = calculateNumOfPackages(fileList)
+        this.onFileStatusChange?.startSending()
         createStartPackage(fileStartParser,
             numOfPackages, dest)
         mutablePackagesMap.clear()
@@ -65,6 +68,7 @@ object FileSendUtils {
 
     private fun updateStep (numOfPackages: Int) {
         sendingPercentage.value = ((current.value?.toDouble()?.div(numOfPackages))?.times(100))?.toInt()
+        sendingPercentage.value?.let { this.onFileStatusChange?.updateStep(it) }
         if(sendingPercentage.value == 100) {
             finishSending()
         }
@@ -276,6 +280,7 @@ object FileSendUtils {
         current.value = 0f
         packagesSent = 0
         isComplete.value = false
+        this.onFileStatusChange?.stopSending()
     }
 
     private fun finishSending() {
@@ -286,5 +291,13 @@ object FileSendUtils {
         packagesSent = 0
         Handler(Looper.getMainLooper()).postDelayed({isComplete.value = false}, 3000)
         isComplete.value = true
+        this.onFileStatusChange?.finishSending()
+    }
+
+    interface OnFileStatusChange {
+        fun startSending () {}
+        fun finishSending () {}
+        fun stopSending () {}
+        fun updateStep (percentage : Int) {}
     }
 }

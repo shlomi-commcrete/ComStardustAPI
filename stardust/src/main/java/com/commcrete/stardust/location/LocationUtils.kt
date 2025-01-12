@@ -44,8 +44,9 @@ import pub.devrel.easypermissions.EasyPermissions
 import java.util.Date
 import kotlin.random.Random
 
-
+@SuppressLint("StaticFieldLeak")
 object LocationUtils  {
+
 
     private lateinit var context: Context
 
