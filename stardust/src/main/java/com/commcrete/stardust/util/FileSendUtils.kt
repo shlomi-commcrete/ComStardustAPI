@@ -56,6 +56,7 @@ object FileSendUtils {
         val fileList = listOf(file)
         val numOfPackages = calculateNumOfPackages(fileList)
         this.onFileStatusChange?.startSending()
+        dest = stardustAPIPackage.destination
         createStartPackage(fileStartParser,
             numOfPackages, dest)
         mutablePackagesMap.clear()
