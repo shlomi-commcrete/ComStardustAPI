@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.Observer
+import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
+import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
@@ -24,6 +26,7 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.FileSendUtils
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
@@ -114,6 +117,9 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> {
                         handleUpdateAddressResponse(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.SEND_FILE -> {
+                        handleBittelFileResponse(mPackage)
+                    }
                     StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_INTERRUPT -> {
                         handleUpdatePolygonFreq(mPackage)
                     }
@@ -184,6 +190,21 @@ internal class StardustPackageHandler(private val context: Context ,
             GroupsUtils.addAllGroups(context)
             StardustPolygonChange.sendSaveConfig(context)
         }
+    }
+
+    private fun handleBittelFileResponse(mPackage: StardustPackage) {
+        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(6,83, 84, 82))) {
+            StardustFileStartParser().parseFileStart(bittelPackage = mPackage)
+                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
+            return
+        }
+        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(83, 84, 82))) {
+            StardustFileStartParser().parseFileStar2(bittelPackage = mPackage)
+                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
+            return
+        }
+        StardustFileParser().parseFile(bittelPackage = mPackage)
+            ?.let { FileSendUtils.handleFileReceive(it, mPackage) }
     }
 
     private fun handleUpdatePolygonFreqResponse(mPackage: StardustPackage) {
