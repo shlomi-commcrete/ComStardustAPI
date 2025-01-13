@@ -47,8 +47,8 @@ object FileSendUtils {
             sendPackage(mPackage, dest)
         }
         current.value = current.value?.plus(1)
-        updateStep(mutablePackagesMap.size, )
         resetSendTimer()
+        updateStep(mutablePackagesMap.size, )
     }
 
     fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange) {
