@@ -3,6 +3,7 @@ package com.commcrete.stardust.util
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
@@ -69,6 +70,7 @@ object FileSendUtils {
 
     private fun updateStep (numOfPackages: Int) {
         sendingPercentage.value = ((current.value?.toDouble()?.div(numOfPackages))?.times(100))?.toInt()
+        Log.d("updateStep", "${sendingPercentage.value}")
         sendingPercentage.value?.let { this.onFileStatusChange?.updateStep(it) }
         if(sendingPercentage.value == 100) {
             finishSending()
