@@ -23,7 +23,7 @@ interface MessagesDao {
     @Update
     suspend fun updateMessage(messageItem: MessageItem)
 
-    @Query("SELECT * FROM messages_table WHERE chatId COLLATE NOCASE = :chatId AND is_audio = 0 ORDER BY epochTimeMs ASC")
+    @Query("SELECT * FROM messages_table WHERE chatId COLLATE NOCASE = :chatId  ORDER BY epochTimeMs ASC")
     fun getAllMessagesByChatId(chatId : String) : LiveData<MutableList<MessageItem>>
 
 

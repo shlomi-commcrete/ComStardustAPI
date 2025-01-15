@@ -162,7 +162,7 @@ internal class ClientConnection(
                 newState: Int
             ) {
                 super.onConnectionStateChange(gatt, status, newState)
-                Timber.tag("onConnectionStateChange").d("status : $status\nnewState : $newState")
+                Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
                 val mtu = gatt?.requestMtu(200)
                 Timber.tag("SetMtu").d("$mtu")
                 if(status == 0 && newState == 2){
@@ -207,6 +207,7 @@ internal class ClientConnection(
                 setDevice()
                 Scopes.getMainCoroutine().launch {
                     if(com.commcrete.stardust.ble.BleManager.isPaired.value == true){
+                        Timber.tag(LOG_TAG).d("gattConnection")
                         gattConnection = gatt
                         com.commcrete.stardust.ble.BleManager.isBleConnected = true
                         com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
@@ -220,7 +221,7 @@ internal class ClientConnection(
                 val readChar = gatt?.getService(Characteristics.getConnectChar(id))
                     ?.getCharacteristic(readUUID)
                 if(readChar!=null){
-                    Timber.tag("ClientConnection").d("has Char")
+                    Timber.tag(LOG_TAG).d("has Char")
                     gatt.setCharacteristicNotification(readChar, true)
                     val desc = readChar.descriptors?.get(0)
                     desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
@@ -386,6 +387,7 @@ internal class ClientConnection(
                     IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
                 ) }
 //            device.createBond()
+            Timber.tag(LOG_TAG).d("bondToBleDevice")
             device.connectGatt(context, false, object  : BluetoothGattCallback() {})
         } catch (e: Exception) {
             e.printStackTrace()
@@ -396,6 +398,7 @@ internal class ClientConnection(
         @SuppressLint("MissingPermission")
         override fun onReceive(context: Context, intent: Intent) {
             with(intent) {
+                Timber.tag(LOG_TAG).d(" broadcastReceiver onReceive")
                 if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED ) {
                     val device = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
                     val previousBondState = getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1)
