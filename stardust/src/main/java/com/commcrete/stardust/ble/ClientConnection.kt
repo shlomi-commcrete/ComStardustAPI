@@ -31,6 +31,7 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import no.nordicsemi.andorid.ble.test.spec.Characteristics
 import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
