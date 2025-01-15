@@ -67,6 +67,9 @@ internal class ClientConnection(
     private val bondTimeout : Long = 5000
     private val pingTimeout : Long = 10000
 
+    private var bluetoothGattCallback: BluetoothGattCallback? = null
+
+
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
         reconnectToDevice()
@@ -138,170 +141,173 @@ internal class ClientConnection(
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
     private fun gettCallback () : BluetoothGattCallback{
-        return object : BluetoothGattCallback(){
+        if (bluetoothGattCallback == null) {
+            bluetoothGattCallback = object : BluetoothGattCallback(){
 
-            private val handler : Handler = Handler(Looper.getMainLooper())
+                private val handler : Handler = Handler(Looper.getMainLooper())
 
-            override fun onPhyUpdate(
-                gatt: BluetoothGatt?,
-                txPhy: Int,
-                rxPhy: Int,
-                status: Int
-            ) {
-                super.onPhyUpdate(gatt, txPhy, rxPhy, status)
-            }
-
-            override fun onPhyRead(gatt: BluetoothGatt?, txPhy: Int, rxPhy: Int, status: Int) {
-                super.onPhyRead(gatt, txPhy, rxPhy, status)
-            }
-
-            @SuppressLint("MissingPermission")
-            override fun onConnectionStateChange(
-                gatt: BluetoothGatt?,
-                status: Int,
-                newState: Int
-            ) {
-                super.onConnectionStateChange(gatt, status, newState)
-                Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
-                val mtu = gatt?.requestMtu(200)
-                Timber.tag("SetMtu").d("$mtu")
-                if(status == 0 && newState == 2){
-                    Handler(Looper.getMainLooper()).postDelayed({gatt?.discoverServices()} , 2000)
-                }else {
-                    Scopes.getMainCoroutine().launch {
-                        Timber.tag("Bittel Disconnected").d("Status Changed")
-                        Timber.tag(LOG_TAG).d("Bittel Disconnected")
-                        com.commcrete.stardust.ble.BleManager.isBleConnected = false
-                        com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
-                    }
+                override fun onPhyUpdate(
+                    gatt: BluetoothGatt?,
+                    txPhy: Int,
+                    rxPhy: Int,
+                    status: Int
+                ) {
+                    super.onPhyUpdate(gatt, txPhy, rxPhy, status)
                 }
-            }
 
-            @SuppressLint("MissingPermission")
-            private fun setDevice() {
-                mDevice?.name?.let {
-                    deviceLastDigit = it.takeLast(2)
-                    uuid = Characteristics.getWriteChar(deviceLastDigit)
+                override fun onPhyRead(gatt: BluetoothGatt?, txPhy: Int, rxPhy: Int, status: Int) {
+                    super.onPhyRead(gatt, txPhy, rxPhy, status)
                 }
-                deviceName?.let { it1 ->
-                    if(it1.isEmpty()){
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                            mDevice?.alias?.let {
-                                SharedPreferencesUtil.setBittelDeviceName(context, it)
-                            }
-                        } else {
-                            mDevice?.name?.let {
-                                SharedPreferencesUtil.setBittelDeviceName(context, it)
-                            }
-                        }
+
+                @SuppressLint("MissingPermission")
+                override fun onConnectionStateChange(
+                    gatt: BluetoothGatt?,
+                    status: Int,
+                    newState: Int
+                ) {
+                    super.onConnectionStateChange(gatt, status, newState)
+                    Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
+                    val mtu = gatt?.requestMtu(200)
+                    Timber.tag("SetMtu").d("$mtu")
+                    if(status == 0 && newState == 2){
+                        Handler(Looper.getMainLooper()).postDelayed({gatt?.discoverServices()} , 2000)
                     }else {
-                        SharedPreferencesUtil.setBittelDeviceName(context, it1)
-                    }
-                }
-                mDevice?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
-            }
-
-            @SuppressLint("MissingPermission")
-            override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
-                super.onServicesDiscovered(gatt, status)
-                setDevice()
-                Scopes.getMainCoroutine().launch {
-                    if(com.commcrete.stardust.ble.BleManager.isPaired.value == true){
-                        Timber.tag(LOG_TAG).d("gattConnection")
-                        gattConnection = gatt
-                        com.commcrete.stardust.ble.BleManager.isBleConnected = true
-                        com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
-                        resetRSSITimer()
-                    }
-                }
-                gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
-                val id = deviceLastDigit
-                val readUUID = Characteristics.getReadChar(id)
-                val writeUUID = Characteristics.getWriteChar(id)
-                val readChar = gatt?.getService(Characteristics.getConnectChar(id))
-                    ?.getCharacteristic(readUUID)
-                if(readChar!=null){
-                    Timber.tag(LOG_TAG).d("has Char")
-                    gatt.setCharacteristicNotification(readChar, true)
-                    val desc = readChar.descriptors?.get(0)
-                    desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    gatt.writeDescriptor(desc)
-                }
-
-                Handler(Looper.getMainLooper()).postDelayed({
-                    SharedPreferencesUtil.getAppUser(context)?.let {
-                        val src = it.appId
-                        if(src != null) {
-                            val mPackage = StardustPackageUtils.getStardustPackage(
-                                source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
-                            addMessageToQueue(mPackage)
-                            resetConnectionTimer()
-                            resetPingTimer()
+                        Scopes.getMainCoroutine().launch {
+                            Timber.tag("Bittel Disconnected").d("Status Changed")
+                            Timber.tag(LOG_TAG).d("Bittel Disconnected")
+                            com.commcrete.stardust.ble.BleManager.isBleConnected = false
+                            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
                         }
                     }
-                }, 4000)
-            }
-
-            override fun onCharacteristicWrite(
-                gatt: BluetoothGatt?,
-                characteristic: BluetoothGattCharacteristic?,
-                status: Int
-            ) {
-                super.onCharacteristicWrite(gatt, characteristic, status)
-            }
-
-            override fun onCharacteristicChanged(
-                gatt: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic
-            ) {
-                Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
-                clearTimer()
-                characteristic.value?.let {
-                    Timber.tag("onCharacteristicChanged").d("without Value")
-                    clearTimer()
-                    StardustPackageUtils.handlePackageReceived(it)
                 }
-            }
 
-            override fun onCharacteristicChanged(
-                gatt: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                value: ByteArray
-            ) {
-                super.onCharacteristicChanged(gatt, characteristic, value)
+                @SuppressLint("MissingPermission")
+                private fun setDevice() {
+                    mDevice?.name?.let {
+                        deviceLastDigit = it.takeLast(2)
+                        uuid = Characteristics.getWriteChar(deviceLastDigit)
+                    }
+                    deviceName?.let { it1 ->
+                        if(it1.isEmpty()){
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                mDevice?.alias?.let {
+                                    SharedPreferencesUtil.setBittelDeviceName(context, it)
+                                }
+                            } else {
+                                mDevice?.name?.let {
+                                    SharedPreferencesUtil.setBittelDeviceName(context, it)
+                                }
+                            }
+                        }else {
+                            SharedPreferencesUtil.setBittelDeviceName(context, it1)
+                        }
+                    }
+                    mDevice?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
+                }
 
-                Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
-            }
-
-            override fun onDescriptorWrite(
-                gatt: BluetoothGatt?,
-                descriptor: BluetoothGattDescriptor?,
-                status: Int
-            ) {
-                super.onDescriptorWrite(gatt, descriptor, status)
-            }
-
-            override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
-                super.onReliableWriteCompleted(gatt, status)
-            }
-
-            override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
-                super.onReadRemoteRssi(gatt, rssi, status)
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    // Handle the RSSI value
+                @SuppressLint("MissingPermission")
+                override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
+                    super.onServicesDiscovered(gatt, status)
+                    setDevice()
                     Scopes.getMainCoroutine().launch {
-                        com.commcrete.stardust.ble.BleManager.rssi.value = rssi
+                        if(com.commcrete.stardust.ble.BleManager.isPaired.value == true){
+                            Timber.tag(LOG_TAG).d("gattConnection")
+                            gattConnection = gatt
+                            com.commcrete.stardust.ble.BleManager.isBleConnected = true
+                            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
+                            resetRSSITimer()
+                        }
+                    }
+                    gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+                    val id = deviceLastDigit
+                    val readUUID = Characteristics.getReadChar(id)
+                    val writeUUID = Characteristics.getWriteChar(id)
+                    val readChar = gatt?.getService(Characteristics.getConnectChar(id))
+                        ?.getCharacteristic(readUUID)
+                    if(readChar!=null){
+                        Timber.tag(LOG_TAG).d("has Char")
+                        gatt.setCharacteristicNotification(readChar, true)
+                        val desc = readChar.descriptors?.get(0)
+                        desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        gatt.writeDescriptor(desc)
+                    }
+
+                    Handler(Looper.getMainLooper()).postDelayed({
+                        SharedPreferencesUtil.getAppUser(context)?.let {
+                            val src = it.appId
+                            if(src != null) {
+                                val mPackage = StardustPackageUtils.getStardustPackage(
+                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                                addMessageToQueue(mPackage)
+                                resetConnectionTimer()
+                                resetPingTimer()
+                            }
+                        }
+                    }, 4000)
+                }
+
+                override fun onCharacteristicWrite(
+                    gatt: BluetoothGatt?,
+                    characteristic: BluetoothGattCharacteristic?,
+                    status: Int
+                ) {
+                    super.onCharacteristicWrite(gatt, characteristic, status)
+                }
+
+                override fun onCharacteristicChanged(
+                    gatt: BluetoothGatt,
+                    characteristic: BluetoothGattCharacteristic
+                ) {
+                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
+                    clearTimer()
+                    characteristic.value?.let {
+                        Timber.tag("onCharacteristicChanged").d("without Value")
+                        clearTimer()
+                        StardustPackageUtils.handlePackageReceived(it)
                     }
                 }
+
+                override fun onCharacteristicChanged(
+                    gatt: BluetoothGatt,
+                    characteristic: BluetoothGattCharacteristic,
+                    value: ByteArray
+                ) {
+                    super.onCharacteristicChanged(gatt, characteristic, value)
+
+                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
+                }
+
+                override fun onDescriptorWrite(
+                    gatt: BluetoothGatt?,
+                    descriptor: BluetoothGattDescriptor?,
+                    status: Int
+                ) {
+                    super.onDescriptorWrite(gatt, descriptor, status)
+                }
+
+                override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
+                    super.onReliableWriteCompleted(gatt, status)
+                }
+
+                override fun onReadRemoteRssi(gatt: BluetoothGatt?, rssi: Int, status: Int) {
+                    super.onReadRemoteRssi(gatt, rssi, status)
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        // Handle the RSSI value
+                        Scopes.getMainCoroutine().launch {
+                            com.commcrete.stardust.ble.BleManager.rssi.value = rssi
+                        }
+                    }
+                }
+
+                override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
+                    super.onMtuChanged(gatt, mtu, status)
+
+                }
+
+
             }
-
-            override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
-                super.onMtuChanged(gatt, mtu, status)
-
-            }
-
-
         }
+            return bluetoothGattCallback!!
     }
 
     fun initBleStatus () {
