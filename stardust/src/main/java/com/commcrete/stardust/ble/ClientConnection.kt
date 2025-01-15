@@ -144,8 +144,6 @@ internal class ClientConnection(
         if (bluetoothGattCallback == null) {
             bluetoothGattCallback = object : BluetoothGattCallback(){
 
-                private val handler : Handler = Handler(Looper.getMainLooper())
-
                 override fun onPhyUpdate(
                     gatt: BluetoothGatt?,
                     txPhy: Int,
@@ -237,7 +235,7 @@ internal class ClientConnection(
                             val src = it.appId
                             if(src != null) {
                                 val mPackage = StardustPackageUtils.getStardustPackage(
-                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                                    source = "0" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
                                 addMessageToQueue(mPackage)
                                 resetConnectionTimer()
                                 resetPingTimer()
