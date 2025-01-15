@@ -372,6 +372,15 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
+        device.name?.let {
+            val deviceLastDigit = it.takeLast(2)
+            val uuid = Characteristics.getWriteChar(deviceLastDigit)
+            val connectedDevice = getBleConnectedDevice(uuid.toString())
+            if(connectedDevice != null) {
+                connectDevice(device)
+                return
+            }
+        }
         this.deviceName = deviceName
         resetBondTimer()
         try {
@@ -453,6 +462,36 @@ internal class ClientConnection(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun getBleConnectedDevice(uuid : String) : BluetoothDevice?{
+        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+        if(btManager == null || btManager.adapter == null) {
+            return null
+        }
+        val pairedDevices = btManager.adapter.bondedDevices
+
+        if (pairedDevices.size > 0) {
+
+            for (device in pairedDevices) {
+                val deviceName = device.name
+                val macAddress = device.address
+                val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    device.alias
+                } else {
+                    "Empty"
+                }
+
+                Log.i(
+                    " pairedDevices ",
+                    "paired device: $deviceName at $macAddress + $aliasing "
+                )
+                if(device.address.equals(uuid)){
+                    return device
+                }
+            }
+        }
+        return null
+    }
     @SuppressLint("MissingPermission")
     fun getBleConnectedDevices(uuid : String) : BluetoothDevice?{
         val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager

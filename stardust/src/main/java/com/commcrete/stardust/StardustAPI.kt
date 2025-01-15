@@ -25,7 +25,7 @@ interface StardustAPI {
     fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
     fun init(context: Context, fileLocation : String)
     fun scanForDevice(context: Context,) : MutableLiveData<List<ScanResult>>
-    fun connectToDevice(context: Context,device: BluetoothDevice)
+    fun connectToDevice(context: Context,device: ScanResult)
     fun disconnectFromDevice(context: Context,)
     fun readChats (context: Context,) : LiveData<List<ChatItem>>
 
