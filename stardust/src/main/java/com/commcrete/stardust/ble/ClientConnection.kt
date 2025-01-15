@@ -281,6 +281,11 @@ internal class ClientConnection(
                     status: Int
                 ) {
                     super.onDescriptorWrite(gatt, descriptor, status)
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        Timber.tag("NotificationSetup").d("Notification successfully enabled for ${descriptor?.characteristic?.uuid}")
+                    } else {
+                        Timber.tag("NotificationSetup").e("Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
+                    }
                 }
 
                 override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
