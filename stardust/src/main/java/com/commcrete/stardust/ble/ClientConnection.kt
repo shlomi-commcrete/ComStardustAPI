@@ -254,13 +254,23 @@ internal class ClientConnection(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic
             ) {
+                Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
                 clearTimer()
                 characteristic.value?.let {
                     Timber.tag("onCharacteristicChanged").d("without Value")
                     clearTimer()
                     StardustPackageUtils.handlePackageReceived(it)
                 }
+            }
 
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                value: ByteArray
+            ) {
+                super.onCharacteristicChanged(gatt, characteristic, value)
+
+                Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
             }
 
             override fun onDescriptorWrite(
