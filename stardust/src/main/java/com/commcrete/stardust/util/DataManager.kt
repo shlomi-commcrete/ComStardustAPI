@@ -23,6 +23,7 @@ import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
+import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -149,7 +150,13 @@ object DataManager : StardustAPI, PttInterface{
             val chatsRepo = getChatsRepo(context)
             val messagesRepository = getMessagesRepo(context)
             Scopes.getDefaultCoroutine().launch{
-//                chatsRepo.addChat(chatItem)
+                val chatItem = chatsRepo.getChatByBittelID(userId)
+                chatItem?.message = Message(
+                    senderID = userId,
+                    text = text,
+                    seen = false
+                )
+                chatItem?.let { chatsRepo.addChat(it) }
                 messagesRepository.addContact(messageItem)
             }
         }
