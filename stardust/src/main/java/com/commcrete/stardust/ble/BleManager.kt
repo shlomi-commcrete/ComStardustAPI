@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -56,6 +57,16 @@ object BleManager {
 
     fun isBluetoothEnabled () : Boolean{
         return isBleConnected && isBluetoothToggleEnabled
+    }
+
+    fun updateStatus () {
+        if(isUsbEnabled ()) {
+            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.USB)
+        } else if (isBluetoothEnabled()) {
+            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.BLE)
+        } else {
+            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.DISCONNECTED)
+        }
     }
 
     enum class ConnectionStatus {

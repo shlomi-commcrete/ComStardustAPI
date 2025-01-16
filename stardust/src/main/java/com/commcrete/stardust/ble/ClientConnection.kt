@@ -176,6 +176,7 @@ internal class ClientConnection(
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
                             com.commcrete.stardust.ble.BleManager.isBleConnected = false
                             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
+                            com.commcrete.stardust.ble.BleManager.updateStatus ()
                         }
                     }
                 }
@@ -214,6 +215,7 @@ internal class ClientConnection(
                             gattConnection = gatt
                             com.commcrete.stardust.ble.BleManager.isBleConnected = true
                             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
+                            com.commcrete.stardust.ble.BleManager.updateStatus ()
                             resetRSSITimer()
                         }
                     }
@@ -373,6 +375,7 @@ internal class ClientConnection(
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
+            com.commcrete.stardust.ble.BleManager.updateStatus ()
             removeRSSITimer()
             removePingTimer()
         }

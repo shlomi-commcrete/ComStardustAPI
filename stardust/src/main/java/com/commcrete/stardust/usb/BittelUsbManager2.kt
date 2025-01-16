@@ -109,6 +109,7 @@ object BittelUsbManager2 : BittelProtocol {
             stardustDevice = null
             BleManager.isUSBConnected = false
             BleManager.usbConnectionStatus.value = false
+            BleManager.updateStatus ()
         }catch (e : Exception) {
             e.printStackTrace()
         }
@@ -195,6 +196,7 @@ object BittelUsbManager2 : BittelProtocol {
                 BleManager.isUSBConnected = true
                 BleManager.usbConnectionStatus.value = true
                 initDataToUsb(context)
+                BleManager.updateStatus ()
             }
         }else {
             Timber.tag("SerialInputOutputManager").d("cant connect")
