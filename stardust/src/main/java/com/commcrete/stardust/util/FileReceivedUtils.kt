@@ -46,11 +46,15 @@ object FileReceivedUtils {
         if(dataStart != null ) {
             Scopes.getMainCoroutine().launch {
                 receivingPercentage.value = ((dataList.size.toDouble().div(dataStart!!.total)).times(100)).toInt()
+                receivingPercentage.value?.let {
+                    DataManager.getCallbacks()?.receiveFileStatus(it)
+                }
             }
             if(dataStart!!.total == dataList.size) {
                 saveFile(bittelPackage, dataStart?.type)
                 Scopes.getMainCoroutine().launch {
                     isReceivingInProgress.value = false
+                    DataManager.getCallbacks()?.receiveFileStatus(0)
                 }
             }
         }
