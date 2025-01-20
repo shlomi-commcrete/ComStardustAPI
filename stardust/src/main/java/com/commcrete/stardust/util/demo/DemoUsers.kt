@@ -1,6 +1,5 @@
 package com.commcrete.bittell.util.demo
 
-import androidx.compose.ui.text.toLowerCase
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.model.user_list.User
 import com.commcrete.stardust.room.chats.ChatItem
@@ -59,11 +58,25 @@ class DemoUsers {
             var isGroup = chat.type == "group"
             var isBittel = (chat.type.toLowerCase() == "bittel" || chat.type.toLowerCase() == "stardust")
             var image = chat.image
+            if(chat.deviceId.isNotEmpty()) {
+                createDeviceUser(chat, userId, loop)
+            }
             mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId.getSrcDestMin4Bytes(), userId, isSniffer,isGroup, isBittel, image))
 //            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
             mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
             loop++
         }
+    }
+
+    private fun createDeviceUser (chat: FolderReader.ExcelUser, userId: String, loop: Int) {
+        val appId = chat.deviceId
+        val name = chat.name
+        val isSniffer = false
+        var isGroup = false
+        var isBittel = true
+        var image = chat.image
+        mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , "", userId, isSniffer,isGroup, isBittel, image))
+        mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
     }
 
     private fun getContact (
