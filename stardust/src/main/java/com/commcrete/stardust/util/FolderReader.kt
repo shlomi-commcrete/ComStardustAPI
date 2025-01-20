@@ -40,12 +40,15 @@ object FolderReader {
                         excelUser.id = (cell as XSSFCell).stringCellValue
                     }
                     if(loop == 1) {
-                        excelUser.name = cell.toString()
+                        excelUser.deviceId = (cell as XSSFCell).stringCellValue
                     }
                     if(loop == 2) {
-                        excelUser.type = cell.toString()
+                        excelUser.name = cell.toString()
                     }
                     if(loop == 3) {
+                        excelUser.type = cell.toString()
+                    }
+                    if(loop == 4) {
                         excelUser.image = cell.toString()
                     }
                     rowData.add(cell.toString())
@@ -231,6 +234,7 @@ object FolderReader {
 
     data class ExcelUser (
         var id : String = "",
+        var deviceId : String = "",
         var name : String = "",
         var type : String = "",
         var image : String = "",

@@ -1,5 +1,6 @@
 package com.commcrete.bittell.util.demo
 
+import androidx.compose.ui.text.toLowerCase
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.model.user_list.User
 import com.commcrete.stardust.room.chats.ChatItem
@@ -52,13 +53,13 @@ class DemoUsers {
         var loop = 0
         for (chat in demoList) {
             val appId = chat.id
-            val bittelId = appId
+            val bittelId = chat.deviceId
             val name = chat.name
             val isSniffer = chat.type == "sniffer"
             var isGroup = chat.type == "group"
-            var isBittel = chat.type == "bittel"
+            var isBittel = (chat.type.toLowerCase() == "bittel" || chat.type.toLowerCase() == "stardust")
             var image = chat.image
-            mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
+            mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId.getSrcDestMin4Bytes(), userId, isSniffer,isGroup, isBittel, image))
 //            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
             mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
             loop++
@@ -93,7 +94,7 @@ class DemoUsers {
         val user = User(
             phone = appId, displayName = getName(userId, appId, name) , appId = arrayOf(appId), bittelId = arrayOf(bittelId)
         )
-        val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = message,
+        val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = message, bittelIDS = bittelId,
             user = user, isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel, imageName = image
         )
         return chatItem

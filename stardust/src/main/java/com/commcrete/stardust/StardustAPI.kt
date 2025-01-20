@@ -28,13 +28,11 @@ interface StardustAPI {
     fun connectToDevice(context: Context,device: ScanResult)
     fun disconnectFromDevice(context: Context,)
     fun readChats (context: Context,) : LiveData<List<ChatItem>>
-
     fun logout(context: Context,)
-
-    // Receive from the SDK
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
 }
 
+// Receive from the SDK
 interface StardustAPICallbacks {
     fun receiveMessage (stardustAPIPackage: StardustAPIPackage, text : String)
     fun receiveLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
