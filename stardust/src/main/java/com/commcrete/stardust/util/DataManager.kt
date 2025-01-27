@@ -271,6 +271,11 @@ object DataManager : StardustAPI, PttInterface{
         return this.destination ?: ""
     }
 
+    fun getUserUtils (context: Context) : UsersUtils {
+        requireContext(context)
+        return UsersUtils
+    }
+
     override fun sendDataToBle(bittelPackage: StardustPackage) {
         getClientConnection(context).addMessageToQueue(bittelPackage)
     }
