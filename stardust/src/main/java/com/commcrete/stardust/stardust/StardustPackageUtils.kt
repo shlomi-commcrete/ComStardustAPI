@@ -38,7 +38,7 @@ object StardustPackageUtils {
         //Requests
         UPDATE_TX_FREQUENCY (0x01,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -46,7 +46,7 @@ object StardustPackageUtils {
         ),
         UPDATE_RX_FREQUENCY (0x02,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -54,7 +54,7 @@ object StardustPackageUtils {
         ),
         UPDATE_LO_POWER_TX (0x03,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -62,7 +62,7 @@ object StardustPackageUtils {
         ),
         UPDATE_LO_POWER_RX (0x04,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -70,7 +70,7 @@ object StardustPackageUtils {
         ),
         UPDATE_HR_POWER_TX (0x05,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -78,7 +78,7 @@ object StardustPackageUtils {
         ),
         UPDATE_LR_POWER_TX (0x06,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -86,7 +86,7 @@ object StardustPackageUtils {
         ),
         UPDATE_LO_FREQUENCY (0x07,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -94,7 +94,7 @@ object StardustPackageUtils {
         ),
         READ_STATUS (0x0C,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -102,7 +102,7 @@ object StardustPackageUtils {
         ),
         SAVE_CONFIGURATION (0x0D,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -110,7 +110,7 @@ object StardustPackageUtils {
         ),
         RESET_BITTEL (0x0E,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -118,7 +118,7 @@ object StardustPackageUtils {
         ),
         PING (0x0F,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -126,7 +126,7 @@ object StardustPackageUtils {
         ),
         GET_VERSION (0x10,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -134,7 +134,7 @@ object StardustPackageUtils {
         ),
         UPDATE_BITTEL_VERSION (0x11,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -142,7 +142,7 @@ object StardustPackageUtils {
         ),
         BURN_BITTEL_VERSION (0x12,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -150,7 +150,7 @@ object StardustPackageUtils {
         ),
         GET_BITTEL_BOOT_ADDRESS (0x13,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -158,7 +158,7 @@ object StardustPackageUtils {
         ),
         SEND_MESSAGE (0x15,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -166,7 +166,7 @@ object StardustPackageUtils {
         ),
          SEND_SOS (0x15,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -174,7 +174,7 @@ object StardustPackageUtils {
         ),
         SEND_PTT (0x15,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.SPEECH, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.SPEECH, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -182,7 +182,7 @@ object StardustPackageUtils {
         ),
         REQUEST_ADDRESS (0x16,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -190,7 +190,7 @@ object StardustPackageUtils {
         ),
         REQUEST_LOCATION (0x17,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -198,7 +198,7 @@ object StardustPackageUtils {
         ),
         UPDATE_ADDRESS (0x18,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -206,7 +206,7 @@ object StardustPackageUtils {
         ),
         UPDATE_BITTEL_TYPE (0x19,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -214,7 +214,7 @@ object StardustPackageUtils {
         ),
         UPDATE_UART_PORT (0x1A,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -222,7 +222,7 @@ object StardustPackageUtils {
         ),
         UPDATE_POLYGON_FREQ (0x1D,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -230,7 +230,7 @@ object StardustPackageUtils {
         ),
         GET_POLYGON (0x1E,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -238,7 +238,7 @@ object StardustPackageUtils {
         ),
         UPDATE_SERVER_BITTEL_CONNECT (0x20,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -246,14 +246,14 @@ object StardustPackageUtils {
         ),
         SET_ADMIN_MODE (0x22,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR)
         ),
         GET_BITTEL_LOGS (0x23,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -262,7 +262,7 @@ object StardustPackageUtils {
 
         REQUEST_LAST_LOCATION (0x25,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -271,7 +271,7 @@ object StardustPackageUtils {
 
         REQUEST_GPS_SATELLITE (0x28,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -279,7 +279,7 @@ object StardustPackageUtils {
         ),
         REQUEST_ADD_GROUPS (0x29,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -287,7 +287,7 @@ object StardustPackageUtils {
         ),
         REQUEST_REMOVE_GROUPS (0x2A,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -295,7 +295,7 @@ object StardustPackageUtils {
         ),
         REQUEST_DELETE_ALL_GROUPS (0x2B,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -303,7 +303,7 @@ object StardustPackageUtils {
         ),
         REQUEST_GET_ALL_GROUPS (0x2B,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -311,7 +311,7 @@ object StardustPackageUtils {
         ),
         SEND_FILE (0x30,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -320,7 +320,7 @@ object StardustPackageUtils {
         //Responses
         READ_CONFIGURATION_RESPONSE (0x8C,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -328,7 +328,7 @@ object StardustPackageUtils {
         ),
         SAVE_CONFIG_RESPONSE (0x8D,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -336,7 +336,7 @@ object StardustPackageUtils {
         ),
         PING_RESPONSE (0x8F,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -344,7 +344,7 @@ object StardustPackageUtils {
         ),
         RECEIVE_FILE (0xB0,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -352,7 +352,7 @@ object StardustPackageUtils {
         ),
         RECEIVE_VERSION (0x90,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -360,7 +360,7 @@ object StardustPackageUtils {
         ),
         UPDATE_BITTEL_VERSION_RESPONSE (0x91,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -368,7 +368,7 @@ object StardustPackageUtils {
         ),
         UPDATE_BITTEL_VERSION_PACKAGE_RESPONSE (0x92,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -376,7 +376,7 @@ object StardustPackageUtils {
         ),
         GET_BITTEL_BOOT_ADDRESS_RESPONSE (0x93,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -384,7 +384,7 @@ object StardustPackageUtils {
         ),
         SEND_DATA_RESPONSE (0x95,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -392,7 +392,7 @@ object StardustPackageUtils {
         ),
         GET_ADDRESSES (0x96,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -400,7 +400,7 @@ object StardustPackageUtils {
         ),
         RECEIVE_LOCATION (0x97,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -408,7 +408,7 @@ object StardustPackageUtils {
         ),
         UPDATE_ADDRESS_RESPONSE (0x98,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -417,7 +417,7 @@ object StardustPackageUtils {
 
         UPDATE_PORT_RESPONSE (0x9A,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -425,7 +425,7 @@ object StardustPackageUtils {
         ),
         UPDATE_POLYGON_FREQ_RESPONSE (0x9D,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -433,7 +433,7 @@ object StardustPackageUtils {
         ),
         GET_POLYGON_RESPONSE (0x9E,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -441,7 +441,7 @@ object StardustPackageUtils {
         ),
         SET_ADMIN_MODE_RESPONSE (0x9E,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -449,7 +449,7 @@ object StardustPackageUtils {
         ),
         GET_BITTEL_LOGS_RESPONSE (0xA3,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -458,7 +458,7 @@ object StardustPackageUtils {
 
         RECEIVE_LAST_LOCATION (0xA5,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
@@ -466,8 +466,24 @@ object StardustPackageUtils {
         ),
         RECEIVE_GPS_SATELLITE (0xA8,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        ADD_GROUPS_RESPONSE (0xA9,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        DELETE_GROUPS_RESPONSE (0xAB,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
             )
@@ -475,7 +491,7 @@ object StardustPackageUtils {
         //Interrupts
         UPDATE_POLYGON_INTERRUPT (0xFA,
             StardustControlByte(
-                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.HR,
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR

@@ -35,6 +35,15 @@ open class StardustParser {
         return result
     }
 
+    fun byteArrayToBoolean(byteArray: ByteArray): Boolean {
+        for (byte in byteArray) {
+            if (byte != 0.toByte()) {
+                return true
+            }
+        }
+        return false
+    }
+
     fun byteArrayToLong(byteArray: ByteArray): Long {
         if(byteArray.isEmpty()){
             return 0

@@ -25,9 +25,11 @@ object SOSUtils {
                 text?.let {
                     data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
                 }
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = "00000002", stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
+                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
             }
         }

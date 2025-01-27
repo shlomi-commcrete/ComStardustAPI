@@ -23,8 +23,10 @@ import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.toHex
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
+import com.commcrete.stardust.util.FunctionalityType
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.ustadmobile.codec2.Codec2Decoder
@@ -393,7 +395,9 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                     data = audioIntArray)
             }
+            val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.PTT)
             bittelPackage?.stardustControlByte?.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+            bittelPackage?.stardustControlByte?.stardustDeliveryType = radio.second
             bittelPackage?.checkXor =
                 bittelPackage?.getStardustPackageToCheckXor()
                     ?.let { StardustPackageUtils.getCheckXor(it) }

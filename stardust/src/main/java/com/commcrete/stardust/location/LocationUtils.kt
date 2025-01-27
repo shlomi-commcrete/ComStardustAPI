@@ -31,6 +31,7 @@ import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.PermissionTracking
 import com.google.android.gms.location.*
@@ -108,7 +109,7 @@ object LocationUtils  {
                     location.longitude = bittelLocationPackage.longitude.toDouble()
                     location.altitude = bittelLocationPackage.height.toDouble()
                     DataManager.getCallbacks()?.receiveLocation(
-                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
+                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByStardustPackage(bittelPackage)),
                         location)
                 }
             } else if(isCreateNewUser) {
@@ -122,7 +123,7 @@ object LocationUtils  {
         ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
     }
     internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                       isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null){
+                       isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null){
         if(lastLocation == null){
             sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
         }else {
@@ -147,7 +148,7 @@ object LocationUtils  {
     }
 
     private fun sendMissingLocation(mPackage: StardustPackage, clientConnection : ClientConnection, isDemandAck : Boolean = false,
-                                    isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null) {
+                                    isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null) {
         // TODO: send Cant find location ToPreviousDevice
         // TODO: change xor check
         Scopes.getDefaultCoroutine().launch {
@@ -157,13 +158,13 @@ object LocationUtils  {
             )
 
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = if (isHR) StardustControlByte.StardustDeliveryType.HR else StardustControlByte.StardustDeliveryType.LR
+            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
             clientConnection.sendMessage(bittelPackageToReturn)
         }
     }
 
     internal fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
-                             isHR : Boolean = true, opCode : StardustPackageUtils.StardustOpCode? = null) {
+                             isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null) {
         // TODO: change xor check
 
         Scopes.getDefaultCoroutine().launch {
@@ -177,7 +178,7 @@ object LocationUtils  {
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             bittelPackageToReturn.isDemandAck = isDemandAck
             bittelPackageToReturn.idNumber = id
-            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = if (isHR) StardustControlByte.StardustDeliveryType.HR else StardustControlByte.StardustDeliveryType.LR
+            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
 
             clientConnection.sendMessage(bittelPackageToReturn)
 

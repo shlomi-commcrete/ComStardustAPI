@@ -8,6 +8,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileSendUtils
 import java.io.File
 
@@ -30,6 +31,7 @@ interface StardustAPI {
     fun readChats (context: Context,) : LiveData<List<ChatItem>>
     fun logout(context: Context,)
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
+    fun getCarriers (context: Context) : List<Carrier>?
 }
 
 // Receive from the SDK

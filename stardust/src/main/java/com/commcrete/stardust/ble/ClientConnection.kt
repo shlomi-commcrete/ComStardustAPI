@@ -705,7 +705,7 @@ internal class ClientConnection(
                     }
 
                 })
-                ackSystem.delayTS = if(bittelPackage.stardustControlByte.stardustDeliveryType == StardustControlByte.StardustDeliveryType.HR) DELAY_TS_HR else DELAY_TS_LR
+                ackSystem.delayTS = DELAY_TS_LR
                 ackSystem.start()
                 mutableAckAwaitingList.add(ackSystem)
             }

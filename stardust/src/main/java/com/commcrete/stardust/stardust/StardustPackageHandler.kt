@@ -25,12 +25,16 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.AdminUtils
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileSendUtils
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 internal class StardustPackageHandler(private val context: Context ,
                              private var clientConnection: ClientConnection? = null) {
@@ -148,6 +152,15 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS_RESPONSE -> {
                         handleBittelLog(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> {
+                        handleAdminModeResponse(mPackage)
+                    }
+                    StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> {
+                        handleAddGroupsResponse(mPackage)
+                    }
+                    StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> {
+                        handleDeleteGroupsResponse(mPackage)
+                    }
                     else -> {}
                 } }
             resetTimer()
@@ -176,6 +189,24 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handlePingResponse (mPackage: StardustPackage) {
     }
 
+    private fun handleAdminModeResponse(mPackage: StardustPackage) {
+        if(BleManager.isUsbEnabled()){
+            BittelUsbManager2.updateBlePort()
+            Timber.tag("startUpdatingPort").d("updateUsbPort")
+        }else if (BleManager.isBluetoothEnabled()) {
+            DataManager.getClientConnection(context).updateBlePort()
+            Timber.tag("startUpdatingPort").d("updateBlePort")
+        }
+    }
+
+    private fun handleDeleteGroupsResponse(mPackage: StardustPackage) {
+        GroupsUtils.addAllGroups(DataManager.context)
+    }
+
+    private fun handleAddGroupsResponse(mPackage: StardustPackage) {
+        AdminUtils.updateBittelAdminMode()
+    }
+
     private fun handleSaveConfigResponse(mPackage: StardustPackage) {
         if(mPackage.isAck() && StardustPolygonChange.isProcessRunning){
             StardustPolygonChange.updateServerOfSaveConfigSuccess()
@@ -184,11 +215,8 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            DataManager.getClientConnection(context).updateBlePort()
+            GroupsUtils.deleteAllGroups(context)
             DataManager.getClientConnection(context).removeConnectionTimer()
-//            GroupsUtils.deleteAllGroups(context)
-            GroupsUtils.addAllGroups(context)
-            StardustPolygonChange.sendSaveConfig(context)
         }
     }
 
@@ -227,7 +255,17 @@ internal class StardustPackageHandler(private val context: Context ,
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
             UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
+            bittelConfigurationPackage?. let {
+
+            if(CarriersUtils.isCarriersChanged(it) == true) {
+                CarriersUtils.getCarrierListAndUpdate(bittelConfigurationPackage)
+                CarriersUtils.getDefaults()
+
+            } else {
+                CarriersUtils.setLocalCarrierList ()
+            }
         }
+    }
     }
 
     private fun handleSOS (mPackage: StardustPackage) {
@@ -310,7 +348,7 @@ internal class StardustPackageHandler(private val context: Context ,
         mPackage.destinationBytes = dst
         DataManager.getClientConnection(context).let {
             LocationUtils.sendMyLocation(mPackage,
-                it, isHR = mPackage.stardustControlByte.stardustDeliveryType == StardustControlByte.StardustDeliveryType.HR
+                it, isHR = mPackage.stardustControlByte.stardustDeliveryType
             )
         }
     }

@@ -32,6 +32,7 @@ import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
@@ -126,6 +127,7 @@ object DataManager : StardustAPI, PttInterface{
 
         val messageNum = 1
         // TODO: check
+        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)
         Scopes.getDefaultCoroutine().launch {
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
@@ -135,9 +137,9 @@ object DataManager : StardustAPI, PttInterface{
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
                 mPackage.messageNumber = splitData.size
                 mPackage.idNumber = id
-                mPackage.stardustControlByte.stardustDeliveryType = if (stardustAPIPackage.isLR == true) StardustControlByte.StardustDeliveryType.LR else StardustControlByte.StardustDeliveryType.HR
+                mPackage.stardustControlByte.stardustDeliveryType = radio.second
                 sendDataToBle(mPackage)
-                delay(if(stardustAPIPackage.isLR == true)4000 else 800)
+                delay(if(radio.first == null || radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.HR)800 else 4000)
             }
         }
         saveSentMessage(context, text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
@@ -178,7 +180,8 @@ object DataManager : StardustAPI, PttInterface{
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
         requireContext(context)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
-        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context))
+        val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.LOCATION)
+        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
 
     override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange) {
@@ -198,7 +201,9 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {
         requireContext(context)
+        val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.LOCATION)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
+        stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
         }
@@ -251,6 +256,11 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun setCallback(stardustAPICallbacks: StardustAPICallbacks) {
         this.stardustAPICallbacks = stardustAPICallbacks
+    }
+
+    override fun getCarriers(context: Context): List<Carrier>? {
+        requireContext(context)
+        return CarriersUtils.setLocalCarrierList ()
     }
 
     override fun getSource(): String {

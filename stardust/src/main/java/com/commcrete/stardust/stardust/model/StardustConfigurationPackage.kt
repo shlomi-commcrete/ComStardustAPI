@@ -1,47 +1,48 @@
 package com.commcrete.stardust.stardust.model
 
 data class StardustConfigurationPackage(
-    var frequencyHRSatelliteTXBytes : Double,
-    var frequencyHRRadioTXBytes : Double,
-    var frequencyLRSatelliteTXBytes : Double,
-    var frequencyHRSatelliteRXBytes : Double,
-    var frequencyHRRadioRXBytes : Double,
-    var frequencyLRSatelliteRXBytes : Double,
+    var frequencyXcvr1SatelliteTXBytes : Double,
+    var frequencyXcvr1RadioTXBytes : Double,
+    var frequencyXcvr2SatelliteTXBytes : Double,
+    var frequencyXcvr1SatelliteRXBytes : Double,
+    var frequencyXcvr1RadioRXBytes : Double,
+    var frequencyXcvr2SatelliteRXBytes : Double,
     var powerLOTX : Int,
     var powerLORX : Int,
-    var powerHRTX : Int,
-    var powerLRTX : Int,
+    var powerXcvr1TX : Int,
+    var powerXcvr2TX : Int,
     var radioLODeduction : Float,
-    var stardustType : StardustConfigurationParser.StardustType,
+    var bittelType : StardustConfigurationParser.StardustType,
     var portType : StardustConfigurationParser.PortType,
     var crcType : Int,
     var serverByteType : Int,
+    var debugIgnoreCanTransmit : Boolean,
+    var snifferMode: StardustConfigurationParser.SnifferMode,
+    var stardustId : String,
+    var appId : String,
+    val antenna : StardustConfigurationParser.AntennaType,
+    var frequencyXcvr3SatelliteTXBytes : Double,
+    var frequencyXcvr4SatelliteTXBytes : Double,
+    var frequencyXcvr3SatelliteRXBytes : Double,
+    var frequencyXcvr4SatelliteRXBytes : Double,
+    var powerXcvr3TX : Int,
+    var powerXcvr4TX : Int,
+    val functionalityXcvr1 : StardustConfigurationParser.StardustTypeFunctionality,
+    val functionalityXcvr2 : StardustConfigurationParser.StardustTypeFunctionality,
+    val functionalityXcvr3 : StardustConfigurationParser.StardustTypeFunctionality,
     var frequencyLOTX : Double,
     var frequencyLORX : Double,
-    var frequencyLRTX : Double,
-    var frequencyLRRX : Double,
+    var frequencyXcvr2TX : Double,
+    var frequencyXcvr2RX : Double,
     var powerBattery : Float,
-    var power12V : Float,
     var batteryChargeStatus : StardustConfigurationParser.StardustBatteryCharge,
     var mcuTemperature : Int,
     var rdpLevel : StardustConfigurationParser.StardustRDPLevel,
-    var snifferMode: StardustConfigurationParser.SnifferMode,
-    var StardustId : String,
-    var appId : String,
+    var frequencyXcvr3TX : Double,
+    var frequencyXcvr3RX : Double,
+    var frequencyXcvr4TX : Double,
+    var frequencyXcvr4RX : Double,
+    var power12V : Float,
 ) {
-    fun setFromDefaults (StardustDefaults: StardustDefaults.StardustDefaults) {
-        frequencyHRSatelliteTXBytes = StardustDefaults.frequencyHRSatelliteTXBytes
-        frequencyHRRadioTXBytes = StardustDefaults.frequencyHRRadioTXBytes
-        frequencyLRSatelliteTXBytes = StardustDefaults.frequencyLRSatelliteTXBytes
-        frequencyHRSatelliteRXBytes = StardustDefaults.frequencyHRSatelliteRXBytes
-        frequencyHRRadioRXBytes = StardustDefaults.frequencyHRRadioRXBytes
-        frequencyLRSatelliteRXBytes = StardustDefaults.frequencyLRSatelliteRXBytes
-        powerLOTX = StardustDefaults.powerLOTX
-        powerLORX = StardustDefaults.powerLORX
-        powerHRTX = StardustDefaults.powerHRTX
-        powerLRTX = StardustDefaults.powerLRTX
-        portType = StardustDefaults.portType
-        stardustType = StardustDefaults.stardustType
-        serverByteType = StardustDefaults.serverByteType
-    }
+
 }

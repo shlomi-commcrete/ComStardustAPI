@@ -9,7 +9,7 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
 ) {
 
     constructor() : this(
-        StardustPackageType.DATA, StardustDeliveryType.HR, StardustAcknowledgeType.DEMAND_ACK,
+        StardustPackageType.DATA, StardustDeliveryType.RD1, StardustAcknowledgeType.DEMAND_ACK,
         StardustPartType.MESSAGE, StardustServer.NOT_SERVER, StardustMessageType.REGULAR
     )
 
@@ -27,10 +27,10 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
     }
 
     enum class StardustDeliveryType (val value : Int, val radioName : String) {
-        HR(0, "Radio 1"),
-        LR(2, "Radio 2"),
-        RD1(4, "Radio 3"),
-        RD2(6, "Radio 4"),
+        RD1(0, "RD1"),
+        RD2(2, "RD2"),
+        RD3(4, "RD3"),
+        RD4(6, "RD4"),
     }
 
     enum class StardustAcknowledgeType (val value : Int) {
@@ -57,11 +57,11 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
         return StardustControlByte(
             if (byte and 1 == 1) StardustPackageType.SPEECH else StardustPackageType.DATA,
             when((byte and 2) + (byte and 4)) {
-                0 -> {StardustDeliveryType.HR}
-                2 -> {StardustDeliveryType.LR}
-                4 -> {StardustDeliveryType.RD1}
-                6 -> {StardustDeliveryType.RD2}
-                else -> {StardustDeliveryType.HR}
+                0 -> {StardustDeliveryType.RD1}
+                2 -> {StardustDeliveryType.RD2}
+                4 -> {StardustDeliveryType.RD3}
+                6 -> {StardustDeliveryType.RD4}
+                else -> {StardustDeliveryType.RD1}
             },
             if (byte and 8 == 8) StardustAcknowledgeType.DEMAND_ACK else StardustAcknowledgeType.NO_DEMAND_ACK,
             if (byte and 16 == 16) StardustPartType.LAST else StardustPartType.MESSAGE,

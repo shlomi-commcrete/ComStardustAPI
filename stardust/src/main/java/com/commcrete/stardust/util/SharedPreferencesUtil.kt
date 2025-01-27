@@ -14,6 +14,7 @@ import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -83,6 +84,16 @@ object SharedPreferencesUtil {
 
     private const val KEY_OUTPUT_DEFAULT = "output_default"
     private const val KEY_INPUT_DEFAULT = "input_default"
+
+    //Carriers
+    private const val KEY_LAST_CARRIERS = "last_carriers"
+    private const val KEY_SOS_DEFAULT = "sos_default"
+    private const val KEY_TEXT_DEFAULT = "text_default"
+    private const val KEY_LOCATION_DEFAULT = "location_default"
+    private const val KEY_PTT_DEFAULT = "ptt_default"
+    private const val KEY_BFT_DEFAULT = "bft_default"
+    private const val KEY_FILE_DEFAULT = "file_default"
+    private const val KEY_IMAGE_DEFAULT = "image_default"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -417,6 +428,24 @@ object SharedPreferencesUtil {
             }
         }else {
             return MediaRecorder.AudioSource.MIC
+        }
+    }
+
+    fun setCarriers(context: Context, carriers: List<Carrier>) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
+        preferences.edit().putString(KEY_LAST_CARRIERS, carriersJson).apply() // Save JSON as a string
+    }
+
+    fun getCarriers(context: Context): List<Carrier>? {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = preferences.getString(KEY_LAST_CARRIERS, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
         }
     }
 }

@@ -39,7 +39,7 @@ object FileSendUtils {
     private var packagesSent = 0
     private var dest : String? = null
     private var onFileStatusChange : OnFileStatusChange? = null
-
+    private var sendType : StardustFileStartParser.FileTypeEnum? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
@@ -153,6 +153,10 @@ object FileSendUtils {
             return
         }
         val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages)
+        sendType = type
+        val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
+            FunctionalityType.FILE else FunctionalityType.IMAGE
+        )
         DataManager.getClientConnection(DataManager.context).let {
             SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
                 val sosString = "STR"
@@ -164,6 +168,7 @@ object FileSendUtils {
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = data)
+                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(fileStartMessage)
             }
         }
@@ -221,9 +226,13 @@ object FileSendUtils {
         }
         DataManager.getClientConnection(DataManager.context).let {
             SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
+                    FunctionalityType.FILE else FunctionalityType.IMAGE
+                )
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = stardustFilePackage.toArrayInt())
+                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
                 packagesSent ++
                 Timber.tag("FileUpload").d("send : $packagesSent")
                 it.addMessageToQueue(fileStartMessage)
@@ -284,6 +293,7 @@ object FileSendUtils {
         packagesSent = 0
         isComplete.value = false
         this.onFileStatusChange?.stopSending()
+        sendType = null
     }
 
     private fun finishSending() {
@@ -295,6 +305,7 @@ object FileSendUtils {
         Handler(Looper.getMainLooper()).postDelayed({isComplete.value = false}, 3000)
         isComplete.value = true
         this.onFileStatusChange?.finishSending()
+        sendType = null
     }
 
     interface OnFileStatusChange {
