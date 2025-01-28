@@ -204,7 +204,19 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleAddGroupsResponse(mPackage: StardustPackage) {
-        AdminUtils.updateBittelAdminMode()
+        getConfiguration ()
+    }
+
+    private fun getConfiguration () {
+        SharedPreferencesUtil.getAppUser(DataManager.context)?.let {
+            val src = it.appId
+            val dst = it.bittelId
+            if(src != null && dst != null) {
+                val configurationPackage = StardustPackageUtils.getStardustPackage(
+                    source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.READ_STATUS)
+                clientConnection?.addMessageToQueue(configurationPackage)
+            }
+        }
     }
 
     private fun handleSaveConfigResponse(mPackage: StardustPackage) {
@@ -264,6 +276,7 @@ internal class StardustPackageHandler(private val context: Context ,
             } else {
                 CarriersUtils.setLocalCarrierList ()
             }
+            AdminUtils.updateBittelAdminMode()
         }
     }
     }
