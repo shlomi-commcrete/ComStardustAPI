@@ -1,6 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import timber.log.Timber
 import java.nio.ByteBuffer
 
 class StardustPackageParser : StardustParser() {
@@ -31,8 +32,10 @@ class StardustPackageParser : StardustParser() {
             val StardustPackage =  getStardustPackageFromBuffer()
             StardustPackage?.let {
                 if((StardustPackage.getDataAsString() !=null
-                            && StardustPackage.length <= StardustPackage.getDataSizeLength())){
+                            && StardustPackage.length <= StardustPackage.getDataSizeLength() && StardustPackage.checkXor != -2000)){
                     return true
+                }else {
+                    Timber.tag("notFinished").d("bittelPackage.getDataAsString() : ${StardustPackage.getDataAsString()}\nbittelPackage.length : ${StardustPackage.length}\nbittelPackage.getDataSizeLength() : ${StardustPackage.getDataSizeLength()}")
                 }
             }
         }catch (e : Exception){
@@ -62,6 +65,7 @@ class StardustPackageParser : StardustParser() {
             offset += syncBytesLength
             if(offset < 4 || !syncBytes.contentEquals(intArrayToByteArray(StardustPackageUtils.SYNC_BYTES.toMutableList()))){
                 isDefect = true
+                return null
             }
             val destinationBytes = cutByteArray(byteArray, destinationBytesLength, offset)
             offset += destinationBytesLength
@@ -74,15 +78,16 @@ class StardustPackageParser : StardustParser() {
             val opcode = getOpCode(opCodeBytes[0].toUByte())
             val controlByte = StardustControlByte().getStardustControlByteFromByte(controlBytes[0].toInt())
             var lengthBytes = cutByteArray(byteArray, lengthBytesLength, offset)
-            var length = lengthBytes[0].toInt()
+            var length = lengthBytes[0].toUByte().toInt()
             offset += lengthBytesLength
             var dataBytes : ByteArray? = null
             dataBytes = cutByteArray(byteArray, length, offset)
             offset += length
             val checkXorBytes = cutByteArray(byteArray, checkXorBytesLength, offset)
             if(opcode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && controlByte.stardustPackageType == StardustControlByte.StardustPackageType.DATA){
-                dataBytes = dataBytes.copyOfRange(1, dataBytes.size)
-                length -= 1
+                val realLength = dataBytes[0].toUByte().toInt()
+                dataBytes = dataBytes.copyOfRange(1, realLength+1)
+                length = realLength
             }
             val StardustPackage = StardustPackage(
                 syncBytes = StardustPackageUtils.byteArrayToIntArray(syncBytes),
@@ -92,7 +97,7 @@ class StardustPackageParser : StardustParser() {
                 stardustOpCode = opcode ,
                 length = length,
                 data = dataBytes.let { StardustPackageUtils.byteArrayToIntArray(it) },
-                checkXor = if(checkXorBytes.isEmpty()) 0 else checkXorBytes[0].toInt()
+                checkXor = if(checkXorBytes.isEmpty()) -2000 else checkXorBytes[0].toInt()
 
             )
             return StardustPackage
