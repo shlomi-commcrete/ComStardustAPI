@@ -397,8 +397,7 @@ internal class ClientConnection(
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         device.name?.let {
             val deviceLastDigit = it.takeLast(2)
-            val uuid = Characteristics.getWriteChar(deviceLastDigit)
-            val connectedDevice = getBleConnectedDevice(uuid.toString())
+            val connectedDevice = getBleConnectedDevice(device.address)
             if(connectedDevice != null) {
                 connectDevice(device)
                 return
