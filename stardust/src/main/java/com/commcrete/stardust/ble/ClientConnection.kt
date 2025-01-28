@@ -396,9 +396,9 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         device.name?.let {
-            val deviceLastDigit = it.takeLast(2)
             val connectedDevice = getBleConnectedDevice(device.address)
             if(connectedDevice != null) {
+                com.commcrete.stardust.ble.BleManager.isPaired.value = true
                 connectDevice(device)
                 return
             }
