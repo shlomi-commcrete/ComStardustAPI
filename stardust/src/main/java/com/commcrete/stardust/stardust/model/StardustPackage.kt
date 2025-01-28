@@ -182,6 +182,7 @@ data class StardustPackage(
         stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
         stringBuilder.append("Full Byte Array : \n")
         stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
+        stringBuilder.append("OpCode : ${stardustOpCode}\n")
         stringBuilder.append("Destenation : ${getDestAsString()}\n")
         stringBuilder.append("Source : ${getSourceAsString()}\n")
         stringBuilder.append("Length : $length\n")

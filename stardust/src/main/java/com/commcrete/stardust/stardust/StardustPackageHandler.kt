@@ -67,6 +67,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 if(mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.PING_RESPONSE){
                     savedPackage = mPackage
                 }
+                Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray : ${mPackage}")
 //                SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
 //                    if(mPackage.getDestAsString() != it && mPackage.getSourceAsString() != it
 //                        && mPackage.getDestAsString() != "00000002") {
