@@ -17,6 +17,7 @@ import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import kotlinx.coroutines.launch
@@ -34,7 +35,7 @@ object FileSendUtils {
     private var isComplete : MutableLiveData<Boolean> = MutableLiveData(false)
     private val mutablePackagesMap : MutableMap<Float,StardustFilePackage > = mutableMapOf()
     private var current : MutableLiveData<Float> = MutableLiveData(0f)
-    private val sendInterval : Long = 1300
+    private var sendInterval : Long = 1300
 
     private var packagesSent = 0
     private var dest : String? = null
@@ -225,10 +226,15 @@ object FileSendUtils {
             return
         }
         DataManager.getClientConnection(DataManager.context).let {
+            val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
+                FunctionalityType.FILE else FunctionalityType.IMAGE
+            )
+            this.sendInterval = if(radio.first != null && radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
+                300
+            } else {
+                1300
+            }
             SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
-                    FunctionalityType.FILE else FunctionalityType.IMAGE
-                )
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = stardustFilePackage.toArrayInt())
@@ -294,6 +300,7 @@ object FileSendUtils {
         isComplete.value = false
         this.onFileStatusChange?.stopSending()
         sendType = null
+        sendInterval = 1300
     }
 
     private fun finishSending() {
@@ -306,6 +313,7 @@ object FileSendUtils {
         isComplete.value = true
         this.onFileStatusChange?.finishSending()
         sendType = null
+        sendInterval = 1300
     }
 
     interface OnFileStatusChange {
