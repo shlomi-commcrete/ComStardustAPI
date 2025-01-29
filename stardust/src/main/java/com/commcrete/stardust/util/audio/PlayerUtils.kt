@@ -22,6 +22,7 @@ import com.commcrete.bittell.room.sniffer.SnifferItem
 import com.commcrete.bittell.room.sniffer.SnifferRepository
 import com.commcrete.bittell.util.sniffer.isLocalGroup
 import com.commcrete.bittell.util.sniffer.isMyId
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -139,11 +140,11 @@ object PlayerUtils : BleMediaConnector() {
             savedUser?.appId?.let {
                 if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
                     && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
-                    playPTT(pttAudio, pttAudio.size )
+                    playPTT(pttAudio, pttAudio.size, source, destinations )
                 }
             }
         }else {
-            playPTT(pttAudio, pttAudio.size )
+            playPTT(pttAudio, pttAudio.size , source, destinations)
         }
 
         resetTimer()
@@ -227,9 +228,11 @@ object PlayerUtils : BleMediaConnector() {
     }
 
 
-    private fun playPTT(audioStream: ByteArray, size: Int) {
+    private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String) {
 //        if(App.isAppInForeground || SharedPreferencesUtil.getEnablePttSound(DataManager.context)){
             track?.let { playStream(it, audioStream, size) }
+            DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination,), audioStream)
+
 //        }
     }
 

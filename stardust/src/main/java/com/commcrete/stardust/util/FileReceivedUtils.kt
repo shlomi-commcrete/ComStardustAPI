@@ -5,6 +5,7 @@ import android.os.Looper
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -110,6 +111,11 @@ object FileReceivedUtils {
             dataStart = null
             dataList.clear()
             removeReceiveTimer()
+            if(fileType == 0) {
+                DataManager.getCallbacks()?.receiveFile(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
+            } else {
+                DataManager.getCallbacks()?.receiveImage(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
             println("Error saving file: ${e.message}")
