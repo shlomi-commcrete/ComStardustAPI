@@ -24,7 +24,7 @@ class StardustFileStartParser : StardustParser() {
             offset += totalLength
 
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
-            byteArrayToInt(totalBytes.reversedArray()))
+            byteArrayToUInt(totalBytes.reversedArray()).toInt())
 
         }
         return null
@@ -41,7 +41,7 @@ class StardustFileStartParser : StardustParser() {
             offset += totalLength
 
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
-            byteArrayToInt(totalBytes.reversedArray()))
+            byteArrayToUInt(totalBytes.reversedArray()).toInt())
 
         }
         return null
