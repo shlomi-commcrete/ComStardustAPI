@@ -221,9 +221,14 @@ data class StardustPackage(
         return false
     }
 
-    fun isEqual(StardustPackage: StardustPackage) : Boolean{
-        return (this.stardustOpCode == StardustPackage.stardustOpCode && this.stardustControlByte == StardustPackage.stardustControlByte
-            && this.data.contentEquals(StardustPackage.data))
+    fun isEqual(bittelPackage: StardustPackage) : Boolean{
+        return (this.stardustOpCode == bittelPackage.stardustOpCode &&
+                this.stardustControlByte.stardustPackageType == bittelPackage.stardustControlByte.stardustPackageType &&
+                this.stardustControlByte.stardustAcknowledgeType == bittelPackage.stardustControlByte.stardustAcknowledgeType &&
+                this.stardustControlByte.stardustPackageType == bittelPackage.stardustControlByte.stardustPackageType &&
+                this.stardustControlByte.stardustServer == bittelPackage.stardustControlByte.stardustServer &&
+                this.stardustControlByte.stardustMessageType == bittelPackage.stardustControlByte.stardustMessageType
+                && this.data.contentEquals(bittelPackage.data))
     }
 
 }

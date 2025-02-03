@@ -20,112 +20,46 @@ import java.io.FileOutputStream
 
 object FileReceivedUtils {
 
-    val isReceivingInProgress : MutableLiveData<Boolean> = MutableLiveData(false)
-    val receivingPercentage : MutableLiveData<Int> = MutableLiveData(0)
-
-    val dataList :MutableMap<Int,StardustFilePackage> = mutableMapOf()
-    var dataStart : StardustFileStartPackage? = null
+    val fileReceivedDataList : MutableList<FileReceivedData> = mutableListOf()
     private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
-    private val sendInterval : Long = 3000
-    private val handler : Handler = Handler(Looper.getMainLooper())
-    private val runnable : Runnable = Runnable {
-        dataStart = null
-        dataList.clear()
-        Scopes.getMainCoroutine().launch {
-            isReceivingInProgress.value = false
+
+
+    private fun getInit (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
+        var haveFileStart = false
+        for (fileStart in fileReceivedDataList) {
+            if(fileStart.dataStart != null && fileStart.dataStart == bittelFileStartPackage) {
+                haveFileStart = true
+            }
+        }
+        if(!haveFileStart) {
+            fileReceivedDataList.add(FileReceivedData(dataStart = bittelFileStartPackage, isReceivingInProgress = true, bittelPackage = bittelPackage,
+                receivingPercentage = 0))
+        }
+    }
+
+    private fun getData (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
+
+        for (fileStart in fileReceivedDataList) {
+            if(fileStart.bittelPackage != null &&
+                fileStart.bittelPackage.getSourceAsString() == bittelPackage.getSourceAsString() &&
+                fileStart.bittelPackage.getDestAsString() == bittelPackage.getDestAsString() &&
+                fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
+                bittelPackage.stardustControlByte.stardustDeliveryType) {
+                fileStart.dataList.put(bittelFilePackage.current, bittelFilePackage)
+                fileStart.updateProgress ()
+                fileStart.resetReceiveTimer()
+
+            }
         }
     }
     fun getInitFile (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
-        dataStart = bittelFileStartPackage
-        Scopes.getMainCoroutine().launch {
-            isReceivingInProgress.value = true
-        }
+        getInit(bittelFileStartPackage, bittelPackage)
     }
 
     fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
-        dataList.put(bittelFilePackage.current, bittelFilePackage)
-        resetReceiveTimer()
+        getData(bittelFilePackage, bittelPackage)
         Log.d("fileReceived", "current : ${bittelFilePackage.current}")
-        if(dataStart != null ) {
-            Scopes.getMainCoroutine().launch {
-                receivingPercentage.value = ((dataList.size.toDouble().div(dataStart!!.total)).times(100)).toInt()
-                receivingPercentage.value?.let {
-                    DataManager.getCallbacks()?.receiveFileStatus(it)
-                }
-            }
-            if(dataStart!!.total == dataList.size) {
-                saveFile(bittelPackage, dataStart?.type)
-                Scopes.getMainCoroutine().launch {
-                    isReceivingInProgress.value = false
-                    DataManager.getCallbacks()?.receiveFileStatus(0)
-                }
-            }
-        }
     }
-
-    private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {
-        val context = DataManager.context
-        // Get the destination directory
-        val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
-
-        // Ensure the directory exists
-        if (!destDir.exists()) {
-            destDir.mkdirs()
-        }
-        val type = if(fileType == 0) ".txt" else ".jpg"
-        // Create the target file with a timestamp
-        val ts = System.currentTimeMillis()
-        val targetFile = File(destDir, "$ts$type")
-
-        try {
-            // Step 1: Create a temporary file for the concatenated data
-            val tempOutputFile = File.createTempFile("output_temp", null, context.cacheDir)
-
-            // Write concatenated data to the temporary file
-
-            if(fileType == 0) {
-                FileOutputStream(tempOutputFile).use { outputStream ->
-                    for (key in dataList.keys.sorted()) { // Ensure the data is written in order
-                        val data = dataList[key]?.data
-                        if (data != null) {
-                            outputStream.write(data) // Write raw bytes to the file
-                        }
-                    }
-                }
-                // Step 2: Decompress the temporary file into the target file
-                FileSendUtils.decompressTextFile(tempOutputFile, targetFile)
-                // Clean up: Delete the temporary file
-                tempOutputFile.delete()
-
-            } else {
-                FileOutputStream(targetFile).use { outputStream ->
-                    for (key in dataList.keys.sorted()) { // Ensure the data is written in order
-                        val data = dataList[key]?.data
-                        if (data != null) {
-                            outputStream.write(data) // Write raw bytes to the file
-                        }
-                    }
-                }
-            }
-
-            println("File saved successfully at: ${targetFile.absolutePath}")
-            saveToMessages(bittelPackage, targetFile, fileType)
-            dataStart = null
-            dataList.clear()
-            removeReceiveTimer()
-            if(fileType == 0) {
-                DataManager.getCallbacks()?.receiveFile(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
-            } else {
-                DataManager.getCallbacks()?.receiveImage(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            println("Error saving file: ${e.message}")
-            dataStart = null
-            dataList.clear()
-        }
-    }
-
     private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?) {
         Scopes.getDefaultCoroutine().launch {
             val type = if(fileType == 0) "File Received" else "Image Received"
@@ -174,22 +108,130 @@ object FileReceivedUtils {
         }
     }
 
-    private fun resetReceiveTimer() {
-        handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
-        handler.postDelayed(runnable, sendInterval)
-    }
+    data class FileReceivedData (
+        val dataList :MutableMap<Int,StardustFilePackage> = mutableMapOf(),
+        var dataStart : StardustFileStartPackage? = null,
+        var isReceivingInProgress : Boolean = false,
+        var receivingPercentage : Int = 0,
+        val bittelPackage: StardustPackage? = null
+    ) {
+        private val sendInterval : Long = 3000
+        private val handler : Handler = Handler(Looper.getMainLooper())
+        private val runnable : Runnable = Runnable {
+            dataStart = null
+            dataList.clear()
+            Scopes.getMainCoroutine().launch {
+                DataManager.getCallbacks()?.receiveFileStatus(0)
+            }
+        }
 
-    private fun removeReceiveTimer() {
-        try {
+        fun resetReceiveTimer() {
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
-        }catch (e : Exception) {
-            e.printStackTrace()
+            handler.postDelayed(
+                runnable,
+                sendInterval
+            )
         }
-    }
 
-    private fun handleAck (bittelPackage: StardustPackage) {
+        fun removeReceiveTimer() {
+            try {
+                handler.removeCallbacks(runnable)
+                handler.removeCallbacksAndMessages(null)
+            }catch (e : Exception) {
+                e.printStackTrace()
+            }
+        }
 
+        fun updateReceiving (isReceiving : Boolean) {
+            Scopes.getMainCoroutine().launch {
+                DataManager.getCallbacks()?.receiveFileStatus(0)
+            }
+        }
+
+        fun updateProgress () {
+            if(dataStart != null ) {
+                Scopes.getMainCoroutine().launch {
+                    receivingPercentage = ((dataList.size.toDouble().div(
+                        dataStart!!.total)).times(100)).toInt()
+                    DataManager.getCallbacks()?.receiveFileStatus(receivingPercentage)
+                }
+                if(dataStart!!.total == dataList.size) {
+                    bittelPackage?.let { saveFile(it, dataStart?.type) }
+                    Scopes.getMainCoroutine().launch {
+                        isReceivingInProgress = false
+                        DataManager.getCallbacks()?.receiveFileStatus(0)
+                    }
+                }
+            }
+        }
+
+        private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {
+            val context = DataManager.context
+            // Get the destination directory
+            val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
+
+            // Ensure the directory exists
+            if (!destDir.exists()) {
+                destDir.mkdirs()
+            }
+            val type = if(fileType == 0) ".txt" else ".jpg"
+            // Create the target file with a timestamp
+            val ts = System.currentTimeMillis()
+            val targetFile = File(destDir, "$ts$type")
+
+            try {
+                // Step 1: Create a temporary file for the concatenated data
+                val tempOutputFile = File.createTempFile("output_temp", null, context.cacheDir)
+
+                // Write concatenated data to the temporary file
+
+                if(fileType == 0) {
+                    FileOutputStream(tempOutputFile).use { outputStream ->
+                        for (key in dataList.keys.sorted()) { // Ensure the data is written in order
+                            val data = dataList[key]?.data
+                            if (data != null) {
+                                outputStream.write(data) // Write raw bytes to the file
+                            }
+                        }
+                    }
+                    // Step 2: Decompress the temporary file into the target file
+                    FileSendUtils.decompressTextFile(tempOutputFile, targetFile)
+                    // Clean up: Delete the temporary file
+                    tempOutputFile.delete()
+
+                } else {
+                    FileOutputStream(targetFile).use { outputStream ->
+                        for (key in dataList.keys.sorted()) { // Ensure the data is written in order
+                            val data = dataList[key]?.data
+                            if (data != null) {
+                                outputStream.write(data) // Write raw bytes to the file
+                            }
+                        }
+                    }
+                }
+
+                println("File saved successfully at: ${targetFile.absolutePath}")
+                saveToMessages(bittelPackage, targetFile, fileType)
+                dataStart = null
+                dataList.clear()
+                removeReceiveTimer()
+                if(fileType == 0) {
+                    DataManager.getCallbacks()?.receiveFile(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
+                } else {
+                    DataManager.getCallbacks()?.receiveImage(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                println("Error saving file: ${e.message}")
+                dataStart = null
+                dataList.clear()
+            }
+        }
+
+
+        private fun handleAck (bittelPackage: StardustPackage) {
+
+        }
     }
 }
