@@ -80,7 +80,7 @@ object DataManager : StardustAPI, PttInterface{
         }
 
         getStardustPackageHandler(context)
-
+        clientConnection?.bondToBleDeviceStartup()
         return clientConnection!!
     }
 
@@ -107,6 +107,7 @@ object DataManager : StardustAPI, PttInterface{
         if(bittelPackageHandler == null){
             bittelPackageHandler = StardustPackageHandler(context, clientConnection)
         }
+        BleManager.initBleConnectState(context)
         return bittelPackageHandler!!
     }
 

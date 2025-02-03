@@ -82,6 +82,10 @@ internal class ClientConnection(
     }
     private val pingHandler : Handler = Handler(Looper.getMainLooper())
 
+    init {
+        initBleStatus ()
+    }
+
     private fun sendPing () {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
@@ -425,6 +429,17 @@ internal class ClientConnection(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    fun bondToBleDeviceStartup() {
+        val connectedDevice = getBleConnectedStardustDevice()
+        if(connectedDevice != null) {
+            com.commcrete.stardust.ble.BleManager.isPaired.value = true
+            connectDevice(connectedDevice)
+            this.deviceName = connectedDevice.name
+            return
+        }
+    }
+
     private val broadcastReceiver = object : BroadcastReceiver() {
         @SuppressLint("MissingPermission")
         override fun onReceive(context: Context, intent: Intent) {
@@ -508,6 +523,38 @@ internal class ClientConnection(
                     "paired device: $deviceName at $macAddress + $aliasing "
                 )
                 if(device.address.equals(uuid)){
+                    return device
+                }
+            }
+        }
+        return null
+    }
+
+    @SuppressLint("MissingPermission")
+    fun getBleConnectedStardustDevice() : BluetoothDevice?{
+        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+        if(btManager == null || btManager.adapter == null) {
+            return null
+        }
+        val pairedDevices = btManager.adapter.bondedDevices
+
+        if (pairedDevices.size > 0) {
+
+            for (device in pairedDevices) {
+                val deviceName = device.name
+                val macAddress = device.address
+                val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    device.alias
+                } else {
+                    "Empty"
+                }
+
+                Log.i(
+                    " pairedDevices ",
+                    "paired device: $deviceName at $macAddress + $aliasing "
+                )
+                if(aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
+                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true){
                     return device
                 }
             }

@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
@@ -44,6 +45,7 @@ object FileReceivedUtils {
     fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
         dataList.put(bittelFilePackage.current, bittelFilePackage)
         resetReceiveTimer()
+        Log.d("fileReceived", "current : ${bittelFilePackage.current}")
         if(dataStart != null ) {
             Scopes.getMainCoroutine().launch {
                 receivingPercentage.value = ((dataList.size.toDouble().div(dataStart!!.total)).times(100)).toInt()

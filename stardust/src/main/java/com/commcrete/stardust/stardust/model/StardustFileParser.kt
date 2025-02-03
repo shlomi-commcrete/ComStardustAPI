@@ -24,7 +24,7 @@ class StardustFileParser : StardustParser() {
             if(dataBytes.isEmpty()) {
                 return parseFile2(bittelPackage)
             }else {
-                return StardustFilePackage( current = byteArrayToInt(currentBytes.reversedArray()), data = dataBytes)
+                return StardustFilePackage( current = byteArrayToUInt(currentBytes.reversedArray()).toInt(), data = dataBytes)
             }
 
 
@@ -44,7 +44,7 @@ class StardustFileParser : StardustParser() {
             val dataBytes = cutByteArray(byteArray, size, offset)
             offset += size
 
-            return StardustFilePackage( current = byteArrayToInt(currentBytes.reversedArray()), data = dataBytes)
+            return StardustFilePackage( current = byteArrayToUInt(currentBytes.reversedArray()).toInt(), data = dataBytes)
 
         }
         return null
