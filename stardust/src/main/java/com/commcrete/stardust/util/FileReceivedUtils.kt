@@ -20,9 +20,8 @@ import java.io.FileOutputStream
 
 object FileReceivedUtils {
 
-    val fileReceivedDataList : MutableList<FileReceivedData> = mutableListOf()
+    private val fileReceivedDataList : MutableList<FileReceivedData> = mutableListOf()
     private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
-
 
     private fun getInit (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
         var haveFileStart = false
@@ -48,10 +47,10 @@ object FileReceivedUtils {
                 fileStart.dataList.put(bittelFilePackage.current, bittelFilePackage)
                 fileStart.updateProgress ()
                 fileStart.resetReceiveTimer()
-
             }
         }
     }
+
     fun getInitFile (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
         getInit(bittelFileStartPackage, bittelPackage)
     }
@@ -123,6 +122,7 @@ object FileReceivedUtils {
             Scopes.getMainCoroutine().launch {
                 DataManager.getCallbacks()?.receiveFileStatus(0)
             }
+            removeFromFileReceivedList()
         }
 
         fun resetReceiveTimer() {
@@ -143,12 +143,6 @@ object FileReceivedUtils {
             }
         }
 
-        fun updateReceiving (isReceiving : Boolean) {
-            Scopes.getMainCoroutine().launch {
-                DataManager.getCallbacks()?.receiveFileStatus(0)
-            }
-        }
-
         fun updateProgress () {
             if(dataStart != null ) {
                 Scopes.getMainCoroutine().launch {
@@ -162,6 +156,7 @@ object FileReceivedUtils {
                         isReceivingInProgress = false
                         DataManager.getCallbacks()?.receiveFileStatus(0)
                     }
+                    removeFromFileReceivedList()
                 }
             }
         }
@@ -232,6 +227,11 @@ object FileReceivedUtils {
 
         private fun handleAck (bittelPackage: StardustPackage) {
 
+        }
+
+        private fun removeFromFileReceivedList() {
+            fileReceivedDataList.remove(this)
+            Log.d("FileReceivedUtils", "Removed object from fileReceivedDataList")
         }
     }
 }
