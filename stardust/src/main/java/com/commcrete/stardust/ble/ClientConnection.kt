@@ -431,7 +431,9 @@ internal class ClientConnection(
     fun bondToBleDeviceStartup() {
         val connectedDevice = getBleConnectedStardustDevice()
         if(connectedDevice != null) {
-            com.commcrete.stardust.ble.BleManager.isPaired.value = true
+            Scopes.getMainCoroutine().launch {
+                com.commcrete.stardust.ble.BleManager.isPaired.value = true
+            }
             connectDevice(connectedDevice)
             this.deviceName = connectedDevice.name
             return
