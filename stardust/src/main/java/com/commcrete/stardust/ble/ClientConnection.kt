@@ -104,19 +104,6 @@ internal class ClientConnection(
         }
     }
 
-    private val bleStatusObserver = object : Observer<Boolean> {
-        override fun onChanged(isConnected: Boolean) {
-            if(!isConnected) {
-                disconnectFromDevice()
-            } else {
-                if(!com.commcrete.stardust.ble.BleManager.isBleConnected){
-                    mDevice?.let { connectDevice(it) }
-                }
-            }
-        }
-
-    }
-
     var lastPlayedTS : Long = 0
 
     private val bondRunnable : Runnable = kotlinx.coroutines.Runnable {
@@ -321,7 +308,18 @@ internal class ClientConnection(
     }
 
     fun initBleStatus () {
-        BluetoothStateManager.bluetoothState.observeForever(bleStatusObserver)
+        BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
+            override fun onChanged(isConnected: Boolean) {
+                if(!isConnected) {
+                    disconnectFromDevice()
+                } else {
+                    if(!com.commcrete.stardust.ble.BleManager.isBleConnected){
+                        mDevice?.let { connectDevice(it) }
+                    }
+                }
+            }
+
+        })
     }
 
     override fun log(priority: Int, message: String) {
