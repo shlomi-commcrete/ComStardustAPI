@@ -81,7 +81,6 @@ object DataManager : StardustAPI, PttInterface{
         }
 
         getStardustPackageHandler(context)
-        clientConnection?.bondToBleDeviceStartup()
         return clientConnection!!
     }
 
@@ -228,6 +227,11 @@ object DataManager : StardustAPI, PttInterface{
         val bleScanner = getBleScanner(this.context)
         bleScanner.startScan()
         return bleScanner.getScanResultsLiveData()
+    }
+
+    fun bondOnStartup (context: Context) {
+        requireContext(context)
+        getClientConnection(context).bondToBleDeviceStartup()
     }
 
     override fun connectToDevice(context: Context, device: ScanResult) {
