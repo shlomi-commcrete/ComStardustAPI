@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.util.Scopes
+import kotlinx.coroutines.launch
 
 object BluetoothStateManager {
 
@@ -14,7 +16,9 @@ object BluetoothStateManager {
     val bluetoothState: MutableLiveData<Boolean> get() = _bluetoothState
 
     fun initialize(context: Context) {
-        _bluetoothState.value = getBluetoothState()
+        Scopes.getMainCoroutine().launch {
+            _bluetoothState.value = getBluetoothState()
+        }
 
         val filter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED)
         context.registerReceiver(bluetoothStateReceiver, filter)
