@@ -75,6 +75,7 @@ object DataManager : StardustAPI, PttInterface{
 
     internal fun getClientConnection (context: Context) : ClientConnection {
         requireContext(context)
+        BleManager.initBleConnectState(context)
         if(clientConnection == null) {
             clientConnection = ClientConnection(context = context)
         }
@@ -107,7 +108,6 @@ object DataManager : StardustAPI, PttInterface{
         if(bittelPackageHandler == null){
             bittelPackageHandler = StardustPackageHandler(context, clientConnection)
         }
-        BleManager.initBleConnectState(context)
         return bittelPackageHandler!!
     }
 
