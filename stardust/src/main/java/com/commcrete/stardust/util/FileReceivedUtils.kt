@@ -148,6 +148,7 @@ object FileReceivedUtils {
                 Log.d("fileReceived", "index : $index")
                 Log.d("fileReceived", "data start total : ${dataStart!!.total}")
                 Log.d("fileReceived", "dataList.size : ${dataList.size}")
+                Log.d("fileReceived", "data current : ${dataList[dataList.size - 1]?.current}")
                 Scopes.getMainCoroutine().launch {
                     receivingPercentage = ((dataList.size.toDouble().div(
                         dataStart!!.total)).times(100)).toInt()
