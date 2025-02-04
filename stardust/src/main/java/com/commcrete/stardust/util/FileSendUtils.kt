@@ -18,6 +18,7 @@ import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import kotlinx.coroutines.launch
@@ -175,29 +176,43 @@ object FileSendUtils {
         }
     }
 
-    private fun createPackages (files: List<File>) : Map<Float, StardustFilePackage> {
+    private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
         var packageIndex = 0
         var packageData = 0
         val chunkSize = 135
         val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
-        for (file in files) {
-            val fileBytes = file.readBytes() // Read the file as a byte array
+
+        for ((fileIndex, file) in files.withIndex()) { // Iterate with index
+            val fileBytes = file.readBytes() // Read file as byte array
             Timber.tag("FileUpload").d("fileBytes : ${fileBytes.size}")
+
             var offset = 0
             while (offset < fileBytes.size) {
                 val end = minOf(offset + chunkSize, fileBytes.size) // Calculate end of the chunk
                 val chunk = fileBytes.copyOfRange(offset, end) // Create the chunk
-                Timber.tag("FileUpload").d("chunk : ${chunk.size}")
-                packageData = packageData.plus(chunk.size)
-                bittelFileList.put(packageIndex.toFloat(), StardustFilePackage(current = packageIndex, data = chunk))
-                offset += chunkSize // Move to the next chunk
+
+                packageData += chunk.size
+                val isLast = (offset + chunkSize >= fileBytes.size) && (fileIndex == files.lastIndex) // Check if last package
+
+                bittelFileList[packageIndex.toFloat()] = StardustFilePackage(
+                    current = packageIndex,
+                    data = chunk,
+                    isLast = isLast // Set last package flag
+                )
+
+                Timber.tag("FileUpload").d("chunk : ${chunk.size}, isLast: $isLast")
+
+                offset += chunkSize
                 packageIndex++
             }
         }
-        Timber.tag("FileUpload").d("chunkSize : $packageData")
-        Timber.tag("FileUpload").d("bittelFileList : ${bittelFileList.size}}")
+
+        Timber.tag("FileUpload").d("Total chunkSize : $packageData")
+        Timber.tag("FileUpload").d("Total packages created : ${bittelFileList.size}")
+
         return bittelFileList
     }
+
 
     fun decompressTextFile(inputFile: File, outputFile: File) {
         FileInputStream(inputFile).use { fis ->
@@ -239,6 +254,9 @@ object FileSendUtils {
                     source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = stardustFilePackage.toArrayInt())
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+                if(stardustFilePackage.isLast) {
+                    fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
+                }
                 packagesSent ++
                 Timber.tag("FileUpload").d("send : $packagesSent")
                 it.addMessageToQueue(fileStartMessage)

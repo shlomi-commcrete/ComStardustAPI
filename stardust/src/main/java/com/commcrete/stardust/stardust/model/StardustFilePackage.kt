@@ -1,7 +1,7 @@
 package com.commcrete.bittell.util.bittel_package.model
 
 data class StardustFilePackage (
-    val current : Int, var data: ByteArray
+    val current : Int, var data: ByteArray, val isLast : Boolean = false
 ){
     fun toArrayInt(): Array<Int> {
         require(current in 0..65535) { "Current must fit in 2 bytes (0-65535)" }
