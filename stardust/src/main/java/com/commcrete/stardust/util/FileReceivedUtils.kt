@@ -57,7 +57,6 @@ object FileReceivedUtils {
 
     fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
         getData(bittelFilePackage, bittelPackage)
-        Log.d("fileReceived", "current : ${bittelFilePackage.current}")
     }
     private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?) {
         Scopes.getDefaultCoroutine().launch {
@@ -146,6 +145,9 @@ object FileReceivedUtils {
 
         fun updateProgress () {
             if(dataStart != null ) {
+                Log.d("fileReceived", "index : $index")
+                Log.d("fileReceived", "data start total : ${dataStart!!.total}")
+                Log.d("fileReceived", "dataList.size : ${dataList.size}")
                 Scopes.getMainCoroutine().launch {
                     receivingPercentage = ((dataList.size.toDouble().div(
                         dataStart!!.total)).times(100)).toInt()
@@ -157,7 +159,7 @@ object FileReceivedUtils {
                         isReceivingInProgress = false
                         DataManager.getCallbacks()?.receiveFileStatus(index, 0)
                     }
-                    removeFromFileReceivedList()
+                    handler.postDelayed( {removeFromFileReceivedList()}, 300)
                 }
             }
         }
@@ -231,8 +233,12 @@ object FileReceivedUtils {
         }
 
         private fun removeFromFileReceivedList() {
-            fileReceivedDataList.remove(this)
-            Log.d("FileReceivedUtils", "Removed object from fileReceivedDataList")
+            try {
+                fileReceivedDataList.remove(this)
+                Log.d("FileReceivedUtils", "Removed object from fileReceivedDataList")
+            }catch (e : Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }
