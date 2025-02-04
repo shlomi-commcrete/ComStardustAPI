@@ -42,6 +42,6 @@ interface StardustAPICallbacks {
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
-    fun receiveFileStatus (percentage : Int)
+    fun receiveFileStatus (index : Int, percentage : Int)
     fun connectionStatusChanged (connectionStatus: BleManager.ConnectionStatus)
 }

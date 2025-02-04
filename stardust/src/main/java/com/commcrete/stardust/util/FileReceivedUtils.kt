@@ -31,7 +31,7 @@ object FileReceivedUtils {
             }
         }
         if(!haveFileStart) {
-            fileReceivedDataList.add(FileReceivedData(dataStart = bittelFileStartPackage, isReceivingInProgress = true, bittelPackage = bittelPackage,
+            fileReceivedDataList.add(FileReceivedData(index = fileReceivedDataList.size+1, dataStart = bittelFileStartPackage, isReceivingInProgress = true, bittelPackage = bittelPackage,
                 receivingPercentage = 0))
         }
     }
@@ -108,6 +108,7 @@ object FileReceivedUtils {
     }
 
     data class FileReceivedData (
+        val index : Int = 0,
         val dataList :MutableMap<Int,StardustFilePackage> = mutableMapOf(),
         var dataStart : StardustFileStartPackage? = null,
         var isReceivingInProgress : Boolean = false,
@@ -120,7 +121,7 @@ object FileReceivedUtils {
             dataStart = null
             dataList.clear()
             Scopes.getMainCoroutine().launch {
-                DataManager.getCallbacks()?.receiveFileStatus(0)
+                DataManager.getCallbacks()?.receiveFileStatus(index, 0)
             }
             removeFromFileReceivedList()
         }
@@ -148,13 +149,13 @@ object FileReceivedUtils {
                 Scopes.getMainCoroutine().launch {
                     receivingPercentage = ((dataList.size.toDouble().div(
                         dataStart!!.total)).times(100)).toInt()
-                    DataManager.getCallbacks()?.receiveFileStatus(receivingPercentage)
+                    DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
                 }
                 if(dataStart!!.total == dataList.size) {
                     bittelPackage?.let { saveFile(it, dataStart?.type) }
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
-                        DataManager.getCallbacks()?.receiveFileStatus(0)
+                        DataManager.getCallbacks()?.receiveFileStatus(index, 0)
                     }
                     removeFromFileReceivedList()
                 }
