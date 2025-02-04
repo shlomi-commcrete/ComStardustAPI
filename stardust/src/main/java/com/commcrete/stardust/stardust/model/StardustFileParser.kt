@@ -1,5 +1,6 @@
 package com.commcrete.bittell.util.bittel_package.model
 
+import android.util.Log
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustParser
 
@@ -11,6 +12,7 @@ class StardustFileParser : StardustParser() {
     }
     fun parseFile (bittelPackage: StardustPackage) : StardustFilePackage? {
         bittelPackage.data?.let { intArray ->
+            Log.d("fileReceived", "int array : ${intArrayToByteArray(intArray.toMutableList()).toHex()}")
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             var offset = 0
             val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
