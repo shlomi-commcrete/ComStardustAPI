@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util.audio
 
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Context.AUDIO_SERVICE
@@ -8,7 +9,13 @@ import android.media.AudioManager
 import android.support.v4.media.session.MediaSessionCompat
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.startPTT
+import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -17,9 +24,27 @@ object ButtonListener {
 
     private var isClicked = false
     private var receivedAlready = false
-    val isPlayPTT : MutableLiveData<Boolean> = MutableLiveData(false)
+    val isPlayPTT : CountingLiveData<Boolean> = CountingLiveData(false)
     var mediaSession: MediaSessionCompat? = null
 
+    class CountingLiveData<T>(initialValue: T? = null) : MutableLiveData<T>(initialValue) {
+
+        private var observerCount = 0
+
+        fun getObserverCount(): Int {
+            return observerCount
+        }
+
+        override fun onActive() {
+            super.onActive()
+            observerCount++
+        }
+
+        override fun onInactive() {
+            super.onInactive()
+            if (observerCount > 0) observerCount--
+        }
+    }
 
     fun updateMediaClick () {
         if(!this.receivedAlready) {
@@ -34,6 +59,38 @@ object ButtonListener {
     fun notifyData (isClicked : Boolean) {
         Scopes.getMainCoroutine().launch {
             isPlayPTT.value = isClicked
+        }
+        Scopes.getDefaultCoroutine().launch{
+            val userID = SharedPreferencesUtil.getLastUser(DataManager.context)
+            if(userID.isNotEmpty()) {
+                recordAndStop(isClicked, userID)
+            }
+        }
+    }
+
+
+    @SuppressLint("MissingPermission")
+    fun dismissPttRecording (context: Context, chatID : String) {
+        val registerUser = getAppUser(context)
+        registerUser?.appId?.let {
+            stopPTT(context,StardustAPIPackage(it, chatID, false, null))
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun startPttRecord(context: Context, chatID : String) {
+        val registerUser = getAppUser(context)
+        registerUser?.appId?.let {
+            startPTT(context,StardustAPIPackage(it, chatID, false, null))
+        }
+    }
+    private fun recordAndStop (isClicked: Boolean, userID: String) {
+        if(isClicked) {
+            startPttRecord(DataManager.context, userID)
+            Timber.tag("isPlayPTT").d("startRecording")
+        }else {
+            Timber.tag("isPlayPTT").d("finishRecording")
+            dismissPttRecording(DataManager.context, userID)
         }
     }
 
