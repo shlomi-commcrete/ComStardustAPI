@@ -162,7 +162,7 @@ object CarriersUtils {
 
     fun getDefaults () {
         val mutableList = SharedPreferencesUtil.getCarriers(DataManager.context)?.toMutableList()
-        val firstHR = false
+        var firstHR = false
         mutableList?.forEach {
             when(it.type) {
                 StardustConfigurationParser.StardustTypeFunctionality.LR -> {
@@ -173,6 +173,7 @@ object CarriersUtils {
                     if(!firstHR){
                         it.functionalityTypeList.clear()
                         it.functionalityTypeList.add(FunctionalityType.BFT)
+                        firstHR = true
                     } else {
                         it.functionalityTypeList.clear()
                         it.functionalityTypeList.add(FunctionalityType.TEXT)
