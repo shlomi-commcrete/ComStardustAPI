@@ -166,18 +166,22 @@ object CarriersUtils {
         mutableList?.forEach {
             when(it.type) {
                 StardustConfigurationParser.StardustTypeFunctionality.LR -> {
+                    it.functionalityTypeList.clear()
                     it.functionalityTypeList.add(FunctionalityType.SOS)
                 }
                 StardustConfigurationParser.StardustTypeFunctionality.HR -> {
                     if(!firstHR){
+                        it.functionalityTypeList.clear()
                         it.functionalityTypeList.add(FunctionalityType.BFT)
                     } else {
+                        it.functionalityTypeList.clear()
                         it.functionalityTypeList.add(FunctionalityType.TEXT)
                         it.functionalityTypeList.add(FunctionalityType.LOCATION)
                         it.functionalityTypeList.add(FunctionalityType.PTT)
                     }
                 }
                 StardustConfigurationParser.StardustTypeFunctionality.ST -> {
+                    it.functionalityTypeList.clear()
                     it.functionalityTypeList.add(FunctionalityType.FILE)
                     it.functionalityTypeList.add(FunctionalityType.IMAGE)
                 }
@@ -201,7 +205,7 @@ data class Carrier (
     val index : Int,
     val type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
-    val functionalityTypeList : MutableList<FunctionalityType> = mutableListOf()
+    val functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true // Reference equality
