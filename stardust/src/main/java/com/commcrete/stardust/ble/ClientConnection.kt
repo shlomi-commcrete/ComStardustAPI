@@ -26,6 +26,7 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.BittelProtocol
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
@@ -292,6 +293,7 @@ internal class ClientConnection(
                         // Handle the RSSI value
                         Scopes.getMainCoroutine().launch {
                             com.commcrete.stardust.ble.BleManager.rssi.value = rssi
+                            DataManager.getCallbacks()?.onRSSIChanged(rssi)
                         }
                     }
                 }
