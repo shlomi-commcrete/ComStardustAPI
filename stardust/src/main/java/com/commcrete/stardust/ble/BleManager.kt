@@ -60,7 +60,9 @@ object BleManager {
     }
 
     fun updateStatus () {
-        if(isUsbEnabled ()) {
+        if(isUsbEnabled () && isBluetoothEnabled()) {
+            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.BLE_USB)
+        } else if(isUsbEnabled ()) {
             DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.USB)
         } else if (isBluetoothEnabled()) {
             DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.BLE)
@@ -72,6 +74,7 @@ object BleManager {
     enum class ConnectionStatus {
         USB,
         BLE,
+        BLE_USB,
         DISCONNECTED
     }
 }
