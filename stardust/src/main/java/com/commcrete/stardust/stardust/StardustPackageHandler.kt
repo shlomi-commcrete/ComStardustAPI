@@ -399,7 +399,7 @@ internal class StardustPackageHandler(private val context: Context ,
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = mPackage.stardustControlByte.stardustDeliveryType
             DataManager.getClientConnection(context).let {
-                LocationUtils.sendMyLocation(bittelPackageToReturn, it, opCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE)
+                LocationUtils.sendMyLocation(bittelPackageToReturn, it, opCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE, isHR = mPackage.stardustControlByte.stardustDeliveryType)
             }
 
 //            sendDataToBle(bittelPackageToReturn)
