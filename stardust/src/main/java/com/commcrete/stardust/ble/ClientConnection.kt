@@ -556,7 +556,8 @@ internal class ClientConnection(
                     "paired device: $deviceName at $macAddress + $aliasing "
                 )
                 if(aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true){
+                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true
+                    || aliasing?.lowercase(Locale.getDefault())?.contains("stardust") == true){
                     return device
                 }
             }
@@ -588,7 +589,8 @@ internal class ClientConnection(
                 )
                 if(device.address.equals(uuid)
                     || aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true){
+                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true
+                    || aliasing?.lowercase(Locale.getDefault())?.contains("stardust") == true){
                     return device
                 }
             }

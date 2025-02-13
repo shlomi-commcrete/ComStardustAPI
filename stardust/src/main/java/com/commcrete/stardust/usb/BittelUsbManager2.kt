@@ -27,7 +27,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.launch
 import timber.log.Timber
-
+@SuppressLint("StaticFieldLeak")
 object BittelUsbManager2 : BittelProtocol {
 
     var usbManager : UsbManager? = null
@@ -48,6 +48,7 @@ object BittelUsbManager2 : BittelProtocol {
     private var stardustDevice : UsbDevice? = null
 
     private val echoPackage : ByteArray = byteArrayOf(0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01 )
+
     private val usbDevicePermissionHandler : UsbDevicePermissionHandler  = UsbDevicePermissionHandler
 
     private val runnable : Runnable = Runnable {
@@ -64,17 +65,17 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" ) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase() == "j-box" ) {
             connectToAudioDevice(context, device)
-        }else if (device.productName == "FT231X USB UART") {
+        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase() == "stardust" ) {
             connectToDevice(context, device)
         }
     }
 
     fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" ) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase() == "j-box" ) {
             disconnect()
-        }else if (device.productName == "FT231X USB UART") {
+        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase() == "stardust" ) {
             disconnectAudio()
         }
         disconnect()
