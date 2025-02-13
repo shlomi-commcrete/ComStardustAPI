@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.commcrete.stardust.R
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 
@@ -28,6 +29,21 @@ object SOSUtils {
                 val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = "00000002", stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+                    data = data)
+                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
+                it.addMessageToQueue(sosMessage)
+            }
+        }
+    }
+
+    fun sendSos (context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
+        DataManager.getClientConnection(context).let {
+            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
+                var data : Array<Int> = arrayOf()
+                data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
+                val sosMessage = StardustPackageUtils.getStardustPackage(
+                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)

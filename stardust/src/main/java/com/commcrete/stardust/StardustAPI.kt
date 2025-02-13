@@ -32,6 +32,7 @@ interface StardustAPI {
     fun logout(context: Context,)
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (context: Context) : List<Carrier>?
+    fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location)
 }
 
 // Receive from the SDK
