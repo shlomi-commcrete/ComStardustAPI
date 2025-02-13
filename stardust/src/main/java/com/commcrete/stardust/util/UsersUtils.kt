@@ -285,7 +285,7 @@ object UsersUtils {
         val user = com.commcrete.stardust.request_objects.model.user_list.User(
             phone = appId, displayName = name, appId = arrayOf(appId), bittelId = arrayOf(bittelId)
         )
-        val chatItem = ChatItem(chat_id = appId, name = name, message = message,
+        val chatItem = ChatItem(chat_id = appId, name = name, message = null,
             user = user
         )
         return chatItem

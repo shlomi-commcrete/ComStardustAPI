@@ -107,7 +107,7 @@ class DemoUsers {
         val user = User(
             phone = appId, displayName = getName(userId, appId, name) , appId = arrayOf(appId), bittelId = arrayOf(bittelId)
         )
-        val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = message, bittelIDS = bittelId,
+        val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = null, bittelIDS = bittelId,
             user = user, isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel, imageName = image
         )
         return chatItem
