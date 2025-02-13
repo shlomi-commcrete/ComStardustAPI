@@ -132,27 +132,27 @@ object FolderReader {
 
     fun processFolder(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
         var excel : Uri? = uri
-        val fileList = listFilesInFolder(context, uri)
-        for (tempFileData in fileList) {
-            when {
-                isExcelFile(context, tempFileData.uri) -> {
-                    println("File at $uri is an Excel file")
-                    excel = tempFileData.uri
-                    // Handle Excel file
-                }
-
-                isImageFile(context, tempFileData.uri) -> {
-                    println("File at $uri is an Image file")
-                    saveImageToInternalStorage(context, tempFileData.uri, tempFileData.name)
-                    // Handle Image file
-                }
-
-                else -> {
-                    println("File at $uri is of an unknown type")
-                    // Handle other file types
-                }
-            }
-        }
+//        val fileList = listFilesInFolder(context, uri)
+//        for (tempFileData in fileList) {
+//            when {
+//                isExcelFile(context, tempFileData.uri) -> {
+//                    println("File at $uri is an Excel file")
+//                    excel = tempFileData.uri
+//                    // Handle Excel file
+//                }
+//
+//                isImageFile(context, tempFileData.uri) -> {
+//                    println("File at $uri is an Image file")
+//                    saveImageToInternalStorage(context, tempFileData.uri, tempFileData.name)
+//                    // Handle Image file
+//                }
+//
+//                else -> {
+//                    println("File at $uri is of an unknown type")
+//                    // Handle other file types
+//                }
+//            }
+//        }
         excel?.let { processExcelFile(it, context, onExcelFilesSelected) }
     }
 
