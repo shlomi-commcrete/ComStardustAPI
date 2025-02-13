@@ -315,7 +315,7 @@ internal class ClientConnection(
                 if(!isConnected) {
                     disconnectFromDevice()
                 } else {
-                    if(!com.commcrete.stardust.ble.BleManager.isBleConnected){
+                    if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
                     }
                 }
