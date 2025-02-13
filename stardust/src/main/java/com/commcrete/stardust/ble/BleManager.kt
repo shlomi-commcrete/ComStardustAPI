@@ -62,7 +62,7 @@ object BleManager {
     fun updateStatus () {
         if(isUsbEnabled ()) {
             DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.USB)
-            if(!isBluetoothToggleEnabled) {
+            if(!isBluetoothToggleEnabled && isBleConnected) {
                 DataManager.getClientConnection(DataManager.context).disconnectFromDevice()
             }
         } else if (isBluetoothEnabled()) {
