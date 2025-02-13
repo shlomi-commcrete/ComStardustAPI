@@ -131,7 +131,7 @@ object FolderReader {
 
 
     fun processFolder(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
-        var excel : Uri? = null
+        var excel : Uri? = uri
         val fileList = listFilesInFolder(context, uri)
         for (tempFileData in fileList) {
             when {
