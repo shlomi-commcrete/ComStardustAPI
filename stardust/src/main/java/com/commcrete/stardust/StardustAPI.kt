@@ -33,6 +33,7 @@ interface StardustAPI {
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (context: Context) : List<Carrier>?
     fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage)
 }
 
 // Receive from the SDK

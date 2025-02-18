@@ -223,6 +223,13 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
 
+    override fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage) {
+        requireContext(context)
+        Scopes.getDefaultCoroutine().launch {
+            SOSUtils.ackSOS(context = context, stardustAPIPackage = stardustAPIPackage)
+        }
+    }
+
 
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)

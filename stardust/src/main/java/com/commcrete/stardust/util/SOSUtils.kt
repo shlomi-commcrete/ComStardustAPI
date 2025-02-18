@@ -36,6 +36,18 @@ object SOSUtils {
         }
     }
 
+    fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
+        DataManager.getClientConnection(context).let {
+            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
+                val sosMessage = StardustPackageUtils.getStardustPackage(
+                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
+                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
+                it.addMessageToQueue(sosMessage)
+            }
+        }
+    }
+
     fun sendSos (context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
