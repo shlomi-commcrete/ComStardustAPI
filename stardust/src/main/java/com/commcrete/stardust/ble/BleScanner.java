@@ -132,6 +132,6 @@ public class BleScanner {
     }
 
     private boolean isStartWithBittle(String name) {
-        return name.toLowerCase().startsWith("bittle") || name.toLowerCase().startsWith("stardust");
+        return name.toLowerCase().contains("bittle") || name.toLowerCase().contains("stardust");
     }
 }

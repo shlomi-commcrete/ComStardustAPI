@@ -337,6 +337,14 @@ object StardustPackageUtils {
             )
         ),
         //Responses
+        RECEIVE_SOS (0x85,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         READ_CONFIGURATION_RESPONSE (0x8C,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
@@ -508,6 +516,23 @@ object StardustPackageUtils {
             )
         ),
         //Interrupts
+        RECEIVE_SOS_INTERRUPT (0xF8,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+
+        SEND_SOS_INTERRUPT (0xF9,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         UPDATE_POLYGON_INTERRUPT (0xFA,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,

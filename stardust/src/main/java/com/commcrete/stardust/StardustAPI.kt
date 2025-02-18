@@ -41,6 +41,7 @@ interface StardustAPICallbacks {
     fun receiveMessage (stardustAPIPackage: StardustAPIPackage, text : String)
     fun receiveLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
     fun receiveSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
+    fun receiveRealSOS (stardustAPIPackage: StardustAPIPackage, location: Location)
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)

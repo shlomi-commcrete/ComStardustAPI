@@ -157,6 +157,53 @@ object UsersUtils {
             }
         }
     }
+
+    fun saveBittelUserSOSReal(bittelPackage: StardustPackage, bittelSOSPackage: StardustSOSPackage, isCreateNewUser : Boolean = true){
+        Scopes.getDefaultCoroutine().launch {
+            val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            if(chatContact != null) {
+                chatContact.let {
+                    var contact : ChatContact? = it
+                    var whoSent = ""
+                    var displayName = contact?.displayName
+                    if(bittelPackage.getSourceAsString() == "00000002"){
+                        whoSent = bittelPackage.getDestAsString()
+                        val sender = chatsRepo.getChatByBittelID(whoSent)
+                        sender?.let {
+                            displayName = it.name
+                        }
+                        contact = contactsRepository.getChatContactByBittelID(whoSent)
+                    }else {
+                        whoSent = bittelPackage.getSourceAsString()
+                    }
+                    contact?.lastUpdateTS = Date().time
+                    contact?.lat = bittelSOSPackage.latitude.toDouble()
+                    contact?.lon = bittelSOSPackage.longitude.toDouble()
+                    contact?.isSOS = true
+                    contact?.let { it1 -> contactsRepository.addContact(it1) }
+                    Scopes.getMainCoroutine().launch {
+                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
+                    }
+                    val text = "latitude : ${bittelSOSPackage.latitude}\n" +
+                            "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
+                    val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
+                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = true)
+                    MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
+                    var location = Location(whoSent)
+                    location.latitude = bittelSOSPackage.latitude.toDouble()
+                    location.longitude = bittelSOSPackage.longitude.toDouble()
+                    location.altitude = bittelSOSPackage.height.toDouble()
+                    DataManager.getCallbacks()?.receiveRealSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
+                        location)
+
+                }
+            } else if(isCreateNewUser) {
+                LocationUtils.createNewContact(bittelPackage)
+                saveBittelUserSOS(bittelPackage, bittelSOSPackage, false)
+            }
+        }
+    }
     fun saveBittelMessageToDatabase(bittelPackage: StardustPackage, isSOS : Boolean = false){
         Scopes.getDefaultCoroutine().launch {
             if(bittelPackage.getSourceAsString().isNotEmpty()){

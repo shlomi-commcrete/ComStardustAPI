@@ -162,10 +162,18 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> {
                         handleDeleteGroupsResponse(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT -> {
+                        handleRealSOS(mPackage)
+                    }
                     else -> {}
                 } }
             resetTimer()
         }
+    }
+
+    private fun handleRealSOS(mPackage: StardustPackage) {
+        val sosPackage = StardustLocationParser().parseSOSReal(mPackage)
+        sosPackage?.let { UsersUtils.saveBittelUserSOSReal(mPackage, it) }
     }
 
     private fun handleBittelUpdateResponse(mPackage: StardustPackage) {

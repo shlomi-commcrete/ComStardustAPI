@@ -60,6 +60,29 @@ class StardustLocationParser : StardustParser() {
         return null
     }
 
+    fun parseSOSReal (StardustPackage: StardustPackage) : StardustSOSPackage? {
+        StardustPackage.data?.let { intArray ->
+            val byteArray = intArrayToByteArray(intArray.toMutableList())
+            var offset = 0
+            val locationBytes = cutByteArray(byteArray, locationLength, offset)
+            val locations = CoordinatesUtil().unpackLocation(locationBytes)
+
+            return StardustSOSPackage(
+                latitude = locations[0],
+                longitude = locations[1],
+                height = locations[2].toInt(),
+                year = 0,
+                month = 0,
+                day = 0,
+                hour = 0,
+                minute = 0,
+                second = 0,
+                sosType = 0
+            )
+        }
+        return null
+    }
+
     fun getEmptyLocation() : Array<Int>{
         val byteArray = ByteArray(13)
         var loop = 0
