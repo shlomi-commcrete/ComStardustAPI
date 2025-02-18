@@ -14,9 +14,10 @@ object CarriersUtils {
 
     fun getCarrierList(bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
         val mutableList : MutableList<Carrier> = arrayListOf()
-        mutableList.add(Carrier(0, bittelConfigurationPackage.functionalityXcvr1,  "RD1"))
-        mutableList.add(Carrier(1, bittelConfigurationPackage.functionalityXcvr2,  "RD2"))
-        mutableList.add(Carrier(2, bittelConfigurationPackage.functionalityXcvr3,  "RD3"))
+        val radios = bittelConfigurationPackage.getCurrentRadios()
+        mutableList.add(Carrier(0, radios.xcvr1,  "RD1"))
+        mutableList.add(Carrier(1, radios.xcvr2,  "RD2"))
+        mutableList.add(Carrier(2, radios.xcvr3,  "RD3"))
         mutableList.add(Carrier(3, StardustConfigurationParser.StardustTypeFunctionality.ST,  "RD4"))
         return mutableList
     }
