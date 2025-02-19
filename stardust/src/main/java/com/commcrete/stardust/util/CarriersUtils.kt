@@ -22,6 +22,15 @@ object CarriersUtils {
         return mutableList
     }
 
+    fun getCarrierByControl (deliveryType: StardustControlByte.StardustDeliveryType) : Carrier?{
+        when (deliveryType) {
+            StardustControlByte.StardustDeliveryType.RD1 -> return carrierList.value?.get(0)
+            StardustControlByte.StardustDeliveryType.RD2 -> return carrierList.value?.get(1)
+            StardustControlByte.StardustDeliveryType.RD3 -> return carrierList.value?.get(2)
+            StardustControlByte.StardustDeliveryType.RD4 -> return carrierList.value?.get(3)
+        }
+    }
+
     fun getCarrierListAndUpdate (bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
         val list = getCarrierList(bittelConfigurationPackage)
         updateCarrierList(list.toMutableList())

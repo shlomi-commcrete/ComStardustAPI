@@ -194,7 +194,8 @@ object UsersUtils {
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
                     location.altitude = bittelSOSPackage.height.toDouble()
-                    DataManager.getCallbacks()?.receiveRealSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
+                    DataManager.getCallbacks()?.receiveRealSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),
+                        carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)
 
                 }
