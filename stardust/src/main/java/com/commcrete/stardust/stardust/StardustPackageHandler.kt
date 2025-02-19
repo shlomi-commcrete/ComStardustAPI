@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.lifecycle.Observer
 import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.location.LocationUtils
@@ -165,10 +166,18 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT -> {
                         handleRealSOS(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.SOS_ACK -> {
+                        handleSOSAck(mPackage)
+                    }
                     else -> {}
                 } }
             resetTimer()
         }
+    }
+
+    private fun handleSOSAck(mPackage: StardustPackage) {
+        DataManager.getCallbacks()?.handleSOSAck(StardustAPIPackage(source = mPackage.getSourceAsString(),
+            destination = mPackage.getDestAsString(), false, null))
     }
 
     private fun handleRealSOS(mPackage: StardustPackage) {
