@@ -243,6 +243,16 @@ object DataManager : StardustAPI, PttInterface{
         return bleScanner.getScanResultsLiveData()
     }
 
+    fun getPairedDevices (context: Context) : BluetoothDevice?{
+        requireContext(context)
+        return getClientConnection(context).getBleConnectedStardustDevice()
+    }
+
+    fun getConnectedDevices (context: Context) : BluetoothDevice?{
+        requireContext(context)
+        return getClientConnection(context).mDevice
+    }
+
     fun bondOnStartup (context: Context) {
         requireContext(context)
         getClientConnection(context).bondToBleDeviceStartup()

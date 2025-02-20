@@ -320,8 +320,6 @@ class StardustConfigurationParser : StardustParser() {
                 offset += debuIgnoreCanTrasmitLength
                 val snifferModeBytes = cutByteArray(byteArray, snifferModeLength, offset)
                 offset += snifferModeLength
-                val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
-                offset += bittelAddressLength
                 val appIdBytes = cutByteArray(byteArray, appAddressLength, offset)
                 offset += appAddressLength
                 val logBytes = cutByteArray(byteArray, logModeLength, offset)
@@ -336,7 +334,8 @@ class StardustConfigurationParser : StardustParser() {
                 offset += radioLODeductionLength
                 val radioXcvr4DeductionBytes = cutByteArray(byteArray, radioXcvr4DeductionLength, offset)
                 offset += radioXcvr4DeductionLength
-
+                val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
+                offset += bittelAddressLength
                 val deviceModelBytes = cutByteArray(byteArray, deviceModelLength, offset)
                 offset += deviceModelLength
                 val deviceSerialBytes = cutByteArray(byteArray, deviceSerialLength, offset)
