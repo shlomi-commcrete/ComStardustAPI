@@ -31,7 +31,7 @@ object FileReceivedUtils {
             }
         }
         if(!haveFileStart) {
-            fileReceivedDataList.add(FileReceivedData(index = fileReceivedDataList.size+1, dataStart = bittelFileStartPackage, isReceivingInProgress = true, bittelPackage = bittelPackage,
+            fileReceivedDataList.add(FileReceivedData(index = bittelPackage.stardustControlByte.stardustDeliveryType.value, dataStart = bittelFileStartPackage, isReceivingInProgress = true, bittelPackage = bittelPackage,
                 receivingPercentage = 0))
         }
     }
@@ -45,6 +45,7 @@ object FileReceivedUtils {
                 fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
                 bittelPackage.stardustControlByte.stardustDeliveryType) {
                 fileStart.dataList.put(bittelFilePackage.current, bittelFilePackage)
+                Log.d("fileReceived", "dataList.put : ${bittelFilePackage.current}")
                 fileStart.updateProgress ()
                 fileStart.resetReceiveTimer()
             }
