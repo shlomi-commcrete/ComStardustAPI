@@ -320,6 +320,8 @@ class StardustConfigurationParser : StardustParser() {
                 offset += debuIgnoreCanTrasmitLength
                 val snifferModeBytes = cutByteArray(byteArray, snifferModeLength, offset)
                 offset += snifferModeLength
+                val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
+                offset += bittelAddressLength
                 val appIdBytes = cutByteArray(byteArray, appAddressLength, offset)
                 offset += appAddressLength
                 val logBytes = cutByteArray(byteArray, logModeLength, offset)
@@ -334,8 +336,7 @@ class StardustConfigurationParser : StardustParser() {
                 offset += radioLODeductionLength
                 val radioXcvr4DeductionBytes = cutByteArray(byteArray, radioXcvr4DeductionLength, offset)
                 offset += radioXcvr4DeductionLength
-                val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
-                offset += bittelAddressLength
+
                 val deviceModelBytes = cutByteArray(byteArray, deviceModelLength, offset)
                 offset += deviceModelLength
                 val deviceSerialBytes = cutByteArray(byteArray, deviceSerialLength, offset)
@@ -435,9 +436,9 @@ class StardustConfigurationParser : StardustParser() {
                     debugIgnoreCanTransmit = byteArrayToBoolean(debugCanTrasmit),
                     snifferMode = SnifferMode.values()[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
+                    stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
                     antenna = AntennaType.values()[byteArrayToInt(antennaBytes)],
                     radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
-                    stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
                     power12V = byteArrayToFloat(power12V.reversedArray()),
                     powerBattery = byteArrayToFloat(powerBattery.reversedArray()),
                     batteryChargeStatus = StardustBatteryCharge.values()[byteArrayToInt(batteryChargeStatus)],
