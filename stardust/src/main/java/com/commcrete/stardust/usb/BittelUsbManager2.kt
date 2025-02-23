@@ -65,7 +65,8 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true ) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
+            || device.productName?.toLowerCase()?.contains("jbox") == true) {
             connectToAudioDevice(context, device)
         }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
             connectToDevice(context, device)
@@ -73,7 +74,9 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true ) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
+            || device.productName?.toLowerCase()?.contains("jbox") == true) {
+
             disconnect()
         }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
             disconnectAudio()

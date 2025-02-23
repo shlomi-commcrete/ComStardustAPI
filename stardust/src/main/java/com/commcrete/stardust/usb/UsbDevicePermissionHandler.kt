@@ -97,7 +97,10 @@ object UsbDevicePermissionHandler {
         if (devicesQueue.isNotEmpty()) {
             isRequestingPermission = true
             currentDevice = devicesQueue.poll()
-            if (currentDevice?.productName?.contains("FT231X USB UART") == true|| currentDevice?.productName?.toLowerCase()?.contains("stardust") == true) {
+            if (currentDevice?.productName?.contains("FT231X USB UART") == true|| currentDevice?.productName?.toLowerCase()?.contains("stardust") == true
+                || currentDevice?.productName?.toLowerCase()?.contains("j-box") == true
+                || currentDevice?.productName?.toLowerCase()?.contains("jbox") == true) {
+
                 Timber.tag("SerialInputOutputManager").d("Requesting permission for device: ${currentDevice?.productName}")
                 val permissionIntent = PendingIntent.getBroadcast(
                     context, 0,
