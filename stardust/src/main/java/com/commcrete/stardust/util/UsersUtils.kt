@@ -220,7 +220,7 @@ object UsersUtils {
 
                             var whoSent = ""
                             var displayName = contact.displayName
-                            if(bittelPackage.getSourceAsString() == "00000002"){
+                            if(chat.isGroup){
                                 whoSent = bittelPackage.getDestAsString()
                                 val sender = chatsRepo.getChatByBittelID(whoSent)
                                 sender?.let {

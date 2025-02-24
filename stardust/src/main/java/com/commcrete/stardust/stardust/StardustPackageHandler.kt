@@ -78,7 +78,7 @@ internal class StardustPackageHandler(private val context: Context ,
 //                }
                 val mPackageControl = mPackage.stardustControlByte
                 val mPackageOpCode = mPackage.stardustOpCode
-                if(mPackage.getDestAsString() == "00000002"){
+                if(GroupsUtils.isGroup(mPackage.getDestAsString())){
                     val srcBytes = mPackage.sourceBytes
                     val dstBytes = mPackage.destinationBytes
                     mPackage.sourceBytes = dstBytes

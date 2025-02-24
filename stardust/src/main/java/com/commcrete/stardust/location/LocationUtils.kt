@@ -33,6 +33,7 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.PermissionTracking
 import com.google.android.gms.location.*
 import kotlinx.coroutines.Job
@@ -78,7 +79,7 @@ object LocationUtils  {
                     val contact = it
                     var whoSent = ""
                     var displayName = contact.displayName
-                    if(bittelPackage.getSourceAsString() == "00000002"){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
                         whoSent = bittelPackage.getDestAsString()
                         val sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
