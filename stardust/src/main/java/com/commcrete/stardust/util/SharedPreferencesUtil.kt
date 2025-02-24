@@ -394,6 +394,16 @@ object SharedPreferencesUtil {
         return AdminUtils.AdminLocal.Regular
     }
 
+    fun setOutputDevice(context: Context, outputDevice : String) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_OUTPUT_DEFAULT , outputDevice)
+    }
+
+    fun setInputDevice(context: Context, inputDevice : String) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_INPUT_DEFAULT , inputDevice)
+    }
+
     fun getOutputDevice(context: Context) : Int {
         val audioSourceString = getPreferencesString(context, KEY_OUTPUT_DEFAULT)
         if(audioSourceString != null) {
