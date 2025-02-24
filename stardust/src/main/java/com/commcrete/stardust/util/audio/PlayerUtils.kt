@@ -237,21 +237,20 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     @SuppressLint("NewApi")
-    private fun syncBleDevice () {
+    private fun syncBleDevice (context: Context) {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
-        val bleDevice = getPreferredDevice(audioManager)
+        val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_OUTPUTS, context)
         bleDevice?.let {
             track?.setPreferredDevice(it)
             audioManager.startBluetoothSco()
             audioManager.setBluetoothScoOn(true)
-
         }
     }
 
     @SuppressLint("NewApi")
-    private fun removeSyncBleDevices () {
+    private fun removeSyncBleDevices (context: Context) {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
-        val bleDevice = getPreferredDevice(audioManager)
+        val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_OUTPUTS, context)
         bleDevice?.let {
             audioManager.stopBluetoothSco()
         }
@@ -463,7 +462,7 @@ object PlayerUtils : BleMediaConnector() {
                     .setAudioFormat(AudioFormat.Builder().setSampleRate((sampleRate * speedFactor).toInt()).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                     .setTransferMode(AudioTrack.MODE_STREAM) // Set to streaming mode
                     .setBufferSizeInBytes(bufferSizeInBytes).build()
-                syncBleDevice()
+                syncBleDevice(DataManager.context)
             }
 
             track?.audioSessionId?.let {

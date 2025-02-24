@@ -2,6 +2,7 @@ package com.commcrete.stardust.util.audio
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -92,7 +93,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
         recorder?.audioSessionId?.let { setRecordingParams(it, DataManager.context) }
-//        syncBleDevice(context)
+        syncBleDevice(context)
         recorder?.startRecording()
         isRecording = true
 
@@ -107,10 +108,19 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         } else {
             TODO("VERSION.SDK_INT < M")
         }
-        val bleDevice = getPreferredDevice(audioManager)
-        bleDevice?.let {
-            recorder?.setPreferredDevice(it)
-            audioManager.startBluetoothSco()
+        val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
+
+        if (wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            val bleDevice =
+                getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
+            bleDevice?.let {
+                recorder?.setPreferredDevice(it)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.setCommunicationDevice(it)
+                }
+                audioManager.startBluetoothSco()
+                audioManager.isBluetoothScoOn = true
+            }
         }
     }
 
@@ -120,10 +130,18 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         } else {
             TODO("VERSION.SDK_INT < M")
         }
-        val bleDevice = getPreferredDevice(audioManager)
-        bleDevice?.let {
-            audioManager.stopBluetoothSco()
-        }
+        val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
+        if(wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+
+            val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS, context)
+            bleDevice?.let {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.clearCommunicationDevice()
+                }
+                audioManager.stopBluetoothSco()
+                audioManager.isBluetoothScoOn = false
+
+            }}
     }
 
 
