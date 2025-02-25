@@ -30,6 +30,10 @@ open class BleMediaConnector (){
             TODO("VERSION.SDK_INT < M")
         }
 
+        if(defaultType == AudioDeviceInfo.TYPE_UNKNOWN) {
+            return null
+        }
+
         // Define the hierarchy of device types based on input/output
         val deviceTypes = when (type) {
             AudioManager.GET_DEVICES_INPUTS -> AudioDeviceHierarchyInput.values().map { it.deviceInfo }
