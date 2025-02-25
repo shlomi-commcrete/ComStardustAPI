@@ -73,6 +73,9 @@ object SharedPreferencesUtil {
     private const val KEY_DEFAULT_AUDIO_OUTPUT_USB_HEADSET = "USB-Headset"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_EARPIECE = "Earpiece"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_BLUETOOTH = "Bluetooth-Device"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_HDMI = "HDMI"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_BLUETOOTH_A2DP = "Bluetooth-A2DP"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_REMOTE_SUBMIX = "Remote-Submix"
 
     //Input Values
     private const val KEY_DEFAULT_AUDIO_INPUT = "Builtin-Mic"
@@ -414,6 +417,9 @@ object SharedPreferencesUtil {
                     KEY_DEFAULT_AUDIO_OUTPUT_USB_HEADSET -> return AudioDeviceInfo.TYPE_USB_HEADSET
                     KEY_DEFAULT_AUDIO_OUTPUT_EARPIECE -> return AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
                     KEY_DEFAULT_AUDIO_OUTPUT_BLUETOOTH -> return AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    KEY_DEFAULT_AUDIO_OUTPUT_TYPE_HDMI -> return AudioDeviceInfo.TYPE_HDMI
+                    KEY_DEFAULT_AUDIO_OUTPUT_TYPE_BLUETOOTH_A2DP -> return AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
+                    KEY_DEFAULT_AUDIO_OUTPUT_TYPE_REMOTE_SUBMIX -> return AudioDeviceInfo.TYPE_REMOTE_SUBMIX
                     else -> { return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                 }
             }

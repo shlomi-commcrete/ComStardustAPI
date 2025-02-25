@@ -3,15 +3,15 @@ package com.commcrete.stardust.util.audio
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
 import android.media.MediaPlayer
+import android.media.MediaRouter
 import android.media.RingtoneManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.OptIn
@@ -38,15 +38,10 @@ import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.source.DefaultMediaSourceFactory
-import com.google.android.exoplayer2.upstream.RawResourceDataSource
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
 import timber.log.Timber
 import java.io.*
-import java.util.Date
 import kotlin.experimental.and
 import kotlin.experimental.or
 
@@ -231,7 +226,7 @@ object PlayerUtils : BleMediaConnector() {
     private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String) {
 //        if(App.isAppInForeground || SharedPreferencesUtil.getEnablePttSound(DataManager.context)){
             track?.let { playStream(it, audioStream, size) }
-            DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination,), audioStream)
+            DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination), audioStream)
 
 //        }
     }
@@ -244,8 +239,27 @@ object PlayerUtils : BleMediaConnector() {
             track?.setPreferredDevice(it)
             audioManager.startBluetoothSco()
             audioManager.setBluetoothScoOn(true)
+            if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
+                try {
+                    routeAudioToMediaRouter(context)
+
+                }catch (e : Exception) {
+                    e.printStackTrace()
+                }
+            }
         }
     }
+
+    private fun routeAudioToMediaRouter(context: Context) {
+        val mediaRouter = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as MediaRouter
+        val selectedRoute = mediaRouter.getSelectedRoute(MediaRouter.ROUTE_TYPE_LIVE_AUDIO)
+        if (selectedRoute != null) {
+
+        } else {
+
+        }
+    }
+
 
     @SuppressLint("NewApi")
     private fun removeSyncBleDevices (context: Context) {
