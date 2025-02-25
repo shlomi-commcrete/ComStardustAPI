@@ -236,15 +236,18 @@ object PlayerUtils : BleMediaConnector() {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
         val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_OUTPUTS, context)
         bleDevice?.let {
-            track?.setPreferredDevice(it)
-            audioManager.startBluetoothSco()
-            audioManager.setBluetoothScoOn(true)
-            if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
-                try {
-                    routeAudioToMediaRouter(context)
 
-                }catch (e : Exception) {
-                    e.printStackTrace()
+            if(it.type != AudioDeviceInfo.TYPE_UNKNOWN){
+                track?.setPreferredDevice(it)
+                audioManager.startBluetoothSco()
+                audioManager.setBluetoothScoOn(true)
+                if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
+                    try {
+                        routeAudioToMediaRouter(context)
+
+                    }catch (e : Exception) {
+                        e.printStackTrace()
+                    }
                 }
             }
         }
