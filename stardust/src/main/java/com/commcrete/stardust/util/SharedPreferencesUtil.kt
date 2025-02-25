@@ -79,6 +79,7 @@ object SharedPreferencesUtil {
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_UNKNOWN = "Unknown"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_WIRED_HEADSET = "Wired-Headset"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_AUX_LINE = "Aux"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_TEL = "Telephony"
 
     //Input Values
     private const val KEY_DEFAULT_AUDIO_INPUT = "Builtin-Mic"
@@ -426,6 +427,7 @@ object SharedPreferencesUtil {
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_UNKNOWN -> return AudioDeviceInfo.TYPE_UNKNOWN
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_WIRED_HEADSET -> return AudioDeviceInfo.TYPE_WIRED_HEADSET
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_AUX_LINE -> return AudioDeviceInfo.TYPE_AUX_LINE
+                    KEY_DEFAULT_AUDIO_OUTPUT_TYPE_TEL -> return AudioDeviceInfo.TYPE_TELEPHONY
                     else -> { return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                 }
             }
