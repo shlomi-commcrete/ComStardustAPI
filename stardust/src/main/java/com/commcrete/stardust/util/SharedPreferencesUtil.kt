@@ -396,12 +396,12 @@ object SharedPreferencesUtil {
 
     fun setOutputDevice(context: Context, outputDevice : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_OUTPUT_DEFAULT , outputDevice)
+        preferences.edit().putString(KEY_OUTPUT_DEFAULT , outputDevice).apply()
     }
 
     fun setInputDevice(context: Context, inputDevice : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_INPUT_DEFAULT , inputDevice)
+        preferences.edit().putString(KEY_INPUT_DEFAULT , inputDevice).apply()
     }
 
     fun getOutputDevice(context: Context) : Int {
