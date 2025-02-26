@@ -30,7 +30,11 @@ open class BleMediaConnector (){
             TODO("VERSION.SDK_INT < M")
         }
 
-        if(defaultType == AudioDeviceInfo.TYPE_UNKNOWN) {
+        if( type == AudioManager.GET_DEVICES_OUTPUTS && defaultType == AudioDeviceInfo.TYPE_UNKNOWN) {
+            return null
+        }
+
+        if( type == AudioManager.GET_DEVICES_INPUTS && defaultInputType == AudioDeviceInfo.TYPE_UNKNOWN) {
             return null
         }
 

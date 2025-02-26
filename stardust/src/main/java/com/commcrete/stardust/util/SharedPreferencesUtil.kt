@@ -76,13 +76,14 @@ object SharedPreferencesUtil {
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_HDMI = "HDMI"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_BLUETOOTH_A2DP = "Bluetooth-A2DP"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_REMOTE_SUBMIX = "Remote-Submix"
-    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_UNKNOWN = "Unknown"
+    private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_UNKNOWN = "Default"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_WIRED_HEADSET = "Wired-Headset"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_AUX_LINE = "Aux"
     private const val KEY_DEFAULT_AUDIO_OUTPUT_TYPE_TEL = "Telephony"
 
     //Input Values
     private const val KEY_DEFAULT_AUDIO_INPUT = "Builtin-Mic"
+    private const val KEY_DEFAULT_AUDIO_INPUT_DEFAULT = "Default"
     private const val KEY_DEFAULT_AUDIO_INPUT_WIRED_HEADPHONES = "Wired-Headphones"
     private const val KEY_DEFAULT_AUDIO_INPUT_USB_HEADSET = "USB-Headset"
     private const val KEY_DEFAULT_AUDIO_INPUT_USB_DEVICE = "USB-Device"
@@ -428,11 +429,11 @@ object SharedPreferencesUtil {
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_WIRED_HEADSET -> return AudioDeviceInfo.TYPE_WIRED_HEADSET
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_AUX_LINE -> return AudioDeviceInfo.TYPE_AUX_LINE
                     KEY_DEFAULT_AUDIO_OUTPUT_TYPE_TEL -> return AudioDeviceInfo.TYPE_TELEPHONY
-                    else -> { return AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                    else -> { return AudioDeviceInfo.TYPE_UNKNOWN }
                 }
             }
         }else {
-            return MediaRecorder.AudioSource.MIC
+            return AudioDeviceInfo.TYPE_UNKNOWN
         }
     }
 
@@ -442,16 +443,17 @@ object SharedPreferencesUtil {
             audioSourceString.let {
                 when (it) {
                     KEY_DEFAULT_AUDIO_INPUT -> return AudioDeviceInfo.TYPE_BUILTIN_MIC
+                    KEY_DEFAULT_AUDIO_INPUT_DEFAULT -> return AudioDeviceInfo.TYPE_UNKNOWN
                     KEY_DEFAULT_AUDIO_INPUT_WIRED_HEADPHONES -> return AudioDeviceInfo.TYPE_WIRED_HEADPHONES
                     KEY_DEFAULT_AUDIO_INPUT_USB_HEADSET -> return AudioDeviceInfo.TYPE_USB_HEADSET
                     KEY_DEFAULT_AUDIO_INPUT_USB_DEVICE -> return AudioDeviceInfo.TYPE_USB_DEVICE
                     KEY_DEFAULT_AUDIO_INPUT_EARPIECE -> return AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
                     KEY_DEFAULT_AUDIO_INPUT_BLUETOOTH -> return AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                    else -> { return AudioDeviceInfo.TYPE_BUILTIN_MIC }
+                    else -> { return AudioDeviceInfo.TYPE_UNKNOWN }
                 }
             }
         }else {
-            return MediaRecorder.AudioSource.MIC
+            return AudioDeviceInfo.TYPE_UNKNOWN
         }
     }
 
