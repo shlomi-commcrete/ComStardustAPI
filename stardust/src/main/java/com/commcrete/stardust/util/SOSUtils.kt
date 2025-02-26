@@ -13,7 +13,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 object SOSUtils {
 
     //added location from user
-    fun sendSos (type : Int, text : String ? = null, context: Context, location: Location) {
+    fun sendSos (type : Int, text : String ? = null, context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosString = "SOS"
@@ -28,7 +28,7 @@ object SOSUtils {
                 }
                 val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = "00000002", stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
