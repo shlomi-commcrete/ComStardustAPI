@@ -44,7 +44,7 @@ object FileReceivedUtils {
                 fileStart.bittelPackage.getDestAsString() == bittelPackage.getDestAsString() &&
                 fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
                 bittelPackage.stardustControlByte.stardustDeliveryType) {
-                fileStart.dataList.put(bittelFilePackage.current, bittelFilePackage)
+                fileStart.dataList.add(bittelFilePackage)
                 Log.d("fileReceived", "dataList.put : ${bittelFilePackage.current}")
                 fileStart.updateProgress ()
                 fileStart.resetReceiveTimer()
@@ -109,7 +109,7 @@ object FileReceivedUtils {
 
     data class FileReceivedData (
         val index : Int = 0,
-        val dataList :MutableMap<Int,StardustFilePackage> = mutableMapOf(),
+        val dataList: MutableList<StardustFilePackage> = mutableListOf()
         var dataStart : StardustFileStartPackage? = null,
         var isReceivingInProgress : Boolean = false,
         var receivingPercentage : Int = 0,
@@ -149,11 +149,10 @@ object FileReceivedUtils {
                 Log.d("fileReceived", "index : $index")
                 Log.d("fileReceived", "data start total : ${dataStart?.total}")
                 Log.d("fileReceived", "dataList.size : ${dataList.size}")
-                Log.d("fileReceived", "data current : ${dataList[dataList.size - 1]?.current}")
+                Log.d("fileReceived", "data current : ${dataList.lastOrNull()?.current}")
                 Scopes.getMainCoroutine().launch {
                     dataStart?.let {
-                        receivingPercentage = ((dataList.size.toDouble().div(
-                            it.total)).times(100)).toInt()
+                        receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
                         DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
                     }
                 }
@@ -192,11 +191,8 @@ object FileReceivedUtils {
 
                 if(fileType == 0) {
                     FileOutputStream(tempOutputFile).use { outputStream ->
-                        for (key in dataList.keys.sorted()) { // Ensure the data is written in order
-                            val data = dataList[key]?.data
-                            if (data != null) {
-                                outputStream.write(data) // Write raw bytes to the file
-                            }
+                        for (packageData in dataList.sortedBy { it.current }) {
+                            outputStream.write(packageData.data)
                         }
                     }
                     // Step 2: Decompress the temporary file into the target file
@@ -206,11 +202,8 @@ object FileReceivedUtils {
 
                 } else {
                     FileOutputStream(targetFile).use { outputStream ->
-                        for (key in dataList.keys.sorted()) { // Ensure the data is written in order
-                            val data = dataList[key]?.data
-                            if (data != null) {
-                                outputStream.write(data) // Write raw bytes to the file
-                            }
+                        for (packageData in dataList.sortedBy { it.current }) {
+                            outputStream.write(packageData.data)
                         }
                     }
                 }
