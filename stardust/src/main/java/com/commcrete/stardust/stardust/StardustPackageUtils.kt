@@ -138,7 +138,7 @@ object StardustPackageUtils {
         PING (0x0F,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
-                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
             )

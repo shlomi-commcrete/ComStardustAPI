@@ -13,6 +13,7 @@ import timber.log.Timber
 
 object PortUtils {
     private var job: Job? = null
+    private var jobPing: Job? = null
 
     fun startUpdatingPort(context: Context) {
         job = Scopes.getMainCoroutine().launch {
@@ -27,10 +28,18 @@ object PortUtils {
                 delay(300000)
             }
         }
+
+        jobPing = Scopes.getMainCoroutine().launch {
+            while (isActive) {
+                DataManager.getClientConnection(context).sendPing()
+                delay(30000)
+            }
+        }
     }
 
     fun stopUpdatingPort() {
         job?.cancel() // Cancels the coroutine
+        jobPing?.cancel() // Cancels the coroutine
 
     }
 }

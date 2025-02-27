@@ -87,7 +87,7 @@ internal class ClientConnection(
         initBleStatus ()
     }
 
-    private fun sendPing () {
+    fun sendPing () {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
             val dst = it.bittelId
