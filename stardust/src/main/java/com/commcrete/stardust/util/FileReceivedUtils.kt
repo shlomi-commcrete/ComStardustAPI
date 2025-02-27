@@ -109,7 +109,7 @@ object FileReceivedUtils {
 
     data class FileReceivedData (
         val index : Int = 0,
-        val dataList: MutableList<StardustFilePackage> = mutableListOf()
+        val dataList: MutableList<StardustFilePackage> = mutableListOf(),
         var dataStart : StardustFileStartPackage? = null,
         var isReceivingInProgress : Boolean = false,
         var receivingPercentage : Int = 0,
