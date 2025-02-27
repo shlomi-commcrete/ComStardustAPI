@@ -445,7 +445,7 @@ object StardustPackageUtils {
         UPDATE_PORT_RESPONSE (0x9A,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
-                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
             )
