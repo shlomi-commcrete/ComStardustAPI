@@ -24,7 +24,7 @@ object PortUtils {
                     DataManager.getClientConnection(context).updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateBlePort")
                 }
-                delay(30000) // Wait for 10 seconds
+                delay(300000)
             }
         }
     }
