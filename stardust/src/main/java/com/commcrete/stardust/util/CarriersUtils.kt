@@ -189,12 +189,14 @@ object CarriersUtils {
                         it.functionalityTypeList.add(FunctionalityType.TEXT)
                         it.functionalityTypeList.add(FunctionalityType.LOCATION)
                         it.functionalityTypeList.add(FunctionalityType.PTT)
+                        it.functionalityTypeList.add(FunctionalityType.FILE)
+                        it.functionalityTypeList.add(FunctionalityType.IMAGE)
                     }
                 }
                 StardustConfigurationParser.StardustTypeFunctionality.ST -> {
                     it.functionalityTypeList.clear()
-                    it.functionalityTypeList.add(FunctionalityType.FILE)
-                    it.functionalityTypeList.add(FunctionalityType.IMAGE)
+//                    it.functionalityTypeList.add(FunctionalityType.FILE)
+//                    it.functionalityTypeList.add(FunctionalityType.IMAGE)
                 }
             }
         }
