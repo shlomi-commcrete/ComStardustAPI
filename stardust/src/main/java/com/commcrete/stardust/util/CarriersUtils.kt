@@ -122,7 +122,7 @@ object CarriersUtils {
                 }
             }
             FunctionalityType.IMAGE -> {
-                if (carrier?.type != StardustConfigurationParser.StardustTypeFunctionality.ST) {
+                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.LR) {
                     return getDefaultRadio(functionalityType)
                 }
             }
