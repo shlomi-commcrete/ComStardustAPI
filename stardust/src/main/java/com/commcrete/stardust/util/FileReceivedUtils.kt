@@ -147,21 +147,25 @@ object FileReceivedUtils {
         fun updateProgress () {
             if(dataStart != null ) {
                 Log.d("fileReceived", "index : $index")
-                Log.d("fileReceived", "data start total : ${dataStart!!.total}")
+                Log.d("fileReceived", "data start total : ${dataStart?.total}")
                 Log.d("fileReceived", "dataList.size : ${dataList.size}")
                 Log.d("fileReceived", "data current : ${dataList[dataList.size - 1]?.current}")
                 Scopes.getMainCoroutine().launch {
-                    receivingPercentage = ((dataList.size.toDouble().div(
-                        dataStart!!.total)).times(100)).toInt()
-                    DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
-                }
-                if(dataStart!!.total == dataList.size) {
-                    bittelPackage?.let { saveFile(it, dataStart?.type) }
-                    Scopes.getMainCoroutine().launch {
-                        isReceivingInProgress = false
-                        DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                    dataStart?.let {
+                        receivingPercentage = ((dataList.size.toDouble().div(
+                            it.total)).times(100)).toInt()
+                        DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
                     }
-                    handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                }
+                dataStart?.let {
+                    if(it.total == dataList.size) {
+                        bittelPackage?.let { saveFile(it, dataStart?.type) }
+                        Scopes.getMainCoroutine().launch {
+                            isReceivingInProgress = false
+                            DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                        }
+                        handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                    }
                 }
             }
         }
