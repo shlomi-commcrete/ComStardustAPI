@@ -703,6 +703,7 @@ object StardustPackageUtils {
         for (element in bDataCodec) {
             stringBuilder.append("${element},")
         }
+        Timber.tag(tagTitle).d(stringBuilder.toString())
     }
 
     private fun resetTimer(){

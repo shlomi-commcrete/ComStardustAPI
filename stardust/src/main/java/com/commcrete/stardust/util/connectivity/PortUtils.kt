@@ -29,7 +29,7 @@ object PortUtils {
             }
         }
 
-        jobPing = Scopes.getMainCoroutine().launch {
+        jobPing = Scopes.getDefaultCoroutine().launch {
             while (isActive) {
                 DataManager.getClientConnection(context).sendPing()
                 delay(30000)

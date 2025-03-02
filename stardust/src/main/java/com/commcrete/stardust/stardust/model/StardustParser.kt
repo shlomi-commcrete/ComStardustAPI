@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
+import timber.log.Timber
 import java.nio.ByteBuffer
 
 open class StardustParser {
@@ -16,6 +17,7 @@ open class StardustParser {
         for (element in bDataCodec) {
             stringBuilder.append("${element},")
         }
+        Timber.tag(tagTitle).d(stringBuilder.toString())
     }
 
     fun intArrayToByteArray(intArray: MutableList<Int>): ByteArray {
