@@ -690,8 +690,6 @@ object StardustPackageUtils {
                     bittelPackageHandler?.handleStardustPackage(it)
                     packagesList.remove(mPackage)
                 }
-            } else if(mPackage.isDefect){
-                packagesList.remove(mPackage)
             }
         }
         resetTimer()
