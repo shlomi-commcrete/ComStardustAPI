@@ -65,7 +65,8 @@ internal class StardustPackageHandler(private val context: Context ,
             val mPackage = bittelPackage
             val tempSavedPackage = savedPackage
             if(tempSavedPackage == null ||!mPackage.isEqual(tempSavedPackage)){
-                if(mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.PING_RESPONSE){
+                if(mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.PING_RESPONSE &&
+                    mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE){
                     savedPackage = mPackage
                 }
                 Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray : ${mPackage}")
