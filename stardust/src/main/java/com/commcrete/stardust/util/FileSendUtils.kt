@@ -72,7 +72,7 @@ object FileSendUtils {
 
     private fun updateStep (numOfPackages: Int) {
         sendingPercentage.value = ((current.value?.toDouble()?.div(numOfPackages))?.times(100))?.toInt()
-        Log.d("updateStep", "${sendingPercentage.value}")
+//        Log.d("updateStep", "${sendingPercentage.value}")
         sendingPercentage.value?.let { this.onFileStatusChange?.updateStep(it) }
         if(sendingPercentage.value == 100) {
             finishSending()

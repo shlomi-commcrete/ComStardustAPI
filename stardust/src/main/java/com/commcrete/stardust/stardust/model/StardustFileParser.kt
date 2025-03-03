@@ -12,7 +12,7 @@ class StardustFileParser : StardustParser() {
     }
     fun parseFile (bittelPackage: StardustPackage) : StardustFilePackage? {
         bittelPackage.data?.let { intArray ->
-            Log.d("fileReceived", "int array : ${intArrayToByteArray(intArray.toMutableList()).toHex()}")
+//            Log.d("fileReceived", "int array : ${intArrayToByteArray(intArray.toMutableList()).toHex()}")
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             var offset = 0
             val sizeBytes = cutByteArray(byteArray, sizeLength, offset)

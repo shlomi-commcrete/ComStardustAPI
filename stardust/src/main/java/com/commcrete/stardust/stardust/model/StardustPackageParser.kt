@@ -9,6 +9,7 @@ class StardustPackageParser : StardustParser() {
     private var byteBuffer : ByteBuffer? = null
     var isFinished = false
     var isDefect = false
+    var isXorOk = false
 
     companion object{
         const val syncBytesLength = 4

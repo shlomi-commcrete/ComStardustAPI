@@ -45,7 +45,7 @@ object FileReceivedUtils {
                 fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
                 bittelPackage.stardustControlByte.stardustDeliveryType) {
                 fileStart.dataList.add(bittelFilePackage)
-                Log.d("fileReceived", "dataList.put : ${bittelFilePackage.current}")
+//                Log.d("fileReceived", "dataList.put : ${bittelFilePackage.current}")
                 fileStart.updateProgress ()
                 fileStart.resetReceiveTimer()
             }
@@ -146,10 +146,10 @@ object FileReceivedUtils {
 
         fun updateProgress () {
             if(dataStart != null ) {
-                Log.d("fileReceived", "index : $index")
-                Log.d("fileReceived", "data start total : ${dataStart?.total}")
-                Log.d("fileReceived", "dataList.size : ${dataList.size}")
-                Log.d("fileReceived", "data current : ${dataList.lastOrNull()?.current}")
+//                Log.d("fileReceived", "index : $index")
+//                Log.d("fileReceived", "data start total : ${dataStart?.total}")
+//                Log.d("fileReceived", "dataList.size : ${dataList.size}")
+//                Log.d("fileReceived", "data current : ${dataList.lastOrNull()?.current}")
                 Scopes.getMainCoroutine().launch {
                     dataStart?.let {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
@@ -234,7 +234,7 @@ object FileReceivedUtils {
         private fun removeFromFileReceivedList() {
             try {
                 fileReceivedDataList.remove(this)
-                Log.d("FileReceivedUtils", "Removed object from fileReceivedDataList")
+//                Log.d("FileReceivedUtils", "Removed object from fileReceivedDataList")
             }catch (e : Exception) {
                 e.printStackTrace()
             }

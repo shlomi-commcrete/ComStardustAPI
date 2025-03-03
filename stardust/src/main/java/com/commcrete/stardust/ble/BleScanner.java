@@ -43,7 +43,7 @@ public class BleScanner {
         public void onBatchScanResults(List<ScanResult> results) {
             super.onBatchScanResults(results);
             // Add your logic here
-            Log.d("scanResults", "onBatchScanResults");
+//            Log.d("scanResults", "onBatchScanResults");
 
             if (!results.isEmpty()) {
                 for (ScanResult result : results) {
@@ -84,9 +84,9 @@ public class BleScanner {
 
     @SuppressLint("MissingPermission")
     public boolean startScan() {
-        Log.d("scanResults", "startScan");
+//        Log.d("scanResults", "startScan");
         if (!checkBlePermissions()) {
-            Log.d("scanResults", "no permissions");
+//            Log.d("scanResults", "no permissions");
             return false;
         }
 
@@ -102,7 +102,7 @@ public class BleScanner {
 
         bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
         bluetoothLeScanner.startScan(scanFilters, scanSettingsBuilder.build(), scanCallback);
-        Log.d("scanResults", "scanning");
+//        Log.d("scanResults", "scanning");
         return true;
     }
 
