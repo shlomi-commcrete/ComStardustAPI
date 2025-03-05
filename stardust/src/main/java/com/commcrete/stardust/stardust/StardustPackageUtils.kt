@@ -690,6 +690,8 @@ object StardustPackageUtils {
                     bittelPackageHandler?.handleStardustPackage(it)
                     packagesList.remove(mPackage)
                 }
+            } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
+                packagesList.remove(mPackage)
             }
         }
         resetTimer()

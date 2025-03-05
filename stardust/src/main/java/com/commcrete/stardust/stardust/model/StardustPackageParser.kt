@@ -8,8 +8,7 @@ class StardustPackageParser : StardustParser() {
 
     private var byteBuffer : ByteBuffer? = null
     var isFinished = false
-    var isDefect = false
-    var isXorOk = false
+    var packageState : PackageState = PackageState.NOT_ENOUGH_DATA
 
     companion object{
         const val syncBytesLength = 4
@@ -65,7 +64,7 @@ class StardustPackageParser : StardustParser() {
             val syncBytes = cutByteArray(byteArray, syncBytesLength, offset)
             offset += syncBytesLength
             if(offset < 4 || !syncBytes.contentEquals(intArrayToByteArray(StardustPackageUtils.SYNC_BYTES.toMutableList()))){
-                isDefect = true
+                packageState = PackageState.NOT_ENOUGH_DATA
                 return null
             }
             val destinationBytes = cutByteArray(byteArray, destinationBytesLength, offset)
@@ -85,10 +84,15 @@ class StardustPackageParser : StardustParser() {
             dataBytes = cutByteArray(byteArray, length, offset)
             offset += length
             val checkXorBytes = cutByteArray(byteArray, checkXorBytesLength, offset)
+
             if(opcode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && controlByte.stardustPackageType == StardustControlByte.StardustPackageType.DATA){
                 val realLength = dataBytes[0].toUByte().toInt()
                 dataBytes = dataBytes.copyOfRange(1, realLength+1)
                 length = realLength
+            }
+            packageState = if(checkXorBytes[0].toInt() == calcChecksum(byteArray, offset).toInt()) PackageState.VALID else PackageState.INVALID_DATA
+            if(packageState != PackageState.VALID) {
+                return null
             }
             val StardustPackage = StardustPackage(
                 syncBytes = StardustPackageUtils.byteArrayToIntArray(syncBytes),
@@ -104,6 +108,20 @@ class StardustPackageParser : StardustParser() {
             return StardustPackage
         }
         return null
+    }
+
+    private fun calcChecksum(data: ByteArray, size: Int): Byte {
+        var result: Byte = 0
+        for (i in 0 until size) {
+            result = (result.toInt() xor data[i].toInt()).toByte()
+        }
+        return result
+    }
+
+    enum class PackageState {
+        VALID,
+        NOT_ENOUGH_DATA,
+        INVALID_DATA
     }
 
     private fun getOpCode(opCodeByte: UByte): StardustPackageUtils.StardustOpCode {
