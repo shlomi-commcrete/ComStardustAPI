@@ -531,6 +531,25 @@ internal class ClientConnection(
         }
         return null
     }
+    @SuppressLint("MissingPermission")
+    fun getBleConnectedStardustDeviceBySavedAddress(savedAddress : String) : BluetoothDevice?{
+        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+        if(btManager == null || btManager.adapter == null) {
+            return null
+        }
+        val pairedDevices = btManager.adapter.bondedDevices
+
+        if (pairedDevices.size > 0) {
+
+            for (device in pairedDevices) {
+                val macAddress = device.address
+                if(macAddress == savedAddress) {
+                    return device
+                }
+            }
+        }
+        return null
+    }
 
     @SuppressLint("MissingPermission")
     fun getBleConnectedStardustDevice() : BluetoothDevice?{

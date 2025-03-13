@@ -18,6 +18,7 @@ import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.ButtonListener
@@ -40,7 +41,7 @@ object BittelUsbManager2 : BittelProtocol {
     private var uartManagerAudio : UARTManager? = null
     val SYNC_BYTES = byteArrayOf(0x37.toByte(), 0x65.toByte(), 0x21.toByte(), 0x84.toByte())
 
-    private val connectionTimeout : Long = 10000
+    private val reconnectTimeout : Long = 10000
 
     private var tempDevice : UsbDevice? = null
 
@@ -51,11 +52,7 @@ object BittelUsbManager2 : BittelProtocol {
 
     private val usbDevicePermissionHandler : UsbDevicePermissionHandler  = UsbDevicePermissionHandler
 
-    private val runnable : Runnable = Runnable {
-        tempDevice?.let { context?.let { it1 -> connectToDevice(it1, it) } }
-    }
-
-    private val handler : Handler = Handler(Looper.getMainLooper())
+    private var handlerObject : HandlerObject? = null
 
     private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
 
@@ -102,6 +99,13 @@ object BittelUsbManager2 : BittelProtocol {
                 sendDataToUart(mPackage)
             }
         }
+    }
+
+    fun reconnectToDevice () {
+        handlerObject = HandlerObject(reconnectTimeout) {
+            initDataToUsb(DataManager.context)
+        }
+        handlerObject?.resetTimer()
     }
 
 
@@ -185,6 +189,11 @@ object BittelUsbManager2 : BittelProtocol {
                 Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
                 processReceivedData(data)
+                Scopes.getMainCoroutine().launch {
+                    BleManager.isUSBConnected = true
+                    BleManager.usbConnectionStatus.value = true
+                    BleManager.updateStatus ()
+                }
 
             }
             override fun onRunError(e: Exception) {

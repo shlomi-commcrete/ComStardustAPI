@@ -244,7 +244,24 @@ object DataManager : StardustAPI, PttInterface{
         return bleScanner.getScanResultsLiveData()
     }
 
-    fun getPairedDevices (context: Context) : BluetoothDevice?{
+    fun getStartupBleData (context: Context) : BluetoothDevice? {
+        requireContext(context)
+        val savedAddress = SharedPreferencesUtil.getBittelDevice(context)
+        if(savedAddress.isNullOrEmpty()) {
+            val device =  getPairedDevices(context)
+            device?.let {
+                return it
+            }
+        } else {
+            val device = getClientConnection(context).getBleConnectedStardustDeviceBySavedAddress(savedAddress)
+            device?.let {
+                return it
+            }
+        }
+        return null
+    }
+
+     fun getPairedDevices (context: Context) : BluetoothDevice?{
         requireContext(context)
         return getClientConnection(context).getBleConnectedStardustDevice()
     }

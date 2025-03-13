@@ -206,6 +206,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handlePingResponse (mPackage: StardustPackage) {
+        DataManager.getPortUtils(DataManager.context).onPingReceived()
     }
 
     private fun handleAdminModeResponse(mPackage: StardustPackage) {

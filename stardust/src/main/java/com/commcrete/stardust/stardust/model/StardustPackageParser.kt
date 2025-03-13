@@ -7,7 +7,7 @@ import java.nio.ByteBuffer
 class StardustPackageParser : StardustParser() {
 
     private var byteBuffer : ByteBuffer? = null
-    var isFinished = false
+    private var spareData : ByteBuffer? = null
     var packageState : PackageState = PackageState.NOT_ENOUGH_DATA
 
     companion object{
@@ -20,7 +20,7 @@ class StardustPackageParser : StardustParser() {
         const val checkXorBytesLength = 1
     }
 
-    fun populateByteBuffer(byteArray: ByteArray?) : Boolean {
+    fun populateByteBuffer(byteArray: ByteArray?) : PackageState {
         try{
             if(byteBuffer == null) {
                 byteBuffer = ByteBuffer.allocate(2048)
@@ -29,19 +29,11 @@ class StardustPackageParser : StardustParser() {
                 byteBuffer?.limit(byteBuffer?.position()?.plus(100) ?: 30000)
                 byteBuffer?.put(it)
             }
-            val StardustPackage =  getStardustPackageFromBuffer()
-            StardustPackage?.let {
-                if((StardustPackage.getDataAsString() !=null
-                            && StardustPackage.length <= StardustPackage.getDataSizeLength() && StardustPackage.checkXor != -2000)){
-                    return true
-                }else {
-                    Timber.tag("notFinished").d("bittelPackage.getDataAsString() : ${StardustPackage.getDataAsString()}\nbittelPackage.length : ${StardustPackage.length}\nbittelPackage.getDataSizeLength() : ${StardustPackage.getDataSizeLength()}")
-                }
-            }
+            getStardustPackageFromBuffer()
         }catch (e : Exception){
             e.printStackTrace()
         }
-        return false
+        return packageState
     }
 
     private fun getByteBuffer(): ByteBuffer? {
@@ -63,8 +55,12 @@ class StardustPackageParser : StardustParser() {
             var offset = 0
             val syncBytes = cutByteArray(byteArray, syncBytesLength, offset)
             offset += syncBytesLength
-            if(offset < 4 || !syncBytes.contentEquals(intArrayToByteArray(StardustPackageUtils.SYNC_BYTES.toMutableList()))){
+            if(byteArray.size < 4 ){
                 packageState = PackageState.NOT_ENOUGH_DATA
+                return null
+            }
+            if(!syncBytes.contentEquals(intArrayToByteArray(StardustPackageUtils.SYNC_BYTES.toMutableList()))) {
+                packageState = PackageState.INVALID_DATA
                 return null
             }
             val destinationBytes = cutByteArray(byteArray, destinationBytesLength, offset)
@@ -89,6 +85,10 @@ class StardustPackageParser : StardustParser() {
                 val realLength = dataBytes[0].toUByte().toInt()
                 dataBytes = dataBytes.copyOfRange(1, realLength+1)
                 length = realLength
+            }
+            if(length > dataBytes.size) {
+                packageState = PackageState.NOT_ENOUGH_DATA
+                return null
             }
             packageState = if(checkXorBytes[0].toInt() == calcChecksum(byteArray, offset).toInt()) PackageState.VALID else PackageState.INVALID_DATA
             if(packageState != PackageState.VALID) {

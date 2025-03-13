@@ -138,7 +138,7 @@ object StardustPackageUtils {
         PING (0x0F,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
-                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
                 StardustControlByte.StardustServer.NOT_SERVER,
                 StardustControlByte.StardustMessageType.REGULAR
             )
@@ -668,7 +668,7 @@ object StardustPackageUtils {
     }
 
     fun handlePackageReceived (byteArray: ByteArray) {
-        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
+//        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
             lastByteArray = byteArray
             lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray", it) }
             logByteArray("handlePackageReceivedbyteArray", byteArray)
@@ -679,12 +679,12 @@ object StardustPackageUtils {
             }catch (e : Exception) {
                 e.printStackTrace()
             }
-            if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].isFinished){
+            if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
                 packagesList.add(StardustPackageParser())
             }
             val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
             val mPackage =  packagesList[packagesList.lastIndex]
-            if(isFinished){
+            if(isFinished == StardustPackageParser.PackageState.VALID){
                 val bittelPackage = packagesList[packagesList.lastIndex].getStardustPackageFromBuffer()
                 bittelPackage?.let {
                     bittelPackageHandler?.handleStardustPackage(it)
@@ -692,8 +692,9 @@ object StardustPackageUtils {
                 }
             } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
                 packagesList.remove(mPackage)
+
             }
-        }
+//        }
         resetTimer()
         resetTimerByteArray()
     }
