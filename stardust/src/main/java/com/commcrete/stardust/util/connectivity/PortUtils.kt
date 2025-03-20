@@ -25,7 +25,7 @@ object PortUtils {
 //            BleManager.usbConnectionStatus.value = false
 //            BleManager.updateStatus ()
 //        }
-//        DataManager.getUsbManager(DataManager.context).reconnectToDevice()
+        DataManager.getUsbManager(DataManager.context).reconnectToDevice()
     }
 
     fun startUpdatingPort(context: Context) {
