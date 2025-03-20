@@ -20,12 +20,12 @@ object PortUtils {
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val connectionTimeout = 5000L
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        Scopes.getMainCoroutine().launch {
-            BleManager.isUSBConnected = false
-            BleManager.usbConnectionStatus.value = false
-            BleManager.updateStatus ()
-        }
-        DataManager.getUsbManager(DataManager.context).reconnectToDevice()
+//        Scopes.getMainCoroutine().launch {
+//            BleManager.isUSBConnected = false
+//            BleManager.usbConnectionStatus.value = false
+//            BleManager.updateStatus ()
+//        }
+//        DataManager.getUsbManager(DataManager.context).reconnectToDevice()
     }
 
     fun startUpdatingPort(context: Context) {
@@ -53,7 +53,7 @@ object PortUtils {
 
     fun onPingReceived () {
         removeConnectionTimer()
-        DataManager.getUsbManager(DataManager.context).resetReconnect()
+//        DataManager.getUsbManager(DataManager.context).resetReconnect()
     }
 
     private fun resetConnectionTimer() {
