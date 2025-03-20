@@ -18,7 +18,7 @@ object PortUtils {
     private var jobPing: Job? = null
 
     private val handler : Handler = Handler(Looper.getMainLooper())
-    private val connectionTimeout = 1000L
+    private val connectionTimeout = 5000L
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
         Scopes.getMainCoroutine().launch {
             BleManager.isUSBConnected = false
