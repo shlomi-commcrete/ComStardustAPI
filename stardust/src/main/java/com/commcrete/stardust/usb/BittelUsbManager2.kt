@@ -108,6 +108,9 @@ object BittelUsbManager2 : BittelProtocol {
         handlerObject?.resetTimer()
     }
 
+    fun resetReconnect () {
+        handlerObject?.removeTimer()
+    }
 
     fun disconnect () {
         try {

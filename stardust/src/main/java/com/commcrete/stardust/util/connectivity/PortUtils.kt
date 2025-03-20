@@ -53,6 +53,7 @@ object PortUtils {
 
     fun onPingReceived () {
         removeConnectionTimer()
+        DataManager.getUsbManager(DataManager.context).resetReconnect()
     }
 
     private fun resetConnectionTimer() {
