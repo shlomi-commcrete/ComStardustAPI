@@ -69,7 +69,7 @@ object DataManager : StardustAPI, PttInterface{
     fun requireContext (context: Context){
         this.context = context
         if(!hasTimber) {
-//            Timber.plant(Timber.DebugTree())
+            Timber.plant(Timber.DebugTree())
             hasTimber = true
         }
     }
