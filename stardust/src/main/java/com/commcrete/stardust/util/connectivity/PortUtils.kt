@@ -38,7 +38,7 @@ object PortUtils {
                     DataManager.getClientConnection(context).updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateBlePort")
                 }
-                delay(300000)
+                delay(20000)
             }
         }
 
