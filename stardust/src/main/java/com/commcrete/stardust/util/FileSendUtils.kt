@@ -1,10 +1,7 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
-import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
@@ -20,7 +17,6 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.stardust.model.StardustPackageParser
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -42,6 +38,7 @@ object FileSendUtils {
     private var dest : String? = null
     private var onFileStatusChange : OnFileStatusChange? = null
     private var sendType : StardustFileStartParser.FileTypeEnum? = null
+    private var stardustAPIPackage : StardustAPIPackage? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
@@ -55,13 +52,14 @@ object FileSendUtils {
 
     fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange) {
         this.onFileStatusChange = onFileStatusChange
+        this.stardustAPIPackage = stardustAPIPackage
         isSendingInProgress.value = true
         val fileList = listOf(file)
         val numOfPackages = calculateNumOfPackages(fileList)
         this.onFileStatusChange?.startSending()
         dest = stardustAPIPackage.destination
         createStartPackage(fileStartParser,
-            numOfPackages, dest)
+            numOfPackages, dest, stardustAPIPackage)
         mutablePackagesMap.clear()
         mutablePackagesMap.putAll(createPackages(fileList))
         resetSendTimer()
@@ -149,7 +147,8 @@ object FileSendUtils {
     private fun createStartPackage (
         type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
-        dest: String?
+        dest: String?,
+        stardustAPIPackage: StardustAPIPackage
     ){
         if(dest == null) {
             return
@@ -157,7 +156,7 @@ object FileSendUtils {
         val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages)
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
-            FunctionalityType.FILE else FunctionalityType.IMAGE
+            FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
         )
         DataManager.getClientConnection(DataManager.context).let {
             SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
@@ -242,7 +241,7 @@ object FileSendUtils {
         }
         DataManager.getClientConnection(DataManager.context).let {
             val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
-                FunctionalityType.FILE else FunctionalityType.IMAGE
+                FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage?.carrier
             )
             this.sendInterval = if(radio.first != null && radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
                 300

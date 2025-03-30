@@ -170,18 +170,18 @@ object DataManager : StardustAPI, PttInterface{
         this.source = stardustAPIPackage.source
         this.destination = stardustAPIPackage.destination
         RecorderUtils.init(this)
-        RecorderUtils.onRecord(true, stardustAPIPackage.destination)
+        RecorderUtils.onRecord(true, stardustAPIPackage.destination, stardustAPIPackage.carrier)
     }
     @SuppressLint("MissingPermission")
     override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
         requireContext(context)
-        RecorderUtils.onRecord(false, stardustAPIPackage.destination)
+        RecorderUtils.onRecord(false, stardustAPIPackage.destination, null)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
         requireContext(context)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
-        val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.LOCATION)
+        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION)
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
 
@@ -202,7 +202,7 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {
         requireContext(context)
-        val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.LOCATION)
+        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION)
         val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
         Scopes.getDefaultCoroutine().launch {

@@ -3,8 +3,8 @@ package com.commcrete.stardust.util.audio
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
 import androidx.annotation.RequiresPermission
+import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.ustadmobile.codec2.Codec2
 import java.io.File
 
@@ -29,14 +29,14 @@ object RecorderUtils {
     }
 
     @RequiresPermission(RECORD_AUDIO)
-    fun onRecord(start: Boolean, destination : String) = if (start) {
+    fun onRecord(start: Boolean, destination : String, carrier: Carrier?) = if (start) {
 
         //Works with computer codec2
         wavRecorder = WavRecorder(DataManager.context, pttInterface)
         DataManager.getSource().let {
             file = createFile(DataManager.fileLocation, destination, it)
         }
-        wavRecorder.startRecording(file?.absolutePath?:"", destination)
+        wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
 
     } else {
         wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context)

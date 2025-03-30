@@ -6,7 +6,6 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.AutomaticGainControl
 import android.media.audiofx.NoiseSuppressor
@@ -24,6 +23,7 @@ import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.toHex
+import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
@@ -74,10 +74,10 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private var runnable = {
     }
 
-    private fun sendRecordEnd(){
+    private fun sendRecordEnd(carrier: Carrier?){
 //        setMinData()
         //todo Correction crash
-        sendData(mutableByteListToSend.toByteArray().copyOf(), true)
+        sendData(mutableByteListToSend.toByteArray().copyOf(), true, carrier)
         mutableByteListToSend.clear()
         numOfPackage++
 //        Toast.makeText(context, "Sent $numOfPackage Packages", Toast.LENGTH_LONG ).show()
@@ -85,7 +85,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     @SuppressLint("MissingPermission")
-    fun startRecording(path: String, destination: String) {
+    fun startRecording(path: String, destination: String, carrier: Carrier?) {
         val audioSource = SharedPreferencesUtil.getAudioSource(DataManager.context)
         recorder = AudioRecord(
             audioSource,
@@ -98,7 +98,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         isRecording = true
 
         recordingThread = thread(true) {
-            writeAudioDataToFile(path)
+            writeAudioDataToFile(path, carrier)
         }
     }
 
@@ -154,13 +154,13 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 removeSyncBleDevices (context)
                 recordingThread = null
                 recorder = null
-                sendRecordEnd()
+                sendRecordEnd(null)
                 savePtt(chatID, path, context)
             }
         }, 400)
     }
 
-    private fun writeAudioDataToFile(path: String) {
+    private fun writeAudioDataToFile(path: String, carrier: Carrier?) {
 
 
         val targetGain = (SharedPreferencesUtil.getGain(DataManager.context)/100f)
@@ -213,11 +213,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
 
                 if(BleManager.isNetworkEnabled()){
-                    handleBlePackage(byteaArray)
+                    handleBlePackage(byteaArray, null)
                 }
                 else if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
 //                    send to BLE
-                    handleBlePackage(byteaArray)
+                    handleBlePackage(byteaArray, carrier)
                 }else {
                     Scopes.getMainCoroutine().launch {
 //                        viewModel?.error?.value = "Unable To Send Message - No Connection"
@@ -393,15 +393,15 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         return byteArray
     }
 
-    private fun sendData(byteArray: ByteArray, isLast : Boolean = false){
+    private fun sendData(byteArray: ByteArray, isLast : Boolean = false, carrier: Carrier? = null){
         if(BleManager.isNetworkEnabled()){
 //            sendToServer(byteArray, isLast)
         }else if (BleManager.isBluetoothEnabled()|| BleManager.isUsbEnabled()) {
-            sendToBle(byteArray, isLast)
+            sendToBle(byteArray, isLast, carrier)
         }
     }
 
-    private fun sendToBle(byteArray: ByteArray, isLast : Boolean = false) {
+    private fun sendToBle(byteArray: ByteArray, isLast: Boolean = false, carrier: Carrier?) {
         Scopes.getDefaultCoroutine().launch {
             val audioIntArray = StardustPackageUtils.byteArrayToIntArray(byteArray)
             val bittelPackage = viewModel?.let {
@@ -413,7 +413,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                     data = audioIntArray)
             }
-            val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.PTT)
+            val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT)
             bittelPackage?.stardustControlByte?.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
             bittelPackage?.stardustControlByte?.stardustDeliveryType = radio.second
             bittelPackage?.checkXor =
@@ -432,7 +432,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         return Random.nextInt(0, 41) // 41 is exclusive
     }
 
-    private fun appendToArray (byteArray: ByteArray?){
+    private fun appendToArray (byteArray: ByteArray?, carrier: Carrier?){
         val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
         if(numOfPackage.times(880) > maxSecondsPTT){
 
@@ -451,7 +451,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 for(byte in it){
                     mutableByteListToSend.add(byte)
                     if(mutableByteListToSend.size == 77){
-                        sendData(mutableByteListToSend.toByteArray().copyOf())
+                        sendData(mutableByteListToSend.toByteArray().copyOf(), carrier = carrier)
                         mutableByteListToSend.clear()
                         numOfPackage++
                     }
@@ -487,7 +487,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         return byteShift1.toByte() or byteShift2.toByte()
     }
 
-    private fun handleBlePackage (byteArray: ByteArray?){
+    private fun handleBlePackage (byteArray: ByteArray?, carrier: Carrier?){
         byteArray?.let { logByteArray("handleBlePackage", it) }
         if(savedByteArray == null){
             savedByteArray = byteArray
@@ -496,7 +496,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 byteArray?.let {
                     val concatenatedByteArray = concatenateByteArraysWithIgnoring(mArray, it)
                     logByteArray("handleBlePackageconcate", concatenatedByteArray)
-                    appendToArray(concatenatedByteArray)
+                    appendToArray(concatenatedByteArray, carrier)
                 }
             }
             savedByteArray = null
