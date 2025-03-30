@@ -344,6 +344,12 @@ object DataManager : StardustAPI, PttInterface{
         return BleManager
     }
 
+    fun unpairDeviceBLE (context: Context) {
+        requireContext(context)
+        val clientConnection = getClientConnection(context)
+        clientConnection.removeBittelBond()
+    }
+
     fun getPortUtils (context: Context): PortUtils {
         requireContext(context)
         return PortUtils

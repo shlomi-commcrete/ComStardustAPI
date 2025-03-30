@@ -102,10 +102,7 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun reconnectToDevice () {
-//        handlerObject = HandlerObject(reconnectTimeout) {
             initDataToUsb(DataManager.context)
-        }
-//        handlerObject?.resetTimer()
     }
 
     fun resetReconnect () {

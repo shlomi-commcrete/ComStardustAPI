@@ -538,7 +538,6 @@ internal class ClientConnection(
             return null
         }
         val pairedDevices = btManager.adapter.bondedDevices
-
         if (pairedDevices.size > 0) {
 
             for (device in pairedDevices) {
@@ -560,10 +559,14 @@ internal class ClientConnection(
         val pairedDevices = btManager.adapter.bondedDevices
 
         if (pairedDevices.size > 0) {
+            val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
 
             for (device in pairedDevices) {
                 val deviceName = device.name
                 val macAddress = device.address
+                if(savedAddress == macAddress) {
+                    return device
+                }
                 val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                     device.alias
                 } else {
