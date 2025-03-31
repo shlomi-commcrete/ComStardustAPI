@@ -271,7 +271,7 @@ object DataManager : StardustAPI, PttInterface{
         if(getClientConnection(context).mDevice != null) {
             return getClientConnection(context).mDevice
         } else {
-            return getClientConnection(context).getBleConnectedStardustDevice()
+            return getClientConnection(context).getBlePairedStardustDevice()
         }
     }
 
