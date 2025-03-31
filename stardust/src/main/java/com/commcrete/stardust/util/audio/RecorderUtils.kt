@@ -39,7 +39,7 @@ object RecorderUtils {
         wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
 
     } else {
-        wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context)
+        wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context, carrier)
     }
 
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){

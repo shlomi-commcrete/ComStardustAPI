@@ -145,7 +145,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
 
-    fun stopRecording(chatID: String, path: String, context: Context) {
+    fun stopRecording(chatID: String, path: String, context: Context, carrier: Carrier?) {
         Handler(Looper.getMainLooper()).postDelayed({
             recorder?.run {
                 isRecording = false
@@ -154,7 +154,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 removeSyncBleDevices (context)
                 recordingThread = null
                 recorder = null
-                sendRecordEnd(null)
+                sendRecordEnd(carrier)
                 savePtt(chatID, path, context)
             }
         }, 400)
@@ -440,8 +440,9 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 it.getDestenation()
                     ?.let { it1 ->
                         RecorderUtils.file?.absolutePath?.let { it2 ->
-                        stopRecording(it1,
-                            it2, context
+                        stopRecording(
+                            it1,
+                            it2, context, carrier
                         )
                             it.maxPTTTimeoutReached()
                     } }
