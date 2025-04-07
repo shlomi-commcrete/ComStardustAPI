@@ -24,7 +24,7 @@ class CoordinatesUtil {
         val coordinate = Coordinates()
         val coordBytes = ByteArray(8)
         coordinate.packGPSCoordData(200.toFloat(), 200.toFloat()
-            , ((-1000).toShort()), coordBytes)
+            , ((32764).toShort()), coordBytes)
         return StardustPackageUtils.byteArrayToIntArray(coordBytes.reversedArray())
     }
 
