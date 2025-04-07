@@ -19,3 +19,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep all of Apache POI and OpenXML schemas
+-keep class org.apache.poi.** { *; }
+-keep class org.openxmlformats.schemas.** { *; }
+-dontwarn org.openxmlformats.schemas.**
+-dontwarn org.apache.xmlbeans.**
+
+# If you're using shaded XMLBeans from poi-ooxml-full
+-keep class schemaorg_apache_xmlbeans.** { *; }
+-dontwarn schemaorg_apache_xmlbeans.**
