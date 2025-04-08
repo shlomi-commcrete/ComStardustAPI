@@ -29,3 +29,20 @@
 # If you're using shaded XMLBeans from poi-ooxml-full
 -keep class schemaorg_apache_xmlbeans.** { *; }
 -dontwarn schemaorg_apache_xmlbeans.**
+
+# Keep everything in com.commcrete.stardust and its subpackages
+-keep class com.commcrete.stardust.** { *; }
+
+# Keep enum values (important if you're using them by ordinal or name)
+-keepclassmembers enum com.commcrete.stardust.** {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+# If you're using reflection (e.g., by class name)
+-keepnames class com.commcrete.stardust.**
+
+# Optional: Keep constructors if you're creating classes via reflection
+-keepclassmembers class com.commcrete.stardust.** {
+    public <init>(...);
+}
