@@ -69,6 +69,7 @@ class StardustConfigurationParser : StardustParser() {
         const val serverByteTypeLength = 1
         const val debuIgnoreCanTrasmitLength = 1
         const val snifferModeLength = 1
+        const val bittelAddressLength = 4
         const val appAddressLength = 4
         const val logModeLength = 2
         const val antennaTypeLength = 1
@@ -76,7 +77,6 @@ class StardustConfigurationParser : StardustParser() {
         const val SOSDataLength = 9
         const val radioLODeductionLength = 4
         const val radioXcvr4DeductionLength = 4
-        const val bittelAddressLength = 4
         const val deviceModelLength = 14
         const val deviceSerialLength = 14
         const val licenceNumberLength = 1
