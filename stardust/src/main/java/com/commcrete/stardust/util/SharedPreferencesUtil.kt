@@ -103,6 +103,9 @@ object SharedPreferencesUtil {
     private const val KEY_FILE_DEFAULT = "file_default"
     private const val KEY_IMAGE_DEFAULT = "image_default"
 
+    //Location
+    private const val KEY_LOCATION_FORMAT = "location_format"
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -473,5 +476,15 @@ object SharedPreferencesUtil {
         } else {
             null
         }
+    }
+
+    fun setLocationFormat (context: Context,locationFormat : String ) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_LOCATION_FORMAT, locationFormat).apply()
+    }
+
+    fun getLocationFormat (context: Context) : String {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        return preferences.getString(KEY_LOCATION_FORMAT, "") ?: ""
     }
 }
