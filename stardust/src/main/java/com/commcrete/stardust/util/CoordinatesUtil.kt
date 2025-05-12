@@ -23,7 +23,7 @@ class CoordinatesUtil {
     fun packEmptyLocation() : Array<Int>{
         val coordinate = Coordinates()
         val coordBytes = ByteArray(8)
-        coordinate.packGPSCoordData(200.toFloat(), 200.toFloat()
+        coordinate.packGPSCoordData(0.toFloat(), 0.toFloat()
             , ((32764).toShort()), coordBytes)
         return StardustPackageUtils.byteArrayToIntArray(coordBytes.reversedArray())
     }
