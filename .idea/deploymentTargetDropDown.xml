@@ -8,6 +8,9 @@
       <entry key="app">
         <State />
       </entry>
+      <entry key="packLocationTest()">
+        <State />
+      </entry>
       <entry key="testXor()">
         <State />
       </entry>

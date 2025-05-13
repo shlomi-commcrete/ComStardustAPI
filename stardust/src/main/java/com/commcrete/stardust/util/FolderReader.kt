@@ -153,6 +153,9 @@ object FolderReader {
 //                }
 //            }
 //        }
+        if(excel == null) {
+            onExcelFilesSelected.onError()
+        }
         excel?.let { processExcelFile(it, context, onExcelFilesSelected) }
     }
 
@@ -163,11 +166,18 @@ object FolderReader {
             if (success != null) {
                 // File saved successfully
                 val userList = readExcelFile(success)
-                onExcelFilesSelected.onGetUsers(userList)
+                if(userList.isNotEmpty()) {
+                    onExcelFilesSelected.onError()
+                } else {
+                    onExcelFilesSelected.onGetUsers(userList)
+                }
 
             } else {
+                onExcelFilesSelected.onError()
                 // Error saving file
             }
+        } else {
+            onExcelFilesSelected.onError()
         }
     }
 
@@ -257,5 +267,6 @@ object FolderReader {
 
     interface OnExcelFilesSelected {
         fun onGetUsers(userList: List<ExcelUser>)
+        fun onError ()
     }
 }
