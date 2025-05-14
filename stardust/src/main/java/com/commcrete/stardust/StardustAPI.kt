@@ -49,4 +49,5 @@ interface StardustAPICallbacks {
     fun receiveFileStatus (index : Int, percentage : Int)
     fun connectionStatusChanged (connectionStatus: BleManager.ConnectionStatus)
     fun onRSSIChanged (rssi : Int)
+    fun onPermissionDenied (deviceName : String)
 }
