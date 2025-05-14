@@ -10,6 +10,7 @@ import androidx.fragment.app.Fragment
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.request_objects.LocationMessage
+import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustLocationPackage
@@ -20,6 +21,7 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
 import com.commcrete.stardust.room.beetle_users.BittelUserRepository
+import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
@@ -74,14 +76,15 @@ object LocationUtils  {
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            var sender : ChatItem? = null
             if(chatContact != null) {
-                chatContact.let {
+                chatContact.let { it ->
                     val contact = it
                     var whoSent = ""
                     var displayName = contact.displayName
                     if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
                         whoSent = bittelPackage.getDestAsString()
-                        val sender = chatsRepo.getChatByBittelID(whoSent)
+                        sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
                             displayName = it.name
                         }
@@ -101,6 +104,12 @@ object LocationUtils  {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+                    sender?.let {
+                        it.message = Message(senderID = whoSent, text = "Location Received", seen = false)
+                        chatsRepo.addChat(it)
+                        val numOfUnread = it.numOfUnseenMessages
+                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
+                    }
                     val pollingUtils = DataManager.getPollingUtils(DataManager.context)
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
@@ -201,6 +210,15 @@ object LocationUtils  {
         message.idNumber = idNumber
         message.senderName = getSenderName(message.senderID)
         MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+        val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+        var senderObj : ChatItem? = null
+        senderObj = chatsRepo.getChatByBittelID(sender)
+        senderObj?.let {
+            it.message = Message(senderID = sender, text = "Location Sent", seen = true)
+            chatsRepo.addChat(it)
+            val numOfUnread = it.numOfUnseenMessages
+            chatsRepo.updateNumOfUnseenMessages(sender, numOfUnread+1)
+        }
     }
 
     fun Double.getAfterDot (numAfterDot : Int): String {
