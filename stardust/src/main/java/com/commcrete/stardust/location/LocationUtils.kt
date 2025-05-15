@@ -90,6 +90,8 @@ object LocationUtils  {
                         }
                     }else {
                         whoSent = bittelPackage.getSourceAsString()
+                        sender = chatsRepo.getChatByBittelID(whoSent)
+
                     }
                     contact.lastUpdateTS = Date().time
                     contact.lat = bittelLocationPackage.latitude.toDouble()
@@ -212,7 +214,7 @@ object LocationUtils  {
         MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
         val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
         var senderObj : ChatItem? = null
-        senderObj = chatsRepo.getChatByBittelID(sender)
+        senderObj = chatsRepo.getChatByBittelID(chatId)
         senderObj?.let {
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
