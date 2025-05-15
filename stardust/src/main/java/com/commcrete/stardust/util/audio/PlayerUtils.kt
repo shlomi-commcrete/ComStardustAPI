@@ -135,11 +135,11 @@ object PlayerUtils : BleMediaConnector() {
             savedUser?.appId?.let {
                 if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
                     && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
-                    playPTT(pttAudio, pttAudio.size, source, destinations )
+                    playPTT(pttAudio, pttAudio.size, source, destinations , false)
                 }
             }
         }else {
-            playPTT(pttAudio, pttAudio.size , source, destinations)
+            playPTT(pttAudio, pttAudio.size , source, destinations, isLocalGroup(source, destinations))
         }
 
         resetTimer()
@@ -223,7 +223,7 @@ object PlayerUtils : BleMediaConnector() {
     }
 
 
-    private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String) {
+    private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String, isGroup: Boolean) {
 //        if(App.isAppInForeground || SharedPreferencesUtil.getEnablePttSound(DataManager.context)){
             track?.let { playStream(it, audioStream, size) }
             DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination), audioStream)

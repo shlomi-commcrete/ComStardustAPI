@@ -2,7 +2,7 @@
 <project version="4">
   <component name="deploymentTargetDropDown">
     <value>
-      <entry key="TestClass">
+      <entry key="LocationManagerInstrumentedTest">
         <State />
       </entry>
       <entry key="app">
@@ -11,7 +11,10 @@
       <entry key="packLocationTest()">
         <State />
       </entry>
-      <entry key="testXor()">
+      <entry key="testFusedLocationFromWifiOnly()">
+        <State />
+      </entry>
+      <entry key="testLocationManagerProvidesLocation()">
         <State />
       </entry>
     </value>
