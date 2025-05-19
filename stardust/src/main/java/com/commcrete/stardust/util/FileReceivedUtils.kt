@@ -162,7 +162,7 @@ object FileReceivedUtils {
                 if(lostPackagesIndex.size >= it.spare ) {
                     updateFailure(FileFailure.MISSING)
                 }
-                if(!checkIfMissingMain()) {
+                if(checkIfMissingMain()) {
                     bittelPackage?.let { saveFile(it, dataStart?.type) }
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
