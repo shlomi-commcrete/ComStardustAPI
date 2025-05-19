@@ -8,5 +8,6 @@ data class StardustAPIPackage(
     val destination : String,
     val requireAck : Boolean = false,
     val carrier: Carrier? = null,
-    val isGroup: Boolean = false
+    val isGroup: Boolean = false,
+    val spare : Int
     )
