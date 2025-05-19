@@ -257,6 +257,11 @@ object FileReceivedUtils {
                     outputStream.write(packageData.data)
                 }
             } else {
+                dataStart?.let {
+                    if(dataList.last().current == it.total) {
+                        dataList.last().data + ByteArray(it.spareData) { 0 }
+                    }
+                }
                 val ldpc = LDPCCode(maxPackets = dataStart?.total ?: 0,parityPackets = dataStart?.spare ?: 0)
                 val decoded = ldpc.decode(received = sortedList.map { it.data }, lostIndices = lostPackagesIndex.toList())
                 for (packageData in decoded) {
