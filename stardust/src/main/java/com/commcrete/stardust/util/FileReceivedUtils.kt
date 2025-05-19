@@ -2,8 +2,6 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
-import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
 import com.commcrete.stardust.StardustAPIPackage
@@ -114,11 +112,12 @@ object FileReceivedUtils {
         var isReceivingInProgress : Boolean = false,
         var receivingPercentage : Int = 0,
         val bittelPackage: StardustPackage? = null,
-        val lostPackagesIndex : MutableList<Int> = mutableListOf()
+        val lostPackagesIndex : MutableSet<Int> = mutableSetOf()
     ) {
         private val sendInterval : Long = 3000
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
+            checkData()
             dataStart = null
             dataList.clear()
             Scopes.getMainCoroutine().launch {
@@ -146,35 +145,53 @@ object FileReceivedUtils {
         }
 
         fun updateProgress () {
+            checkMissingPackages()
             if(dataStart != null ) {
-//                Log.d("fileReceived", "index : $index")
-//                Log.d("fileReceived", "data start total : ${dataStart?.total}")
-//                Log.d("fileReceived", "dataList.size : ${dataList.size}")
-//                Log.d("fileReceived", "data current : ${dataList.lastOrNull()?.current}")
                 Scopes.getMainCoroutine().launch {
                     dataStart?.let {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
                         DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
                     }
                 }
-                dataStart?.let {
-                    if(it.total == dataList.size) {
+                checkData()
+            }
+        }
+
+        private fun checkData () {
+            dataStart?.let {
+                if(lostPackagesIndex.size >= it.spare ) {
+                    updateFailure(FileFailure.MISSING)
+                }
+                if(!checkIfMissingMain()) {
+                    bittelPackage?.let { saveFile(it, dataStart?.type) }
+                    Scopes.getMainCoroutine().launch {
+                        isReceivingInProgress = false
+                        DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                    }
+                    handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                } else {
+                    if(it.total == dataList.last().current) {
                         bittelPackage?.let { saveFile(it, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
                             DataManager.getCallbacks()?.receiveFileStatus(index, 0)
                         }
                         handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                    } else {
+
                     }
                 }
             }
         }
-
         private fun calculateDelay () : Int {
             dataStart?.spare?.let {
                 return it - lostPackagesIndex.size
             }
             return 0
+        }
+
+        private fun updateFailure (failure: FileFailure) {
+            DataManager.getCallbacks()?.receiveFailure(failure)
         }
 
         private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {
@@ -197,11 +214,12 @@ object FileReceivedUtils {
 
                 // Write concatenated data to the temporary file
 
+
+
+                //After i get all the packages.
                 if(fileType == 0) {
                     FileOutputStream(tempOutputFile).use { outputStream ->
-                        for (packageData in dataList.sortedBy { it.current }) {
-                            outputStream.write(packageData.data)
-                        }
+                        writeDataToFile(outputStream)
                     }
                     // Step 2: Decompress the temporary file into the target file
                     FileSendUtils.decompressTextFile(tempOutputFile, targetFile)
@@ -210,9 +228,7 @@ object FileReceivedUtils {
 
                 } else {
                     FileOutputStream(targetFile).use { outputStream ->
-                        for (packageData in dataList.sortedBy { it.current }) {
-                            outputStream.write(packageData.data)
-                        }
+                        writeDataToFile(outputStream)
                     }
                 }
 
@@ -234,6 +250,49 @@ object FileReceivedUtils {
             }
         }
 
+        private fun writeDataToFile(outputStream: FileOutputStream) {
+            val sortedList = dataList.sortedBy { it.current }
+            if(dataStart?.spare == 0) {
+                for (packageData in sortedList) {
+                    outputStream.write(packageData.data)
+                }
+            } else {
+                val ldpc = LDPCCode(maxPackets = dataStart?.total ?: 0,parityPackets = dataStart?.spare ?: 0)
+                val decoded = ldpc.decode(received = sortedList.map { it.data }, lostIndices = lostPackagesIndex.toList())
+                for (packageData in decoded) {
+                    outputStream.write(packageData)
+                }
+            }
+        }
+
+        private fun checkMissingPackages() {
+            if (dataList.isEmpty()) return
+
+            // Step 1: Get all present indices
+            val presentIndices = dataList.map { it.current }.toSet()
+
+            // Step 2: Determine the max current index (assuming linear and sequential from 0)
+            val maxIndex = dataList.maxOf { it.current }
+
+            // Step 3: Compare expected vs present
+            for (i in 0..maxIndex) {
+                if (i !in presentIndices) {
+                    lostPackagesIndex.add(i)
+                }
+            }
+
+            // Optional: Print or log the result
+            println("Missing packages: $lostPackagesIndex")
+        }
+
+        private fun checkIfMissingMain(): Boolean {
+            val mainCount = dataStart?.total ?: return false
+            val spare = dataStart?.spare ?: 0
+
+            // Check if any missing package index is in the main range
+            return ((mainCount - spare) == dataList.size ) && lostPackagesIndex.isEmpty()
+        }
+
 
         private fun handleAck (bittelPackage: StardustPackage) {
 
@@ -246,6 +305,11 @@ object FileReceivedUtils {
             }catch (e : Exception) {
                 e.printStackTrace()
             }
+        }
+
+        enum class FileFailure {
+            MISSING,
+            ERROR
         }
     }
 }
