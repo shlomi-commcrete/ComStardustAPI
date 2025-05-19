@@ -11,6 +11,7 @@ class StardustFileStartParser : StardustParser() {
         const val initLength2 = 3
         const val typeLength = 1
         const val totalLength = 2
+        const val spareLength = 2
     }
 
     fun parseFileStart (bittelPackage: StardustPackage) : StardustFileStartPackage? {
@@ -22,9 +23,13 @@ class StardustFileStartParser : StardustParser() {
             offset += typeLength
             val totalBytes = cutByteArray(byteArray, totalLength, offset)
             offset += totalLength
+            val spareBytes = cutByteArray(byteArray, spareLength, offset)
+            offset += spareLength
 
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
-            byteArrayToUInt(totalBytes.reversedArray()).toInt())
+            byteArrayToUInt(totalBytes.reversedArray()).toInt(),
+                spare =
+                byteArrayToUInt(totalBytes.reversedArray()).toInt())
 
         }
         return null
@@ -41,7 +46,9 @@ class StardustFileStartParser : StardustParser() {
             offset += totalLength
 
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
-            byteArrayToUInt(totalBytes.reversedArray()).toInt())
+            byteArrayToUInt(totalBytes.reversedArray()).toInt(),
+                spare =
+                byteArrayToUInt(totalBytes.reversedArray()).toInt())
 
         }
         return null
