@@ -253,7 +253,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleBittelFileResponse(mPackage: StardustPackage) {
-        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(6,83, 84, 82))) {
+        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(9,83, 84, 82))) {
             StardustFileStartParser().parseFileStart(bittelPackage = mPackage)
                 ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
             return
