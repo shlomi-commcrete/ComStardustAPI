@@ -252,7 +252,7 @@ object FileReceivedUtils {
 
         private fun writeDataToFile(outputStream: FileOutputStream) {
             val sortedList = dataList.sortedBy { it.current }
-            if(dataStart?.spare == 0) {
+            if(dataStart?.spare == 0 || lostPackagesIndex.isEmpty()) {
                 for (packageData in sortedList) {
                     outputStream.write(packageData.data)
                 }
