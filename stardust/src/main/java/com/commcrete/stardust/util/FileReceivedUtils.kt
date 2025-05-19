@@ -113,7 +113,8 @@ object FileReceivedUtils {
         var dataStart : StardustFileStartPackage? = null,
         var isReceivingInProgress : Boolean = false,
         var receivingPercentage : Int = 0,
-        val bittelPackage: StardustPackage? = null
+        val bittelPackage: StardustPackage? = null,
+        val lostPackagesIndex : MutableList<Int> = mutableListOf()
     ) {
         private val sendInterval : Long = 3000
         private val handler : Handler = Handler(Looper.getMainLooper())
@@ -131,7 +132,7 @@ object FileReceivedUtils {
             handler.removeCallbacksAndMessages(null)
             handler.postDelayed(
                 runnable,
-                sendInterval
+                sendInterval * calculateDelay()
             )
         }
 
@@ -167,6 +168,13 @@ object FileReceivedUtils {
                     }
                 }
             }
+        }
+
+        private fun calculateDelay () : Int {
+            dataStart?.spare?.let {
+                return it - lostPackagesIndex.size
+            }
+            return 0
         }
 
         private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {

@@ -55,7 +55,7 @@ object FileSendUtils {
         this.stardustAPIPackage = stardustAPIPackage
         isSendingInProgress.value = true
         val fileList = listOf(file)
-        val numOfPackages = calculateNumOfPackages(fileList)
+        val numOfPackages = calculateNumOfPackages(fileList, stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending()
         dest = stardustAPIPackage.destination
         createStartPackage(fileStartParser,
@@ -153,7 +153,8 @@ object FileSendUtils {
         if(dest == null) {
             return
         }
-        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages)
+        // TODO: Add encode and spare
+        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, 0)
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
@@ -278,7 +279,7 @@ object FileSendUtils {
         }
     }
 
-    private fun calculateNumOfPackages(files : List<File>) : Int {
+    private fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
         var length = 0
         val chunkSize = 135
         for (file in files) {
@@ -287,7 +288,7 @@ object FileSendUtils {
                 length ++
             }
         }
-        return length
+        return length + spare
     }
 
     private fun calculateSendTime(numOfPackages: Int): String {
