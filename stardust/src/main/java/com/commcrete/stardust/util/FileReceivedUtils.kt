@@ -283,6 +283,11 @@ object FileReceivedUtils {
                     lostIndices = lostPackagesIndex.toList()
                 ).toMutableList()
 
+                // Remove the last `parityPackets` elements
+                repeat(parityPackets) {
+                    if (decoded.isNotEmpty()) decoded.removeAt(decoded.lastIndex)
+                }
+
                 dataStart?.let {
                     val spare = it.spareData
                     val lastIndex = decoded.lastIndex
