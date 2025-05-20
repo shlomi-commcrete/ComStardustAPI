@@ -17,7 +17,7 @@ class LDPCCode(
     private val parityPackets: Int = 4
 ) : LDPCEncoder {
     private val parityCheckMatrix: BinaryMatrix = generateParityCheckMatrix(maxPackets, parityPackets)
-    private var maxPacketSize: Int = 0
+    var maxPacketSize: Int = 0
 
     private fun generateParityCheckMatrix(dataLength: Int, parityLength: Int): BinaryMatrix {
         val total = dataLength + parityLength
