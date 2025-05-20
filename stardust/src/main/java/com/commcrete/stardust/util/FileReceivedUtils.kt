@@ -139,10 +139,14 @@ object FileReceivedUtils {
         fun resetReceiveTimer() {
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
+            val timesDelay = calculateDelay()
             handler.postDelayed(
                 runnable,
-                sendInterval * calculateDelay()
+                sendInterval * timesDelay
             )
+
+            Log.d("lastPackage", "delay : $timesDelay")
+
         }
 
         fun removeReceiveTimer() {
