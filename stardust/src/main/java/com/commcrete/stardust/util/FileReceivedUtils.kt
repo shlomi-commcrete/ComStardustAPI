@@ -12,6 +12,7 @@ import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.stardust.hexStringToByteArray
 import com.commcrete.stardust.stardust.model.StardustPackage
 import kotlinx.coroutines.launch
 import java.io.File
@@ -283,11 +284,9 @@ object FileReceivedUtils {
                     lostIndices = lostPackagesIndex.toList()
                 ).toMutableList()
 
-                // Remove the last `parityPackets` elements
-                repeat(parityPackets) {
-                    if (decoded.isNotEmpty()) decoded.removeAt(decoded.lastIndex)
+                for (packageData in decoded) {
+                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
                 }
-
                 dataStart?.let {
                     val spare = it.spareData
                     val lastIndex = decoded.lastIndex
@@ -295,10 +294,12 @@ object FileReceivedUtils {
                 }
 
                 for (packageData in decoded) {
+                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
                     outputStream.write(packageData)
                 }
             }
         }
+
 
         private fun checkMissingPackages() {
             if (dataList.isEmpty()) return
@@ -354,3 +355,6 @@ object FileReceivedUtils {
         }
     }
 }
+
+fun Packet.toHexString(): String =
+    joinToString(" ") { "%02X".format(it) }
