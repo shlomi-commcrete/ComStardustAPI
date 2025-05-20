@@ -278,7 +278,7 @@ object FileReceivedUtils {
             } else {
                 val total = dataStart?.total ?: 0
                 val parityPackets = dataStart?.spare ?: 0
-                val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
+                val ldpc = LDPCCode(maxPackets = total - parityPackets -1,parityPackets = parityPackets)
                 val decoded = ldpc.decode(
                     received = sortedList.map { it.data },
                     lostIndices = lostPackagesIndex.toList()
