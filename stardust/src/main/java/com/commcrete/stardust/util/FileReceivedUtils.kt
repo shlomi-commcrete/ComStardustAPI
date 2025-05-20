@@ -117,7 +117,16 @@ object FileReceivedUtils {
         private val sendInterval : Long = 3000
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
-            checkData()
+            if(checkIfHaveEnough()) {
+                bittelPackage?.let { saveFile(it, dataStart?.type) }
+                Scopes.getMainCoroutine().launch {
+                    isReceivingInProgress = false
+                    DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                }
+                handler.postDelayed( {removeFromFileReceivedList()}, 300)
+            } else {
+
+            }
             dataStart = null
             dataList.clear()
             Scopes.getMainCoroutine().launch {
@@ -159,7 +168,7 @@ object FileReceivedUtils {
 
         private fun checkData () {
             dataStart?.let {
-                if(lostPackagesIndex.size >= it.spare ) {
+                if(lostPackagesIndex.size > (it.total-it.spare) ) {
                     updateFailure(FileFailure.MISSING)
                 }
                 if(checkIfMissingMain()) {
@@ -178,7 +187,6 @@ object FileReceivedUtils {
                         }
                         handler.postDelayed( {removeFromFileReceivedList()}, 300)
                     } else {
-
                     }
                 }
             }
@@ -301,6 +309,12 @@ object FileReceivedUtils {
 
             // Check if any missing package index is in the main range
             return ((mainCount - spare) == dataList.size ) && lostPackagesIndex.isEmpty()
+        }
+
+        private fun checkIfHaveEnough(): Boolean {
+            val mainCount = dataStart?.total ?: return false
+            val spare = dataStart?.spare ?: 0
+            return (dataList.size  >= (mainCount - spare))
         }
 
 
