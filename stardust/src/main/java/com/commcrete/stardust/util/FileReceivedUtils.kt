@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
 import com.commcrete.stardust.StardustAPIPackage
@@ -114,7 +115,7 @@ object FileReceivedUtils {
         val bittelPackage: StardustPackage? = null,
         val lostPackagesIndex : MutableSet<Int> = mutableSetOf()
     ) {
-        private val sendInterval : Long = 3000
+        private val sendInterval : Long = 2300
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
             if(checkIfHaveEnough()) {
@@ -179,7 +180,8 @@ object FileReceivedUtils {
                     }
                     handler.postDelayed( {removeFromFileReceivedList()}, 300)
                 } else {
-                    if(it.total == dataList.last().current) {
+                    Log.d("lastPackage", "total : ${it.total}, current : ${dataList.last().current}")
+                    if(it.total == dataList.last().current + 1) {
                         bittelPackage?.let { saveFile(it, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
@@ -191,13 +193,17 @@ object FileReceivedUtils {
                 }
             }
         }
-        private fun calculateDelay () : Int {
-            dataStart?.spare?.let {
-                return it - lostPackagesIndex.size
+        private fun calculateDelay(): Int {
+            val spareDelay = dataStart?.spare?.let {
+                it - lostPackagesIndex.size
             }
-            return 0
-        }
 
+            val totalDelay = dataStart?.total?.let {
+                it - dataList.last().current + 1
+            }
+
+            return listOfNotNull(spareDelay, totalDelay).minOrNull() ?: 0
+        }
         private fun updateFailure (failure: FileFailure) {
             DataManager.getCallbacks()?.receiveFailure(failure)
         }
