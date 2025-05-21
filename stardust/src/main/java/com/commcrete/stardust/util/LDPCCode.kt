@@ -17,7 +17,7 @@ class LDPCCode(
     private val parityPackets: Int = 4
 ) : LDPCEncoder {
     private val parityCheckMatrix: BinaryMatrix = generateParityCheckMatrix(maxPackets, parityPackets)
-    var maxPacketSize: Int = 0
+    private var maxPacketSize: Int = 0
 
     private fun generateParityCheckMatrix(dataLength: Int, parityLength: Int): BinaryMatrix {
         val total = dataLength + parityLength
@@ -94,6 +94,9 @@ class LDPCCode(
 
     override fun decode(received: List<Packet?>, lostIndices: List<Int>): List<Packet> {
         val total = maxPackets + parityPackets
+        received.firstOrNull { it != null }?.let {
+            maxPacketSize = it.size
+        }
         val working = received.toMutableList()
 
         // pad or trim to expected length

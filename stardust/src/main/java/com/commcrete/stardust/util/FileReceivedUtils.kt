@@ -278,10 +278,17 @@ object FileReceivedUtils {
             } else {
                 val total = dataStart?.total ?: 0
                 val parityPackets = dataStart?.spare ?: 0
+                val receivedWithNulls: List<Packet?> = (0 until total).map { index ->
+                    if (lostPackagesIndex.contains(index)) {
+                        null
+                    } else {
+                        // Find the packet with current == index
+                        sortedList.find { it.current == index }?.data
+                    }
+                }
                 val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
-                ldpc.maxPacketSize = sortedList.last().data.size
                 val decoded = ldpc.decode(
-                    received = sortedList.map { it.data },
+                    received = receivedWithNulls,
                     lostIndices = lostPackagesIndex.toList()
                 ).toMutableList()
 
