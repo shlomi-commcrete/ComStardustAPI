@@ -40,10 +40,13 @@ object FileSendUtils {
     private var sendType : StardustFileStartParser.FileTypeEnum? = null
     private var stardustAPIPackage : StardustAPIPackage? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
+    val randomMiss : Int = 2
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-            sendPackage(mPackage, dest)
+            if(current.value != randomMiss.toFloat()) {
+                sendPackage(mPackage, dest)
+            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
