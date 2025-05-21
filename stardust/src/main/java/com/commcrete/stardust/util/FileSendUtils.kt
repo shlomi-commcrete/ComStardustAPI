@@ -164,7 +164,7 @@ object FileSendUtils {
             return
         }
         // TODO: Add encode and spare
-        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, 0)
+        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData)
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
