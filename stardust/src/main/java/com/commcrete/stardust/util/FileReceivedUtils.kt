@@ -207,8 +207,9 @@ object FileReceivedUtils {
                 it - dataList.last().current + 1
             }
 
-            return listOfNotNull(spareDelay, totalDelay).minOrNull() ?: 0
+            return maxOf(1, listOfNotNull(spareDelay, totalDelay).minOrNull() ?: 0)
         }
+
         private fun updateFailure (failure: FileFailure) {
             DataManager.getCallbacks()?.receiveFailure(failure)
         }
