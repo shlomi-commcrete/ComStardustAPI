@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
@@ -74,6 +75,7 @@ object FileSendUtils {
 
         mutablePackagesMap.clear()
         mutablePackagesMap.putAll(packages)
+        testDecode(packages, stardustAPIPackage.spare)
         resetSendTimer()
         saveLocalMessages(
             stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
@@ -220,6 +222,13 @@ object FileSendUtils {
         }
 
         return Pair(bittelFileList, paddingAdded)
+    }
+
+    private fun testDecode(packages: Map<Float, StardustFilePackage>, spare: Int) {
+        val data = packages.values.map { it.data }
+        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+        val decoded = ldpc.decode(data, listOf(spare))
+        Log.d("decoded", "decoded = ${decoded.size}")
     }
 
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
