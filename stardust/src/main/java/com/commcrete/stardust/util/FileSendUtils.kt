@@ -58,10 +58,19 @@ object FileSendUtils {
         val numOfPackages = calculateNumOfPackages(fileList, stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending()
         dest = stardustAPIPackage.destination
-        createStartPackage(fileStartParser,
-            numOfPackages, dest, stardustAPIPackage)
+        var packages =  createPackages(fileList)
+        if(stardustAPIPackage.spare > 0) {
+            val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
+           packages = dataWithSpare.first
+            createStartPackage(fileStartParser,
+                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second)
+        } else {
+            createStartPackage(fileStartParser,
+                numOfPackages, dest, stardustAPIPackage, 0)
+        }
+
         mutablePackagesMap.clear()
-        mutablePackagesMap.putAll(createPackages(fileList))
+        mutablePackagesMap.putAll(packages)
         resetSendTimer()
         saveLocalMessages(
             stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
@@ -148,7 +157,8 @@ object FileSendUtils {
         type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
         dest: String?,
-        stardustAPIPackage: StardustAPIPackage
+        stardustAPIPackage: StardustAPIPackage,
+        spareData : Int
     ){
         if(dest == null) {
             return
@@ -174,6 +184,39 @@ object FileSendUtils {
                 it.addMessageToQueue(fileStartMessage)
             }
         }
+    }
+    private fun createSparePackages(
+        packages: Map<Float, StardustFilePackage>,
+        spare: Int
+    ): Pair<Map<Float, StardustFilePackage>, Int> {
+        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+        val dataList = packages.map { it.value.data }.toMutableList()
+
+        var paddingAdded = 0
+
+        // Pad the last packet to 135 bytes if needed
+        if (dataList.isNotEmpty()) {
+            val lastIndex = dataList.lastIndex
+            val originalSize = dataList[lastIndex].size
+            if (originalSize < 135) {
+                paddingAdded = 135 - originalSize
+                dataList[lastIndex] = dataList[lastIndex].copyOf(135) // Pads with zeros
+            }
+        }
+
+        val newArray = ldpc.encode(dataList)
+        val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
+
+        for ((index, data) in newArray.withIndex()) {
+            val isLast = index == newArray.lastIndex
+            bittelFileList[index.toFloat()] = StardustFilePackage(
+                current = index,
+                data = data,
+                isLast = isLast
+            )
+        }
+
+        return Pair(bittelFileList, paddingAdded)
     }
 
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
