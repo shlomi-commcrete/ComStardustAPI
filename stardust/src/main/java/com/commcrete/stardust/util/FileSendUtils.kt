@@ -227,7 +227,7 @@ object FileSendUtils {
     private fun testDecode(packages: Map<Float, StardustFilePackage>, spare: Int) {
         val data = packages.values.map { it.data }
         val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
-        val decoded = ldpc.decode(data, listOf(spare))
+        val decoded = ldpc.decode(data, listOf(2))
         Log.d("decoded", "decoded = ${decoded.size}")
     }
 
