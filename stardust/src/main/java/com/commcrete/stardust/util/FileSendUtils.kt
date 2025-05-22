@@ -93,7 +93,7 @@ object FileSendUtils {
     }
 
     private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
-        val count = maxOf(1, (spare - kotlin.math.sqrt(spare.toDouble())).toInt())
+        val count = maxOf(1, (kotlin.math.sqrt(spare.toDouble())).toInt())
         randomMisses = mutableSetOf<Int>()
 
         while (randomMisses.size < count) {
