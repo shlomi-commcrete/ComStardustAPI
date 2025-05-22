@@ -41,11 +41,11 @@ object FileSendUtils {
     private var sendType : StardustFileStartParser.FileTypeEnum? = null
     private var stardustAPIPackage : StardustAPIPackage? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
-    val randomMiss : Int = 2
+    var randomMisses : MutableSet<Int> = mutableSetOf()
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-            if(current.value != randomMiss.toFloat()) {
+            if(randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
             }
         }
@@ -63,6 +63,7 @@ object FileSendUtils {
         this.onFileStatusChange?.startSending()
         dest = stardustAPIPackage.destination
         var packages =  createPackages(fileList)
+
         if(stardustAPIPackage.spare > 0) {
             val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
            packages = dataWithSpare.first
@@ -72,10 +73,10 @@ object FileSendUtils {
             createStartPackage(fileStartParser,
                 numOfPackages, dest, stardustAPIPackage, 0)
         }
-
+        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
         mutablePackagesMap.clear()
         mutablePackagesMap.putAll(packages)
-        testDecode(packages, stardustAPIPackage.spare)
+//        testDecode(packages, stardustAPIPackage.spare)
         resetSendTimer()
         saveLocalMessages(
             stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
@@ -89,6 +90,18 @@ object FileSendUtils {
         if(sendingPercentage.value == 100) {
             finishSending()
         }
+    }
+
+    private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
+        val count = maxOf(1, (spare - kotlin.math.sqrt(spare.toDouble())).toInt())
+        randomMisses = mutableSetOf<Int>()
+
+        while (randomMisses.size < count) {
+            val rand = (0 until numOfPackages).random()
+            randomMisses.add(rand)
+        }
+
+        return randomMisses.toList()
     }
 
     private fun saveLocalMessages (chatID : String, userId : String, fileTypeEnum: StardustFileStartParser.FileTypeEnum,
