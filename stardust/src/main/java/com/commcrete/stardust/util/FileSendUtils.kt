@@ -45,7 +45,7 @@ object FileSendUtils {
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-            if(randomMisses.contains(current.value?.toInt())) {
+            if(!randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
             }
         }
