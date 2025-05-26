@@ -45,9 +45,9 @@ object FileSendUtils {
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-            if(!randomMisses.contains(current.value?.toInt())) {
+//            if(!randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
-            }
+//            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
@@ -73,7 +73,7 @@ object FileSendUtils {
             createStartPackage(fileStartParser,
                 numOfPackages, dest, stardustAPIPackage, 0)
         }
-        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
+//        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
         mutablePackagesMap.clear()
         mutablePackagesMap.putAll(packages)
 //        testDecode(packages, stardustAPIPackage.spare)
