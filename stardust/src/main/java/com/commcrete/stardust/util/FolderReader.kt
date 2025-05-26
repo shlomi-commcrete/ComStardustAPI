@@ -166,7 +166,7 @@ object FolderReader {
             if (success != null) {
                 // File saved successfully
                 val userList = readExcelFile(success)
-                if(userList.isNotEmpty()) {
+                if(userList.isEmpty()) {
                     onExcelFilesSelected.onError()
                 } else {
                     onExcelFilesSelected.onGetUsers(userList)
