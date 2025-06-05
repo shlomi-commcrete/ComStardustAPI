@@ -1,4 +1,4 @@
-package com.commcrete.bittell.util.bittel_package.model
+package com.commcrete.stardust.stardust.model
 
 data class StardustFileStartPackage(
     val type: Int,

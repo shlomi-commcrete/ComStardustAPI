@@ -4,7 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
-import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
+import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
@@ -12,7 +12,6 @@ import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
-import com.commcrete.stardust.stardust.hexStringToByteArray
 import com.commcrete.stardust.stardust.model.StardustPackage
 import kotlinx.coroutines.launch
 import java.io.File

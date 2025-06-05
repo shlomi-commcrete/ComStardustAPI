@@ -63,20 +63,20 @@ object UsbDevicePermissionHandler {
                             // Cancel the timeout runnable since we received a response
                             handler.removeCallbacks(permissionTimeoutRunnable)
 
-                            if (permissionGranted) {
+//                            if (permissionGranted) {
                                 // Permission granted for this device
                                 Timber.tag("UsbPermission").d("Permission granted for device: ${currentDevice?.productName}")
                             context?.let { connectToUnknownDevice(it, currentDevice!!) }
                                 // Handle the connected device as needed
-                            } else {
-                                // Permission denied
-                                Timber.tag("UsbPermission").d("Permission denied for device: ${currentDevice?.productName}")
-                                currentDevice?.productName?.let {
-                                    DataManager.getCallbacks()?.onPermissionDenied(
-                                        it
-                                    )
-                                }
-                            }
+//                            } else {
+//                                // Permission denied
+//                                Timber.tag("UsbPermission").d("Permission denied for device: ${currentDevice?.productName}")
+//                                currentDevice?.productName?.let {
+//                                    DataManager.getCallbacks()?.onPermissionDenied(
+//                                        it
+//                                    )
+//                                }
+//                            }
                         }
 
                         // Proceed to request permission for the next device, if any

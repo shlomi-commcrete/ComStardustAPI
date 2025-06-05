@@ -5,7 +5,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
-import com.commcrete.bittell.util.bittel_package.model.StardustFileStartPackage
+import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
