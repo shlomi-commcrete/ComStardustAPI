@@ -20,7 +20,7 @@ class ContactsRepository (private val contactsDao: ContactsDao) {
     fun  getChatContactByAppBittelID(bittelID : String) : ChatContact? = contactsDao.getChatContactByAppBittelID(bittelID)
 
 
-    fun  getUserNamesByUsersIds(userIds : List<String>) : List<ChatContact> = contactsDao.getUserNames(userIds)
+//    fun  getUserNamesByUsersIds(userIds : List<String>) : List<ChatContact> = contactsDao.getUserNames(userIds)
 
     suspend fun addContact(chatContact: ChatContact) {
         contactsDao.addContact(chatContact)
@@ -29,7 +29,7 @@ class ContactsRepository (private val contactsDao: ContactsDao) {
         contactsDao.addAllContacts(chatContact)
     }
 
-    fun  getContactsById(userIds : List<String>) : List<ChatContact> = contactsDao.getContactsById(userIds)
+//    fun  getContactsById(userIds : List<String>) : List<ChatContact> = contactsDao.getContactsById(userIds)
 
     suspend fun updateChatName(chatId: String, name : String) = contactsDao.updateChatName(chatId, name)
 
