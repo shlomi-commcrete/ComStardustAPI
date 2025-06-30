@@ -19,8 +19,13 @@ interface ChatsDao {
 
     @Query("SELECT * FROM chats_table ORDER BY epochTimeMs DESC")
     fun readChats() : List<ChatItem>
-    @Query("SELECT * FROM chats_table WHERE chat_id=:chatId LIMIT 1")
-    fun getChat(chatId: String) : LiveData<ChatItem>
+    @Query("""
+      SELECT * 
+        FROM chats_table 
+       WHERE LOWER(chat_id) = LOWER(:chatId) 
+       LIMIT 1
+    """)
+    fun getChat(chatId: String): LiveData<ChatItem>
 
     @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE  chat_id=:chatId")
     suspend fun updateChatAudioReceived(chatId: String, isAudioReceived : Boolean)
@@ -46,8 +51,13 @@ interface ChatsDao {
     @Query("SELECT chat_id FROM chats_table WHERE is_group = 1 ")
     fun getAllGroupIds() : List<String>
 
-    @Query("SELECT * FROM chats_table WHERE appId LIKE '%'||:bittelID||'%' LIMIT 1")
-    fun getChatContactByBittelID(bittelID : String) : ChatItem?
+    @Query("""
+      SELECT * 
+        FROM chats_table 
+       WHERE LOWER(appId) LIKE '%' || LOWER(:bittelID) || '%' 
+       LIMIT 1
+    """)
+    fun getChatContactByBittelID(bittelID: String): ChatItem?
 
     @Query("DELETE FROM chats_table")
     fun clearData()

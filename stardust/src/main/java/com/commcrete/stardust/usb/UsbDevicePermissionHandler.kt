@@ -110,7 +110,7 @@ object UsbDevicePermissionHandler {
                 val permissionIntent = PendingIntent.getBroadcast(
                     context, 0,
                     Intent(ACTION_USB_PERMISSION),
-                    PendingIntent.FLAG_IMMUTABLE
+                    PendingIntent.FLAG_MUTABLE
                 )
                 usbManager?.requestPermission(currentDevice, permissionIntent)
 
