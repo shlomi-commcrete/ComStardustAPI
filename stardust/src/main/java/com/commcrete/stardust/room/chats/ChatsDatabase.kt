@@ -9,7 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
 
-@Database(entities = [ChatItem::class], version = 31, exportSchema = false)
+@Database(entities = [ChatItem::class], version = 32, exportSchema = false)
 @TypeConverters(Converters.StringArrayConverter::class, Converters.DoubleArrayConverter::class)
 abstract class ChatsDatabase : RoomDatabase() {
     abstract fun chatsDao() : ChatsDao

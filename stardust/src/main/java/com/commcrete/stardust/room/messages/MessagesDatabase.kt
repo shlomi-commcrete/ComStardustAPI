@@ -9,7 +9,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
 
-@Database(entities = [MessageItem::class], version = 22, exportSchema = false)
+@Database(entities = [MessageItem::class], version = 23, exportSchema = false)
 @TypeConverters(Converters.EnumConverter::class)
 
 abstract class MessagesDatabase : RoomDatabase() {
