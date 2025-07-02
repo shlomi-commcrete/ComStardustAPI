@@ -119,6 +119,9 @@ object SOSUtils {
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
                 messagesRepository.addContact(messageItem)
+                val numOfUnread = chatItem?.numOfUnseenMessages ?: 0
+                chatsRepo.updateNumOfUnseenMessages(stardustAPIPackage.source, numOfUnread+1)
+
             }
         }
     }

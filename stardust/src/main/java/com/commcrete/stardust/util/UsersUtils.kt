@@ -164,11 +164,13 @@ object UsersUtils {
                                 "S.O.S"}
                         }
                         it.message = Message(
-                            senderID = whoSent,
+                            senderID = bittelPackage.getSourceAsString(),
                             text = "$text Received",
                             seen = false
                         )
                         it.let { chatsRepo.addChat(it) }
+                        val numOfUnread = it.numOfUnseenMessages
+                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                     }
 
                 }
@@ -223,11 +225,13 @@ object UsersUtils {
 
                     sender?.let {
                         it.message = Message(
-                            senderID = whoSent,
+                            senderID = bittelPackage.getSourceAsString(),
                             text = "S.O.S Received",
                             seen = false
                         )
                         it.let { chatsRepo.addChat(it) }
+                        val numOfUnread = it.numOfUnseenMessages
+                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                     }
 
                 }
