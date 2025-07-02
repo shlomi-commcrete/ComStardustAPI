@@ -103,7 +103,8 @@ object SOSUtils {
                 "S.O.S"}
         }
         val text = "$textName Sent"
-        val messageItem = MessageItem(chatId = stardustAPIPackage.destination, text = text, epochTimeMs = Date().time, senderID = stardustAPIPackage.source)
+        val messageItem = MessageItem(chatId = stardustAPIPackage.destination, text = text, epochTimeMs = Date().time, senderID = stardustAPIPackage.source,
+            isSOS = true, sosType = type)
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = DataManager.getChatsRepo(context)
             val messagesRepository = DataManager.getMessagesRepo(context)
