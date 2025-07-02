@@ -136,7 +136,7 @@ object UsersUtils {
                     contact?.isSOS = true
                     contact?.let { it1 -> contactsRepository.addContact(it1) }
                     Scopes.getMainCoroutine().launch {
-                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
+//                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
                     }
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
@@ -183,7 +183,7 @@ object UsersUtils {
                     contact?.isSOS = true
                     contact?.let { it1 -> contactsRepository.addContact(it1) }
                     Scopes.getMainCoroutine().launch {
-                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
+//                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
                     }
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
