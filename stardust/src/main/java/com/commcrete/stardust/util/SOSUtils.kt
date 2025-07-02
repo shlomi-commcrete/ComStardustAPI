@@ -102,7 +102,9 @@ object SOSUtils {
             else -> {
                 "S.O.S"}
         }
-        val text = "$textName Sent"
+//        val text = "$textName Sent"
+        val text = "latitude : ${location.latitude}\n" +
+                "longitude : ${location.longitude}\naltitude : ${location.altitude}"
         val messageItem = MessageItem(chatId = stardustAPIPackage.destination, text = text, epochTimeMs = Date().time, senderID = stardustAPIPackage.source,
             isSOS = true, sosType = type)
         Scopes.getDefaultCoroutine().launch {
