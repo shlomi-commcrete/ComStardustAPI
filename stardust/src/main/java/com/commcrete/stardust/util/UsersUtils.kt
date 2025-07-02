@@ -141,7 +141,8 @@ object UsersUtils {
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
-                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = true)
+                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = true,
+                        sosType = bittelSOSPackage.sosType)
                     MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
                     var location = Location(whoSent)
                     location.latitude = bittelSOSPackage.latitude.toDouble()

@@ -39,6 +39,8 @@ data class MessageItem (
     var isAudioComplete : Boolean? = false,
     @ColumnInfo(name = "is_sos")
     var isSOS : Boolean? = false,
+    @ColumnInfo(name = "sosType")
+    var sosType : Int = 0,
     @ColumnInfo(name = "time")
     var time : String? = null,
     @ColumnInfo(name = "isAck")
