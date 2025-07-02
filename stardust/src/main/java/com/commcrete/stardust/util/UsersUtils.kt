@@ -152,6 +152,24 @@ object UsersUtils {
                     location.altitude = bittelSOSPackage.height.toDouble()
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
+                    sender?.let {
+                        val text = when (bittelSOSPackage.sosType) {
+                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
+                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName }
+                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
+                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName}
+                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
+                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName}
+                            else -> {
+                                "S.O.S"}
+                        }
+                        it.message = Message(
+                            senderID = whoSent,
+                            text = "$text Received",
+                            seen = false
+                        )
+                        it.let { chatsRepo.addChat(it) }
+                    }
 
                 }
             } else if(isCreateNewUser) {
@@ -202,6 +220,15 @@ object UsersUtils {
                     DataManager.getCallbacks()?.receiveRealSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),
                         carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)
+
+                    sender?.let {
+                        it.message = Message(
+                            senderID = whoSent,
+                            text = "S.O.S Received",
+                            seen = false
+                        )
+                        it.let { chatsRepo.addChat(it) }
+                    }
 
                 }
             } else if(isCreateNewUser) {
