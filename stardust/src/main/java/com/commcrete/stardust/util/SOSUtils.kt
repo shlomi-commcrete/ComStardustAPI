@@ -114,7 +114,7 @@ object SOSUtils {
                 val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
                 chatItem?.message = Message(
                     senderID = stardustAPIPackage.source,
-                    text = text,
+                    text = "$textName Sent",
                     seen = false
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
