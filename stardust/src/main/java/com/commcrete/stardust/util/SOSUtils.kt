@@ -8,7 +8,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.commcrete.stardust.R
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.location.LocationUtils
+import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import kotlinx.coroutines.launch
+import java.util.Date
 
 object SOSUtils {
 
@@ -32,6 +36,7 @@ object SOSUtils {
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
+                saveSOSSent(context, type,stardustAPIPackage, location)
             }
         }
     }
@@ -59,6 +64,8 @@ object SOSUtils {
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
+                saveSOSSent(context, 0 ,stardustAPIPackage, location)
+
             }
         }
     }
@@ -77,6 +84,40 @@ object SOSUtils {
         MAN_DOWN (11, "Man Down", R.drawable.medical, Icons.Filled.LocalFireDepartment ), //MEDIC 175 Arma
         LOST (12, "M.I.A", R.drawable.mia, Icons.Filled.LocalFireDepartment), // Question mark 145/146 Arma
         REINFORCEMENT (13, "Need Reinforcement", R.drawable.sos_lost, Icons.Filled.LocalFireDepartment) // Hand 207
+    }
+
+    fun saveSOSSent (
+        context: Context,
+        type: Int,
+        stardustAPIPackage: StardustAPIPackage,
+        location: Location
+    ) {
+        val textName = when (type) {
+            SOS_TYPES_ARMY.HOSTILE.type -> {
+                SOS_TYPES_ARMY.HOSTILE.sosName }
+            SOS_TYPES_ARMY.MAN_DOWN.type -> {
+                SOS_TYPES_ARMY.MAN_DOWN.sosName}
+            SOS_TYPES_ARMY.LOST.type -> {
+                SOS_TYPES_ARMY.LOST.sosName}
+            else -> {
+                "S.O.S"}
+        }
+        val text = "$textName Sent"
+        val messageItem = MessageItem(chatId = stardustAPIPackage.destination, text = text, epochTimeMs = Date().time, senderID = stardustAPIPackage.source)
+        Scopes.getDefaultCoroutine().launch {
+            val chatsRepo = DataManager.getChatsRepo(context)
+            val messagesRepository = DataManager.getMessagesRepo(context)
+            Scopes.getDefaultCoroutine().launch{
+                val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
+                chatItem?.message = Message(
+                    senderID = stardustAPIPackage.source,
+                    text = text,
+                    seen = false
+                )
+                chatItem?.let { chatsRepo.addChat(it) }
+                messagesRepository.addContact(messageItem)
+            }
+        }
     }
 
     private fun getSOSDest (context: Context) : List<String> {
