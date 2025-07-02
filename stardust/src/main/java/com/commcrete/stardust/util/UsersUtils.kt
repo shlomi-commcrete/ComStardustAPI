@@ -115,20 +115,22 @@ object UsersUtils {
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            var sender : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(bittelPackage.getSourceAsString() == "00000002"){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
                         whoSent = bittelPackage.getDestAsString()
-                        val sender = chatsRepo.getChatByBittelID(whoSent)
+                        sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
                             displayName = it.name
                         }
-                        contact = contactsRepository.getChatContactByBittelID(whoSent)
                     }else {
                         whoSent = bittelPackage.getSourceAsString()
+                        sender = chatsRepo.getChatByBittelID(whoSent)
+
                     }
                     contact?.lastUpdateTS = Date().time
                     contact?.lat = bittelSOSPackage.latitude.toDouble()
@@ -163,20 +165,22 @@ object UsersUtils {
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            var sender : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(bittelPackage.getSourceAsString() == "00000002"){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
                         whoSent = bittelPackage.getDestAsString()
-                        val sender = chatsRepo.getChatByBittelID(whoSent)
+                        sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
                             displayName = it.name
                         }
-                        contact = contactsRepository.getChatContactByBittelID(whoSent)
                     }else {
                         whoSent = bittelPackage.getSourceAsString()
+                        sender = chatsRepo.getChatByBittelID(whoSent)
+
                     }
                     contact?.lastUpdateTS = Date().time
                     contact?.lat = bittelSOSPackage.latitude.toDouble()
