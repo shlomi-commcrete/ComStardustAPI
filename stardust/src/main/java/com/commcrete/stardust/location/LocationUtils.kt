@@ -219,7 +219,7 @@ object LocationUtils  {
         senderObj = chatsRepo.getChatByBittelID(chatId)
         senderObj?.let {
             message.senderName = it.name
-            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+//            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
             val numOfUnread = it.numOfUnseenMessages
