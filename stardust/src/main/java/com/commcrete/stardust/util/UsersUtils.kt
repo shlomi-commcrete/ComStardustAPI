@@ -150,6 +150,8 @@ object UsersUtils {
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
                     location.altitude = bittelSOSPackage.height.toDouble()
+                    PlayerUtils.playNotificationSound (DataManager.context)
+
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
                     sender?.let {

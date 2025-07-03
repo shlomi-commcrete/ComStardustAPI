@@ -37,6 +37,7 @@ import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.PermissionTracking
+import com.commcrete.stardust.util.audio.PlayerUtils
 import com.google.android.gms.location.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -120,6 +121,7 @@ object LocationUtils  {
                     location.latitude = bittelLocationPackage.latitude.toDouble()
                     location.longitude = bittelLocationPackage.longitude.toDouble()
                     location.altitude = bittelLocationPackage.height.toDouble()
+                    PlayerUtils.playNotificationSound (DataManager.context)
                     DataManager.getCallbacks()?.receiveLocation(
                         StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByStardustPackage(bittelPackage)),
                         location)
@@ -216,6 +218,8 @@ object LocationUtils  {
         var senderObj : ChatItem? = null
         senderObj = chatsRepo.getChatByBittelID(chatId)
         senderObj?.let {
+            message.senderName = it.name
+            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
             val numOfUnread = it.numOfUnseenMessages
