@@ -212,14 +212,14 @@ object LocationUtils  {
             senderName = senderName, chatId = chatId, isLocation = true, seen = if(chatId != "00000002") SeenStatus.SENT else SeenStatus.SEEN)
         message.isAck = isDemandAck
         message.idNumber = idNumber
-        message.senderName = getSenderName(message.senderID)
-        MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+//        message.senderName = getSenderName(message.senderID)
+//        MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
         val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
         var senderObj : ChatItem? = null
         senderObj = chatsRepo.getChatByBittelID(chatId)
         senderObj?.let {
             message.senderName = it.name
-//            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
             val numOfUnread = it.numOfUnseenMessages
