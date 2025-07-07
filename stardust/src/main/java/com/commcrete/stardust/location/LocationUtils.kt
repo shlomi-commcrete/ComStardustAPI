@@ -145,6 +145,15 @@ object LocationUtils  {
         }
     }
 
+    internal fun handleAck(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
+                                isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null){
+        if(lastLocation == null){
+            sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
+        }else {
+            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode)
+        }
+    }
+
     fun getLocationForSOSMyLocation(): Array<Int> {
         if(lastLocation == null){
             return CoordinatesUtil().packEmptyLocation()
