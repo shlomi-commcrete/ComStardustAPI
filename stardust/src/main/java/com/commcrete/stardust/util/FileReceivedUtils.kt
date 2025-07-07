@@ -13,6 +13,7 @@ import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -98,6 +99,7 @@ object FileReceivedUtils {
                             chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                             Scopes.getMainCoroutine().launch {
                                 UsersUtils.messageReceived.value = messageItem
+                                PlayerUtils.playNotificationSound (DataManager.context)
                             }
                         }
                     }
