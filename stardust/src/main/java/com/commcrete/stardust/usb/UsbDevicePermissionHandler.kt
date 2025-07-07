@@ -24,6 +24,7 @@ object UsbDevicePermissionHandler {
     private var isRequestingPermission: Boolean = false
     private var currentDevice: UsbDevice? = null
     private var context: Context? = null
+    val usbPermissionReceiver : UsbPermissionReceiver = UsbPermissionReceiver()
 
     private val handler = Handler(Looper.getMainLooper())
     private val permissionTimeoutRunnable = Runnable {
@@ -45,23 +46,22 @@ object UsbDevicePermissionHandler {
         if (devicesQueue.isNotEmpty()) {
             isRequestingPermission = true
             currentDevice = devicesQueue.poll()
-            val name = currentDevice?.productName?.lowercase(Locale.ROOT) ?: ""
+            if (currentDevice?.productName?.contains("FT231X USB UART") == true|| currentDevice?.productName?.toLowerCase()?.contains("stardust") == true
+                || currentDevice?.productName?.toLowerCase()?.contains("j-box") == true
+                || currentDevice?.productName?.toLowerCase()?.contains("jbox") == true) {
 
-            if (name.contains("ft231x") || name.contains("stardust") || name.contains("j-box") || name.contains("jbox")) {
-                Timber.tag("SerialInputOutputManager").d("Requesting permission for device: $name")
-
+                Timber.tag("SerialInputOutputManager").d("Requesting permission for device: ${currentDevice?.productName}")
                 val permissionIntent = PendingIntent.getBroadcast(
-                    context,
-                    0,
-                    Intent(context, UsbPermissionReceiver::class.java).apply {
-                        action = ACTION_USB_PERMISSION
-                    },
+                    context, 0,
+                    Intent(ACTION_USB_PERMISSION),
                     PendingIntent.FLAG_IMMUTABLE
                 )
-
                 usbManager?.requestPermission(currentDevice, permissionIntent)
+
+                // Schedule a timeout to reset isRequestingPermission after 10 seconds
                 handler.postDelayed(permissionTimeoutRunnable, 10000)
             } else {
+                // If the device is null or does not match the condition, continue with the next device
                 requestNextPermission()
             }
         } else {
@@ -110,11 +110,10 @@ object UsbDevicePermissionHandler {
                 addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             }
-            val receiver = UsbPermissionReceiver()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+                context.registerReceiver(usbPermissionReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
-                context.registerReceiver(receiver, filter)
+                context.registerReceiver(usbPermissionReceiver, filter)
             }
             receiverRegistered = true
         }

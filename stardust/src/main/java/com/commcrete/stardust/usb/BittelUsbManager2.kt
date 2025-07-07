@@ -52,7 +52,6 @@ object BittelUsbManager2 : BittelProtocol {
 
     private val usbDevicePermissionHandler : UsbDevicePermissionHandler  = UsbDevicePermissionHandler
 
-    private val usbPermissionReceiver : UsbPermissionReceiver = UsbPermissionReceiver()
 
     private var handlerObject : HandlerObject? = null
 
@@ -235,9 +234,9 @@ object BittelUsbManager2 : BittelProtocol {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(usbPermissionReceiver, filter, RECEIVER_EXPORTED)
+            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter, RECEIVER_EXPORTED)
         }else {
-            context.registerReceiver(usbPermissionReceiver, filter)
+            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter)
 
         }
     }
@@ -245,7 +244,7 @@ object BittelUsbManager2 : BittelProtocol {
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun unregisterReceiver(context: Context){
 //        context.unregisterReceiver(usbReceiver)
-        context.unregisterReceiver(usbPermissionReceiver)
+        context.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
     }
 
     override fun updateBlePort() {
