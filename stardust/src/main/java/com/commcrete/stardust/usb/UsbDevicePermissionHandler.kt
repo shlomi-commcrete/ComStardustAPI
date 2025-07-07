@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.usb.BittelUsbManager2.ACTION_USB_PERMISSION
@@ -109,7 +110,12 @@ object UsbDevicePermissionHandler {
                 addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             }
-            context.registerReceiver(UsbPermissionReceiver(), filter)
+            val receiver = UsbPermissionReceiver()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                context.registerReceiver(receiver, filter)
+            }
             receiverRegistered = true
         }
     }
