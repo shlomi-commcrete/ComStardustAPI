@@ -66,6 +66,7 @@ object SharedPreferencesUtil {
     private const val KEY_ADMIN_LOCAL_MODE = "admin_mode_type_name"
 
     private const val KEY_LAST_USER = "last_user"
+    private const val KEY_ALERT_DEST = "alert_dest"
 
     //Output Values
     private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
@@ -486,5 +487,16 @@ object SharedPreferencesUtil {
     fun getLocationFormat (context: Context) : String {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return preferences.getString(KEY_LOCATION_FORMAT, "") ?: ""
+    }
+
+    fun getAlertDest (context: Context) : String {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        return preferences.getString(KEY_ALERT_DEST, "") ?: ""
+    }
+
+    fun setAlertDest (context: Context, dest : String)  {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_ALERT_DEST, dest).apply()
+
     }
 }
