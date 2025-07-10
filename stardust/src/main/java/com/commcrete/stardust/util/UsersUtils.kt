@@ -1,8 +1,6 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import android.location.Location
-import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
@@ -116,6 +114,7 @@ object UsersUtils {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
             var sender : ChatItem? = null
+            var receiver : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let {
                     var contact : ChatContact? = it
@@ -124,6 +123,7 @@ object UsersUtils {
                     if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
+                        receiver = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                         sender?.let {
                             displayName = it.name
                         }
@@ -154,20 +154,29 @@ object UsersUtils {
 
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
-                    sender?.let {
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())) {
+                        receiver?.let {
+                            saveChatItemSOS(it, bittelSOSPackage, chatsRepo)
+                        }
+                    } else {
+                        sender?.let {
+                            saveChatItemSOS(it, bittelSOSPackage, chatsRepo)
+                        }
+                    }
+                        sender?.let {
                         val text = when (bittelSOSPackage.sosType) {
                             com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
-                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName }
+                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} event" }
                             com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
-                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName}
+                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} event"}
                             com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
-                                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName}
+                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} event"}
                             else -> {
-                                "S.O.S"}
+                                "Reporting S.O.S"}
                         }
                         it.message = Message(
                             senderID = bittelPackage.getSourceAsString(),
-                            text = "$text Received",
+                            text = "$text",
                             seen = false
                         )
                         it.let { chatsRepo.addChat(it) }
@@ -180,6 +189,33 @@ object UsersUtils {
                 LocationUtils.createNewContact(bittelPackage)
                 saveBittelUserSOS(bittelPackage, bittelSOSPackage, false)
             }
+        }
+    }
+
+    fun saveChatItemSOS (
+        chatItem: ChatItem,
+        bittelSOSPackage: StardustSOSPackage,
+        chatsRepo: ChatsRepository
+    ) {
+        Scopes.getDefaultCoroutine().launch {
+            val text = when (bittelSOSPackage.sosType) {
+                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} event" }
+                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} event"}
+                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} event"}
+                else -> {
+                    "Reporting S.O.S"}
+            }
+            chatItem.message = Message(
+                senderID = chatItem.chat_id,
+                text = "$text",
+                seen = false
+            )
+            chatItem.let { chatsRepo.addChat(it) }
+            val numOfUnread = chatItem.numOfUnseenMessages
+            chatsRepo.updateNumOfUnseenMessages(chatItem.chat_id, numOfUnread+1)
         }
     }
 
@@ -228,7 +264,7 @@ object UsersUtils {
                     sender?.let {
                         it.message = Message(
                             senderID = bittelPackage.getSourceAsString(),
-                            text = "S.O.S Received",
+                            text = "Reporting S.O.S",
                             seen = false
                         )
                         it.let { chatsRepo.addChat(it) }
