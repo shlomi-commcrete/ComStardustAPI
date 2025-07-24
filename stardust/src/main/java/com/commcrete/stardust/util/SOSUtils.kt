@@ -114,7 +114,7 @@ object SOSUtils {
                 val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
                 var textChat = "Reporting $textName"
                 if(type != 0) {
-                    textChat = "$textName Event"
+                    textChat = "$textChat Event"
                 }
                 chatItem?.message = Message(
                     senderID = stardustAPIPackage.source,
