@@ -179,9 +179,9 @@ object UsersUtils {
                             text = "$text",
                             seen = false
                         )
-                        it.let { chatsRepo.addChat(it) }
-                        val numOfUnread = it.numOfUnseenMessages
-                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
+//                        it.let { chatsRepo.addChat(it) }
+//                        val numOfUnread = it.numOfUnseenMessages
+//                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                     }
 
                 }
