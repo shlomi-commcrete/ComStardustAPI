@@ -200,11 +200,11 @@ object UsersUtils {
         Scopes.getDefaultCoroutine().launch {
             val text = when (bittelSOSPackage.sosType) {
                 com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} event" }
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} Event" }
                 com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} event"}
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} Event"}
                 com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} event"}
+                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} Event"}
                 else -> {
                     "Reporting S.O.S"}
             }

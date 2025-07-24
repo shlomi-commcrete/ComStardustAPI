@@ -112,9 +112,13 @@ object SOSUtils {
             val messagesRepository = DataManager.getMessagesRepo(context)
             Scopes.getDefaultCoroutine().launch{
                 val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
+                var textChat = "Reporting $textName"
+                if(type != 0) {
+                    textChat = "$textName Event"
+                }
                 chatItem?.message = Message(
                     senderID = stardustAPIPackage.source,
-                    text = "$textName Sent",
+                    text = textChat,
                     seen = false
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
