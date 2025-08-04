@@ -1,60 +1,22 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.util.Carrier
+import com.commcrete.stardust.util.FunctionalityType
+
 class StardustConfigurationParser : StardustParser() {
 
     companion object{
         const val sizeLength = 1
 
-        const val preset1Xcvr1TXFreqLength = 4
-        const val preset1Xcvr1RXFreqLength = 4
-        const val preset1Xcvr1PowerLength = 1
-        const val preset1Xcvr1RadioLength = 1
-        const val preset1Xcvr2TXFreqLength = 4
-        const val preset1Xcvr2RXFreqLength = 4
-        const val preset1Xcvr2PowerLength = 1
-        const val preset1Xcvr2RadioLength = 1
-        const val preset1Xcvr3TXFreqLength = 4
-        const val preset1Xcvr3RXFreqLength = 4
-        const val preset1Xcvr3PowerLength = 1
-        const val preset1Xcvr3RadioLength = 1
-        const val preset1Xcvr4TXFreqLength = 4
-        const val preset1Xcvr4RXFreqLength = 4
-        const val preset1Xcvr4PowerLength = 1
-        const val preset1Xcvr4RadioLength = 1
+        const val xcvrParseLength = 11
+        const val presetParseLength = 44
+        const val presetParsetsLength = 132
+        const val xcvrParseTXLength = 4
+        const val xcvrParseRXLength = 4
+        const val xcvrParsePowerLength = 1
+        const val xcvrParseFunctionalityLength = 1
+        const val xcvrParseTransceiverLength = 1
 
-        const val preset2Xcvr1TXFreqLength = 4
-        const val preset2Xcvr1RXFreqLength = 4
-        const val preset2Xcvr1PowerLength = 1
-        const val preset2Xcvr1RadioLength = 1
-        const val preset2Xcvr2TXFreqLength = 4
-        const val preset2Xcvr2RXFreqLength = 4
-        const val preset2Xcvr2PowerLength = 1
-        const val preset2Xcvr2RadioLength = 1
-        const val preset2Xcvr3TXFreqLength = 4
-        const val preset2Xcvr3RXFreqLength = 4
-        const val preset2Xcvr3PowerLength = 1
-        const val preset2Xcvr3RadioLength = 1
-        const val preset2Xcvr4TXFreqLength = 4
-        const val preset2Xcvr4RXFreqLength = 4
-        const val preset2Xcvr4PowerLength = 1
-        const val preset2Xcvr4RadioLength = 1
-
-        const val preset3Xcvr1TXFreqLength = 4
-        const val preset3Xcvr1RXFreqLength = 4
-        const val preset3Xcvr1PowerLength = 1
-        const val preset3Xcvr1RadioLength = 1
-        const val preset3Xcvr2TXFreqLength = 4
-        const val preset3Xcvr2RXFreqLength = 4
-        const val preset3Xcvr2PowerLength = 1
-        const val preset3Xcvr2RadioLength = 1
-        const val preset3Xcvr3TXFreqLength = 4
-        const val preset3Xcvr3RXFreqLength = 4
-        const val preset3Xcvr3PowerLength = 1
-        const val preset3Xcvr3RadioLength = 1
-        const val preset3Xcvr4TXFreqLength = 4
-        const val preset3Xcvr4RXFreqLength = 4
-        const val preset3Xcvr4PowerLength = 1
-        const val preset3Xcvr4RadioLength = 1
 
         const val LOTXFreqLength = 4
         const val LORXFreqLength = 4
@@ -175,126 +137,26 @@ class StardustConfigurationParser : StardustParser() {
         ST(2)
     }
 
+
+    enum class StardustCarrier (val carrier : Int, val carrierName : String){
+        Carrier1(0, "Carrier 1"),
+        Carrier2(1, "Carrier 2"),
+        Carrier3(2, "Carrier 3")
+    }
+
     fun parseConfiguration(StardustPackage: StardustPackage) : StardustConfigurationPackage? {
         StardustPackage.data?.let { intArray ->
             try {
+
                 val byteArray = intArrayToByteArray(intArray.toMutableList())
                 var offset = 0
                 val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
                 offset += sizeLength
                 //Preset 1
-
-                val preset1Xcvr1TXFreqBytes = cutByteArray(byteArray, preset1Xcvr1TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset1Xcvr1RXFreqBytes = cutByteArray(byteArray, preset1Xcvr1RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset1Xcvr1PowerBytes = cutByteArray(byteArray, preset1Xcvr1PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset1Xcvr1RadioBytes = cutByteArray(byteArray, preset1Xcvr1RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset1Xcvr2TXFreqBytes = cutByteArray(byteArray, preset1Xcvr2TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset1Xcvr2RXFreqBytes = cutByteArray(byteArray, preset1Xcvr2RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset1Xcvr2PowerBytes = cutByteArray(byteArray, preset1Xcvr2PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset1Xcvr2RadioBytes = cutByteArray(byteArray, preset1Xcvr2RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset1Xcvr3TXFreqBytes = cutByteArray(byteArray, preset1Xcvr3TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset1Xcvr3RXFreqBytes = cutByteArray(byteArray, preset1Xcvr3RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset1Xcvr3PowerBytes = cutByteArray(byteArray, preset1Xcvr3PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset1Xcvr3RadioBytes = cutByteArray(byteArray, preset1Xcvr3RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset1Xcvr4TXFreqBytes = cutByteArray(byteArray, preset1Xcvr4TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset1Xcvr4RXFreqBytes = cutByteArray(byteArray, preset1Xcvr4RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset1Xcvr4PowerBytes = cutByteArray(byteArray, preset1Xcvr4PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset1Xcvr4RadioBytes = cutByteArray(byteArray, preset1Xcvr4RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                //Preset 2
-
-                val preset2Xcvr1TXFreqBytes = cutByteArray(byteArray, preset1Xcvr1TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset2Xcvr1RXFreqBytes = cutByteArray(byteArray, preset1Xcvr1RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset2Xcvr1PowerBytes = cutByteArray(byteArray, preset1Xcvr1PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset2Xcvr1RadioBytes = cutByteArray(byteArray, preset1Xcvr1RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset2Xcvr2TXFreqBytes = cutByteArray(byteArray, preset1Xcvr2TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset2Xcvr2RXFreqBytes = cutByteArray(byteArray, preset1Xcvr2RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset2Xcvr2PowerBytes = cutByteArray(byteArray, preset1Xcvr2PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset2Xcvr2RadioBytes = cutByteArray(byteArray, preset1Xcvr2RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset2Xcvr3TXFreqBytes = cutByteArray(byteArray, preset1Xcvr3TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset2Xcvr3RXFreqBytes = cutByteArray(byteArray, preset1Xcvr3RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset2Xcvr3PowerBytes = cutByteArray(byteArray, preset1Xcvr3PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset2Xcvr3RadioBytes = cutByteArray(byteArray, preset1Xcvr3RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset2Xcvr4TXFreqBytes = cutByteArray(byteArray, preset1Xcvr4TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset2Xcvr4RXFreqBytes = cutByteArray(byteArray, preset1Xcvr4RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset2Xcvr4PowerBytes = cutByteArray(byteArray, preset1Xcvr4PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset2Xcvr4RadioBytes = cutByteArray(byteArray, preset1Xcvr4RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                //Preset 3
-
-                val preset3Xcvr1TXFreqBytes = cutByteArray(byteArray, preset1Xcvr1TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset3Xcvr1RXFreqBytes = cutByteArray(byteArray, preset1Xcvr1RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset3Xcvr1PowerBytes = cutByteArray(byteArray, preset1Xcvr1PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset3Xcvr1RadioBytes = cutByteArray(byteArray, preset1Xcvr1RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset3Xcvr2TXFreqBytes = cutByteArray(byteArray, preset1Xcvr2TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset3Xcvr2RXFreqBytes = cutByteArray(byteArray, preset1Xcvr2RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset3Xcvr2PowerBytes = cutByteArray(byteArray, preset1Xcvr2PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset3Xcvr2RadioBytes = cutByteArray(byteArray, preset1Xcvr2RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset3Xcvr3TXFreqBytes = cutByteArray(byteArray, preset1Xcvr3TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset3Xcvr3RXFreqBytes = cutByteArray(byteArray, preset1Xcvr3RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset3Xcvr3PowerBytes = cutByteArray(byteArray, preset1Xcvr3PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset3Xcvr3RadioBytes = cutByteArray(byteArray, preset1Xcvr3RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
-
-                val preset3Xcvr4TXFreqBytes = cutByteArray(byteArray, preset1Xcvr4TXFreqLength, offset)
-                offset += preset1Xcvr1TXFreqLength
-                val preset3Xcvr4RXFreqBytes = cutByteArray(byteArray, preset1Xcvr4RXFreqLength, offset)
-                offset += preset1Xcvr1RXFreqLength
-                val preset3Xcvr4PowerBytes = cutByteArray(byteArray, preset1Xcvr4PowerLength, offset)
-                offset += preset1Xcvr1PowerLength
-                val preset3Xcvr4RadioBytes = cutByteArray(byteArray, preset1Xcvr4RadioLength, offset)
-                offset += preset1Xcvr1RadioLength
+//Preset 1
+                val presetsBytes = cutByteArray(byteArray, presetParsetsLength, offset)
+                val presets = parsePresets(presetsBytes)
+                offset += presetParsetsLength
 
                 val LOTXFreqBytes = cutByteArray(byteArray, LOTXFreqLength, offset)
                 offset += LOTXFreqLength
@@ -358,69 +220,7 @@ class StardustConfigurationParser : StardustParser() {
                 offset += deviceTypeLength
 
                 val bittelConfigurationPackage = StardustConfigurationPackage(
-                    //Preset 1
-                    frequencyXcvr1SatelliteTXBytesPreset1 = byteArrayToUInt32(preset1Xcvr1TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1SatelliteRXBytesPreset1 = byteArrayToUInt32(preset1Xcvr1RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1PowerBytesPreset1 = byteArrayToInt(preset1Xcvr1PowerBytes.reversedArray()),
-                    functionalityXcvr1Preset1 = StardustTypeFunctionality.values()[byteArrayToInt(preset1Xcvr1RadioBytes)],
-
-                    frequencyXcvr2SatelliteTXBytesPreset1 = byteArrayToUInt32(preset1Xcvr2TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2SatelliteRXBytesPreset1 = byteArrayToUInt32(preset1Xcvr2RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2PowerBytesPreset1 = byteArrayToInt(preset1Xcvr2PowerBytes.reversedArray()),
-                    functionalityXcvr2Preset1 = StardustTypeFunctionality.values()[byteArrayToInt(preset1Xcvr2RadioBytes)],
-
-                    frequencyXcvr3SatelliteTXBytesPreset1 = byteArrayToUInt32(preset1Xcvr3TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3SatelliteRXBytesPreset1 = byteArrayToUInt32(preset1Xcvr3RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3PowerBytesPreset1 = byteArrayToInt(preset1Xcvr3PowerBytes.reversedArray()),
-                    functionalityXcvr3Preset1 = StardustTypeFunctionality.values()[byteArrayToInt(preset1Xcvr3RadioBytes)],
-
-                    frequencyXcvr4SatelliteTXBytesPreset1 = byteArrayToUInt32(preset1Xcvr4TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4SatelliteRXBytesPreset1 = byteArrayToUInt32(preset1Xcvr4RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4PowerBytesPreset1 = byteArrayToInt(preset1Xcvr4PowerBytes.reversedArray()),
-                    functionalityXcvr4Preset1 = StardustTypeFunctionality.values()[byteArrayToInt(preset1Xcvr4RadioBytes)],
-
-                    //Preset 2
-                    frequencyXcvr1SatelliteTXBytesPreset2 = byteArrayToUInt32(preset2Xcvr1TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1SatelliteRXBytesPreset2 = byteArrayToUInt32(preset2Xcvr1RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1PowerBytesPreset2 = byteArrayToInt(preset2Xcvr1PowerBytes.reversedArray()),
-                    functionalityXcvr1Preset2 = StardustTypeFunctionality.values()[byteArrayToInt(preset2Xcvr1RadioBytes)],
-
-                    frequencyXcvr2SatelliteTXBytesPreset2 = byteArrayToUInt32(preset2Xcvr2TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2SatelliteRXBytesPreset2 = byteArrayToUInt32(preset2Xcvr2RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2PowerBytesPreset2 = byteArrayToInt(preset2Xcvr2PowerBytes.reversedArray()),
-                    functionalityXcvr2Preset2 = StardustTypeFunctionality.values()[byteArrayToInt(preset2Xcvr2RadioBytes)],
-
-                    frequencyXcvr3SatelliteTXBytesPreset2 = byteArrayToUInt32(preset2Xcvr3TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3SatelliteRXBytesPreset2 = byteArrayToUInt32(preset2Xcvr3RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3PowerBytesPreset2 = byteArrayToInt(preset2Xcvr3PowerBytes.reversedArray()),
-                    functionalityXcvr3Preset2 = StardustTypeFunctionality.values()[byteArrayToInt(preset2Xcvr3RadioBytes)],
-
-                    frequencyXcvr4SatelliteTXBytesPreset2 = byteArrayToUInt32(preset2Xcvr4TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4SatelliteRXBytesPreset2 = byteArrayToUInt32(preset2Xcvr4RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4PowerBytesPreset2 = byteArrayToInt(preset2Xcvr4PowerBytes.reversedArray()),
-                    functionalityXcvr4Preset2 = StardustTypeFunctionality.values()[byteArrayToInt(preset2Xcvr4RadioBytes)],
-
-                    //Preset 3
-                    frequencyXcvr1SatelliteTXBytesPreset3 = byteArrayToUInt32(preset3Xcvr1TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1SatelliteRXBytesPreset3 = byteArrayToUInt32(preset3Xcvr1RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr1PowerBytesPreset3 = byteArrayToInt(preset3Xcvr1PowerBytes.reversedArray()),
-                    functionalityXcvr1Preset3 = StardustTypeFunctionality.values()[byteArrayToInt(preset3Xcvr1RadioBytes)],
-
-                    frequencyXcvr2SatelliteTXBytesPreset3 = byteArrayToUInt32(preset3Xcvr2TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2SatelliteRXBytesPreset3 = byteArrayToUInt32(preset3Xcvr2RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr2PowerBytesPreset3 = byteArrayToInt(preset3Xcvr2PowerBytes.reversedArray()),
-                    functionalityXcvr2Preset3 = StardustTypeFunctionality.values()[byteArrayToInt(preset3Xcvr2RadioBytes)],
-
-                    frequencyXcvr3SatelliteTXBytesPreset3 = byteArrayToUInt32(preset3Xcvr3TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3SatelliteRXBytesPreset3 = byteArrayToUInt32(preset3Xcvr3RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr3PowerBytesPreset3 = byteArrayToInt(preset3Xcvr3PowerBytes.reversedArray()),
-                    functionalityXcvr3Preset3 = StardustTypeFunctionality.values()[byteArrayToInt(preset3Xcvr3RadioBytes)],
-
-                    frequencyXcvr4SatelliteTXBytesPreset3 = byteArrayToUInt32(preset3Xcvr4TXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4SatelliteRXBytesPreset3 = byteArrayToUInt32(preset3Xcvr4RXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyXcvr4PowerBytesPreset3 = byteArrayToInt(preset3Xcvr4PowerBytes.reversedArray()),
-                    functionalityXcvr4Preset3 = StardustTypeFunctionality.values()[byteArrayToInt(preset3Xcvr4RadioBytes)],
-
+                    presets = presets,
                     powerLOTX = byteArrayToInt(LOTXPowerBytes.reversedArray()),
                     powerLORX = byteArrayToInt(LORXPowerBytes.reversedArray()),
                     frequencyLOTX = byteArrayToUInt32(LOTXFreqBytes.reversedArray()).toDouble().div(MHz),
@@ -452,6 +252,137 @@ class StardustConfigurationParser : StardustParser() {
         }
         return null
     }
+
+
+    private fun parsePresets (byteArray: ByteArray) : List<Preset>{
+        val presetList : MutableList<Preset> = mutableListOf()
+        var offset = 0
+        try {
+            val preset1Bytes = cutByteArray(byteArray, presetParseLength, offset)
+            val preset1 = parsePreset(preset1Bytes)
+            presetList.add(preset1)
+            offset += presetParseLength
+            val preset2Bytes = cutByteArray(byteArray, presetParseLength, offset)
+            val preset2 = parsePreset(preset2Bytes)
+            presetList.add(preset2)
+            offset += presetParseLength
+            val preset3Bytes = cutByteArray(byteArray, presetParseLength, offset)
+            val preset3 = parsePreset(preset3Bytes)
+            presetList.add(preset3)
+            offset += presetParseLength
+        } catch (e : Exception) {
+            e.printStackTrace()
+        }
+        return presetList
+    }
+
+    private fun parsePreset (byteArray: ByteArray) : Preset {
+        val preset = Preset()
+        var offset = 0
+
+        try {
+            val xcvr1Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
+            val xcvr1 = parseXcvr(xcvr1Bytes, 0)
+            preset.xcvrList.add(xcvr1)
+            offset += xcvrParseLength
+            val xcvr2Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
+            val xcvr2 = parseXcvr(xcvr2Bytes, 1)
+            preset.xcvrList.add(xcvr2)
+            offset += xcvrParseLength
+            val xcvr3Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
+            val xcvr3 = parseXcvr(xcvr3Bytes, 2)
+            preset.xcvrList.add(xcvr3)
+            offset += xcvrParseLength
+            val xcvr4Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
+            val xcvr4 = parseXcvr(xcvr4Bytes, 3)
+            preset.xcvrList.add(xcvr4)
+            offset += xcvrParseLength
+        } catch (e : Exception) {
+            e.printStackTrace()
+        }
+        return preset
+    }
+
+    private fun parseXcvr (byteArray: ByteArray, xcvrNum : Int = 0) : xcvr {
+        val xcvr = xcvr()
+        var offset = 0
+        try {
+            val xcvrTxFrequencyBytes = cutByteArray(byteArray, xcvrParseTXLength, offset)
+            xcvr.txFrequency = byteArrayToUInt32(xcvrTxFrequencyBytes.reversedArray()).toDouble().div(MHz)
+            offset += xcvrParseTXLength
+
+            val xcvrRxFrequencyBytes = cutByteArray(byteArray, xcvrParseRXLength, offset)
+            xcvr.rxFrequency = byteArrayToUInt32(xcvrRxFrequencyBytes.reversedArray()).toDouble().div(MHz)
+            offset += xcvrParseRXLength
+
+            val xcvrPowerBytes = cutByteArray(byteArray, xcvrParsePowerLength, offset)
+            xcvr.power = byteArrayToInt(xcvrPowerBytes.reversedArray())
+            offset += xcvrParsePowerLength
+
+            val xcvrFunctionalityBytes = cutByteArray(byteArray, xcvrParseFunctionalityLength, offset)
+            val byteFunctionality = xcvrFunctionalityBytes[0].toInt() and 0xFF  // Ensure unsigned byte interpretation
+            xcvr.functionality = if ((byteFunctionality and 0b00000001) == 0) {
+                StardustTypeFunctionality.HR
+            } else {
+                StardustTypeFunctionality.LR
+            }
+            if(xcvrNum == 3) {
+                xcvr.functionality = StardustTypeFunctionality.ST
+            }
+
+            // Remaining bits (bits 1–7) → options
+            xcvr.options = byteFunctionality shr 1
+            offset += xcvrParseFunctionalityLength
+
+            val xcvrCarrierBytes = cutByteArray(byteArray, xcvrParseTransceiverLength, offset)
+            val byteCarrier = xcvrCarrierBytes[0].toInt() and 0xFF  // Ensure unsigned byte interpretation
+            val carrierBits = byteCarrier and 0b00000011 // Mask bits 0 and 1
+
+            // Map carrier bits to enum
+            xcvr.carrier = when (carrierBits) {
+                0 -> StardustCarrier.Carrier1
+                1 -> StardustCarrier.Carrier2
+                2 -> StardustCarrier.Carrier3
+                else -> StardustCarrier.Carrier1 // fallback/default
+            }
+
+            // Extract third bit (bit 2) for carrierOn
+            xcvr.carrierOn = (byteCarrier and 0b00000100) != 0
+
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
+        return xcvr
+    }
+
+    data class xcvr (
+        var txFrequency: Double = 0.0,
+        var rxFrequency: Double = 0.0,
+        var power: Int = 0,
+        var functionality : StardustTypeFunctionality = StardustTypeFunctionality.HR,
+        var options : Int = 0,
+        var carrier : StardustCarrier = StardustCarrier.Carrier1,
+        var carrierOn : Boolean = true
+    ) {
+        private fun getOptions () : Set<FunctionalityType>{
+            val functionalityOptions = mutableSetOf<FunctionalityType>()
+            for (type in FunctionalityType.values()) {
+                if ((options and type.bitwise) == type.bitwise) {
+                    functionalityOptions.add(type)
+                }
+            }
+            return functionalityOptions
+        }
+
+        fun getRadio (carrier: Carrier) : Carrier {
+            carrier.functionalityTypeList = getOptions().toMutableSet()
+            return carrier
+        }
+    }
+
+    data class Preset (
+        val xcvrList: MutableList<xcvr> = mutableListOf()
+    )
 
     private fun getPortType (portType : Int): PortType {
         PortType.values().iterator().forEach {

@@ -16,7 +16,6 @@ import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustLocationParser
-import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.LogUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -25,10 +24,15 @@ import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
+import com.commcrete.stardust.stardust.model.StardustAppEventParser
+import com.commcrete.stardust.stardust.model.StardustBatteryParser
+import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
+import com.commcrete.stardust.util.AppEvents
 import com.commcrete.stardust.util.CarriersUtils
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileSendUtils
 import com.commcrete.stardust.util.GroupsUtils
@@ -170,9 +174,31 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.SOS_ACK -> {
                         handleSOSAck(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT -> {
+                        handleAppEvent(mPackage)
+                    }
                     else -> {}
                 } }
             resetTimer()
+        }
+    }
+
+    private fun handleAppEvent(mPackage: StardustPackage) {
+        val bittelAppEventPackage = StardustAppEventParser().parseAppEvent(mPackage)
+        bittelAppEventPackage.let { sdPackage ->
+            when (sdPackage.eventType) {
+                RXSuccess -> {}
+                RXFail -> {}
+                TXStart -> {}
+                TXFinish -> {}
+                TXBufferFull -> {}
+                PresetChange -> {sdPackage.getCurrentPreset()?.let {
+                    ConfigurationUtils.setCurrentPreset(it)
+                    ConfigurationUtils.setDefaults(DataManager.context)
+                }}
+                null -> {}
+            }
+            AppEvents.updateAppEvents(sdPackage)
         }
     }
 
@@ -207,6 +233,10 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handlePingResponse (mPackage: StardustPackage) {
         DataManager.getPortUtils(DataManager.context).onPingReceived()
+        val bittelBatteryPackage = StardustBatteryParser().parseBattery(mPackage)
+        bittelBatteryPackage.let {
+            AppEvents.updateBattery(it)
+        }
     }
 
     private fun handleAdminModeResponse(mPackage: StardustPackage) {
@@ -283,19 +313,39 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
+    private fun setOldLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
+//        if(CarriersUtils.isCarriersChanged(stardustConfigurationPackage) == true) {
+//            CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
+//            CarriersUtils.getDefaults()
+//
+//        } else {
+//            CarriersUtils.setLocalCarrierList ()
+//        }
+    }
+
+    private fun setNewLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
+        CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
+        ConfigurationUtils.setDefaults(DataManager.context)
+
+//
+//        //todo change
+//        if(CarriersUtils.isCarriersChanged(stardustConfigurationPackage) == true) {
+//            CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
+//            CarriersUtils.getDefaults()
+//
+//        } else {
+//            CarriersUtils.setLocalCarrierList ()
+//        }
+    }
+
     private fun handleConfiguration(mPackage: StardustPackage) {
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
             UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
             bittelConfigurationPackage?. let {
-
-            if(CarriersUtils.isCarriersChanged(it) == true) {
-                CarriersUtils.getCarrierListAndUpdate(bittelConfigurationPackage)
-                CarriersUtils.getDefaults()
-
-            } else {
-                CarriersUtils.setLocalCarrierList ()
-            }
+            ConfigurationUtils.setConfigFile(it)
+            setOldLocals(it)
+            setNewLocals(it)
             AdminUtils.updateBittelAdminMode()
         }
     }

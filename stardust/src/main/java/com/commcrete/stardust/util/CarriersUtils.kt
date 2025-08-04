@@ -170,6 +170,21 @@ object CarriersUtils {
         return null
     }
 
+    fun getDefaultsFromPresets () {
+        val mutableList = SharedPreferencesUtil.getCarriers(DataManager.context)?.toMutableList()
+        val newList = mutableListOf<Carrier>()
+        val xcvrList = ConfigurationUtils.selectedPreset?.xcvrList
+        mutableList?.forEachIndexed { index, value ->
+            xcvrList?.get(index)?.getRadio(value)?.let { newList.add(it) }
+        }
+        if(newList.isEmpty()) {
+            getDefaults()
+        } else {
+            updateCarrierList(newList)
+        }
+
+    }
+
     fun getDefaults () {
         val mutableList = SharedPreferencesUtil.getCarriers(DataManager.context)?.toMutableList()
         var firstHR = false
@@ -204,21 +219,21 @@ object CarriersUtils {
     }
 }
 
-enum class FunctionalityType {
-    SOS,
-    TEXT,
-    LOCATION,
-    PTT,
-    BFT,
-    FILE,
-    IMAGE
+enum class FunctionalityType (val bitwise : Int) {
+    SOS(64),
+    TEXT(2),
+    LOCATION(4),
+    PTT(1),
+    BFT(16),
+    FILE(16),
+    IMAGE(32)
 }
 
 data class Carrier (
     val index : Int,
     val type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
-    val functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
+    var functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true // Reference equality

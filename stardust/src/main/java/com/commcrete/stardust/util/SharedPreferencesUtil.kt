@@ -96,6 +96,7 @@ object SharedPreferencesUtil {
 
     //Carriers
     private const val KEY_LAST_CARRIERS = "last_carriers"
+    private const val KEY_LAST_PRESETS = "last_presets"
     private const val KEY_SOS_DEFAULT = "sos_default"
     private const val KEY_TEXT_DEFAULT = "text_default"
     private const val KEY_LOCATION_DEFAULT = "location_default"
@@ -458,6 +459,24 @@ object SharedPreferencesUtil {
             }
         }else {
             return AudioDeviceInfo.TYPE_UNKNOWN
+        }
+    }
+
+    fun setPresets(context: Context, carriers: List<StardustConfigurationParser.Preset>) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
+        preferences.edit().putString(KEY_LAST_PRESETS, carriersJson).apply() // Save JSON as a string
+    }
+
+    fun getPresets(context: Context): List<StardustConfigurationParser.Preset>? {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = preferences.getString(KEY_LAST_PRESETS, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<List<StardustConfigurationParser.Preset>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<StardustConfigurationParser.Preset>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
         }
     }
 
