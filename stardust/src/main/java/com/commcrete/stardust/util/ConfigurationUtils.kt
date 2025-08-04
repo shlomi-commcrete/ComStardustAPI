@@ -15,10 +15,11 @@ object ConfigurationUtils {
         currentConfig = config
         currentConfig?.let {
             presetsList = it.presets
-            setCurrentPreset(it.currentPreset)
+            setCurrentPresetLocal(it.currentPreset)
         }
     }
-    fun setCurrentPreset (preset : StardustConfigurationParser.CurrentPreset) {
+
+    fun setCurrentPresetLocal (preset : StardustConfigurationParser.CurrentPreset) {
         currentPreset = preset
         setCurrentPreset()
     }

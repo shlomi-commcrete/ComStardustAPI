@@ -193,7 +193,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 TXFinish -> {}
                 TXBufferFull -> {}
                 PresetChange -> {sdPackage.getCurrentPreset()?.let {
-                    ConfigurationUtils.setCurrentPreset(it)
+                    ConfigurationUtils.setCurrentPresetLocal(it)
                     ConfigurationUtils.setDefaults(DataManager.context)
                 }}
                 null -> {}
