@@ -29,6 +29,22 @@ object CarriersUtils {
         return mutableList
     }
 
+    fun getCarrierLisByPreset(bittelConfigurationPackage: StardustConfigurationPackage, preset: StardustConfigurationParser.Preset?) : List<Carrier> {
+        val mutableList : MutableList<Carrier> = arrayListOf()
+        val radios = bittelConfigurationPackage.getCurrentRadios()
+        val defaults1 = preset?.xcvrList?.get(0)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        val defaults2 = preset?.xcvrList?.get(1)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        val defaults3 = preset?.xcvrList?.get(2)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset?.xcvrList?.get(0)?.carrier,
+            functionalityTypeList = defaults1))
+        mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset?.xcvrList?.get(1)?.carrier,
+            functionalityTypeList = defaults2))
+        mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset?.xcvrList?.get(2)?.carrier,
+            functionalityTypeList = defaults3))
+        mutableList.add(Carrier(3, StardustConfigurationParser.StardustTypeFunctionality.ST,  "RD4"))
+        return mutableList
+    }
+
     fun getCarrierByControl (deliveryType: StardustControlByte.StardustDeliveryType) : Carrier?{
         when (deliveryType) {
             StardustControlByte.StardustDeliveryType.RD1 -> return carrierList.value?.get(0)
@@ -39,13 +55,29 @@ object CarriersUtils {
     }
 
     fun getCarrierListAndUpdate (bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
-        val oldList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
+        val currentPreset = ConfigurationUtils.currentPreset?.value ?: 0
+        for (preset in bittelConfigurationPackage.presets) {
+            if(preset.index != currentPreset) {
+                updateByPreset(preset, bittelConfigurationPackage)
+            }
+        }
+        val oldList = getLocalCarriersByPreset((currentPreset), DataManager.context)
         if(!oldList.isNullOrEmpty() ) {
             updateCarrierList(oldList.toMutableList())
             return oldList
         }
         val list = getCarrierList(bittelConfigurationPackage)
         updateCarrierList(list.toMutableList())
+        return list
+    }
+
+    private fun updateByPreset (preset: StardustConfigurationParser.Preset, bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
+        val oldList = getLocalCarriersByPreset((preset.index), DataManager.context)
+        if(!oldList.isNullOrEmpty() ) {
+            return oldList
+        }
+        val list = getCarrierLisByPreset(bittelConfigurationPackage, preset)
+        setLocalCarriersByPreset((preset.index), list, DataManager.context)
         return list
     }
 
