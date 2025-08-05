@@ -56,6 +56,11 @@ object FolderReader {
                 }
                 if(excelUser.id.isNotEmpty()){
                     demoList.add(excelUser)
+                } else if (excelUser.deviceId.isNotEmpty()) {
+                    val excelDeviceUser = excelUser
+                    excelDeviceUser.id = excelUser.deviceId
+                    excelDeviceUser.deviceId = ""
+                    demoList.add(excelDeviceUser)
                 }
                 // Process rowData as needed
                 Timber.tag("readExcelFile").d(rowData.toString())
