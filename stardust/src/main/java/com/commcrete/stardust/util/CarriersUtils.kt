@@ -299,7 +299,7 @@ enum class FunctionalityType (val bitwise : Int) {
 
 data class Carrier (
     val index : Int,
-    val type : StardustConfigurationParser.StardustTypeFunctionality,
+    var type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
     var f : StardustConfigurationParser.StardustCarrier? = null,
     var functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()

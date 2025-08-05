@@ -377,6 +377,7 @@ class StardustConfigurationParser : StardustParser() {
         fun getRadio (carrier: Carrier) : Carrier {
             carrier.functionalityTypeList = getOptions().toMutableSet()
             carrier.f = this.carrier
+            carrier.type = this.functionality
             return carrier
         }
     }
