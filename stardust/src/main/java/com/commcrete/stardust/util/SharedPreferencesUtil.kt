@@ -96,6 +96,9 @@ object SharedPreferencesUtil {
 
     //Carriers
     private const val KEY_LAST_CARRIERS = "last_carriers"
+    private const val KEY_LAST_CARRIERS1 = "last_carriers1"
+    private const val KEY_LAST_CARRIERS2 = "last_carriers2"
+    private const val KEY_LAST_CARRIERS3 = "last_carriers3"
     private const val KEY_LAST_PRESETS = "last_presets"
     private const val KEY_SOS_DEFAULT = "sos_default"
     private const val KEY_TEXT_DEFAULT = "text_default"
@@ -489,6 +492,60 @@ object SharedPreferencesUtil {
     fun getCarriers(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = preferences.getString(KEY_LAST_CARRIERS, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
+        }
+    }
+
+    fun setCarriers1(context: Context, carriers: List<Carrier>) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
+        preferences.edit().putString(KEY_LAST_CARRIERS1, carriersJson).apply() // Save JSON as a string
+    }
+
+    fun getCarriers1(context: Context): List<Carrier>? {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = preferences.getString(KEY_LAST_CARRIERS1, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
+        }
+    }
+
+    fun setCarriers2(context: Context, carriers: List<Carrier>) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
+        preferences.edit().putString(KEY_LAST_CARRIERS2, carriersJson).apply() // Save JSON as a string
+    }
+
+    fun getCarriers2(context: Context): List<Carrier>? {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = preferences.getString(KEY_LAST_CARRIERS2, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
+        }
+    }
+
+    fun setCarriers3(context: Context, carriers: List<Carrier>) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
+        preferences.edit().putString(KEY_LAST_CARRIERS3, carriersJson).apply() // Save JSON as a string
+    }
+
+    fun getCarriers3(context: Context): List<Carrier>? {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val carriersJson = preferences.getString(KEY_LAST_CARRIERS3, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
