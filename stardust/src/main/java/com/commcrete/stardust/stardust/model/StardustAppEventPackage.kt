@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust.model
 data class StardustAppEventPackage(
     var eventType : StardustAppEventType? = null,
     var xcvr : Int = 0,
+    var carrier : StardustConfigurationParser.StardustCarrier? = null,
     var preset : Int? = null,
     var listRSSIPackage: List<RSSIPackage> = mutableListOf()
 ) {

@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 
@@ -41,6 +42,16 @@ object ConfigurationUtils {
             }
         }
 
+    }
+
+    fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
+        selectedPreset?.xcvrList?.let { xcvrs ->
+            when (stardustAppEventPackage.xcvr) {
+                0 -> {stardustAppEventPackage.carrier = xcvrs.get(0).carrier}
+                1 -> {stardustAppEventPackage.carrier = xcvrs.get(1).carrier}
+                2 -> {stardustAppEventPackage.carrier = xcvrs.get(2).carrier}
+            }
+        }
     }
 
     private fun getLastPresets (context: Context) : List<StardustConfigurationParser.Preset>?{

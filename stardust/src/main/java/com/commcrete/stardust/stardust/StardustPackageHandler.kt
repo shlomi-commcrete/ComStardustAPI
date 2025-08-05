@@ -187,11 +187,11 @@ internal class StardustPackageHandler(private val context: Context ,
         val bittelAppEventPackage = StardustAppEventParser().parseAppEvent(mPackage)
         bittelAppEventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
-                RXSuccess -> {}
-                RXFail -> {}
-                TXStart -> {}
-                TXFinish -> {}
-                TXBufferFull -> {}
+                RXSuccess -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
+                RXFail -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
+                TXStart -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
+                TXFinish -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
+                TXBufferFull -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
                 PresetChange -> {sdPackage.getCurrentPreset()?.let {
                     ConfigurationUtils.setCurrentPresetLocal(it)
                     ConfigurationUtils.setDefaults(DataManager.context)
