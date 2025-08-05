@@ -214,7 +214,7 @@ object CarriersUtils {
         return null
     }
 
-    fun getDefaultsFromPresets () {
+    fun getDefaultsFromPresets(config: StardustConfigurationPackage) {
         val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
         val newList = mutableListOf<Carrier>()
         val xcvrList = ConfigurationUtils.selectedPreset?.xcvrList
@@ -225,6 +225,12 @@ object CarriersUtils {
             getDefaults()
         } else {
             updateCarrierList(newList)
+        }
+        val currentPreset = ConfigurationUtils.currentPreset?.value ?: 0
+        for (preset in config.presets) {
+            if(preset.index != currentPreset) {
+                updateByPreset(preset, config)
+            }
         }
 
     }
@@ -295,7 +301,7 @@ data class Carrier (
     val index : Int,
     val type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
-    val f : StardustConfigurationParser.StardustCarrier? = null,
+    var f : StardustConfigurationParser.StardustCarrier? = null,
     var functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
 ) {
     override fun equals(other: Any?): Boolean {

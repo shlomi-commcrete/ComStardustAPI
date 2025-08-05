@@ -72,7 +72,7 @@ object ConfigurationUtils {
         currentConfig?.let {config ->
             if(isPresetsChanged(config.presets, context)) {
                 selectedPreset?.let { preset ->
-                    CarriersUtils.getDefaultsFromPresets()
+                    CarriersUtils.getDefaultsFromPresets(config)
                 }
             }
 //            getDefaults()
