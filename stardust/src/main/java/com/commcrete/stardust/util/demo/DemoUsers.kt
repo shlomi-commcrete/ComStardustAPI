@@ -56,7 +56,8 @@ class DemoUsers {
             val name = chat.name
             val isSniffer = chat.type == "sniffer"
             var isGroup = chat.type == "group"
-            var isBittel = (chat.type.toLowerCase() == "bittel" || chat.type.toLowerCase() == "stardust")
+            var isBittel = (chat.type.toLowerCase() == "bittel" || chat.type.toLowerCase() == "stardust" ||
+                    chat.type.toLowerCase() == "device")
             var image = chat.image
             if(chat.deviceId.isNotEmpty()) {
                 createDeviceUser(chat, userId, loop)
