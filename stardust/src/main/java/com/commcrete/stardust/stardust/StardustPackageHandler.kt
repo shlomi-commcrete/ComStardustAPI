@@ -344,7 +344,6 @@ internal class StardustPackageHandler(private val context: Context ,
             UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
             bittelConfigurationPackage?. let {
             ConfigurationUtils.setConfigFile(it)
-            setOldLocals(it)
             setNewLocals(it)
             AdminUtils.updateBittelAdminMode()
         }

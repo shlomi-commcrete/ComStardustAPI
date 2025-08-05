@@ -364,7 +364,7 @@ class StardustConfigurationParser : StardustParser() {
         var carrier : StardustCarrier = StardustCarrier.Carrier1,
         var carrierOn : Boolean = true
     ) {
-        private fun getOptions () : Set<FunctionalityType>{
+        fun getOptions () : Set<FunctionalityType>{
             val functionalityOptions = mutableSetOf<FunctionalityType>()
             for (type in FunctionalityType.values()) {
                 if ((options and type.bitwise) == type.bitwise) {

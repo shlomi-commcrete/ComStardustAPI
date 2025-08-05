@@ -15,9 +15,16 @@ object CarriersUtils {
     fun getCarrierList(bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
         val mutableList : MutableList<Carrier> = arrayListOf()
         val radios = bittelConfigurationPackage.getCurrentRadios()
-        mutableList.add(Carrier(0, radios.xcvr1,  "RD1"))
-        mutableList.add(Carrier(1, radios.xcvr2,  "RD2"))
-        mutableList.add(Carrier(2, radios.xcvr3,  "RD3"))
+        val preset = ConfigurationUtils.selectedPreset
+        val defaults1 = preset?.xcvrList?.get(0)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        val defaults2 = preset?.xcvrList?.get(1)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        val defaults3 = preset?.xcvrList?.get(2)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset?.xcvrList?.get(0)?.carrier,
+            functionalityTypeList = defaults1))
+        mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset?.xcvrList?.get(1)?.carrier,
+            functionalityTypeList = defaults2))
+        mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset?.xcvrList?.get(2)?.carrier,
+            functionalityTypeList = defaults3))
         mutableList.add(Carrier(3, StardustConfigurationParser.StardustTypeFunctionality.ST,  "RD4"))
         return mutableList
     }
@@ -32,6 +39,11 @@ object CarriersUtils {
     }
 
     fun getCarrierListAndUpdate (bittelConfigurationPackage: StardustConfigurationPackage) : List<Carrier> {
+        val oldList = SharedPreferencesUtil.getCarriers(DataManager.context)
+        if(!oldList.isNullOrEmpty() ) {
+            updateCarrierList(oldList.toMutableList())
+            return oldList
+        }
         val list = getCarrierList(bittelConfigurationPackage)
         updateCarrierList(list.toMutableList())
         return list
@@ -233,6 +245,7 @@ data class Carrier (
     val index : Int,
     val type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
+    val f : StardustConfigurationParser.StardustCarrier? = null,
     var functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
 ) {
     override fun equals(other: Any?): Boolean {
