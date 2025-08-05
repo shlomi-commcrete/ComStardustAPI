@@ -224,7 +224,7 @@ enum class FunctionalityType (val bitwise : Int) {
     TEXT(2),
     LOCATION(4),
     PTT(1),
-    BFT(16),
+    BFT(8),
     FILE(16),
     IMAGE(32)
 }
