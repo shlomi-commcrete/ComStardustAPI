@@ -532,7 +532,7 @@ object StardustPackageUtils {
             )
         ),
         //Interrupts
-        RECEIVE_APP_EVENT (0xF8,
+        RECEIVE_APP_EVENT (0xF7,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
