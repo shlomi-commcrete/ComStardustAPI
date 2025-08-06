@@ -265,12 +265,12 @@ class StardustConfigurationParser : StardustParser() {
             offset += presetParseLength
             val preset2Bytes = cutByteArray(byteArray, presetParseLength, offset)
             val preset2 = parsePreset(preset2Bytes, 1)
-            preset1.currentPreset = CurrentPreset.PRESET2
+            preset2.currentPreset = CurrentPreset.PRESET2
             presetList.add(preset2)
             offset += presetParseLength
             val preset3Bytes = cutByteArray(byteArray, presetParseLength, offset)
             val preset3 = parsePreset(preset3Bytes, 2)
-            preset1.currentPreset = CurrentPreset.PRESET3
+            preset3.currentPreset = CurrentPreset.PRESET3
             presetList.add(preset3)
             offset += presetParseLength
         } catch (e : Exception) {
