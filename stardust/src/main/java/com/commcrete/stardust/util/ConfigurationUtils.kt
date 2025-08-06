@@ -71,6 +71,7 @@ object ConfigurationUtils {
     fun setDefaults (context: Context) {
         currentConfig?.let {config ->
             if(isPresetsChanged(config.presets, context)) {
+                CarriersUtils.uploadNewDefaults(config)
                 selectedPreset?.let { preset ->
                     CarriersUtils.getDefaultsFromPresets(config)
                 }

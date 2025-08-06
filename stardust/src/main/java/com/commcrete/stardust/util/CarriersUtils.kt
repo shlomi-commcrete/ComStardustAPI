@@ -235,6 +235,13 @@ object CarriersUtils {
 
     }
 
+    fun uploadNewDefaults (config: StardustConfigurationPackage) {
+        for (preset in config.presets) {
+            val list = getCarrierLisByPreset(config, preset)
+            setLocalCarriersByPreset((preset.index), list, DataManager.context)
+        }
+    }
+
     fun getDefaults () {
         val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
         var firstHR = false
@@ -268,7 +275,7 @@ object CarriersUtils {
         mutableList?.let { updateCarrierList(it.toMutableList()) }
     }
 
-    fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {
+    private fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {
         val local = when (preset) {
             0 -> {SharedPreferencesUtil.getCarriers1(context)}
             1 -> {SharedPreferencesUtil.getCarriers2(context)}
@@ -278,7 +285,7 @@ object CarriersUtils {
         return local
     }
 
-    fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>, context: Context) {
+    private fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>, context: Context) {
         when (preset) {
             0 -> {SharedPreferencesUtil.setCarriers1(context, carriers)}
             1 -> {SharedPreferencesUtil.setCarriers2(context, carriers)}
