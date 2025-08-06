@@ -158,6 +158,25 @@ object CarriersUtils {
         return null
     }
 
+    fun updateFunctionalityToCarrier (functionalityType: FunctionalityType, carrier: Carrier) {
+        val carriers = carrierList.value
+        carriers?.let {
+            it.forEach {
+                if(it != carrier) {
+                    it.functionalityTypeList.remove(functionalityType)
+                } else {
+                    it.functionalityTypeList.add(functionalityType)
+                }
+            }
+            updateCarrierList(it.toMutableList())
+        }
+    }
+
+    private fun updateCarrierList (mutableList : MutableList<Carrier>) {
+        setLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), mutableList, DataManager.context)
+        carrierList.value = mutableList
+    }
+
     fun getCarrierByStardustPackage (stardustPackage: StardustPackage) : Carrier? {
         when (stardustPackage.stardustControlByte.stardustDeliveryType) {
             StardustControlByte.StardustDeliveryType.RD1 -> {
