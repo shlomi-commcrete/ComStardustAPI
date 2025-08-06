@@ -324,8 +324,8 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun setNewLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
-        CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
         ConfigurationUtils.setDefaults(DataManager.context)
+//        CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
 
 //
 //        //todo change
