@@ -75,12 +75,12 @@ object ConfigurationUtils {
                     CarriersUtils.getDefaultsFromPresets(config)
                 }
             }
-//            getDefaults()
+            getDefaults()
         }
     }
 
-    fun getDefaults () {
-
+    private fun getDefaults () {
+        CarriersUtils.setLocalCarrierList ()
     }
 
 }
