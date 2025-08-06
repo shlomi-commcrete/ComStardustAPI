@@ -195,6 +195,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 PresetChange -> {sdPackage.getCurrentPreset()?.let {
                     ConfigurationUtils.setCurrentPresetLocal(it)
                     ConfigurationUtils.setDefaults(DataManager.context)
+                    CarriersUtils.setLocalCarrierList()
                 }}
                 null -> {}
             }
