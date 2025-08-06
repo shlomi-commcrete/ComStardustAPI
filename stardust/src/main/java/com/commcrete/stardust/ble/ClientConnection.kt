@@ -494,6 +494,7 @@ internal class ClientConnection(
     fun removeBittelBond () {
         mDevice?.let {
             try {
+                disconnectFromDevice()
                 it::class.java.getMethod("removeBond").invoke(it)
             } catch (e: Exception) {
                 e.printStackTrace()
