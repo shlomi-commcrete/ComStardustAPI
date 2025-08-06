@@ -7,6 +7,7 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import kotlinx.coroutines.launch
 
 object CarriersUtils {
 
@@ -83,7 +84,9 @@ object CarriersUtils {
 
     fun setLocalCarrierList () : List<Carrier>?{
         val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
-        mutableList?.let { carrierList.value = it }
+        Scopes.getMainCoroutine().launch {
+            mutableList?.let { carrierList.value = it }
+        }
         return carrierList.value
     }
 
