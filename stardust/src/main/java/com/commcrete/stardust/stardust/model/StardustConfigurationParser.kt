@@ -260,14 +260,17 @@ class StardustConfigurationParser : StardustParser() {
         try {
             val preset1Bytes = cutByteArray(byteArray, presetParseLength, offset)
             val preset1 = parsePreset(preset1Bytes, 0)
+            preset1.currentPreset = CurrentPreset.PRESET1
             presetList.add(preset1)
             offset += presetParseLength
             val preset2Bytes = cutByteArray(byteArray, presetParseLength, offset)
             val preset2 = parsePreset(preset2Bytes, 1)
+            preset1.currentPreset = CurrentPreset.PRESET2
             presetList.add(preset2)
             offset += presetParseLength
             val preset3Bytes = cutByteArray(byteArray, presetParseLength, offset)
             val preset3 = parsePreset(preset3Bytes, 2)
+            preset1.currentPreset = CurrentPreset.PRESET3
             presetList.add(preset3)
             offset += presetParseLength
         } catch (e : Exception) {
@@ -384,6 +387,7 @@ class StardustConfigurationParser : StardustParser() {
 
     data class Preset (
         val index : Int,
+        var currentPreset: CurrentPreset? = null,
         val xcvrList: MutableList<xcvr> = mutableListOf()
     )
 

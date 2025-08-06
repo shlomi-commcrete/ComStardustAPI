@@ -29,8 +29,9 @@ data class StardustConfigurationPackage(
     var mcuTemperature : Int,
     var rdpLevel : StardustConfigurationParser.StardustRDPLevel,
 ){
-    fun getCurrentRadios () : Radios {
-        if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET1) {
+    fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios {
+        val presetToCheck = preset?:currentPreset
+        if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET1) {
             val preset = presets.get(0)
             return Radios(
                 preset.xcvrList.get(0).functionality,
@@ -38,7 +39,7 @@ data class StardustConfigurationPackage(
                 preset.xcvrList.get(2).functionality,
                 StardustConfigurationParser.StardustTypeFunctionality.ST,
             )
-        } else if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET2) {
+        } else if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET2) {
             val preset = presets.get(1)
             return Radios(
                 preset.xcvrList.get(0).functionality,
@@ -46,7 +47,7 @@ data class StardustConfigurationPackage(
                 preset.xcvrList.get(2).functionality,
                 StardustConfigurationParser.StardustTypeFunctionality.ST,
             )
-        } else if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET3) {
+        } else if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET3) {
             val preset = presets.get(2)
             return Radios(
                 preset.xcvrList.get(0).functionality,

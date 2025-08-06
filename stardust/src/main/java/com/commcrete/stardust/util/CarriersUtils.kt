@@ -32,7 +32,7 @@ object CarriersUtils {
 
     fun getCarrierLisByPreset(bittelConfigurationPackage: StardustConfigurationPackage, preset: StardustConfigurationParser.Preset?) : List<Carrier> {
         val mutableList : MutableList<Carrier> = arrayListOf()
-        val radios = bittelConfigurationPackage.getCurrentRadios()
+        val radios = bittelConfigurationPackage.getCurrentRadios(preset?.currentPreset)
         val defaults1 = preset?.xcvrList?.get(0)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
         val defaults2 = preset?.xcvrList?.get(1)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
         val defaults3 = preset?.xcvrList?.get(2)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
