@@ -252,17 +252,17 @@ object SharedPreferencesUtil {
 
     private fun getPreferencesBoolean (context: Context, key :String) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getBoolean(key, false)
+        return getPrefs(context).getBoolean(key, false)
     }
 
     private fun getPreferencesInt (context: Context, key :String, default : Int = 0) : Int {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getInt(key, default)
+        return getPrefs(context).getInt(key, default)
     }
 
     private fun getPreferencesString (context: Context, key :String, default : String = "") : String? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getString(key, default)
+        return getPrefs(context).getString(key, default)
     }
 
     fun getGain(context: Context) : Float{
@@ -300,18 +300,18 @@ object SharedPreferencesUtil {
 
     fun getEnablePttSound (context: Context) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getBoolean(KEY_ENABLE_PTT_SOUND, true)
+        return getPrefs(context).getBoolean(KEY_ENABLE_PTT_SOUND, true)
     }
 
     fun getIsStardustServerBitEnabled(context: Context) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getBoolean(KEY_BITTEL_BIT_SERVER, false)
+        return getPrefs(context).getBoolean(KEY_BITTEL_BIT_SERVER, false)
     }
 
     fun getConnectivityToggles (context: Context) : MutableSet<String>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val defaults = mutableSetOf( context.getString(R.string.bluetooth))
-        return preferences.getStringSet(KEY_SELECT_CONNECTIVITY_OPTIONS, defaults)
+        return getPrefs(context).getStringSet(KEY_SELECT_CONNECTIVITY_OPTIONS, defaults)
     }
 
     fun getConfigSaved (context: Context) : Boolean {
@@ -320,7 +320,7 @@ object SharedPreferencesUtil {
 
     fun setConfigSaved (context: Context) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putBoolean(KEY_IS_CONFIG_SAVED, true).apply()
+        getPrefs(context).edit().putBoolean(KEY_IS_CONFIG_SAVED, true).apply()
     }
 
     fun isBittelAck (context: Context) : Boolean {
@@ -335,7 +335,7 @@ object SharedPreferencesUtil {
 
     fun setLocationInterval (context: Context, interval : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_LOCATION_INTERVAL, interval).apply()
+        getPrefs(context).edit().putString(KEY_LOCATION_INTERVAL, interval).apply()
 //        LocationUtils.updatedLocationPullParams()
     }
 
@@ -383,7 +383,7 @@ object SharedPreferencesUtil {
 
     fun setLastUser (context: Context, userId : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_LAST_USER, userId).apply()
+        getPrefs(context).edit().putString(KEY_LAST_USER, userId).apply()
     }
 
     fun getLastUser (context: Context) : String {
@@ -392,18 +392,18 @@ object SharedPreferencesUtil {
 
     fun setAdminMode (context: Context,snifferMode: StardustConfigurationParser.SnifferMode ) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putInt(KEY_ADMIN_MODE, snifferMode.type).apply()
+        getPrefs(context).edit().putInt(KEY_ADMIN_MODE, snifferMode.type).apply()
     }
 
     fun getAdminMode (context: Context) : StardustConfigurationParser.SnifferMode {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val type =  preferences.getInt(KEY_ADMIN_MODE, 0)
+        val type =  getPrefs(context).getInt(KEY_ADMIN_MODE, 0)
         return StardustConfigurationParser.SnifferMode.values()[type]
     }
 
     fun getAdminLocalMode (context: Context) : AdminUtils.AdminLocal {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val type =  preferences.getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
+        val type =  getPrefs(context).getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
         when (type) {
             context.getString(R.string.regular) -> { return AdminUtils.AdminLocal.Regular}
             context.getString(R.string.admin) -> { return AdminUtils.AdminLocal.Admin}
@@ -414,12 +414,12 @@ object SharedPreferencesUtil {
 
     fun setOutputDevice(context: Context, outputDevice : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_OUTPUT_DEFAULT , outputDevice).apply()
+        getPrefs(context).edit().putString(KEY_OUTPUT_DEFAULT , outputDevice).apply()
     }
 
     fun setInputDevice(context: Context, inputDevice : String) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_INPUT_DEFAULT , inputDevice).apply()
+        getPrefs(context).edit().putString(KEY_INPUT_DEFAULT , inputDevice).apply()
     }
 
     fun getOutputDevice(context: Context) : Int {
@@ -470,12 +470,12 @@ object SharedPreferencesUtil {
     fun setPresets(context: Context, carriers: List<StardustConfigurationParser.Preset>) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        preferences.edit().putString(KEY_LAST_PRESETS, carriersJson).apply() // Save JSON as a string
+        getPrefs(context).edit().putString(KEY_LAST_PRESETS, carriersJson).apply() // Save JSON as a string
     }
 
     fun getPresets(context: Context): List<StardustConfigurationParser.Preset>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = preferences.getString(KEY_LAST_PRESETS, null)
+        val carriersJson = getPrefs(context).getString(KEY_LAST_PRESETS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<StardustConfigurationParser.Preset>>() {}.type // Define the type of List<Carrier>
@@ -488,12 +488,12 @@ object SharedPreferencesUtil {
     fun setCarriers(context: Context, carriers: List<Carrier>) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        preferences.edit().putString(KEY_LAST_CARRIERS, carriersJson).apply() // Save JSON as a string
+        getPrefs(context).edit().putString(KEY_LAST_CARRIERS, carriersJson).apply() // Save JSON as a string
     }
 
     fun getCarriers(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = preferences.getString(KEY_LAST_CARRIERS, null)
+        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
@@ -506,12 +506,12 @@ object SharedPreferencesUtil {
     fun setCarriers1(context: Context, carriers: List<Carrier>) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        preferences.edit().putString(KEY_LAST_CARRIERS1, carriersJson).apply() // Save JSON as a string
+        getPrefs(context).edit().putString(KEY_LAST_CARRIERS1, carriersJson).apply() // Save JSON as a string
     }
 
     fun getCarriers1(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = preferences.getString(KEY_LAST_CARRIERS1, null)
+        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS1, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
@@ -524,12 +524,12 @@ object SharedPreferencesUtil {
     fun setCarriers2(context: Context, carriers: List<Carrier>) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        preferences.edit().putString(KEY_LAST_CARRIERS2, carriersJson).apply() // Save JSON as a string
+        getPrefs(context).edit().putString(KEY_LAST_CARRIERS2, carriersJson).apply() // Save JSON as a string
     }
 
     fun getCarriers2(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = preferences.getString(KEY_LAST_CARRIERS2, null)
+        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS2, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
@@ -542,12 +542,12 @@ object SharedPreferencesUtil {
     fun setCarriers3(context: Context, carriers: List<Carrier>) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        preferences.edit().putString(KEY_LAST_CARRIERS3, carriersJson).apply() // Save JSON as a string
+        getPrefs(context).edit().putString(KEY_LAST_CARRIERS3, carriersJson).apply() // Save JSON as a string
     }
 
     fun getCarriers3(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = preferences.getString(KEY_LAST_CARRIERS3, null)
+        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS3, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
@@ -559,42 +559,42 @@ object SharedPreferencesUtil {
 
     fun setLocationFormat (context: Context,locationFormat : String ) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_LOCATION_FORMAT, locationFormat).apply()
+        getPrefs(context).edit().putString(KEY_LOCATION_FORMAT, locationFormat).apply()
     }
 
     fun getLocationFormat (context: Context) : String {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getString(KEY_LOCATION_FORMAT, "") ?: ""
+        return getPrefs(context).getString(KEY_LOCATION_FORMAT, "") ?: ""
     }
 
     fun getAlertDest (context: Context) : String {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getString(KEY_ALERT_DEST, "") ?: ""
+        return getPrefs(context).getString(KEY_ALERT_DEST, "") ?: ""
     }
 
     fun setAlertDest (context: Context, dest : String)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_ALERT_DEST, dest).apply()
+        getPrefs(context).edit().putString(KEY_ALERT_DEST, dest).apply()
 
     }
 
     fun getKeyNameCrypto (context: Context) : String {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getString(KEY_KEY_NAME, "Default") ?: "Default"
+        return getPrefs(context).getString(KEY_KEY_NAME, "Default") ?: "Default"
     }
 
     fun setKeyNameCrypto (context: Context, dest : String)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putString(KEY_KEY_NAME, dest).apply()
+        getPrefs(context).edit().putString(KEY_KEY_NAME, dest).apply()
     }
 
     fun getIsErased (context: Context) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return preferences.getBoolean(KEY_ERASE, false)
+        return getPrefs(context).getBoolean(KEY_ERASE, false)
     }
 
     fun setIsErased (context: Context, isErased : Boolean)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        preferences.edit().putBoolean(KEY_KEY_NAME, isErased).apply()
+        getPrefs(context).edit().putBoolean(KEY_KEY_NAME, isErased).apply()
     }
 }
