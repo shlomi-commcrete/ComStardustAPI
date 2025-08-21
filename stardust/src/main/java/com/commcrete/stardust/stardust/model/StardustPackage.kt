@@ -1,13 +1,18 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
+import com.commcrete.stardust.stardust.StardustPackageUtils.byteArrayToIntArray
 
 data class StardustPackage(
     val syncBytes: Array<Int>, var destinationBytes: Array<Int>, var sourceBytes: Array<Int>,
     var stardustControlByte: StardustControlByte, var stardustOpCode: StardustPackageUtils.StardustOpCode,
     val length: Int, var data: Array<Int>? = null, var checkXor: Int? = 0,
-    var pullTimer : Int = 0
+    var pullTimer : Int = 0,
+    var lengthForCrypt : Int = 0,
+    var openControlByte: OpenStardustControlByte = OpenStardustControlByte(),
+    var cryptData : Array<Int> = arrayOf()
 ) : StardustParser(){
 
     var retryCounter = 0
@@ -30,11 +35,15 @@ data class StardustPackage(
         }
     }
 
-    fun getStardustPackageToCheckXor () : MutableList<Int> {
+    private fun encryptData () {
+        val byteArray = getDataForEncryption()
+        val encrypted = CryptoUtils.encryptData(byteArray)
+        lengthForCrypt = byteArray.size
+        cryptData = byteArrayToIntArray(encrypted)
+    }
+
+    private fun getDataForEncryption () : ByteArray{
         val packageToCheck = mutableListOf<Int>()
-        for (data in syncBytes) {
-            appendToIntArray(data, packageToCheck)
-        }
         for (data in destinationBytes) {
             appendToIntArray(data, packageToCheck)
         }
@@ -44,36 +53,69 @@ data class StardustPackage(
         appendToIntArray(stardustControlByte.getControlByteValue(), packageToCheck)
         appendToIntArray(stardustOpCode.codeID, packageToCheck)
         appendToIntArray(length, packageToCheck)
-        data?.let { dataList ->
+        getPaddedData(data).let { dataList ->
             for (data in dataList) {
                 appendToIntArray(data, packageToCheck)
             }
         }
-        return packageToCheck
+        checkXor?.let { checkXor ->
+            appendToIntArray(checkXor, packageToCheck)
+        }
+        return intArrayToByteArray(packageToCheck)
     }
 
-    fun getStardustPackageToSend () : ByteArray{
+    fun getStardustPackageToCheckXor () : MutableList<Int> {
+        val packageToCheck = mutableListOf<Int>()
+        val packageToEncrypt = mutableListOf<Int>()
+
+        for (data in destinationBytes) {
+            appendToIntArray(data, packageToEncrypt)
+        }
+        for (data in sourceBytes) {
+            appendToIntArray(data, packageToEncrypt)
+        }
+        appendToIntArray(stardustControlByte.getControlByteValue(), packageToEncrypt)
+        appendToIntArray(stardustOpCode.codeID, packageToEncrypt)
+        appendToIntArray(length, packageToEncrypt)
+        getPaddedData(data).let { dataList ->
+            for (data in dataList) {
+                appendToIntArray(data, packageToEncrypt)
+            }
+        }
+
+        for (data in syncBytes) {
+            appendToIntArray(data, packageToCheck)
+        }
+        val lengthForCryptData = packageToEncrypt.size
+        appendToIntArray(openControlByte.getControlByteValue(), packageToCheck)
+        appendToIntArray(lengthForCryptData, packageToCheck)
+
+        val packageToReturn = mutableListOf<Int>().apply {
+            addAll(packageToCheck)
+            addAll(packageToEncrypt)
+        }
+        return packageToReturn
+    }
+
+    fun getStardustPackageToSend(): ByteArray {
+        encryptData()
         val packageToSend = mutableListOf<Int>()
         for (data in syncBytes) {
             appendToIntArray(data, packageToSend)
         }
-        for (data in destinationBytes) {
-            appendToIntArray(data, packageToSend)
-        }
-        for (data in sourceBytes) {
-            appendToIntArray(data, packageToSend)
-        }
-        appendToIntArray(stardustControlByte.getControlByteValue(), packageToSend)
-        appendToIntArray(stardustOpCode.codeID, packageToSend)
-        appendToIntArray(length, packageToSend)
-        data?.let { dataList ->
-            for (data in dataList) {
+        appendToIntArray(openControlByte.getControlByteValue(), packageToSend)
+        appendToIntArray(lengthForCrypt, packageToSend)
+        if(openControlByte.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
+            for (data in cryptData) {
                 appendToIntArray(data, packageToSend)
             }
+        } else {
+            val getDataForEnc = getDataForEncryption()
+            for (data in getDataForEnc) {
+                appendToIntArray(data.toInt(), packageToSend)
+            }
         }
-        checkXor?.let { checkXor ->
-            appendToIntArray(checkXor, packageToSend)
-        }
+
         return intArrayToByteArray(packageToSend)
     }
 
@@ -91,7 +133,7 @@ data class StardustPackage(
         appendToIntArray(stardustControlByte.getControlByteValue(), packageToSend)
         appendToIntArray(stardustOpCode.codeID, packageToSend)
         appendToIntArray(length, packageToSend)
-        data?.let { dataList ->
+        getPaddedData(data).let { dataList ->
             for (data in dataList) {
                 appendToIntArray(data, packageToSend)
             }
@@ -112,14 +154,14 @@ data class StardustPackage(
     }
 
     fun getDataAsString () : String? {
-        data?.let {
+        getPaddedData(data).let {
             return String(intArrayToByteArray(it.toMutableList()))
         }
         return null
     }
 
     fun getDataSizeLength () : Int {
-        data?.let {
+        getPaddedData(data).let {
             return it.size
         }
         return 0
@@ -163,9 +205,20 @@ data class StardustPackage(
         }
     }
 
+    fun getPaddedData(data: Array<Int>?): Array<Int> {
+        val size = 6
+        val result = Array(size) { 0 }   // fill with zeros
+        data?.let {
+            for (i in it.indices.take(size)) {
+                result[i] = it[i]
+            }
+        }
+        return result
+    }
+
     fun dataToHex (): String {
         try {
-            data?.let {
+            getPaddedData(data).let {
                 val stringBuilder = StringBuilder()
                 stringBuilder.append(intArrayToHexString(it))
                 stringBuilder.append("\n")
@@ -177,6 +230,14 @@ data class StardustPackage(
         return "\n"
     }
 
+    fun encryptPackage () {
+
+    }
+
+    fun decryptPackage () {
+
+    }
+
     override fun toString(): String {
         val stringBuilder = StringBuilder()
         stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
@@ -186,7 +247,7 @@ data class StardustPackage(
         stringBuilder.append("Destenation : ${getDestAsString()}\n")
         stringBuilder.append("Source : ${getSourceAsString()}\n")
         stringBuilder.append("Length : $length\n")
-        data?.let {
+        getPaddedData(data).let {
             if(stardustControlByte.stardustPackageType == StardustControlByte.StardustPackageType.SPEECH || stardustOpCode == StardustPackageUtils.StardustOpCode.REQUEST_LOCATION ){
                 stringBuilder.append("Data : \n")
                 for (mData in it ) {

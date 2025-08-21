@@ -2,19 +2,19 @@
 <project version="4">
   <component name="deploymentTargetDropDown">
     <value>
-      <entry key="LocationManagerInstrumentedTest">
-        <State />
-      </entry>
       <entry key="app">
         <State />
       </entry>
-      <entry key="packLocationTest()">
+      <entry key="decrypt_knownVector_noPadding_zeroIV()">
         <State />
       </entry>
-      <entry key="testFusedLocationFromWifiOnly()">
+      <entry key="decrypt_knownVector_noPadding_zeroIV_repeated()">
         <State />
       </entry>
-      <entry key="testLocationManagerProvidesLocation()">
+      <entry key="encrypt_knownVector_noPadding_zeroIV()">
+        <State />
+      </entry>
+      <entry key="encrypt_knownVector_noPadding_zeroIV_repeated()">
         <State />
       </entry>
     </value>

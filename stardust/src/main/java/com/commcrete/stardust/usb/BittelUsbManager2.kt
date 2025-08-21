@@ -12,6 +12,7 @@ import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
@@ -95,7 +96,8 @@ object BittelUsbManager2 : BittelProtocol {
         CoroutineScope(Dispatchers.Default).launch {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let {
                 val mPackage = StardustPackageUtils.getStardustPackage(
-                    source = it , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                    source = "1" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
                 Timber.tag("SerialInputOutputManager").d("uartManager.send")
                 sendDataToUart(mPackage)
             }

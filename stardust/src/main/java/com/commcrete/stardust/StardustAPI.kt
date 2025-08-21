@@ -36,6 +36,9 @@ interface StardustAPI {
     fun getCarriers (context: Context) : List<Carrier>?
     fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location)
     fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage)
+    fun setSecurityKey(context: Context, key: String, name : String)
+    fun setSecurityKeyDefault(context: Context)
+    fun getSecurityKey(context: Context) : ByteArray
 }
 
 // Receive from the SDK

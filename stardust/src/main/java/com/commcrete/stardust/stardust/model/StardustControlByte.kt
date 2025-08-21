@@ -73,3 +73,31 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
 
 
 }
+
+data class OpenStardustControlByte (var stardustCryptType: StardustCryptType
+) {
+
+    constructor() : this(
+        StardustCryptType.ENCRYPTED
+    )
+
+
+    fun getControlByteValue (): Int {
+        return this.stardustCryptType.value
+    }
+
+    enum class StardustCryptType (val value : Int) {
+        ENCRYPTED(1),
+        DECRYPTED(0)
+    }
+
+
+    fun getStardustControlByteFromByte(byte: Int): OpenStardustControlByte {
+        return OpenStardustControlByte(
+            if (byte and 1 == 1) StardustCryptType.ENCRYPTED else StardustCryptType.DECRYPTED,
+        )
+    }
+
+
+
+}

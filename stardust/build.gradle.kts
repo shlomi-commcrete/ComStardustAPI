@@ -6,15 +6,25 @@ plugins {
     id("maven-publish")
 }
 
+// ✅ Load API key (prefer from ~/.gradle/gradle.properties, fallback to environment var)
+val apiKeyProvider = providers.gradleProperty("Crypt")
+    .orElse(providers.environmentVariable("Crypt"))
+
+val apiKey = apiKeyProvider.orElse("").get()
+
+
 android {
     namespace = "com.commcrete.stardust"
     compileSdk = 34
-
+    buildFeatures {
+        buildConfig = true // ✅ Enable BuildConfig for library module
+    }
     defaultConfig {
         minSdk = 21
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+        buildConfigField("String", "Crypt", "\"$apiKey\"")
     }
 
     buildTypes {
@@ -30,6 +40,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
 }
 
 dependencies {
@@ -101,6 +112,7 @@ dependencies {
     //Excel
     implementation ("org.apache.poi:poi-ooxml:5.2.3")
 //    implementation ("org.apache.commons:commons-compress:1.21")
+    implementation ("androidx.security:security-crypto:1.1.0")
 }
 
 

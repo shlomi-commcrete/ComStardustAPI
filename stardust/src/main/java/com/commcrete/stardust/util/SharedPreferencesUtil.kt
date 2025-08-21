@@ -110,6 +110,8 @@ object SharedPreferencesUtil {
 
     //Location
     private const val KEY_LOCATION_FORMAT = "location_format"
+    private const val KEY_KEY_NAME = "key_name_crypto"
+    private const val KEY_ERASE = "key_is_erased"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -574,5 +576,25 @@ object SharedPreferencesUtil {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         preferences.edit().putString(KEY_ALERT_DEST, dest).apply()
 
+    }
+
+    fun getKeyNameCrypto (context: Context) : String {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        return preferences.getString(KEY_KEY_NAME, "Default") ?: "Default"
+    }
+
+    fun setKeyNameCrypto (context: Context, dest : String)  {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putString(KEY_KEY_NAME, dest).apply()
+    }
+
+    fun getIsErased (context: Context) : Boolean {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        return preferences.getBoolean(KEY_ERASE, false)
+    }
+
+    fun setIsErased (context: Context, isErased : Boolean)  {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        preferences.edit().putBoolean(KEY_KEY_NAME, isErased).apply()
     }
 }

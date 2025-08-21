@@ -32,6 +32,8 @@ class StardustAppEventParser : StardustParser(){
                     StardustAppEventPackage.StardustAppEventType.TXFinish -> parseXcvr(eventDataBytes, bittelAppEventPackage)
                     StardustAppEventPackage.StardustAppEventType.TXBufferFull -> parseXcvr(eventDataBytes, bittelAppEventPackage)
                     StardustAppEventPackage.StardustAppEventType.PresetChange -> parsePreset(eventDataBytes, bittelAppEventPackage)
+                    StardustAppEventPackage.StardustAppEventType.ArmDelete -> parseDelete(eventTypeBytes, bittelAppEventPackage)
+                    StardustAppEventPackage.StardustAppEventType.Delete -> parseDelete(eventTypeBytes, bittelAppEventPackage)
                     null -> {}
                 }
                 val rssiDataBytes = cutByteArray(byteArray,
@@ -57,6 +59,10 @@ class StardustAppEventParser : StardustParser(){
 
     private fun parsePreset (byteArray: ByteArray, bittelAppEventPackage: StardustAppEventPackage){
         bittelAppEventPackage.preset = byteArrayToInt(byteArray.reversedArray())
+    }
+
+    private fun parseDelete (byteArray: ByteArray, bittelAppEventPackage: StardustAppEventPackage) {
+        bittelAppEventPackage.armDelete = byteArrayToInt(byteArray.reversedArray())
     }
 
     private fun parseXcvrRssi (byteArray: ByteArray) : StardustAppEventPackage.RSSIPackage {

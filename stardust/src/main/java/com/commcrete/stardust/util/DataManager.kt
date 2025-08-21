@@ -21,6 +21,7 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message
@@ -68,9 +69,14 @@ object DataManager : StardustAPI, PttInterface{
 
     fun requireContext (context: Context){
         this.context = context
-        if(!hasTimber) {
+ /*       if(!hasTimber) {
             Timber.plant(Timber.DebugTree())
             hasTimber = true
+        }*/
+        SharedPreferencesUtil.getIsErased(context).let {
+            if(it) {
+                throw IllegalStateException("Device is erased, please reset the device")
+            }
         }
     }
 
@@ -229,6 +235,18 @@ object DataManager : StardustAPI, PttInterface{
         Scopes.getDefaultCoroutine().launch {
             SOSUtils.ackSOS(context = context, stardustAPIPackage = stardustAPIPackage)
         }
+    }
+
+    override fun setSecurityKey(context: Context, key: String, name : String) {
+        SecureKeyUtils.setSecuredKey(context, key, name)
+    }
+
+    override fun setSecurityKeyDefault(context: Context) {
+        SecureKeyUtils.setSecuredKeyDefault(context)
+    }
+
+    override fun getSecurityKey(context: Context): ByteArray {
+        return SecureKeyUtils.getSecuredKey(context)
     }
 
 

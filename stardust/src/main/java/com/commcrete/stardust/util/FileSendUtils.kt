@@ -241,7 +241,7 @@ object FileSendUtils {
         val data = packages.values.map { it.data }
         val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
         val decoded = ldpc.decode(data, listOf(2))
-        Log.d("decoded", "decoded = ${decoded.size}")
+//        Log.d("decoded", "decoded = ${decoded.size}")
     }
 
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {

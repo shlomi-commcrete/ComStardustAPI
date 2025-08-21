@@ -5,7 +5,8 @@ data class StardustAppEventPackage(
     var xcvr : Int = 0,
     var carrier : StardustConfigurationParser.StardustCarrier? = null,
     var preset : Int? = null,
-    var listRSSIPackage: List<RSSIPackage> = mutableListOf()
+    var listRSSIPackage: List<RSSIPackage> = mutableListOf(),
+    var armDelete : Int = 0,
 ) {
     enum class StardustAppEventType (val type : Int) {
         RXSuccess (0),
@@ -13,7 +14,9 @@ data class StardustAppEventPackage(
         TXStart (2),
         TXFinish (3),
         TXBufferFull (4),
-        PresetChange (5);
+        PresetChange (5),
+        ArmDelete (6),
+        Delete (7);
         companion object {
             fun fromByte(value: Byte): StardustAppEventType? {
                 return values().find { it.type == value.toInt() }

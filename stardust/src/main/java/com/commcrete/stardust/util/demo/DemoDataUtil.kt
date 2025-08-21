@@ -10,6 +10,7 @@ import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.FolderReader
@@ -121,7 +122,8 @@ object DemoDataUtil {
     private fun onFinishLoadData() {
         Scopes.getMainCoroutine().launch {
             val mPackage = StardustPackageUtils.getStardustPackage(
-                source = "0" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                source = "1" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+            mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
             DataManager.getClientConnection(DataManager.context).addMessageToQueue(mPackage)
         }
     }

@@ -147,7 +147,6 @@ object FileReceivedUtils {
                 sendInterval * timesDelay
             )
 
-            Log.d("lastPackage", "delay : $timesDelay")
 
         }
 
@@ -186,7 +185,6 @@ object FileReceivedUtils {
                     }
                     handler.postDelayed( {removeFromFileReceivedList()}, 300)
                 } else {
-                    Log.d("lastPackage", "total : ${it.total}, current : ${dataList.last().current}")
                     if(it.total == dataList.last().current + 1) {
                         bittelPackage?.let { saveFile(it, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
@@ -294,9 +292,9 @@ object FileReceivedUtils {
                     lostIndices = lostPackagesIndex.toList()
                 ).toMutableList()
 
-                for (packageData in decoded) {
-                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
-                }
+//                for (packageData in decoded) {
+//                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
+//                }
                 dataStart?.let {
                     val spare = it.spareData
                     val lastIndex = decoded.lastIndex
@@ -304,7 +302,7 @@ object FileReceivedUtils {
                 }
 
                 for (packageData in decoded) {
-                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
+//                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
                     outputStream.write(packageData)
                 }
             }

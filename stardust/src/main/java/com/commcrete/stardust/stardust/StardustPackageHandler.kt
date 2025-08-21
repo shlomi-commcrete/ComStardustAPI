@@ -24,6 +24,7 @@ import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -196,7 +197,18 @@ internal class StardustPackageHandler(private val context: Context ,
                     ConfigurationUtils.setCurrentPresetLocal(it)
                     ConfigurationUtils.setDefaults(DataManager.context)
                 }}
+                ArmDelete -> {
+                    if(sdPackage.armDelete == 6) {
+                        EraseUtils.handleArm()
+                    }
+                }
+                Delete -> {
+                    if(sdPackage.armDelete == 7) {
+                        EraseUtils.handleDelete()
+                    }
+                }
                 null -> {}
+
             }
             AppEvents.updateAppEvents(sdPackage)
         }

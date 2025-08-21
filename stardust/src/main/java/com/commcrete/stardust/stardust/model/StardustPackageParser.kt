@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import timber.log.Timber
 import java.nio.ByteBuffer
@@ -12,6 +13,8 @@ class StardustPackageParser : StardustParser() {
 
     companion object{
         const val syncBytesLength = 4
+        const val cryptLengthLength = 1
+        const val cryptControlLength = 1
         const val destinationBytesLength = 4
         const val sourceBytesLength = 4
         const val controlBytesLength = 1
@@ -63,23 +66,43 @@ class StardustPackageParser : StardustParser() {
                 packageState = PackageState.INVALID_DATA
                 return null
             }
-            val destinationBytes = cutByteArray(byteArray, destinationBytesLength, offset)
+            val cryptControlLengthBytes = cutByteArray(byteArray, cryptControlLength, offset)
+            offset += cryptControlLength
+            val openControl = OpenStardustControlByte().getStardustControlByteFromByte(cryptControlLengthBytes[0].toInt())
+            val cryptLengthBytes = cutByteArray(byteArray, cryptLengthLength, offset)
+            offset += cryptLengthLength
+            val cryptLength = cryptLengthBytes[0].toUByte().toInt()
+
+            if((cryptLength > (byteArray.size - offset)) || (offset <= byteArray.size)) {
+                packageState = PackageState.NOT_ENOUGH_DATA
+                return null
+            }
+            var decryptData = byteArrayOf()
+            if(openControl.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
+                val encryptedBytes = byteArray.copyOfRange(offset, byteArray.size)
+                decryptData = CryptoUtils.decryptData(encryptedBytes)
+            } else {
+                decryptData = byteArray.copyOfRange(offset, byteArray.size)
+            }
+
+            offset = 0
+            val destinationBytes = cutByteArray(decryptData, destinationBytesLength, offset)
             offset += destinationBytesLength
-            val sourceBytes = cutByteArray(byteArray, sourceBytesLength, offset)
+            val sourceBytes = cutByteArray(decryptData, sourceBytesLength, offset)
             offset += sourceBytesLength
-            val controlBytes = cutByteArray(byteArray, controlBytesLength, offset)
+            val controlBytes = cutByteArray(decryptData, controlBytesLength, offset)
             offset += controlBytesLength
-            val opCodeBytes = cutByteArray(byteArray, opCodeBytesLength, offset)
+            val opCodeBytes = cutByteArray(decryptData, opCodeBytesLength, offset)
             offset += opCodeBytesLength
             val opcode = getOpCode(opCodeBytes[0].toUByte())
             val controlByte = StardustControlByte().getStardustControlByteFromByte(controlBytes[0].toInt())
-            var lengthBytes = cutByteArray(byteArray, lengthBytesLength, offset)
+            var lengthBytes = cutByteArray(decryptData, lengthBytesLength, offset)
             var length = lengthBytes[0].toUByte().toInt()
             offset += lengthBytesLength
             var dataBytes : ByteArray? = null
-            dataBytes = cutByteArray(byteArray, length, offset)
+            dataBytes = cutByteArray(decryptData, length, offset)
             offset += length
-            val checkXorBytes = cutByteArray(byteArray, checkXorBytesLength, offset)
+            val checkXorBytes = cutByteArray(decryptData, checkXorBytesLength, offset)
 
             if(opcode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && controlByte.stardustPackageType == StardustControlByte.StardustPackageType.DATA){
                 val realLength = dataBytes[0].toUByte().toInt()

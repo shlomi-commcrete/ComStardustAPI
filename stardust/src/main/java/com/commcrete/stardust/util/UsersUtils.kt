@@ -4,6 +4,7 @@ import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
