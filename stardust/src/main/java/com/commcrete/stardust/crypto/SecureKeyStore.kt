@@ -3,68 +3,46 @@ package com.commcrete.stardust.crypto
 import android.content.Context
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 
-/**
- * Stores a 32-byte key securely (encrypted-at-rest).
- * - Default key is 32 bytes of 0x00 until you set it.
- * - You can set using hex or bytes, and get as hex or bytes.
- */
 class SecureKeyStore(context: Context) {
 
     private val appContext = context.applicationContext
 
-    private val masterKey by lazy {
-        MasterKey.Builder(appContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
+    private val masterKeyAlias by lazy {
+        MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     }
 
     private val prefs by lazy {
         EncryptedSharedPreferences.create(
-            appContext,
             PREFS_NAME,
-            masterKey,
+            masterKeyAlias,
+            appContext,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }
 
-    /**
-     * Returns the current 32-byte key. If none is saved yet,
-     * it provisions the default (32 x 0x00) and returns it.
-     */
     @Synchronized
     fun getKey(): ByteArray {
         val b64 = prefs.getString(KEY_NAME, null)
         if (b64.isNullOrEmpty()) {
-            // Provision default all-zeros and persist once
             saveBytes(DEFAULT_KEY)
             return DEFAULT_KEY.copyOf()
         }
         return Base64.decode(b64, Base64.NO_WRAP)
     }
 
-    /** Same as getKey() but hex-encoded (lowercase, 64 chars). */
     fun getKeyHex(): String = bytesToHex(getKey())
 
-    /**
-     * Overwrite the stored key with exactly 32 bytes.
-     * Throws IllegalArgumentException on wrong size.
-     */
     @Synchronized
     fun setKey(bytes: ByteArray) {
         require(bytes.size == 32) { "Key must be exactly 32 bytes." }
         saveBytes(bytes)
     }
 
-    /** Convenience: set the key from 64-char hex string. */
     fun setKeyFromHex(hex: String) = setKey(hexToBytes(hex))
 
-    /**
-     * Generates a fresh random 32-byte key and stores it.
-     * Returns the new key bytes.
-     */
     @Synchronized
     fun rotateRandomKey(): ByteArray {
         val rnd = java.security.SecureRandom()
@@ -74,13 +52,10 @@ class SecureKeyStore(context: Context) {
         return b
     }
 
-    /** Removes the stored key; next getKey() will reprovision zeros. */
     @Synchronized
     fun clear() {
         prefs.edit().remove(KEY_NAME).apply()
     }
-
-    // --- Internals ---
 
     @Synchronized
     private fun saveBytes(bytes: ByteArray) {
@@ -120,6 +95,6 @@ class SecureKeyStore(context: Context) {
     companion object {
         private const val PREFS_NAME = "secure_prefs"
         private const val KEY_NAME = "app_secret_key"
-        private val DEFAULT_KEY = ByteArray(32) { 0x00.toByte() } // 32 x 00
+        private val DEFAULT_KEY = ByteArray(32) { 0x00.toByte() }
     }
 }
