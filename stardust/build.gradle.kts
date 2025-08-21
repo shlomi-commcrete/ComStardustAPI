@@ -112,7 +112,7 @@ dependencies {
     //Excel
     implementation ("org.apache.poi:poi-ooxml:5.2.3")
 //    implementation ("org.apache.commons:commons-compress:1.21")
-    implementation ("androidx.security:security-crypto:1.1.0")
+    implementation ("androidx.security:security-crypto:1.0.0")
 }
 
 

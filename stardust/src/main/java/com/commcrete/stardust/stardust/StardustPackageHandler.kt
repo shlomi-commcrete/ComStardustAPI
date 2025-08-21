@@ -198,12 +198,12 @@ internal class StardustPackageHandler(private val context: Context ,
                     ConfigurationUtils.setDefaults(DataManager.context)
                 }}
                 ArmDelete -> {
-                    if(sdPackage.armDelete == 6) {
+                    if(sdPackage.armDelete == ArmDelete.type) {
                         EraseUtils.handleArm()
                     }
                 }
                 Delete -> {
-                    if(sdPackage.armDelete == 7) {
+                    if(sdPackage.armDelete == Delete.type) {
                         EraseUtils.handleDelete()
                     }
                 }
