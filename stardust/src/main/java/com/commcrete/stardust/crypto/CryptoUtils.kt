@@ -12,7 +12,7 @@ object CryptoUtils {
         )
 
         val cryptBytes = SecureKeyUtils.getSecuredKey(DataManager.context)
-        val out = crypt.decryptBuf(cryptBytes, value)
+        val out = crypt.encryptBuf(cryptBytes, value)
         return out
     }
 

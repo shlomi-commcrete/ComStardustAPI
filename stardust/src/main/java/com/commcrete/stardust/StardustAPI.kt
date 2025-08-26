@@ -39,6 +39,7 @@ interface StardustAPI {
     fun setSecurityKey(context: Context, key: String, name : String)
     fun setSecurityKeyDefault(context: Context)
     fun getSecurityKey(context: Context) : ByteArray
+    fun setPluginContext(context: Context)
 }
 
 // Receive from the SDK
