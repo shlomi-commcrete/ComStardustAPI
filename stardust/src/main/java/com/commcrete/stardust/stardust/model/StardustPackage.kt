@@ -76,7 +76,7 @@ data class StardustPackage(
         }
         appendToIntArray(stardustControlByte.getControlByteValue(), packageToEncrypt)
         appendToIntArray(stardustOpCode.codeID, packageToEncrypt)
-        appendToIntArray(length, packageToEncrypt)
+        appendToIntArray(maxOf(length, 4), packageToEncrypt)
         getPaddedData(data).let { dataList ->
             for (data in dataList) {
                 appendToIntArray(data, packageToEncrypt)
