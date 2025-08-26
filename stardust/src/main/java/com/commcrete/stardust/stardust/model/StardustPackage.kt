@@ -206,7 +206,7 @@ data class StardustPackage(
     }
 
     fun getPaddedData(data: Array<Int>?): Array<Int> {
-        val size = 6
+        val size = 4
         val result = Array(size) { 0 }   // fill with zeros
         data?.let {
             for (i in it.indices.take(size)) {
