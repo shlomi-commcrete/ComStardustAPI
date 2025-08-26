@@ -52,7 +52,7 @@ data class StardustPackage(
         }
         appendToIntArray(stardustControlByte.getControlByteValue(), packageToCheck)
         appendToIntArray(stardustOpCode.codeID, packageToCheck)
-        appendToIntArray(length, packageToCheck)
+        appendToIntArray(maxOf(length, 4), packageToCheck)
         getPaddedData(data).let { dataList ->
             for (data in dataList) {
                 appendToIntArray(data, packageToCheck)

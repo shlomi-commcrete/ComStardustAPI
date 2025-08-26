@@ -96,7 +96,7 @@ object BittelUsbManager2 : BittelProtocol {
         CoroutineScope(Dispatchers.Default).launch {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let {
                 val mPackage = StardustPackageUtils.getStardustPackage(
-                    source = "1" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                    source = it , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
                 mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
                 Timber.tag("SerialInputOutputManager").d("uartManager.send")
                 sendDataToUart(mPackage)

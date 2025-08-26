@@ -231,7 +231,7 @@ internal class ClientConnection(
                             val src = it.appId
                             if(src != null) {
                                 val mPackage = StardustPackageUtils.getStardustPackage(
-                                    source = "1" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
                                 mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
                                 addMessageToQueue(mPackage)
                                 resetConnectionTimer()
