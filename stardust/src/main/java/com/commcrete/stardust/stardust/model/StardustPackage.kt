@@ -67,7 +67,6 @@ data class StardustPackage(
     fun getStardustPackageToCheckXor () : MutableList<Int> {
         val packageToCheck = mutableListOf<Int>()
         val packageToEncrypt = mutableListOf<Int>()
-
         for (data in destinationBytes) {
             appendToIntArray(data, packageToEncrypt)
         }
@@ -88,7 +87,7 @@ data class StardustPackage(
         }
         val lengthForCryptData = packageToEncrypt.size
         appendToIntArray(openControlByte.getControlByteValue(), packageToCheck)
-        appendToIntArray(lengthForCryptData, packageToCheck)
+        appendToIntArray(lengthForCryptData + 1, packageToCheck)
 
         val packageToReturn = mutableListOf<Int>().apply {
             addAll(packageToCheck)
