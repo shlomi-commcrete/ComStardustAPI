@@ -85,9 +85,9 @@ data class StardustPackage(
         for (data in syncBytes) {
             appendToIntArray(data, packageToCheck)
         }
-        val lengthForCryptData = packageToEncrypt.size
+        lengthForCrypt = packageToEncrypt.size + 1 //+1 for checkXor
         appendToIntArray(openControlByte.getControlByteValue(), packageToCheck)
-        appendToIntArray(lengthForCryptData + 1, packageToCheck)
+        appendToIntArray(lengthForCrypt, packageToCheck)
 
         val packageToReturn = mutableListOf<Int>().apply {
             addAll(packageToCheck)
@@ -97,7 +97,6 @@ data class StardustPackage(
     }
 
     fun getStardustPackageToSend(): ByteArray {
-        encryptData()
         val packageToSend = mutableListOf<Int>()
         for (data in syncBytes) {
             appendToIntArray(data, packageToSend)
@@ -105,6 +104,7 @@ data class StardustPackage(
         appendToIntArray(openControlByte.getControlByteValue(), packageToSend)
         appendToIntArray(lengthForCrypt, packageToSend)
         if(openControlByte.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
+            encryptData()
             for (data in cryptData) {
                 appendToIntArray(data, packageToSend)
             }
@@ -204,15 +204,31 @@ data class StardustPackage(
         }
     }
 
+    fun toHexEnc (): String {
+        try {
+            return getDataForEncryption().joinToString(" ") { "%02X".format(it.toLong() and 0xFF) }
+        }catch (e : Exception){
+            e.printStackTrace()
+            return ""
+        }
+    }
+
     fun getPaddedData(data: Array<Int>?): Array<Int> {
         val size = 4
-        val result = Array(size) { 0 }   // fill with zeros
-        data?.let {
-            for (i in it.indices.take(size)) {
-                result[i] = it[i]
-            }
+        if (data == null) {
+            // null → return zero-padded array
+            return Array(size) { 0 }
         }
-        return result
+        if (data.size < size) {
+            // smaller → pad with zeros
+            val result = Array(size) { 0 }
+            for (i in data.indices) {
+                result[i] = data[i]
+            }
+            return result
+        }
+        // large enough → return original array
+        return data
     }
 
     fun dataToHex (): String {
@@ -259,6 +275,16 @@ data class StardustPackage(
         }
         try {
             stringBuilder.append("toHex : ${toHex()}\n")
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
+        try {
+            stringBuilder.append("Before Enc : ${toHexEnc()}\n")
+        }catch (e : Exception) {
+            e.printStackTrace()
+        }
+        try {
+            stringBuilder.append("Padded Data : ${getPaddedData(data)}\n")
         }catch (e : Exception) {
             e.printStackTrace()
         }

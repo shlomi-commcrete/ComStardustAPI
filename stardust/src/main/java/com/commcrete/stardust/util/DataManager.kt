@@ -63,22 +63,17 @@ object DataManager : StardustAPI, PttInterface{
     private var source : String? = null
     private var destination : String? = null
     private var stardustAPICallbacks : StardustAPICallbacks? = null
-//    var pluginContext: Context? = null
+    var pluginContext: Context? = null
 
     private var hasTimber = false
     var isPlayPttFromSdk = true
 
-    override fun setPluginContext (context: Context){
-//        if(pluginContext == null) {
-//            pluginContext = context
-//        }
-    }
     fun requireContext (context: Context){
         this.context = context
- /*       if(!hasTimber) {
+       if(!hasTimber) {
             Timber.plant(Timber.DebugTree())
             hasTimber = true
-        }*/
+        }
         SharedPreferencesUtil.getIsErased(context).let {
             if(it) {
                 throw IllegalStateException("Device is erased, please reset the device")

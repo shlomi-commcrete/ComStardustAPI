@@ -709,7 +709,13 @@ object StardustPackageUtils {
             val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
             val mPackage =  packagesList[packagesList.lastIndex]
             if(isFinished == StardustPackageParser.PackageState.VALID){
-                val bittelPackage = packagesList[packagesList.lastIndex].getStardustPackageFromBuffer()
+                val dataForStardustPackage = packagesList[packagesList.lastIndex]
+                val bittelPackage = dataForStardustPackage.getStardustPackageFromBuffer()
+                dataForStardustPackage.spareData?.let {
+                    if(it.isNotEmpty()){
+                        handlePackageReceived(it)
+                    }
+                }
                 bittelPackage?.let {
                     bittelPackageHandler?.handleStardustPackage(it)
                     packagesList.remove(mPackage)

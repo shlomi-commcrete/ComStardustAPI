@@ -7,17 +7,18 @@ import androidx.security.crypto.MasterKeys
 
 class SecureKeyStore(context: Context) {
 
-    private val appContext = context.applicationContext
 
-    private val masterKeyAlias by lazy {
+    // 1.0.0 API: MasterKeys
+    private val masterKeyAlias: String by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     }
 
-    private val prefs by lazy {
+    // 1.0.0 API: create(fileName, masterKeyAlias, context, keyScheme, valueScheme)
+    private val prefs by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         EncryptedSharedPreferences.create(
-            PREFS_NAME,
-            masterKeyAlias,
-            appContext,
+            PREFS_NAME,                                // fileName
+            masterKeyAlias,                            // masterKeyAlias
+            context,                                // <-- must be a real Android context
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
@@ -64,28 +65,26 @@ class SecureKeyStore(context: Context) {
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
-        val hexChars = CharArray(bytes.size * 2)
-        val hexArray = "0123456789abcdef".toCharArray()
+        val hex = CharArray(bytes.size * 2)
+        val map = "0123456789abcdef".toCharArray()
         var i = 0
         for (b in bytes) {
             val v = b.toInt() and 0xFF
-            hexChars[i++] = hexArray[v ushr 4]
-            hexChars[i++] = hexArray[v and 0x0F]
+            hex[i++] = map[v ushr 4]
+            hex[i++] = map[v and 0x0F]
         }
-        return String(hexChars)
+        return String(hex)
     }
 
     private fun hexToBytes(hex: String): ByteArray {
         require(hex.length == 64) { "Hex must be exactly 64 characters (32 bytes)." }
-        fun parseHexDigit(c: Char): Int {
-            return c.digitToIntOrNull(16)
-                ?: throw IllegalArgumentException("Invalid hex char: '$c'")
-        }
+        fun parse(c: Char) = c.digitToIntOrNull(16)
+            ?: throw IllegalArgumentException("Invalid hex char: '$c'")
         val out = ByteArray(32)
         var i = 0
         while (i < 64) {
-            val hi = parseHexDigit(hex[i]) shl 4
-            val lo = parseHexDigit(hex[i + 1])
+            val hi = parse(hex[i]) shl 4
+            val lo = parse(hex[i + 1])
             out[i / 2] = (hi or lo).toByte()
             i += 2
         }

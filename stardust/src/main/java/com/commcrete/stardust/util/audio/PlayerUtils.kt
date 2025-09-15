@@ -675,24 +675,36 @@ object PlayerUtils : BleMediaConnector() {
         return result
     }
 
-    private   fun splitByteArray2(combined: ByteArray): List<ByteArray> {
-        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray origin : ${combined.toHex()}")
-        val byteArray1 = ByteArray(4)
-        val byteArray2 = ByteArray(4)
+    private fun splitByteArray2(combined: ByteArray): List<ByteArray> {
+        return try {
+            Timber.tag("concatenateByteArraysWithIgnoring")
+                .d("byteArray origin : ${combined.toHex()}")
 
-        // Extract byteArray1 from the first 4 bytes of the combined array
-        for (i in 0 until 4) {
-            byteArray1[i] = combined[i]
+            val byteArray1 = ByteArray(4)
+            val byteArray2 = ByteArray(4)
+
+            // Extract byteArray1 from the first 4 bytes of the combined array
+            for (i in 0 until 4) {
+                byteArray1[i] = combined[i]
+            }
+            byteArray1[3] = (byteArray1[3].toInt() and 0xF0).toByte()
+
+            // Reverse the manipulation to retrieve byteArray2
+            byteArray2[0] = ((combined[3].toUByte().toInt() shl 4) or (combined[4].toUByte().toInt() shr 4)).toByte()
+            byteArray2[1] = ((combined[4].toUByte().toInt() shl 4) or (combined[5].toUByte().toInt() shr 4)).toByte()
+            byteArray2[2] = ((combined[5].toUByte().toInt() shl 4) or (combined[6].toUByte().toInt() shr 4)).toByte()
+            byteArray2[3] = (combined[6].toUByte().toInt() shl 4).toByte()
+
+            Timber.tag("receiveAfterSplit").d("byteArray 1 : ${byteArray1.toHex()}")
+            Timber.tag("receiveAfterSplit").d("byteArray 2 : ${byteArray2.toHex()}")
+
+            listOf(byteArray1, byteArray2)
+
+        } catch (e: Exception) {
+            Timber.tag("splitByteArray2").e(e, "Error while splitting byte array")
+            // Return safe default
+            listOf(ByteArray(4), ByteArray(4))
         }
-        byteArray1[3] =  (byteArray1[3].toInt() and 0xF0).toByte()
-        // Reverse the manipulation to retrieve byteArray2
-        byteArray2[0] = ((combined[3].toUByte().toInt() shl 4) or (combined[4].toUByte().toInt() shr 4)).toByte()
-        byteArray2[1] = ((combined[4].toUByte().toInt() shl 4) or (combined[5].toUByte().toInt() shr 4)).toByte()
-        byteArray2[2] = ((combined[5].toUByte().toInt() shl 4) or (combined[6].toUByte().toInt() shr 4)).toByte()
-        byteArray2[3] = (combined[6].toUByte().toInt() shl 4).toByte() // Assuming the original bits are aligned
-        Timber.tag("receiveAfterSplit").d("byteArray 1 : ${byteArray1.toHex()}")
-        Timber.tag("receiveAfterSplit").d("byteArray 2 : ${byteArray2.toHex()}")
-        return listOf(byteArray1, byteArray2)
     }
 
     private fun testPlayPackage(byteArray: ByteArray, dest : String, snifferContacts: List<ChatContact>? = null){

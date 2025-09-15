@@ -95,6 +95,12 @@ internal class StardustPackageHandler(private val context: Context ,
                     // TODO: Handle Sniffed message
                     return
                 }
+
+                if (StardustInitConnectionHandler.onIncoming(mPackage)) {
+                    resetTimer()
+                    return
+                }
+                Timber.tag("InitHandler").d("not handled by init handler")
                 when(mPackageOpCode){
                     StardustPackageUtils.StardustOpCode.SEND_MESSAGE -> {
                         if(mPackageControl.stardustPackageType == StardustControlByte.StardustPackageType.DATA) {

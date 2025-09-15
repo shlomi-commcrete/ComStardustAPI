@@ -8,7 +8,7 @@ import java.nio.ByteBuffer
 class StardustPackageParser : StardustParser() {
 
     private var byteBuffer : ByteBuffer? = null
-    private var spareData : ByteBuffer? = null
+    var spareData : ByteArray? = null
     var packageState : PackageState = PackageState.NOT_ENOUGH_DATA
 
     companion object{
@@ -73,16 +73,29 @@ class StardustPackageParser : StardustParser() {
             offset += cryptLengthLength
             val cryptLength = cryptLengthBytes[0].toUByte().toInt()
 
-            if((cryptLength > (byteArray.size - offset)) || (offset <= byteArray.size)) {
+            if((cryptLength > (byteArray.size - offset))) {
                 packageState = PackageState.NOT_ENOUGH_DATA
                 return null
             }
+            val cryptStart = offset
             var decryptData = byteArrayOf()
             if(openControl.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
-                val encryptedBytes = byteArray.copyOfRange(offset, byteArray.size)
+                val encryptedBytes = byteArray.copyOfRange(offset, cryptLength+offset)
                 decryptData = CryptoUtils.decryptData(encryptedBytes)
             } else {
-                decryptData = byteArray.copyOfRange(offset, byteArray.size)
+                decryptData = byteArray.copyOfRange(offset, cryptLength+offset)
+            }
+            try {
+                // anything AFTER the crypt payload is considered "spare"
+                val endOfCrypt = cryptStart + cryptLength
+                spareData = if (endOfCrypt < byteArray.size) {
+                    byteArray.copyOfRange(endOfCrypt, byteArray.size)
+                } else {
+                    byteArrayOf() // or `null` if spareData is ByteArray?
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                spareData = byteArrayOf() // keep it sane on failure
             }
 
             offset = 0
@@ -113,7 +126,20 @@ class StardustPackageParser : StardustParser() {
                 packageState = PackageState.NOT_ENOUGH_DATA
                 return null
             }
-            packageState = if(checkXorBytes[0].toInt() == calcChecksum(byteArray, offset).toInt()) PackageState.VALID else PackageState.INVALID_DATA
+            packageState = if(openControl.stardustCryptType == OpenStardustControlByte.StardustCryptType.DECRYPTED) {
+                if(checkXorBytes[0].toInt() == calcChecksum(byteArray, (offset + 6)).toInt()) PackageState.VALID else PackageState.INVALID_DATA
+            } else {
+                // Get the size of decryptData
+                val decryptDataSize = decryptData.size
+// Calculate starting position for replacement (total size minus decrypt data size)
+                val startPos = byteArray.size - decryptDataSize
+// Create new array with original start and replaced end
+                var encryptedBytes = byteArray.copyOf()
+                var encryptedBytesStart = byteArray.copyOf()
+                encryptedBytesStart = encryptedBytes.copyOfRange(0, 6)
+                encryptedBytes = encryptedBytesStart + decryptData
+                if(checkXorBytes[0].toInt() == calcChecksum(encryptedBytes, (offset + 6)).toInt()) PackageState.VALID else PackageState.INVALID_DATA
+            }
             if(packageState != PackageState.VALID) {
                 return null
             }

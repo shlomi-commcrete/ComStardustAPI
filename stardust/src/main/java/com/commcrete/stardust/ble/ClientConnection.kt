@@ -19,6 +19,7 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_HR
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -230,15 +231,20 @@ internal class ClientConnection(
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             val src = it.appId
                             if(src != null) {
-                                val mPackage = StardustPackageUtils.getStardustPackage(
-                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
-                                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
-                                addMessageToQueue(mPackage)
+                                StardustInitConnectionHandler.start()
+
+
+//                                val mPackage = StardustPackageUtils.getStardustPackage(
+//                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
+//                                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
+//                                addMessageToQueue(mPackage)
+
+
                                 resetConnectionTimer()
                                 resetPingTimer()
                             }
                         }
-                    }, 4000)
+                    }, 1000)
                 }
 
                 override fun onCharacteristicWrite(

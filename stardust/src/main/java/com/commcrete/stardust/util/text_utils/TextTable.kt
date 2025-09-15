@@ -213,7 +213,7 @@ fun createDataByteArray(toByteArray: ByteArray) : ByteArray {
 }
 
 fun splitMessage(data: Array<Int>): List<Array<Int>> {
-    val chunkSize = 138
+    val chunkSize = 130
     val numberOfChunks = (data.size + chunkSize - 1) / chunkSize // Calculate how many full or partial chunks there will be
 
     val list = List(numberOfChunks) { index ->

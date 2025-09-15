@@ -124,7 +124,7 @@ afterEvaluate {
 
                 groupId = "com.commcrete.stardust"
                 artifactId = "stardust"
-                version = "0.0.7"
+                version = "0.0.300"
             }
         }
     }

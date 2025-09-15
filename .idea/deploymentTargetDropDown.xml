@@ -5,16 +5,13 @@
       <entry key="app">
         <State />
       </entry>
-      <entry key="decrypt_knownVector_noPadding_zeroIV()">
-        <State />
-      </entry>
       <entry key="decrypt_knownVector_noPadding_zeroIV_repeated()">
         <State />
       </entry>
-      <entry key="encrypt_knownVector_noPadding_zeroIV()">
+      <entry key="encrypt_knownVector_noPadding_zeroIV_repeated()">
         <State />
       </entry>
-      <entry key="encrypt_knownVector_noPadding_zeroIV_repeated()">
+      <entry key="testCalculateXor()">
         <State />
       </entry>
     </value>

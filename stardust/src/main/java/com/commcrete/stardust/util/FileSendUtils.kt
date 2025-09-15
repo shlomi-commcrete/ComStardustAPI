@@ -216,9 +216,9 @@ object FileSendUtils {
         if (dataList.isNotEmpty()) {
             val lastIndex = dataList.lastIndex
             val originalSize = dataList[lastIndex].size
-            if (originalSize < 135) {
-                paddingAdded = 135 - originalSize
-                dataList[lastIndex] = dataList[lastIndex].copyOf(135) // Pads with zeros
+            if (originalSize < 130) {
+                paddingAdded = 130 - originalSize
+                dataList[lastIndex] = dataList[lastIndex].copyOf(130) // Pads with zeros
             }
         }
 
@@ -247,7 +247,7 @@ object FileSendUtils {
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
         var packageIndex = 0
         var packageData = 0
-        val chunkSize = 135
+        val chunkSize = 130
         val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
 
         for ((fileIndex, file) in files.withIndex()) { // Iterate with index
@@ -349,7 +349,7 @@ object FileSendUtils {
 
     private fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
         var length = 0
-        val chunkSize = 135
+        val chunkSize = 130
         for (file in files) {
             length = length + (file.length().div(chunkSize)).toInt()
             if(file.length().mod(chunkSize) != 0) {
