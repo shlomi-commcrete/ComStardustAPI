@@ -232,6 +232,15 @@ internal class ClientConnection(
                             val src = it.appId
                             if(src != null) {
                                 StardustInitConnectionHandler.start()
+                                StardustInitConnectionHandler.listener = object :
+                                    StardustInitConnectionHandler.InitConnectionListener {
+                                    override fun onInitFailed(reason: String) {
+                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.CANCELED)
+                                    }
+                                    override fun onInitDone() {
+                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
+                                    }
+                                }
 
 
 //                                val mPackage = StardustPackageUtils.getStardustPackage(
@@ -508,6 +517,7 @@ internal class ClientConnection(
                 e.printStackTrace()
             }
         }
+        mDevice = null
     }
 
     @SuppressLint("MissingPermission")

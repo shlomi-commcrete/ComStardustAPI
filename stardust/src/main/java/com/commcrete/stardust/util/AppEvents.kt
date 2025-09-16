@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 object AppEvents {
 

@@ -8,6 +8,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceivedUtils
@@ -58,4 +59,5 @@ interface StardustAPICallbacks {
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)
     fun receiveFailure (failure: FileReceivedUtils.FileReceivedData.FileFailure)
+    fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
 }

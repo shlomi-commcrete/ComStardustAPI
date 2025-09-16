@@ -19,8 +19,13 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import timber.log.Timber
+import kotlin.coroutines.cancellation.CancellationException
+
 @SuppressLint("StaticFieldLeak")
 object StardustInitConnectionHandler {
 
@@ -43,6 +48,14 @@ object StardustInitConnectionHandler {
     private val ctx: Context get() = DataManager.context
     private val conn: ClientConnection get() = DataManager.getClientConnection(ctx)
     private var timeoutJob: Job? = null
+
+    interface InitConnectionListener {
+        fun onInitFailed(reason: String)
+        fun onInitDone()
+    }
+
+
+    var listener: InitConnectionListener? = null
 
     val isRunning: Boolean
         get() = state !in setOf(State.IDLE, State.DONE, State.CANCELED)
@@ -67,6 +80,7 @@ object StardustInitConnectionHandler {
         timeoutJob?.cancel()
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow done")
+        listener?.onInitDone()
     }
 
     /**
@@ -167,21 +181,27 @@ object StardustInitConnectionHandler {
         timeoutJob?.cancel()
         timeoutJob = Scopes.getMainCoroutine().launch {
             try {
-                kotlinx.coroutines.withTimeout(STEP_TIMEOUT_MS) {
-                    kotlinx.coroutines.delay(Long.MAX_VALUE)
-                }
-            } catch (_: Exception) {
+                // awaitCancellation is clearer than delay(Long.MAX_VALUE)
+                withTimeout(STEP_TIMEOUT_MS) { awaitCancellation() }
+            } catch (e: TimeoutCancellationException) {
+                // Only act if we're still in the same step (avoid stale callbacks)
+                if (state != step) return@launch
                 Timber.tag("InitHandler").w("$step timeout")
-                // On timeout, retry same step
                 when (step) {
                     State.REQUESTING_ADDRESSES -> retryOrFail { sendGetAddresses() }
-                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail { lastAddresses?.let { sendUpdateSmartphoneAddress(it) } ?: failAndStop("No addresses cached") }
+                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail {
+                        lastAddresses?.let { sendUpdateSmartphoneAddress(it) }
+                            ?: failAndStop("No addresses cached")
+                    }
                     State.DELETING_GROUPS -> retryOrFail { sendDeleteGroups() }
                     State.ADDING_GROUPS -> retryOrFail { sendAddGroups() }
                     State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
                     State.UPDATING_ADMIN_MODE -> retryOrFail { sendUpdateAdminMode() }
                     else -> {}
                 }
+            } catch (e: CancellationException) {
+                e.printStackTrace()
+                // Normal cancellation because the step advanced or flow was canceled — do nothing
             }
         }
     }
@@ -203,6 +223,7 @@ object StardustInitConnectionHandler {
 
     private fun failAndStop(reason: String) {
         Timber.tag("InitHandler").w("Init flow failed: $reason")
+        listener?.onInitFailed(reason )
         cancel()
     }
 
@@ -304,8 +325,9 @@ object StardustInitConnectionHandler {
     private fun handleConfiguration(p: StardustPackage) {
         val cfg = StardustConfigurationParser().parseConfiguration(p)
             ?: return retryOrFail { requestConfiguration() } // parse failure → retry step 5
-
-        UsersUtils.bittelConfiguration.value = cfg
+        Scopes.getMainCoroutine().launch {
+            UsersUtils.bittelConfiguration.value = cfg
+        }
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults(ctx)
 
@@ -322,6 +344,7 @@ object StardustInitConnectionHandler {
         )
         conn.addMessageToQueue(pkg)
         Timber.tag("InitHandler").d("Sent SET_ADMIN_MODE")
+        finishAdminModeUpdate()
     }
 
     private fun finishAdminModeUpdate() {

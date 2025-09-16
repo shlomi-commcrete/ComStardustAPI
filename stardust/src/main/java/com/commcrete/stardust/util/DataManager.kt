@@ -182,7 +182,7 @@ object DataManager : StardustAPI, PttInterface{
     @SuppressLint("MissingPermission")
     override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
         requireContext(context)
-        RecorderUtils.onRecord(false, stardustAPIPackage.destination, null)
+        RecorderUtils.onRecord(false, stardustAPIPackage.destination, stardustAPIPackage.carrier)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {

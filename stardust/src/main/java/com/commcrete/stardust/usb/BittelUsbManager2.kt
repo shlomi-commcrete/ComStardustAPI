@@ -98,6 +98,15 @@ object BittelUsbManager2 : BittelProtocol {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let {
 
                 StardustInitConnectionHandler.start()
+                StardustInitConnectionHandler.listener = object :
+                    StardustInitConnectionHandler.InitConnectionListener {
+                    override fun onInitFailed(reason: String) {
+                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.CANCELED)
+                    }
+                    override fun onInitDone() {
+                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
+                    }
+                }
 
 //                val mPackage = StardustPackageUtils.getStardustPackage(
 //                    source = it , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
