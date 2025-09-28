@@ -147,15 +147,27 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
     fun stopRecording(chatID: String, path: String, context: Context, carrier: Carrier?) {
         Handler(Looper.getMainLooper()).postDelayed({
-            recorder?.run {
+            try {
                 isRecording = false
-                stop()
-                release()
-                removeSyncBleDevices (context)
-                recordingThread = null
-                recorder = null
-                sendRecordEnd(carrier)
+                recorder?.let {
+                    try {
+                        it.stop()
+                        it.release()
+                    } catch (e: Exception) {
+                        e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
+                    } finally {
+                        removeSyncBleDevices(context)
+                        recordingThread = null
+                        recorder = null
+                    }
+                }
+                // ✅ Save PTT regardless of whether recorder was null
                 savePtt(chatID, path, context)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                // ✅ Always notify
+                sendRecordEnd(carrier)
             }
         }, 400)
     }
@@ -358,6 +370,14 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun savePtt(chatID : String, path : String, context: Context){
         Scopes.getDefaultCoroutine().launch {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let {
+                val chatsRepo = DataManager.getChatsRepo(context)
+                val chatItem = chatsRepo.getChatByBittelID(chatID)
+                chatItem?.message = Message(
+                    senderID = it,
+                    text = "PTT Sent",
+                    seen = true
+                )
+                chatItem?.let { chatsRepo.addChat(it) }
                 MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
                     MessageItem(senderID = it,
                         epochTimeMs = RecorderUtils.ts, senderName = "" ,

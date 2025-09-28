@@ -114,11 +114,18 @@ object SharedPreferencesUtil {
     private const val KEY_ERASE = "key_is_erased"
 
     private fun getPrefs(context: Context): SharedPreferences {
+        return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
+    }
+
+    private fun getPrefsPlugin(context: Context): SharedPreferences {
         if(DataManager.pluginContext != null){
             return DataManager.pluginContext!!.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
         }
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
+
     }
+
+
 
     fun getUserID(context: Context): String? {
         return getPrefs(context).getString(KEY_USER_ID, null)
@@ -593,11 +600,11 @@ object SharedPreferencesUtil {
 
     fun getIsErased (context: Context) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return getPrefs(context).getBoolean(KEY_ERASE, false)
+        return getPrefsPlugin(context).getBoolean(KEY_ERASE, false)
     }
 
     fun setIsErased (context: Context, isErased : Boolean)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putBoolean(KEY_ERASE, isErased).apply()
+        getPrefsPlugin(context).edit().putBoolean(KEY_ERASE, isErased).apply()
     }
 }

@@ -2,9 +2,12 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.provider.ContactsContract.Data
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.request_objects.RegisterUser
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
@@ -18,10 +21,12 @@ import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import kotlin.coroutines.cancellation.CancellationException
@@ -299,15 +304,17 @@ object StardustInitConnectionHandler {
 
     // 4) Add groups
     private fun sendAddGroups() {
-        val (src, dst) = requireSrcDst() ?: return
-        val payload = buildAddGroupsPayload() // TODO: replace with your real payload
-        val pkg = StardustPackageUtils.getStardustPackage(
-            source = src, destenation = dst,
-            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-            data = payload
-        )
-        conn.addMessageToQueue(pkg)
-        Timber.tag("InitHandler").d("Sent ADD_GROUPS")
+        Scopes.getDefaultCoroutine().launch {
+            val payload = buildAddGroupsPayload()
+            val (src, dst) = requireSrcDst() ?: return@launch
+            val pkg = StardustPackageUtils.getStardustPackage(
+                source = src, destenation = dst,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
+                data = payload
+            )
+            conn.addMessageToQueue(pkg)
+            Timber.tag("InitHandler").d("Sent ADD_GROUPS")
+        }
     }
 
     // 5) Get configuration
@@ -399,6 +406,23 @@ object StardustInitConnectionHandler {
     }
 
     // Stub payload builders — replace with real content
-    private fun buildDeleteGroupsPayload(): Array<Int> = emptyArray()
-    private fun buildAddGroupsPayload(): Array<Int> = emptyArray()
+    private fun buildDeleteGroupsPayload(): Array<Int> {
+        val intData = arrayListOf<Int>()
+        intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
+        return intData.toIntArray().toTypedArray()
+    }
+    private suspend fun buildAddGroupsPayload(): Array<Int> {
+        return withContext(Dispatchers.IO) {
+            val groupsList = ChatsRepository(
+                ChatsDatabase.getDatabase(DataManager.context).chatsDao()
+            ).getAllGroupIds()
+
+            val intData = arrayListOf<Int>()
+            for (group in groupsList) {
+                intData.addAll(StardustPackageUtils.hexStringToByteArray(group).reversedArray())
+            }
+            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
+            intData.toIntArray().toTypedArray().reversedArray()
+        }
+    }
 }

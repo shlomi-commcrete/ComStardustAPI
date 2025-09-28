@@ -216,6 +216,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 null -> {}
 
             }
+            Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
         }
     }
