@@ -81,7 +81,7 @@ object ButtonListener {
     fun startPttRecord(context: Context, chatID : String) {
         val registerUser = getAppUser(context)
         registerUser?.appId?.let {
-            startPTT(context,StardustAPIPackage(it, chatID, false, null))
+            startPTT(context,StardustAPIPackage(it, chatID, false, null), RecorderUtils.CODE_TYPE.CODEC2)
         }
     }
     private fun recordAndStop (isClicked: Boolean, userID: String) {
