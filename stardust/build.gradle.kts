@@ -113,6 +113,9 @@ dependencies {
     implementation ("org.apache.poi:poi-ooxml:5.2.3")
 //    implementation ("org.apache.commons:commons-compress:1.21")
     implementation ("androidx.security:security-crypto:1.0.0")
+
+    implementation("org.pytorch:pytorch_android_lite:2.1.0")
+    implementation("org.pytorch:pytorch_android_torchvision_lite:2.1.0")
 }
 
 

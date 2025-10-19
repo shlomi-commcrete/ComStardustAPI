@@ -13,13 +13,14 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceivedUtils
 import com.commcrete.stardust.util.FileSendUtils
+import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
 
 interface StardustAPI {
 
     // Send to the SDK
     fun sendMessage (context: Context,stardustAPIPackage: StardustAPIPackage, text : String)
-    fun startPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
+    fun startPTT (context: Context,stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE)
     fun stopPTT (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
     fun sendImage (context: Context,stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange)
@@ -40,6 +41,7 @@ interface StardustAPI {
     fun setSecurityKey(context: Context, key: String, name : String)
     fun setSecurityKeyDefault(context: Context)
     fun getSecurityKey(context: Context) : ByteArray
+    fun reconnectToCurrentDevice (context: Context)
 }
 
 // Receive from the SDK

@@ -42,7 +42,8 @@ object StardustInitConnectionHandler {
         ADDING_GROUPS,                 // 4) add groups
         READING_CONFIGURATION,         // 5) get configuration
         UPDATING_ADMIN_MODE,           // 6) update admin mode
-        DONE, CANCELED
+        DONE, CANCELED,
+        RUNNING
     }
 
     private const val MAX_ATTEMPTS = 3
@@ -57,6 +58,7 @@ object StardustInitConnectionHandler {
     interface InitConnectionListener {
         fun onInitFailed(reason: String)
         fun onInitDone()
+        fun running ()
     }
 
 
@@ -69,6 +71,7 @@ object StardustInitConnectionHandler {
 
     fun start() {
         if (isRunning) return
+        listener?.running()
         attempts.clear()
         transitionTo(State.REQUESTING_ADDRESSES) { sendGetAddresses() }
     }
@@ -86,6 +89,7 @@ object StardustInitConnectionHandler {
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow done")
         listener?.onInitDone()
+
     }
 
     /**
@@ -162,6 +166,7 @@ object StardustInitConnectionHandler {
     // ───────────────────────── State helpers ─────────────────────────
 
     private fun transitionTo(next: State, send: () -> Unit) {
+        listener?.running()
         state = next
         val n = (attempts[next] ?: 0) + 1
         attempts[next] = n

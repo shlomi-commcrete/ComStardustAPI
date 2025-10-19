@@ -240,6 +240,10 @@ internal class ClientConnection(
                                     override fun onInitDone() {
                                         DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
                                     }
+
+                                    override fun running() {
+                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
+                                    }
                                 }
 
 
@@ -948,11 +952,18 @@ internal class ClientConnection(
         containsProperty(BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE)
 
 
-    private fun reconnectToDevice () {
+    fun reconnectToDevice () {
         disconnectFromDevice ()
         Handler(Looper.myLooper()!!).postDelayed({
             mDevice?.let { connectDevice(it) }
         },2000)
+    }
+
+    fun reconnectToDeviceFast () {
+        disconnectFromDevice ()
+        Handler(Looper.myLooper()!!).postDelayed({
+            mDevice?.let { connectDevice(it) }
+        },100)
     }
 
     override fun updateBlePort() {

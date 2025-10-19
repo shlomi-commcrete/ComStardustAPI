@@ -29,17 +29,26 @@ object RecorderUtils {
     }
 
     @RequiresPermission(RECORD_AUDIO)
-    fun onRecord(start: Boolean, destination : String, carrier: Carrier?) = if (start) {
+    fun onRecord(start: Boolean, destination : String, carrier: Carrier?, codeType: RecorderUtils.CODE_TYPE? = CODE_TYPE.CODEC2) = if (start) {
 
-        //Works with computer codec2
-        wavRecorder = WavRecorder(DataManager.context, pttInterface)
-        DataManager.getSource().let {
-            file = createFile(DataManager.fileLocation, destination, it)
+        if(codeType == CODE_TYPE.CODEC2) {
+            //Works with computer codec2
+            wavRecorder = WavRecorder(DataManager.context, pttInterface)
+            DataManager.getSource().let {
+                file = createFile(DataManager.fileLocation, destination, it)
+            }
+            wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
+        } else {
+
         }
-        wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
+
 
     } else {
-        wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context, carrier)
+        if(codeType == CODE_TYPE.CODEC2) {
+            wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context, carrier)
+        } else {
+
+        }
     }
 
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){
@@ -79,5 +88,9 @@ object RecorderUtils {
 
         }
         return newFile
+    }
+
+    enum class CODE_TYPE{
+        AI, CODEC2
     }
 }

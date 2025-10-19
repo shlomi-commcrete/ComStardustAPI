@@ -172,12 +172,12 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
     @SuppressLint("MissingPermission")
-    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
+    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
         requireContext(context)
         this.source = stardustAPIPackage.source
         this.destination = stardustAPIPackage.destination
         RecorderUtils.init(this)
-        RecorderUtils.onRecord(true, stardustAPIPackage.destination, stardustAPIPackage.carrier)
+        RecorderUtils.onRecord(true, stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
     override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
@@ -248,6 +248,10 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun getSecurityKey(context: Context): ByteArray {
         return SecureKeyUtils.getSecuredKey(context)
+    }
+
+    override fun reconnectToCurrentDevice(context: Context) {
+        getClientConnection(context).reconnectToDeviceFast()
     }
 
 

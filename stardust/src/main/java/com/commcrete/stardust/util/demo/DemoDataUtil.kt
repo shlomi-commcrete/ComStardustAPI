@@ -131,6 +131,10 @@ object DemoDataUtil {
                 override fun onInitDone() {
                     DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
                 }
+
+                override fun running() {
+                    DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
+                }
             }
 
 //            val mPackage = StardustPackageUtils.getStardustPackage(
