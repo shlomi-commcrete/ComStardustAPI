@@ -14,6 +14,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.util.UnstableApi
@@ -23,6 +24,7 @@ import com.commcrete.bittell.room.sniffer.SnifferRepository
 import com.commcrete.bittell.util.sniffer.isLocalGroup
 import com.commcrete.bittell.util.sniffer.isMyId
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -53,8 +55,8 @@ object PlayerUtils : BleMediaConnector() {
     private var track: AudioTrack? = null
     const val sampleRate = 8000
     private var spareBytes : ByteArray? = null
-    private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
-    private val chatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+    val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
+    val chatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
     private val handler : Handler = Handler(Looper.getMainLooper())
     val isPttReceived : MutableLiveData<String> = MutableLiveData("empty")
     var ts = ""
@@ -520,6 +522,39 @@ object PlayerUtils : BleMediaConnector() {
                     from = bittelPackage.getDestAsString()
                 }
                 getPackageByFrames(bittelPackage, from)
+                val chatItem = chatsRepo.getChatByBittelID(from)
+                chatItem?.let { chat ->
+                    val chatContact = chat.user
+                    chatContact?.let { contact ->
+                        val chatName = if(!GroupsUtils.isGroup(bittelPackage.getSourceAsString())) contact.displayName else "${contact.displayName} to Group"
+                        val message = "PTT From : $chatName"
+                        Scopes.getMainCoroutine().launch {
+                            isPttReceived.value = message
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun saveBittelPTTAiToDatabase(bittelPackage: StardustPackage){
+        Scopes.getDefaultCoroutine().launch {
+
+            if(bittelPackage.getSourceAsString().isNotEmpty()){
+                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+                var from = bittelPackage.getSourceAsString()
+                if(GroupsUtils.isGroup(from)) {
+                    from = bittelPackage.getDestAsString()
+                }
+                bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
+                    val byteArray = intArrayToByteArray(dataArray.toMutableList())
+                    Log.d("PlayerUtils", "Received PTT AI data size: ${byteArray.size}")
+                    if (byteArray.size > 1) {
+                        val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
+                        Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
+                        PttReceiveManager.addNewData(byteArray, from, bittelPackage.getSourceAsString())
+                    }
+                }
                 val chatItem = chatsRepo.getChatByBittelID(from)
                 chatItem?.let { chat ->
                     val chatContact = chat.user

@@ -1,13 +1,28 @@
 package com.commcrete.aiaudio.media
 
+import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.audio.PlayerUtils
+import com.commcrete.stardust.util.audio.RecorderUtils
+import com.commcrete.stardust.util.audio.WavRecorder
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import timber.log.Timber
 import java.io.File
 import kotlin.text.compareTo
 import kotlin.times
@@ -37,7 +52,29 @@ object PcmStreamPlayer {
 
     private val frameBuffer = mutableListOf<ShortArray>()
 
+    private var isFileInit = false
+    private var destination : String = ""
+    private var source : String = ""
+    private var fileToWrite : File? = null
+    private var ts = ""
+    private val handler : Handler = Handler(Looper.getMainLooper())
+    private val runnable : Runnable = Runnable {
+        Scopes.getMainCoroutine().launch {
+            Log.d("PcmStreamPlayer", "Stopping file write due to inactivity.")
+            val file = fileToWrite
+            Log.d("PcmStreamPlayer", "File to write: ${file?.absolutePath}")
+            file?.let {
+                Log.d("PcmStreamPlayer", "Saving frames to WAV file: ${it.absolutePath}")
+                saveFramesToWav(it)
+            }
 
+            isFileInit = false
+            fileToWrite = null
+            ts = ""
+            destination = ""
+
+        }
+    }
     @Synchronized
     private fun ensureTrack(sampleRate: Int) {
         if (audioTrack != null && currentSampleRate == sampleRate) return
@@ -87,7 +124,7 @@ object PcmStreamPlayer {
                 if (frame != null) {
                     measureTime()
 
-//                    frameBuffer.add(frame)
+                    frameBuffer.add(frame)
 //                    saveFramesToWav()
 
                     val track = audioTrack ?: break
@@ -125,7 +162,18 @@ object PcmStreamPlayer {
     }
 
     /** Enqueue a PCM16 mono frame. Recreates track if sample rate has changed. */
-    fun enqueue(frame: ShortArray, sampleRate: Int) {
+    fun enqueue(frame: ShortArray, sampleRate: Int, from : String, source: String?) {
+        resetTimer()
+        setTs()
+        Scopes.getDefaultCoroutine().launch {
+            source?.let {
+                Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")
+                if(!isFileInit){
+                    Log.d("PcmStreamPlayer", "Initializing PTT input file...")
+                    initPttInputFile(DataManager.context, from, source, null)
+                }
+            }
+        }
         ensureTrack(sampleRate)
         frameChannel.trySend(frame)
     }
@@ -156,20 +204,28 @@ object PcmStreamPlayer {
     private var isFirst = true;
     private var isRecoded = false;
     private var startRecored = 0L
-    private fun saveFramesToWav() {
+    private fun saveFramesToWav(file: File) {
+        Log.d("PcmStreamPlayer", "saveFramesToWav called.")
+        Log.d("PcmStreamPlayer", "Number of buffered frames: ${frameBuffer.size}")
+        Log.d("PcmStreamPlayer", "isRecoded: $isRecoded")
         if (frameBuffer.isEmpty() || isRecoded) return
 
         if (isFirst) {
+            Log.d("PcmStreamPlayer", "Starting recording timer.")
             isFirst = false
             startRecored = System.currentTimeMillis()
         }
 
-        if (System.currentTimeMillis() - startRecored > 1500) {
+        Scopes.getDefaultCoroutine().launch {
+            delay(1500)
+            if (System.currentTimeMillis() - startRecored > 1500) {
+                Log.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
 //             Save buffered frames to WAV file
-            val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-            WavHelper.createWavFile(sampleArray, currentSampleRate, File("/data/data/com.commcrete.aiaudio/cache/stream_receive.wav"))
-            frameBuffer.clear()
-            isRecoded = true
+                val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
+                WavHelper.createWavFile(sampleArray, currentSampleRate, file)
+                frameBuffer.clear()
+                isRecoded = true
+            }
         }
     }
 
@@ -192,5 +248,74 @@ object PcmStreamPlayer {
         if (isBufferLow) {
             Log.w("PcmStreamPlayer", "Buffer running low: $bufferedSamples samples remaining, playState: $playState, head position: $headPosition, buffer size: $bufferSize")
         }
+    }
+
+
+    private fun updateAudioReceived(chatId: String, isAudioReceived : Boolean){
+        if(chatId.isEmpty()) {
+            return
+        }
+        Scopes.getDefaultCoroutine().launch {
+            val newChatID = if( GroupsUtils.isGroup(source)) source else chatId
+            PlayerUtils.chatsRepository.updateAudioReceived(newChatID, isAudioReceived)
+            val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(newChatID)
+            chatItem?.let {
+                chatItem.message = Message(senderID = chatId, text = "Ptt Received",
+                    seen = true)
+                PlayerUtils.chatsRepository.addChat(it)
+            }
+        }
+    }
+
+    private suspend fun initPttInputFile(context: Context, destinations: String, source: String
+                                         , snifferContacts: List<ChatContact>?) : File? {
+        Log.d("PcmStreamPlayer", "initPttInputFile called with destinations: $destinations, source: $source")
+        if(snifferContacts != null) {
+            return PlayerUtils.initPttSnifferFile(context, destinations, snifferContacts)
+        }
+        val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
+        this.destination = destinations
+        val realDest = if   (GroupsUtils.isGroup(this.source)) this.source else destination
+        updateAudioReceived(destination, true)
+        val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
+        val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/${ts}-$source.pcm")
+        if(directory!=null){
+            if(!directory.exists()){
+                directory.mkdir()
+            }
+            if (file != null) {
+                if(!file.exists()){
+                    file.createNewFile()
+                    fileToWrite = file
+                    Scopes.getDefaultCoroutine().launch {
+                        val userName = UsersUtils.getUserName(destination)
+                        try {
+                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
+                        }catch (e :Exception){
+                            e.printStackTrace()
+                        }
+                        PlayerUtils.messagesRepository.savePttMessage(
+                            MessageItem(senderID = destination,
+                                epochTimeMs = ts.toLong(), senderName = userName ,
+                                chatId = realDest, text = "", fileLocation = file.absolutePath,
+                                isAudio = true, audioType = RecorderUtils.CODE_TYPE.AI.id)
+                        )
+                    }
+                }
+                isFileInit = true
+            }
+        }
+        return file
+    }
+
+    private fun setTs(){
+        if(ts.isEmpty()){
+            ts = (System.currentTimeMillis()).toString()
+        }
+    }
+    private fun resetTimer(){
+        handler.removeCallbacks(runnable)
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed(runnable, 2000)
     }
 }

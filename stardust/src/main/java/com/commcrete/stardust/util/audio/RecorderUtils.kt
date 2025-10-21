@@ -2,10 +2,17 @@ package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
+import android.util.Log
 import androidx.annotation.RequiresPermission
+import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.Scopes
+import com.example.chunkrecorder.AudioRecorderAI
+import com.google.android.gms.common.api.Scope
 import com.ustadmobile.codec2.Codec2
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 
@@ -17,6 +24,7 @@ object RecorderUtils {
 
     private var pttInterface : PttInterface? = null
     private var wavRecorder = WavRecorder(DataManager.context)
+    private var aiRecorder : AudioRecorderAI? = null
 
 
     fun init(pttInterface : PttInterface){
@@ -29,8 +37,8 @@ object RecorderUtils {
     }
 
     @RequiresPermission(RECORD_AUDIO)
-    fun onRecord(start: Boolean, destination : String, carrier: Carrier?, codeType: RecorderUtils.CODE_TYPE? = CODE_TYPE.CODEC2) = if (start) {
-
+    fun onRecord(start: Boolean, destination : String, carrier: Carrier?, codeType: CODE_TYPE? = CODE_TYPE.CODEC2) = if (start) {
+        Log.d("AudioRecorder", "onRecord")
         if(codeType == CODE_TYPE.CODEC2) {
             //Works with computer codec2
             wavRecorder = WavRecorder(DataManager.context, pttInterface)
@@ -39,7 +47,45 @@ object RecorderUtils {
             }
             wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
         } else {
+            Log.d("AudioRecorder", "AI Enhanced Recording Started")
+            PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context, pttInterface)
+            Log.d("AudioRecorder", "PttSendManager.init")
+            DataManager.getSource().let {
+                file = createFile(DataManager.fileLocation, destination, it)
+            }
+            Log.d("AudioRecorder", "File Created")
+            PttSendManager.restart()
+            file?.let {
+                aiRecorder = AudioRecorderAI(
+                    context = DataManager.context,
+                    chunkDurationMs = 500,
+                    filesDirProvider = { it},
+                )
+                Log.d("AudioRecorder", "AudioRecorderAI Created")
 
+                aiRecorder?.onChunkReady = { pcmArray, chunkIndex ->
+                    PttSendManager.addNewFrame(pcmArray, it, carrier, destination)
+                }
+
+                aiRecorder?.onPartialFinalChunk = { pcmArray, chunkIndex ->
+                    PttSendManager.addNewFrame(pcmArray, it, carrier, destination)
+                }
+
+                aiRecorder?.onError = { throwable ->
+                    aiRecorder?.stop()
+                }
+                aiRecorder?.onStateChanged = { recording ->
+                    Log.d(LOG_TAG, "Recording state changed: $recording")
+                    if(!recording) {
+                        Scopes.getDefaultCoroutine().launch {
+                            delay(3000)
+                            PttSendManager.finish()
+                        }
+                    }
+                }
+                Log.d("AudioRecorder", "AudioRecorderAI Start")
+                aiRecorder?.start()
+            }
         }
 
 
@@ -47,7 +93,7 @@ object RecorderUtils {
         if(codeType == CODE_TYPE.CODEC2) {
             wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context, carrier)
         } else {
-
+            aiRecorder?.stop()
         }
     }
 
@@ -90,7 +136,7 @@ object RecorderUtils {
         return newFile
     }
 
-    enum class CODE_TYPE{
-        AI, CODEC2
+    enum class CODE_TYPE (val id : Int, val codecName: String){
+        AI(1, "AI Enhanced"), CODEC2(0, "Default")
     }
 }

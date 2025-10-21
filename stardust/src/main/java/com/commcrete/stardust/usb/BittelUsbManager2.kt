@@ -96,7 +96,9 @@ object BittelUsbManager2 : BittelProtocol {
     private fun initDataToUsb (context: Context) {
         CoroutineScope(Dispatchers.Default).launch {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-
+                if(!BleManager.isUSBConnected) {
+                    return@launch
+                }
                 StardustInitConnectionHandler.start()
                 StardustInitConnectionHandler.listener = object :
                     StardustInitConnectionHandler.InitConnectionListener {

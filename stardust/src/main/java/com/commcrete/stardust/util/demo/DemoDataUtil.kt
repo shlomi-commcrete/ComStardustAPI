@@ -1,6 +1,7 @@
 package com.commcrete.bittell.util.demo
 
 import androidx.navigation.NavController
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
@@ -122,6 +123,9 @@ object DemoDataUtil {
 
     private fun onFinishLoadData() {
         Scopes.getMainCoroutine().launch {
+            if(!BleManager.isBluetoothEnabled () && !BleManager.isUSBConnected) {
+                return@launch
+            }
             StardustInitConnectionHandler.start()
             StardustInitConnectionHandler.listener = object :
                 StardustInitConnectionHandler.InitConnectionListener {
@@ -136,11 +140,6 @@ object DemoDataUtil {
                     DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
                 }
             }
-
-//            val mPackage = StardustPackageUtils.getStardustPackage(
-//                source = "1" , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
-//            mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
-//            DataManager.getClientConnection(DataManager.context).addMessageToQueue(mPackage)
         }
     }
 }

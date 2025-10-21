@@ -4,14 +4,10 @@ import android.content.Context
 import android.util.Log
 import org.pytorch.*
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.io.IOException
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.time.measureTime
 
-class WavTokenizerEncoder(context: Context) {
+class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     private val module: Module
     private val TAG = "WavTokenizerEncoder"
     private val SAMPLE_RATE = 24000
@@ -22,7 +18,7 @@ class WavTokenizerEncoder(context: Context) {
     init {
         // If your model is in assets: just put the asset name here.
         val modelAssetName = "wav_to_codes_large_android.ptl"
-        module = LiteModuleLoader.load(assetFilePath(context, modelAssetName))
+        module = LiteModuleLoader.load(assetFilePath(context,pluginContext, modelAssetName))
     }
 
     fun encode(audioSamples: ShortArray): LongArray {
@@ -76,11 +72,16 @@ class WavTokenizerEncoder(context: Context) {
         }
     }
 
-    private fun assetFilePath(context: Context, assetName: String): String {
+    private fun assetFilePath(context: Context, pluginContext: Context, assetName: String): String {
         val outFile = File(context.filesDir, assetName)
         if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
-        context.assets.open(assetName).use { input ->
-            FileOutputStream(outFile).use { output -> input.copyTo(output) }
+        if(!outFile.exists()) {
+            outFile.createNewFile()
+        }
+        pluginContext.assets.open(assetName).use { input ->
+            FileOutputStream(outFile).use { output ->
+                input.copyTo(output)
+            }
         }
         return outFile.absolutePath
     }

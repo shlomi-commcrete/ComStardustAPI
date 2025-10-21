@@ -38,7 +38,9 @@ class AudioRecorderAI(
     private val sampleRate: Int = 24_000,
     private val bitsPerSample: Int = 16,
     private val channels: Int = 1,
-    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val scope : CoroutineScope = CoroutineScope(SupervisorJob() + ioDispatcher),
+    private var recordingThread: Thread? = null
 ) {
 
     // Callbacks
@@ -59,8 +61,9 @@ class AudioRecorderAI(
     private val bytesPerChunk = samplesPerChunk * bytesPerSample * channels
 
     fun start() {
+        Log.d("AudioRecorder", "Starting audio recorder")
         if (running.getAndSet(true)) return
-        job = CoroutineScope(ioDispatcher).launch {
+        job = scope.launch {
             onStateChanged?.invoke(true)
             try {
                 recordLoop()
@@ -84,7 +87,10 @@ class AudioRecorderAI(
         stop()
     }
 
+    @SuppressLint("MissingPermission")
     private suspend fun recordLoop() {
+        Log.d("AudioRecorder", "recordLoop")
+
         enableBluetoothSco()
 
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -115,11 +121,13 @@ class AudioRecorderAI(
         val chunkSamples = ShortArray(samplesPerChunk)
         var chunkSampleIndex = 0
         var chunkIndex = 1
+        Log.d("AudioRecorder", "startRecording")
 
         audioRecord.startRecording()
 
         try {
             while (coroutineContext.isActive && running.get()) {
+                Log.d("AudioRecorder", "while recording")
                 val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
                 if (read <= 0) continue
 
@@ -132,6 +140,7 @@ class AudioRecorderAI(
                     consumed += toCopy
 
                     if (chunkSampleIndex == samplesPerChunk) {
+                        Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
                         onChunkReady?.invoke(chunkSamples, chunkIndex)
                         chunkIndex++
                         chunkSampleIndex = 0
@@ -153,6 +162,7 @@ class AudioRecorderAI(
 
     // In your BleManager or recording activity
 //    @SuppressLint("ServiceCast")
+    @SuppressLint("NewApi")
     private fun enableBluetoothSco() {
         // Get an AudioManager instance
         val audioManager: AudioManager =
@@ -178,6 +188,7 @@ class AudioRecorderAI(
         }
     }
 
+    @SuppressLint("NewApi")
     private fun disableBluetoothSco() {
         val audioManager: AudioManager =
             context.getSystemService<AudioManager?>(AudioManager::class.java)

@@ -10,14 +10,14 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.time.measureTime
 
-class WavTokenizerDecoder(context: Context) {
+class WavTokenizerDecoder(context: Context, pluginContext: Context) {
     private val module: Module
     private val TAG = "WavTokenizerDecoder"
 
     init {
         // If your model is in assets: just put the asset name here.
         val modelAssetName = "codes_to_wav_large_android.ptl"
-        module = LiteModuleLoader.load(assetFilePath(context, modelAssetName))
+        module = LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
 
     // Decode the list of Long tokens into PCM ShortArray
@@ -96,10 +96,13 @@ class WavTokenizerDecoder(context: Context) {
         return Tensor.fromBlob(arr, shape)
     }
 
-    private fun assetFilePath(context: Context, assetName: String): String {
+    private fun assetFilePath(context: Context, pluginContext: Context, assetName: String): String {
         val outFile = File(context.filesDir, assetName)
         if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
-        context.assets.open(assetName).use { input ->
+        if(!outFile.exists()) {
+            outFile.createNewFile()
+        }
+        pluginContext.assets.open(assetName).use { input ->
             FileOutputStream(outFile).use { output -> input.copyTo(output) }
         }
         return outFile.absolutePath

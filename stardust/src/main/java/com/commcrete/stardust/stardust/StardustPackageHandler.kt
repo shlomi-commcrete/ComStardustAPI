@@ -112,6 +112,9 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.SEND_PTT -> {
                         handlePTT(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.SEND_PTT_AI -> {
+                        handlePTTAI(mPackage)
+                    }
                     StardustPackageUtils.StardustOpCode.REQUEST_LOCATION -> {
                         handleLocationRequested(mPackage)
                     }
@@ -451,6 +454,17 @@ internal class StardustPackageHandler(private val context: Context ,
             LocationUtils.sendMyLocation(mPackage,
                 it, isHR = mPackage.stardustControlByte.stardustDeliveryType
             )
+        }
+    }
+
+    private fun handlePTTAI(mPackage: StardustPackage) {
+        PlayerUtils.saveBittelPTTAiToDatabase(bittelPackage = mPackage)
+        Scopes.getDefaultCoroutine().launch {
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
+            if(chatItem == null) {
+                UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
+            }
         }
     }
 

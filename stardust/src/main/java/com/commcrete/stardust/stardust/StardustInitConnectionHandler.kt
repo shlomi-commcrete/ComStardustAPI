@@ -43,7 +43,8 @@ object StardustInitConnectionHandler {
         READING_CONFIGURATION,         // 5) get configuration
         UPDATING_ADMIN_MODE,           // 6) update admin mode
         DONE, CANCELED,
-        RUNNING
+        RUNNING,
+        SEARCHING
     }
 
     private const val MAX_ATTEMPTS = 3

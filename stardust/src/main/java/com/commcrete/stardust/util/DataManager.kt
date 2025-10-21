@@ -18,6 +18,8 @@ import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.ai.codec.PttReceiveManager
+import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
@@ -31,6 +33,7 @@ import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -171,6 +174,12 @@ object DataManager : StardustAPI, PttInterface{
             }
         }
     }
+
+    fun setMPluginContext (context: Context) {
+        this.pluginContext = context
+        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+        PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+    }
     @SuppressLint("MissingPermission")
     override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
         requireContext(context)
@@ -180,9 +189,9 @@ object DataManager : StardustAPI, PttInterface{
         RecorderUtils.onRecord(true, stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage) {
+    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
         requireContext(context)
-        RecorderUtils.onRecord(false, stardustAPIPackage.destination, stardustAPIPackage.carrier)
+        RecorderUtils.onRecord(false, stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
@@ -300,6 +309,7 @@ object DataManager : StardustAPI, PttInterface{
 
     fun bondOnStartup (context: Context) {
         requireContext(context)
+        getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.SEARCHING)
         getClientConnection(context).bondToBleDeviceStartup()
     }
 

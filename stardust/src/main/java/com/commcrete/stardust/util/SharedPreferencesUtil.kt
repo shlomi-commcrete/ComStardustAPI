@@ -12,6 +12,7 @@ import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -93,6 +94,7 @@ object SharedPreferencesUtil {
 
     private const val KEY_OUTPUT_DEFAULT = "output_default"
     private const val KEY_INPUT_DEFAULT = "input_default"
+    private const val KEY_INPUT_CODEC = "codec_type"
 
     //Carriers
     private const val KEY_LAST_CARRIERS = "last_carriers"
@@ -606,5 +608,20 @@ object SharedPreferencesUtil {
     fun setIsErased (context: Context, isErased : Boolean)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefsPlugin(context).edit().putBoolean(KEY_ERASE, isErased).apply()
+    }
+
+    fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        getPrefs(context).edit().putInt(KEY_INPUT_CODEC, codecType.id).apply()
+    }
+
+    fun getCodecType(context: Context): RecorderUtils.CODE_TYPE {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val codecId = getPrefs(context).getInt(KEY_INPUT_CODEC, RecorderUtils.CODE_TYPE.CODEC2.id)
+        when (codecId) {
+            RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
+            RecorderUtils.CODE_TYPE.AI.id -> return RecorderUtils.CODE_TYPE.AI
+            else -> return RecorderUtils.CODE_TYPE.CODEC2
+        }
     }
 }

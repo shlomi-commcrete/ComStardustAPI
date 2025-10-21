@@ -178,6 +178,7 @@ object WavHelper {
                     bb.putShort(sample)
                 }
                 fos.write(bb.array())
+                Log.e("WavHelper", "Finish Writeing WAV file to ${file.absolutePath}" )
             }
         } catch (e: IOException) {
             Log.e("WavHelper", "Error creating WAV file", e)

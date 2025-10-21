@@ -382,7 +382,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     MessageItem(senderID = it,
                         epochTimeMs = RecorderUtils.ts, senderName = "" ,
                         chatId = chatID, text = "", fileLocation = path,
-                        isAudio = true, seen = SeenStatus.SENT)
+                        isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
                 )
             }
             RecorderUtils.ts = 0

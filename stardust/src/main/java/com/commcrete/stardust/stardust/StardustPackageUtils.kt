@@ -199,6 +199,14 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+        SEND_PTT_AI (0x3A,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.SPEECH, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         REQUEST_ADDRESS (0x16,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,

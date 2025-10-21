@@ -29,6 +29,8 @@ data class MessageItem (
     var fileLocation : String? = null,
     @ColumnInfo(name = "is_audio")
     var isAudio : Boolean? = false,
+    @ColumnInfo(name = "audio_type")
+    var audioType : Int = 0,
     @ColumnInfo(name = "is_location")
     var isLocation : Boolean? = false,
     @ColumnInfo(name = "is_file")

@@ -671,9 +671,14 @@ internal class ClientConnection(
         sendMessage(mutableMessageList[0])
     }
 
+    fun isNeedAck (opCode: StardustPackageUtils.StardustOpCode) : Boolean {
+        return opCode != StardustPackageUtils.StardustOpCode.SEND_PTT_AI
+    }
+
     @SuppressLint("MissingPermission")
     fun sendMessage(bittelPackage: StardustPackage){
-        if(mutableAckAwaitingList.isNotEmpty()) {
+
+        if(mutableAckAwaitingList.isNotEmpty() && isNeedAck(bittelPackage.stardustOpCode)) {
             Handler(Looper.getMainLooper()).postDelayed({
                 sendMessage(bittelPackage)
             }, 100)
