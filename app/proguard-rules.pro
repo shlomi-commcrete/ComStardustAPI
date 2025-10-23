@@ -46,3 +46,10 @@
 -keepclassmembers class com.commcrete.stardust.** {
     public <init>(...);
 }
+
+-keep class org.pytorch.** { *; }
+-keep class org.pytorch.torchvision.** { *; }
+-keeppackagenames org.pytorch,org.pytorch.torchvision
+
+# If your build pulls in SoLoader (older setups)
+-keep class com.facebook.soloader.** { *; }

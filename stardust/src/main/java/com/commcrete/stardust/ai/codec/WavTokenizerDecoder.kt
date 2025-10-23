@@ -11,13 +11,15 @@ import java.io.FileOutputStream
 import kotlin.time.measureTime
 
 class WavTokenizerDecoder(context: Context, pluginContext: Context) {
-    private val module: Module
     private val TAG = "WavTokenizerDecoder"
 
+    private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Log.d(TAG, "Loading WavTokenizerDecoder model")
+        val modelAssetName = "codes_to_wav_large_android.ptl"
+        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+    }
     init {
         // If your model is in assets: just put the asset name here.
-        val modelAssetName = "codes_to_wav_large_android.ptl"
-        module = LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
 
     // Decode the list of Long tokens into PCM ShortArray
@@ -116,5 +118,11 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
             shortArray[i] = (clampedValue * Short.MAX_VALUE + 0.5f).toInt().toShort()
         }
         return shortArray
+    }
+
+    fun initModule() {
+        Log.d(TAG, "WavTokenizerDecoder module initialized")
+        module
+        Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
     }
 }

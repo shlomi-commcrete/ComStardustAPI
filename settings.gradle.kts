@@ -12,9 +12,13 @@ dependencyResolutionManagement {
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
         mavenLocal()
+        flatDir {
+            dirs("libs")
+        }
     }
 }
 
 rootProject.name = "StardustAPI"
 include(":app")
 include(":stardust")
+

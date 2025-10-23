@@ -178,7 +178,16 @@ object DataManager : StardustAPI, PttInterface{
     fun setMPluginContext (context: Context) {
         this.pluginContext = context
         PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
-        PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+//        PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+    }
+
+    fun initModules (context: Context) {
+        requireContext(context)
+        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+        Scopes.getDefaultCoroutine().launch {
+            delay(100)
+            PttSendManager.initModules()
+        }
     }
     @SuppressLint("MissingPermission")
     override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {

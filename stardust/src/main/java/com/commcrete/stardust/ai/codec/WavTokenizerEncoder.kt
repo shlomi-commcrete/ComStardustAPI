@@ -8,33 +8,37 @@ import java.io.FileOutputStream
 import kotlin.time.measureTime
 
 class WavTokenizerEncoder(context: Context, pluginContext: Context) {
-    private val module: Module
     private val TAG = "WavTokenizerEncoder"
     private val SAMPLE_RATE = 24000
     private val EXPECTED_SAMPLES = 12000 // 0.5 seconds at
     private val TOKENS_PER_SECOND = 40  // 40 tokens for 1 second of audio
     private val SAMPLES_PER_TOKEN = SAMPLE_RATE / TOKENS_PER_SECOND // 600 samples per token
 
+    private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Log.d(TAG, "Loading WavTokenizerEncoder model")
+        val modelAssetName = "wav_to_codes_large_android.ptl"
+        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+    }
     init {
         // If your model is in assets: just put the asset name here.
-        val modelAssetName = "wav_to_codes_large_android.ptl"
-        module = LiteModuleLoader.load(assetFilePath(context,pluginContext, modelAssetName))
     }
 
     fun encode(audioSamples: ShortArray): LongArray {
         if (audioSamples.size > EXPECTED_SAMPLES) {
             throw IllegalArgumentException("Expected not more than 12,000 samples, got ${audioSamples.size}")
         }
+        Log.d(TAG, "Encoding ${audioSamples.size} audio samples")
 
         // Convert ShortArray to FloatArray in range [-1.0, 1.0]
         val floatSamples = shortArrayToFloatArray(audioSamples)
 
+        Log.d(TAG, "First 5 float samples before padding: ${floatSamples.take(5)}")
         // Ensure exactly 12,000 samples by padding with zeros or trimming
         val paddedSamples = padOrTrim(floatSamples)
-
+        Log.d(TAG, "First 5 float samples after padding: ${paddedSamples.take(5)}")
         // Create samples to input tensor
         val inputTensor = Tensor.fromBlob(paddedSamples, longArrayOf(1, paddedSamples.size.toLong()))
-
+        Log.d(TAG, "Input tensor shape: ${inputTensor.shape().joinToString(",")}")
         // Run the model, the result are the tokens
         var moduleOutputTensor: Tensor?
         val duration = measureTime {
@@ -83,6 +87,13 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
                 input.copyTo(output)
             }
         }
+        Log.d(TAG, "Model file path: ${outFile.absolutePath}")
         return outFile.absolutePath
+    }
+
+    fun initModule() {
+        Log.d(TAG, "WavTokenizerEncoder module initialized")
+        module
+        Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
     }
 }

@@ -47,9 +47,17 @@ object PttSendManager {
     var carrier : Carrier? = null
     var chatID: String? = null
     private var viewModel : PttInterface? = null
+    private var aiEnabled = false
 
     fun init(context: Context, pluginContext: Context, viewModel : PttInterface? = null) {
         cacheDir = context.cacheDir
+        aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
+        if (!aiEnabled) {
+            Log.d(TAG, "AI Codec not enabled for this process.")
+            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
+            return
+        }
+
         if(!::wavTokenizerEncoder.isInitialized) {
             wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
         }
@@ -60,6 +68,16 @@ object PttSendManager {
         startEncodingJob()
 
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
+    }
+
+    fun initModules () {
+        Scopes.getDefaultCoroutine().launch {
+            wavTokenizerEncoder.initModule()
+//            delay(1000)
+            wavTokenizerDecoder.initModule()
+        }
+
+
     }
 
     fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, chatID: String? = null) {
@@ -74,6 +92,7 @@ object PttSendManager {
     }
 
     private fun startEncodingJob() {
+        if (!aiEnabled) return  // hard guard everywhere you might touch PyTorch
         encodingJob = coroutineScope.launch {
             while (isActive) { // Keep the decoding loop active
                 try {

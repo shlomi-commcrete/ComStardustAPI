@@ -115,8 +115,18 @@ dependencies {
     implementation ("androidx.security:security-crypto:1.0.0")
 
     implementation("org.pytorch:pytorch_android_lite:2.1.0")
+
     implementation("org.pytorch:pytorch_android_torchvision_lite:2.1.0")
+
+//    implementation(files("libs/ATAK-Plugin-pytorch-mx-plugin-2.1-99a20191-5.0.0-civ-debug.aar"))
+
+//
+//    configurations.configureEach {
+//        exclude(group = "org.pytorch", module = "pytorch_android")
+//        exclude(group = "org.pytorch", module = "pytorch_android_torchvision")
+//    }
 }
+
 
 
 afterEvaluate {
