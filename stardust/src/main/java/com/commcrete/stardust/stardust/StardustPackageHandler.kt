@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.Observer
 import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
@@ -65,7 +66,7 @@ internal class StardustPackageHandler(private val context: Context ,
 //        StardustPackageUtils.packageLiveData.observeForever(observer)
     }
 
-    fun handleStardustPackage(bittelPackage: StardustPackage?) {
+    fun handleStardustPackage(bittelPackage: StardustPackage?, randomID: String) {
         if(bittelPackage != null){
             val mPackage = bittelPackage
             val tempSavedPackage = savedPackage
@@ -74,7 +75,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE){
                     savedPackage = mPackage
                 }
-                Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray : ${mPackage}")
+                Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray $randomID: ${bittelPackage.stardustOpCode}")
 //                SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
 //                    if(mPackage.getDestAsString() != it && mPackage.getSourceAsString() != it
 //                        && mPackage.getDestAsString() != "00000002") {
@@ -116,7 +117,7 @@ internal class StardustPackageHandler(private val context: Context ,
                         handlePTTAI(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.REQUEST_LOCATION -> {
-                        handleLocationRequested(mPackage)
+                        handleLocationRequested(mPackage, randomID)
                     }
 
                     StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION -> {
@@ -445,7 +446,8 @@ internal class StardustPackageHandler(private val context: Context ,
         locationPackage?.let { LocationUtils.saveBittelUserLocation(mPackage, it) }
     }
 
-    private fun handleLocationRequested(mPackage: StardustPackage){
+    private fun handleLocationRequested(mPackage: StardustPackage, randomID: String){
+        Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         val src = mPackage.sourceBytes
         val dst = mPackage.destinationBytes
         mPackage.sourceBytes = src
@@ -453,7 +455,7 @@ internal class StardustPackageHandler(private val context: Context ,
         DataManager.getClientConnection(context).let {
             LocationUtils.sendMyLocation(mPackage,
                 it, isHR = mPackage.stardustControlByte.stardustDeliveryType
-            )
+            , randomID = randomID)
         }
     }
 

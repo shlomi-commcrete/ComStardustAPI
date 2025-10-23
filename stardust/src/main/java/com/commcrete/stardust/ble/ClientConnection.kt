@@ -268,16 +268,28 @@ internal class ClientConnection(
                     super.onCharacteristicWrite(gatt, characteristic, status)
                 }
 
+                fun fastRandomId(length: Int = 6): String {
+                    val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+                    val random = kotlin.random.Random
+                    val sb = StringBuilder(length)
+
+                    repeat(length) {
+                        sb.append(chars[random.nextInt(chars.length)])
+                    }
+                    return sb.toString()
+                }
+
                 override fun onCharacteristicChanged(
                     gatt: BluetoothGatt,
                     characteristic: BluetoothGattCharacteristic
                 ) {
-                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
-                    clearTimer()
+                    val randomID = fastRandomId()
+                    Log.d("Ble write $randomID", "onCharacteristicChanged")
+//                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
                     characteristic.value?.let {
-                        Timber.tag("onCharacteristicChanged").d("without Value")
+//                        Timber.tag("onCharacteristicChanged").d("without Value")
+                        StardustPackageUtils.handlePackageReceived(it, randomID)
                         clearTimer()
-                        StardustPackageUtils.handlePackageReceived(it)
                     }
                 }
 
@@ -287,8 +299,8 @@ internal class ClientConnection(
                     value: ByteArray
                 ) {
                     super.onCharacteristicChanged(gatt, characteristic, value)
-
-                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
+                    Log.d("Ble write", "onCharacteristicChanged")
+//                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
                 }
 
                 override fun onDescriptorWrite(
@@ -393,6 +405,7 @@ internal class ClientConnection(
     fun disconnectFromDevice () {
         gattConnection?.disconnect()
         gattConnection?.close()
+        bleGatChar = null
         gattConnection = null
         hasCallback = false
         Scopes.getMainCoroutine().launch {
@@ -675,27 +688,35 @@ internal class ClientConnection(
         return opCode != StardustPackageUtils.StardustOpCode.SEND_PTT_AI
     }
 
+    private var bleGatChar : BluetoothGattCharacteristic? = null
     @SuppressLint("MissingPermission")
-    fun sendMessage(bittelPackage: StardustPackage){
+    fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
 
         if(mutableAckAwaitingList.isNotEmpty() && isNeedAck(bittelPackage.stardustOpCode)) {
             Handler(Looper.getMainLooper()).postDelayed({
-                sendMessage(bittelPackage)
+                sendMessage(bittelPackage, randomID)
             }, 100)
             return
         }
         bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
 //        bittelPackage.StardustControlByte.bittelServer = if(SharedPreferencesUtil.getIsStardustServerBitEnabled(DataManager.context))
 //            StardustControlByte.StardustServer.SERVER else StardustControlByte.StardustServer.NOT_SERVER
-
+        Log.d("checkXor $randomID", "sendMessage")
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
+        Log.d("checkXorfini $randomID", "sendMessage")
         if(bittelPackage.isAbleToSendAgain()){
             if(!com.commcrete.stardust.ble.BleManager.isBluetoothEnabled() && !com.commcrete.stardust.ble.BleManager.isUSBConnected){
                 Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
             }
-            Timber.tag(LOG_TAG).d("Sending Package : ${bittelPackage}")
-            resetTimer(bittelPackage)
+            Log.d("isAbleToSendAgain $randomID", "sendMessage")
+
+            Timber.tag(LOG_TAG).d("Sending Package $randomID")
+            Scopes.getDefaultCoroutine().launch {
+                resetTimer(bittelPackage)
+            }
             SharedPreferencesUtil.getAppUser(context)?.let {
+                Log.d("getAppUser $randomID", "sendMessage")
+
                 val id = deviceLastDigit
                 val uuid = Characteristics.getWriteChar(id)
                 bittelPackage.updateRetryCounter()
@@ -704,7 +725,7 @@ internal class ClientConnection(
                 }else {
                     gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
                         ?.let {
-                            writePackage(it, bittelPackage)
+                            writePackage(it, bittelPackage, randomID = randomID)
                         }
                 }
                 if(mutableMessageList.isNotEmpty()){
@@ -723,7 +744,9 @@ internal class ClientConnection(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
         bittelPackage: StardustPackage,
         count : Int = 0
+        , randomID: String = ""
     ) {
+        Log.d("Ble write $randomID", "writePackage attempt ${bittelPackage.stardustOpCode}")
         if(count>3){
             return
         }

@@ -10,6 +10,7 @@ class StardustPackageParser : StardustParser() {
     private var byteBuffer : ByteBuffer? = null
     var spareData : ByteArray? = null
     var packageState : PackageState = PackageState.NOT_ENOUGH_DATA
+    var mPackage : StardustPackage? = null
 
     companion object{
         const val syncBytesLength = 4
@@ -32,7 +33,7 @@ class StardustPackageParser : StardustParser() {
                 byteBuffer?.limit(byteBuffer?.position()?.plus(100) ?: 30000)
                 byteBuffer?.put(it)
             }
-            getStardustPackageFromBuffer()
+            mPackage = getStardustPackageFromBuffer()
         }catch (e : Exception){
             e.printStackTrace()
         }
@@ -54,7 +55,7 @@ class StardustPackageParser : StardustParser() {
     fun getStardustPackageFromBuffer() : StardustPackage?{
         byteBuffer?.let { buffer ->
             val byteArray = readFromByteBuffer(buffer)
-            logByteArray("getStardustPackageFromBuffer", byteArray)
+//            logByteArray("getStardustPackageFromBuffer", byteArray)
             var offset = 0
             val syncBytes = cutByteArray(byteArray, syncBytesLength, offset)
             offset += syncBytesLength

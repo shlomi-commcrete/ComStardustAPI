@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -699,11 +700,12 @@ object StardustPackageUtils {
         return hexArray
     }
 
-    fun handlePackageReceived (byteArray: ByteArray) {
+    fun handlePackageReceived (byteArray: ByteArray, randomID: String) {
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
             lastByteArray = byteArray
-            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray", it) }
-            logByteArray("handlePackageReceivedbyteArray", byteArray)
+//            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
+//            logByteArray("handlePackageReceivedbyteArray $randomID", byteArray)
+            Log.d("handlePackageReceived $randomID", "handlePackageReceived")
             try {
                 if(packagesList.isNotEmpty() && packagesList[packagesList.lastIndex] == null ){
                     packagesList.removeAt(packagesList.lastIndex)
@@ -711,21 +713,26 @@ object StardustPackageUtils {
             }catch (e : Exception) {
                 e.printStackTrace()
             }
-            if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
+        Log.d("handlePackageReceived $randomID", "removeAt")
+
+        if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
                 packagesList.add(StardustPackageParser())
             }
-            val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
-            val mPackage =  packagesList[packagesList.lastIndex]
+        Log.d("handlePackageReceived $randomID", "add")
+
+        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
+        Log.d("handlePackageReceived $randomID", "isFinished")
+        val mPackage =  packagesList[packagesList.lastIndex]
             if(isFinished == StardustPackageParser.PackageState.VALID){
                 val dataForStardustPackage = packagesList[packagesList.lastIndex]
-                val bittelPackage = dataForStardustPackage.getStardustPackageFromBuffer()
+                val bittelPackage = dataForStardustPackage.mPackage
                 dataForStardustPackage.spareData?.let {
                     if(it.isNotEmpty()){
-                        handlePackageReceived(it)
+                        handlePackageReceived(it, randomID)
                     }
                 }
                 bittelPackage?.let {
-                    bittelPackageHandler?.handleStardustPackage(it)
+                    bittelPackageHandler?.handleStardustPackage(it, randomID)
                     packagesList.remove(mPackage)
                 }
             } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {

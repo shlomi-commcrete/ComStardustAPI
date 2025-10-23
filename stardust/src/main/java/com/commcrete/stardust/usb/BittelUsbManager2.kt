@@ -158,7 +158,7 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun sendDataToUart (bittelPackage: StardustPackage) {
-        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
+//        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
         uartManager?.send(bittelPackage.getStardustPackageToSend())
     }
 
@@ -208,7 +208,7 @@ object BittelUsbManager2 : BittelProtocol {
                 Timber.tag("SerialInputOutputManager").d("onNewData : ${device.productName}")
 
                 Timber.tag("SerialInputOutputManager").d("onNewData uartManager")
-                Timber.tag("SerialInputOutputManager").d(data.toHex())
+//                Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
                 processReceivedData(data)
                 Scopes.getMainCoroutine().launch {
@@ -240,8 +240,8 @@ object BittelUsbManager2 : BittelProtocol {
 
     fun processReceivedData(data: ByteArray) {
         try {
-            Timber.tag("SerialInputOutputManager").d("Received data: %s", data.decodeToString())
-            StardustPackageUtils.handlePackageReceived(data)
+//            Timber.tag("SerialInputOutputManager").d("Received data: %s", "")
+            StardustPackageUtils.handlePackageReceived(data, "USB")
         }catch (e : Exception) {
             e.printStackTrace()
         }

@@ -254,6 +254,9 @@ data class StardustPackage(
     }
 
     override fun toString(): String {
+        if(stardustOpCode == StardustPackageUtils.StardustOpCode.PING || stardustOpCode == StardustPackageUtils.StardustOpCode.PING_RESPONSE){
+            return ""
+        }
         val stringBuilder = StringBuilder()
         stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
         stringBuilder.append("Full Byte Array : \n")

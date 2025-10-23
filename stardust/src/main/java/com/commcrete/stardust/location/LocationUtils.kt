@@ -5,6 +5,7 @@ import android.content.Context
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import android.util.Log
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import com.commcrete.stardust.StardustAPIPackage
@@ -137,11 +138,15 @@ object LocationUtils  {
         ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
     }
     internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                       isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null){
+                       isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null,
+                                randomID: String = ""){
+        Log.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
         if(lastLocation == null){
+            Log.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
             sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
         }else {
-            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode)
+            Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
+            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode, randomID)
         }
     }
 
@@ -182,12 +187,14 @@ object LocationUtils  {
 
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
+            Log.d("LocationRequest", "send to ble ${System.currentTimeMillis()}")
             clientConnection.sendMessage(bittelPackageToReturn)
         }
     }
 
     internal fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
-                             isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null) {
+                             isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null,
+                              randomID: String = "") {
         // TODO: change xor check
 
         Scopes.getDefaultCoroutine().launch {
@@ -202,8 +209,8 @@ object LocationUtils  {
             bittelPackageToReturn.isDemandAck = isDemandAck
             bittelPackageToReturn.idNumber = id
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
-
-            clientConnection.sendMessage(bittelPackageToReturn)
+            Log.d("LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
+            clientConnection.sendMessage(bittelPackageToReturn, randomID)
 
             val text = "latitude : ${location.latitude.getAfterDot(4)}\n" +
                     "longitude : ${location.longitude.getAfterDot(6)}\naltitude : ${location.altitude.getAfterDot(0)}"
