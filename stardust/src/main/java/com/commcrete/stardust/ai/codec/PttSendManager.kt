@@ -57,13 +57,17 @@ object PttSendManager {
             // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
             return
         }
+        Scopes.getDefaultCoroutine().launch {
 
-        if(!::wavTokenizerEncoder.isInitialized) {
-            wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
+            if(!::wavTokenizerEncoder.isInitialized) {
+                wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
+            }
+            delay(1000)
+            if(!::wavTokenizerDecoder.isInitialized) {
+                wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
+            }
         }
-        if(!::wavTokenizerDecoder.isInitialized) {
-            wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
-        }
+
         this.viewModel = viewModel
         startEncodingJob()
 
@@ -79,12 +83,7 @@ object PttSendManager {
             if(::wavTokenizerDecoder.isInitialized) {
                 wavTokenizerDecoder.initModule()
             }
-
-
-
         }
-
-
     }
 
     fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, chatID: String? = null) {

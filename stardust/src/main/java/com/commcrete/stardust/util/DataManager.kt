@@ -177,15 +177,17 @@ object DataManager : StardustAPI, PttInterface{
 
     fun setMPluginContext (context: Context) {
         this.pluginContext = context
-        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
-        PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+//        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+
     }
 
     fun initModules (context: Context) {
         requireContext(context)
-        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
         Scopes.getDefaultCoroutine().launch {
-            delay(100)
+            PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+            delay(1000)
+            PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
+            delay(1000)
             PttSendManager.initModules()
             delay(1000)
             PttReceiveManager.initModules()
