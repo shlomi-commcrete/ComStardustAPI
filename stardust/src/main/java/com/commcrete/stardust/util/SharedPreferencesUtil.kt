@@ -54,6 +54,7 @@ object SharedPreferencesUtil {
     private const val KEY_LOCATION_PRIORITY = "select_location_priority"
     private const val KEY_LOCATION_ACCURACY = "location_accuracy"
     private const val KEY_LOCATION_INTERVAL = "location_interval"
+    private const val KEY_LOCATION_MANUAL = "location_manual"
 
     private const val KEY_IS_CONFIG_SAVED = "configSaved"
 
@@ -608,6 +609,16 @@ object SharedPreferencesUtil {
     fun setIsErased (context: Context, isErased : Boolean)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefsPlugin(context).edit().putBoolean(KEY_ERASE, isErased).apply()
+    }
+
+    fun getIsManualLocation (context: Context) : Boolean {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        return getPrefsPlugin(context).getBoolean(KEY_LOCATION_MANUAL, false)
+    }
+
+    fun setIsManualLocation (context: Context, isErased : Boolean)  {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        getPrefsPlugin(context).edit().putBoolean(KEY_LOCATION_MANUAL, isErased).apply()
     }
 
     fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
