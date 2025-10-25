@@ -40,10 +40,23 @@ object PttReceiveManager {
     private var source : String? = ""
 
     fun init(context: Context, pluginContext: Context) {
+
+        PttSendManager.aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
+        if (!PttSendManager.aiEnabled) {
+            Log.d(TAG, "AI Codec not enabled for this process.")
+            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
+            return
+        }
         if(!::wavTokenizerDecoder.isInitialized) {
             wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
         }
         startDecodingJob()
+    }
+
+    fun initModules () {
+        Scopes.getDefaultCoroutine().launch {
+            wavTokenizerDecoder.initModule()
+        }
     }
 
     fun addNewData(data: ByteArray, from : String, source : String? = null) {

@@ -47,7 +47,7 @@ object PttSendManager {
     var carrier : Carrier? = null
     var chatID: String? = null
     private var viewModel : PttInterface? = null
-    private var aiEnabled = false
+    var aiEnabled = false
 
     fun init(context: Context, pluginContext: Context, viewModel : PttInterface? = null) {
         cacheDir = context.cacheDir
