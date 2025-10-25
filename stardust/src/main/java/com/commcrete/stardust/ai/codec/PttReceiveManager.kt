@@ -55,7 +55,7 @@ object PttReceiveManager {
 
     fun initModules () {
         Scopes.getDefaultCoroutine().launch {
-            wavTokenizerDecoder.initModule()
+            wavTokenizerDecoder = PttSendManager.wavTokenizerDecoder
         }
     }
 

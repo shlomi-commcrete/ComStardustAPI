@@ -41,7 +41,7 @@ object PttSendManager {
     private var encodingJob: Job? = null
     private var toEncodeQueue = Channel<ShortArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
     private lateinit var wavTokenizerEncoder: WavTokenizerEncoder
-    private lateinit var wavTokenizerDecoder: WavTokenizerDecoder
+    lateinit var wavTokenizerDecoder: WavTokenizerDecoder
     private lateinit var cacheDir: File
     private var fileToSave: File? = null
     var carrier : Carrier? = null
