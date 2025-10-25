@@ -72,9 +72,16 @@ object PttSendManager {
 
     fun initModules () {
         Scopes.getDefaultCoroutine().launch {
-            wavTokenizerEncoder.initModule()
-//            delay(1000)
-            wavTokenizerDecoder.initModule()
+            if(::wavTokenizerEncoder.isInitialized) {
+                wavTokenizerEncoder.initModule()
+            }
+            delay(1000)
+            if(::wavTokenizerDecoder.isInitialized) {
+                wavTokenizerDecoder.initModule()
+            }
+
+
+
         }
 
 

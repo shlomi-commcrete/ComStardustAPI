@@ -187,7 +187,7 @@ object DataManager : StardustAPI, PttInterface{
         Scopes.getDefaultCoroutine().launch {
             delay(100)
             PttSendManager.initModules()
-            delay(100)
+            delay(1000)
             PttReceiveManager.initModules()
         }
     }
