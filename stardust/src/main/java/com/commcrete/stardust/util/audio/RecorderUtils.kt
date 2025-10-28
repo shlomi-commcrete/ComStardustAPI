@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
@@ -28,6 +29,8 @@ object RecorderUtils {
     private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
     private var aiRecorder : AudioRecorderAI? = null
 
+    val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
+
 
     fun init(pttInterface : PttInterface){
         RecorderUtils.pttInterface = pttInterface
@@ -43,7 +46,10 @@ object RecorderUtils {
         Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             //Works with computer codec2
-            wavRecorder?.kill()
+//            wavRecorder?.kill()
+            Scopes.getMainCoroutine().launch {
+                canRecord.value = false
+            }
             wavRecorder = WavRecorder(DataManager.context, pttInterface)
             DataManager.getSource().let {
                 file = createFile(DataManager.fileLocation, destination, it)
@@ -99,7 +105,11 @@ object RecorderUtils {
         } else {
             aiRecorder?.stop()
         }
-            Handler(Looper.getMainLooper()).postDelayed({ AudioRecordManager.stopAll()}, 200)
+            Scopes.getMainCoroutine().launch {
+                delay(300)
+//                AudioRecordManager.stopAll()
+                canRecord.value = true
+            }
 
 
     }

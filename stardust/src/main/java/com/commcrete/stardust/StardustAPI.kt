@@ -42,6 +42,7 @@ interface StardustAPI {
     fun setSecurityKeyDefault(context: Context)
     fun getSecurityKey(context: Context) : ByteArray
     fun reconnectToCurrentDevice (context: Context)
+    fun canRecord (context: Context) : MutableLiveData<Boolean>
 }
 
 // Receive from the SDK

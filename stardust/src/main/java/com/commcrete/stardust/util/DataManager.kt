@@ -276,6 +276,10 @@ object DataManager : StardustAPI, PttInterface{
         getClientConnection(context).reconnectToDeviceFast()
     }
 
+    override fun canRecord(context: Context): MutableLiveData<Boolean> {
+        return RecorderUtils.canRecord
+    }
+
 
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)

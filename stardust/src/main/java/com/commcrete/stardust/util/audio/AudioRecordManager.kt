@@ -1,5 +1,7 @@
 package com.commcrete.stardust.util.audio
 import android.media.AudioRecord
+import com.commcrete.stardust.util.Scopes
+import kotlinx.coroutines.launch
 import java.util.concurrent.CopyOnWriteArrayList
 
 object AudioRecordManager {
@@ -15,16 +17,18 @@ object AudioRecordManager {
     }
 
     fun stopAll() {
-        for (record in activeRecords) {
-            try {
-                if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                    record.stop()
+        Scopes.getDefaultCoroutine().launch {
+            for (record in activeRecords) {
+                try {
+                    if (record.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                        record.stop()
+                    }
+                    record.release()
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
-                record.release()
-            } catch (e: Exception) {
-                e.printStackTrace()
             }
+            activeRecords.clear()
         }
-        activeRecords.clear()
     }
 }

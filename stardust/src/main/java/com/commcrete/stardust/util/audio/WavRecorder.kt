@@ -212,10 +212,10 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
 
     fun stopRecording(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
-        Handler(Looper.getMainLooper()).postDelayed({
-                                                    stopRecordingNow(retry, chatID, path, context, carrier)
-
-        }, 100)
+        Scopes.getDefaultCoroutine().launch {
+            delay(200)
+            stopRecordingNow(retry, chatID, path, context, carrier)
+        }
     }
 
     private fun writeAudioDataToFile(path: String, carrier: Carrier?) {
