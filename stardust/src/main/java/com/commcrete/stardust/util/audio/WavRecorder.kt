@@ -150,6 +150,28 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             }}
     }
 
+    fun kill () {
+        try {
+            isRecording = false
+            recorder?.let {
+                try {
+                    Log.d(TAG_PTT_DEBUG, "Stopping recorder")
+                    it.stop()
+                    it.release()
+                } catch (e: Exception) {
+                    e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
+                    Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                } finally {
+                    removeSyncBleDevices(context)
+                    recordingThread = null
+                    recorder = null
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     fun stopRecordingNow(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
         var retryNum = retry
         retryNum += 1
@@ -189,7 +211,8 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     fun stopRecording(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
         Handler(Looper.getMainLooper()).postDelayed({
                                                     stopRecordingNow(retry, chatID, path, context, carrier)
-        }, 400)
+
+        }, 100)
     }
 
     private fun writeAudioDataToFile(path: String, carrier: Carrier?) {

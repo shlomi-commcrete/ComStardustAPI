@@ -2,6 +2,8 @@ package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.commcrete.stardust.ai.codec.PttSendManager
@@ -23,7 +25,7 @@ object RecorderUtils {
     private val LOG_TAG = "AudioRecordTest"
 
     private var pttInterface : PttInterface? = null
-    private var wavRecorder = WavRecorder(DataManager.context)
+    private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
     private var aiRecorder : AudioRecorderAI? = null
 
 
@@ -33,7 +35,7 @@ object RecorderUtils {
 
     fun onPTTTest(){
         wavRecorder = WavRecorder(DataManager.context, null)
-        wavRecorder.sendAudioTest(DataManager.context)
+        wavRecorder?.sendAudioTest(DataManager.context)
     }
 
     @RequiresPermission(RECORD_AUDIO)
@@ -41,12 +43,12 @@ object RecorderUtils {
         Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             //Works with computer codec2
-            wavRecorder.stopRecordingNow(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
+            wavRecorder?.kill()
             wavRecorder = WavRecorder(DataManager.context, pttInterface)
             DataManager.getSource().let {
                 file = createFile(DataManager.fileLocation, destination, it)
             }
-            wavRecorder.startRecording(file?.absolutePath?:"", destination, carrier)
+            wavRecorder?.startRecording(file?.absolutePath?:"", destination, carrier)
         } else {
             Log.d("AudioRecorder", "AI Enhanced Recording Started")
             PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context, pttInterface)
@@ -92,7 +94,8 @@ object RecorderUtils {
 
     } else {
         if(codeType == CODE_TYPE.CODEC2) {
-            wavRecorder.stopRecording(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
+            wavRecorder?.stopRecordingNow(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
+            Handler(Looper.getMainLooper()).postDelayed({ wavRecorder = null}, 100)
         } else {
             aiRecorder?.stop()
         }
