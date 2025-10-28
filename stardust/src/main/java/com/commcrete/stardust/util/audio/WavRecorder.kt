@@ -188,10 +188,12 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
-                    stopRecording(retry, chatID, path, context, carrier)
+                    stopRecording(retryNum, chatID, path, context, carrier)
                 } finally {
                     removeSyncBleDevices(context)
                     recordingThread = null
+                    val mRecorder = recorder
+                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
                     recorder = null
                 }
             }
@@ -199,9 +201,10 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             savePtt(chatID, path, context)
         } catch (e: Exception) {
             e.printStackTrace()
-            stopRecording(retry, chatID, path, context, carrier)
+            stopRecording(retryNum, chatID, path, context, carrier)
         } finally {
             // ✅ Always notify
+
             sendRecordEnd(carrier)
         }
         Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
