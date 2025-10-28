@@ -11,6 +11,7 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustControlByte
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -35,6 +36,7 @@ object SOSUtils {
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
+                sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
                 it.addMessageToQueue(sosMessage)
                 saveSOSSent(context, type,stardustAPIPackage, location)
             }
