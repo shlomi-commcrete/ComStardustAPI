@@ -41,6 +41,7 @@ object RecorderUtils {
         Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             //Works with computer codec2
+            wavRecorder.stopRecordingNow(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
             wavRecorder = WavRecorder(DataManager.context, pttInterface)
             DataManager.getSource().let {
                 file = createFile(DataManager.fileLocation, destination, it)
@@ -95,6 +96,9 @@ object RecorderUtils {
         } else {
             aiRecorder?.stop()
         }
+
+        AudioRecordManager.stopAll()
+
     }
 
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){

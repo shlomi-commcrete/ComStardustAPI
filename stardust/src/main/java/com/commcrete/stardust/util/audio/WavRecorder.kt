@@ -93,6 +93,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
+        try {
+            AudioRecordManager.register(recorder!!)
+        }catch ( e : Exception) {
+            e.printStackTrace()
+        }
         recorder?.audioSessionId?.let { setRecordingParams(it, DataManager.context) }
         syncBleDevice(context)
         recorder?.startRecording()
@@ -145,41 +150,45 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             }}
     }
 
-
-    fun stopRecording(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
+    fun stopRecordingNow(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
         var retryNum = retry
         retryNum += 1
         if(retryNum > 3) {
             return
         }
-        Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
-        Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                isRecording = false
-                recorder?.let {
-                    try {
-                        Log.d(TAG_PTT_DEBUG, "Stopping recorder")
-                        it.stop()
-                        it.release()
-                    } catch (e: Exception) {
-                        e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
-                        Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
-                        stopRecording(retry, chatID, path, context, carrier)
-                    } finally {
-                        removeSyncBleDevices(context)
-                        recordingThread = null
-                        recorder = null
-                    }
+        try {
+            isRecording = false
+            recorder?.let {
+                try {
+                    Log.d(TAG_PTT_DEBUG, "Stopping recorder")
+                    it.stop()
+                    it.release()
+                } catch (e: Exception) {
+                    e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
+                    Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                    stopRecording(retry, chatID, path, context, carrier)
+                } finally {
+                    removeSyncBleDevices(context)
+                    recordingThread = null
+                    recorder = null
                 }
-                // ✅ Save PTT regardless of whether recorder was null
-                savePtt(chatID, path, context)
-            } catch (e: Exception) {
-                e.printStackTrace()
-                stopRecording(retry, chatID, path, context, carrier)
-            } finally {
-                // ✅ Always notify
-                sendRecordEnd(carrier)
             }
+            // ✅ Save PTT regardless of whether recorder was null
+            savePtt(chatID, path, context)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            stopRecording(retry, chatID, path, context, carrier)
+        } finally {
+            // ✅ Always notify
+            sendRecordEnd(carrier)
+        }
+        Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
+    }
+
+
+    fun stopRecording(retry : Int = 0 , chatID: String, path: String, context: Context, carrier: Carrier?) {
+        Handler(Looper.getMainLooper()).postDelayed({
+                                                    stopRecordingNow(retry, chatID, path, context, carrier)
         }, 400)
     }
 

@@ -9,6 +9,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
 import androidx.core.content.ContextCompat.getSystemService
+import com.commcrete.stardust.util.audio.AudioRecordManager
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -112,6 +113,11 @@ class AudioRecorderAI(
             recordBufferSize
         )
 
+        try {
+            AudioRecordManager.register(audioRecord)
+        }catch ( e : Exception) {
+            e.printStackTrace()
+        }
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord.release()
             throw IllegalStateException("AudioRecord initialization failed")
