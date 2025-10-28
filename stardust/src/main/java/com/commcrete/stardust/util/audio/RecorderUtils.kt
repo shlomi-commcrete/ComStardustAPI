@@ -91,7 +91,7 @@ object RecorderUtils {
 
     } else {
         if(codeType == CODE_TYPE.CODEC2) {
-            wavRecorder.stopRecording(destination, file?.absolutePath?:"", DataManager.context, carrier)
+            wavRecorder.stopRecording(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
         } else {
             aiRecorder?.stop()
         }

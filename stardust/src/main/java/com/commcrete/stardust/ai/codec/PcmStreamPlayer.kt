@@ -72,6 +72,9 @@ object PcmStreamPlayer {
             fileToWrite = null
             ts = ""
             destination = ""
+            isRecoded = false
+            isFirst = true
+            startRecored = 0L
 
         }
     }
@@ -199,6 +202,8 @@ object PcmStreamPlayer {
         measureCounterSilence = 0L
         measureMinTime = 0L
         measureMaxTime = 0L
+        isRecoded = false
+        isFirst = true
     }
 
     private var isFirst = true;
@@ -224,7 +229,7 @@ object PcmStreamPlayer {
                 val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
                 WavHelper.createWavFile(sampleArray, currentSampleRate, file)
                 frameBuffer.clear()
-                isRecoded = true
+                isRecoded = false
             }
         }
     }
