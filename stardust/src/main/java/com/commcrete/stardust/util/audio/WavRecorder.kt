@@ -94,7 +94,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
         try {
-            AudioRecordManager.register(recorder!!)
+//            AudioRecordManager.register(recorder!!)
         }catch ( e : Exception) {
             e.printStackTrace()
         }
@@ -192,8 +192,8 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 } finally {
                     removeSyncBleDevices(context)
                     recordingThread = null
-                    val mRecorder = recorder
-                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
+//                    val mRecorder = recorder
+//                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
                     recorder = null
                 }
             }

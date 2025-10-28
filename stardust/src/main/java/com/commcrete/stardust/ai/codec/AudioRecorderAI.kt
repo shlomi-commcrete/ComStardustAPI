@@ -114,7 +114,7 @@ class AudioRecorderAI(
         )
 
         try {
-            AudioRecordManager.register(audioRecord)
+//            AudioRecordManager.register(audioRecord)
         }catch ( e : Exception) {
             e.printStackTrace()
         }
