@@ -12,6 +12,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
@@ -151,15 +152,18 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         if(retryNum > 3) {
             return
         }
+        Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 isRecording = false
                 recorder?.let {
                     try {
+                        Log.d(TAG_PTT_DEBUG, "Stopping recorder")
                         it.stop()
                         it.release()
                     } catch (e: Exception) {
                         e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
+                        Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                         stopRecording(retry, chatID, path, context, carrier)
                     } finally {
                         removeSyncBleDevices(context)

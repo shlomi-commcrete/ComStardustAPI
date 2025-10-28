@@ -38,7 +38,7 @@ object RecorderUtils {
 
     @RequiresPermission(RECORD_AUDIO)
     fun onRecord(start: Boolean, destination : String, carrier: Carrier?, codeType: CODE_TYPE? = CODE_TYPE.CODEC2) = if (start) {
-        Log.d("AudioRecorder", "onRecord")
+        Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             //Works with computer codec2
             wavRecorder = WavRecorder(DataManager.context, pttInterface)
