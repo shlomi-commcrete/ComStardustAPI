@@ -46,6 +46,7 @@ interface StardustAPI {
 
 // Receive from the SDK
 interface StardustAPICallbacks {
+    fun pttMaxTimeoutReached ()
     fun receiveMessage (stardustAPIPackage: StardustAPIPackage, text : String)
     fun receiveLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
     fun receiveSOS (stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)

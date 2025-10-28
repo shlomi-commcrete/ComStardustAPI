@@ -462,7 +462,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun appendToArray (byteArray: ByteArray?, carrier: Carrier?){
         val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
         if(numOfPackage.times(880) > maxSecondsPTT){
-
+            DataManager.getCallbacks()?.pttMaxTimeoutReached()
             viewModel?.let {
                 it.getDestenation()
                     ?.let { it1 ->
