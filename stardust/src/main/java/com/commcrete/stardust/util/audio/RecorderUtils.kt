@@ -56,6 +56,9 @@ object RecorderUtils {
             }
             wavRecorder?.startRecording(file?.absolutePath?:"", destination, carrier)
         } else {
+            Scopes.getMainCoroutine().launch {
+                canRecord.value = false
+            }
             Log.d("AudioRecorder", "AI Enhanced Recording Started")
             PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context, pttInterface)
             Log.d("AudioRecorder", "PttSendManager.init")
@@ -107,7 +110,6 @@ object RecorderUtils {
         }
             Scopes.getMainCoroutine().launch {
                 delay(300)
-//                AudioRecordManager.stopAll()
                 canRecord.value = true
             }
 
