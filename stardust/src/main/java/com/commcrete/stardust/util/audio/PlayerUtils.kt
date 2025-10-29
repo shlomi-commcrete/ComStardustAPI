@@ -16,6 +16,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.OptIn
+import androidx.annotation.RawRes
 import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.util.UnstableApi
 import com.commcrete.bittell.room.sniffer.SnifferDatabase
@@ -52,6 +53,7 @@ object PlayerUtils : BleMediaConnector() {
 
     val embpyByte : ByteArray = byteArrayOf(0,0,0,0)
 
+    private var mediaPlayer : SafePlayer? =  null
     private var track: AudioTrack? = null
     const val sampleRate = 8000
     private var spareBytes : ByteArray? = null
@@ -858,31 +860,36 @@ object PlayerUtils : BleMediaConnector() {
             }
         }
     }
+
+    fun createMediaPlayer (context: Context, audioResource : Int) {
+        if(mediaPlayer == null) {
+            mediaPlayer = SafePlayer(context)
+        }
+    }
     @OptIn(UnstableApi::class)
     fun playClickSound (context: Context, audioResource : Int, onFinished : () -> Unit = {}){
-        val mediaPlayer = MediaPlayer.create(context, audioResource)
+        createMediaPlayer(context, audioResource)
         var isSent = false
-        mediaPlayer.setVolume(0.05f, 0.05f)
-        mediaPlayer.setOnCompletionListener {
+        mediaPlayer?.onCompletion = {
             Log.d("playClickSound", "setOnCompletionListener")
             if(!isSent) {
                 onFinished()  // Call the callback when playback finishes
             }
             isSent = true
-            mediaPlayer.release()  // Release the media player resources immediately after playback is complete
+        }
+        mediaPlayer?.onError = { what, extra ->
+            Log.e("TEST", "Audio error: what=$what extra=$extra")
+            Log.d("playClickSound", "Audio error: what=$what extra=$extra")
+            if(!isSent) {
+                onFinished()  // Call the callback when playback finishes
+            }
+            isSent = true
         }
 
 
+
         try {
-            mediaPlayer.start()
-            Handler(Looper.getMainLooper()).postDelayed({
-                Log.d("playClickSound", "Looper")
-                if(!isSent) {
-                    onFinished()  // Call the callback when playback finishes
-                }
-                isSent = true
-                mediaPlayer.release()  // Release the media player resources immediately after playback is complete
-            }, 300)
+            mediaPlayer?.play(audioResource)
         } catch (e: Exception) {
             Log.d("playClickSound", "error ${e.printStackTrace()}")
             println("MediaPlayer start failed: ${e.message}")
@@ -890,7 +897,46 @@ object PlayerUtils : BleMediaConnector() {
                 onFinished()  // Call the callback when playback finishes
             }
             isSent = true
-            mediaPlayer.release()
+        }
+    }
+    class SafePlayer(private val ctx: Context) :
+        MediaPlayer.OnErrorListener,
+        MediaPlayer.OnCompletionListener {
+
+        private var mp: MediaPlayer? = null
+
+        var onCompletion: (() -> Unit)? = null
+        var onError: ((what: Int, extra: Int) -> Unit)? = null
+
+        fun play(@RawRes resId: Int) {
+            stopAndRelease()
+            mp = MediaPlayer.create(ctx, resId)?.apply {
+                setVolume(0.05f,0.05f)
+                setOnCompletionListener(this@SafePlayer)
+                setOnErrorListener(this@SafePlayer)
+                start()
+            }
+        }
+
+        override fun onCompletion(player: MediaPlayer) {
+            onCompletion?.invoke() // ✅ notify outside
+            stopAndRelease()
+        }
+
+        override fun onError(player: MediaPlayer, what: Int, extra: Int): Boolean {
+            onError?.invoke(what, extra) // ✅ notify outside
+            try { player.reset() } catch (_: Throwable) {}
+            stopAndRelease()
+            return true // we handled it
+        }
+
+        fun stopAndRelease() {
+            mp?.run {
+                try { stop() } catch (_: Throwable) {}
+                try { reset() } catch (_: Throwable) {}
+                try { release() } catch (_: Throwable) {}
+            }
+            mp = null
         }
     }
 

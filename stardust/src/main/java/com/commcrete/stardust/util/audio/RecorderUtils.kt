@@ -84,6 +84,7 @@ object RecorderUtils {
                 }
 
                 aiRecorder?.onError = { throwable ->
+                    Log.d("AudioRecorder", "error ${throwable}")
                     aiRecorder?.stop()
                 }
                 aiRecorder?.onStateChanged = { recording ->
@@ -105,10 +106,18 @@ object RecorderUtils {
         Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             wavRecorder?.stopRecording(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
-
+            Scopes.getDefaultCoroutine().launch {
+                delay (50)
+                wavRecorder = null
+            }
         } else {
-            Log.d("AudioRecorder", "stop ${aiRecorder}")
+            Log.d("AudioRecorder", "stop AI")
             aiRecorder?.stop()
+            Scopes.getDefaultCoroutine().launch {
+                delay (50)
+                aiRecorder = null
+            }
+
         }
             Scopes.getMainCoroutine().launch {
                 delay(300)

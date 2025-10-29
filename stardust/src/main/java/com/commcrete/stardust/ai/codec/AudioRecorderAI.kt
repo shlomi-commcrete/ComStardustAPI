@@ -133,7 +133,7 @@ class AudioRecorderAI(
 
         try {
             while (coroutineContext.isActive && running.get()) {
-                Log.d("AudioRecorder", "while recording")
+//                Log.d("AudioRecorder", "while recording")
                 val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
                 if (read <= 0) continue
 

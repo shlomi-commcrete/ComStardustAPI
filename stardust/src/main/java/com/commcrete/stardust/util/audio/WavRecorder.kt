@@ -110,6 +110,8 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun syncBleDevice (context: Context) {
+        Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice")
+
         val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             context.getSystemService(AudioManager::class.java)
         } else {
@@ -121,17 +123,20 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             val bleDevice =
                 getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
             bleDevice?.let {
+                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice has device")
                 recorder?.setPreferredDevice(it)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     audioManager.setCommunicationDevice(it)
                 }
                 audioManager.startBluetoothSco()
                 audioManager.isBluetoothScoOn = true
+                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice added")
             }
         }
     }
 
     private fun removeSyncBleDevices (context: Context) {
+        Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
         val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             context.getSystemService(AudioManager::class.java)
         } else {
@@ -139,7 +144,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
         val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
         if(wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices has device")
             val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS, context)
             bleDevice?.let {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -147,6 +152,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 }
                 audioManager.stopBluetoothSco()
                 audioManager.isBluetoothScoOn = false
+                Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices removed")
 
             }}
     }
