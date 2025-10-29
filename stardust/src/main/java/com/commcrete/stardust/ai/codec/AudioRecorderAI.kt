@@ -161,6 +161,7 @@ class AudioRecorderAI(
                     val partial = chunkSamples.copyOf(chunkSampleIndex)
                     onPartialFinalChunk?.invoke(partial, chunkIndex)
                 }
+                audioRecord.release()
             } catch (_: Exception) {}
             audioRecord.release()
         }
