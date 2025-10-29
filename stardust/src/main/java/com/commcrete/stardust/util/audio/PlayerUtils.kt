@@ -861,9 +861,14 @@ object PlayerUtils : BleMediaConnector() {
     @OptIn(UnstableApi::class)
     fun playClickSound (context: Context, audioResource : Int, onFinished : () -> Unit = {}){
         val mediaPlayer = MediaPlayer.create(context, audioResource)
+        var isSent = false
         mediaPlayer.setVolume(0.05f, 0.05f)
         mediaPlayer.setOnCompletionListener {
-            onFinished()  // Call the callback when playback finishes
+            Log.d("playClickSound", "setOnCompletionListener")
+            if(!isSent) {
+                onFinished()  // Call the callback when playback finishes
+            }
+            isSent = true
             mediaPlayer.release()  // Release the media player resources immediately after playback is complete
         }
 
@@ -871,11 +876,20 @@ object PlayerUtils : BleMediaConnector() {
         try {
             mediaPlayer.start()
             Handler(Looper.getMainLooper()).postDelayed({
-                onFinished()  // Call the callback when playback finishes
+                Log.d("playClickSound", "Looper")
+                if(!isSent) {
+                    onFinished()  // Call the callback when playback finishes
+                }
+                isSent = true
                 mediaPlayer.release()  // Release the media player resources immediately after playback is complete
             }, 300)
         } catch (e: Exception) {
+            Log.d("playClickSound", "error ${e.printStackTrace()}")
             println("MediaPlayer start failed: ${e.message}")
+            if(!isSent) {
+                onFinished()  // Call the callback when playback finishes
+            }
+            isSent = true
             mediaPlayer.release()
         }
     }

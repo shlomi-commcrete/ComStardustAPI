@@ -74,7 +74,7 @@ object RecorderUtils {
                     filesDirProvider = { it},
                 )
                 Log.d("AudioRecorder", "AudioRecorderAI Created")
-
+                Log.d("AudioRecorder", "start ${aiRecorder}")
                 aiRecorder?.onChunkReady = { pcmArray, chunkIndex ->
                     PttSendManager.addNewFrame(pcmArray, it, carrier, destination)
                 }
@@ -102,10 +102,12 @@ object RecorderUtils {
 
 
     } else {
+        Log.d("AudioRecorder", "onRecord $start")
         if(codeType == CODE_TYPE.CODEC2) {
             wavRecorder?.stopRecording(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
 
         } else {
+            Log.d("AudioRecorder", "stop ${aiRecorder}")
             aiRecorder?.stop()
         }
             Scopes.getMainCoroutine().launch {

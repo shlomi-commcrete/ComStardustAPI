@@ -94,6 +94,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
         try {
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder Started recorder ${recorder}")
 //            AudioRecordManager.register(recorder!!)
         }catch ( e : Exception) {
             e.printStackTrace()
@@ -185,6 +186,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     Log.d(TAG_PTT_DEBUG, "Stopping recorder")
                     it.stop()
                     it.release()
+                    Log.d(TAG_PTT_DEBUG, "mWavRecorder Stopped recorder ${recorder}")
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
@@ -195,17 +197,21 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
                     recorder = null
+                    Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally Recorder")
                 }
             }
             // ✅ Save PTT regardless of whether recorder was null
             savePtt(chatID, path, context)
         } catch (e: Exception) {
             e.printStackTrace()
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
+
             stopRecording(retryNum, chatID, path, context, carrier)
         } finally {
             // ✅ Always notify
-
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
             sendRecordEnd(carrier)
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally after sendRecordEnd")
         }
         Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
     }
