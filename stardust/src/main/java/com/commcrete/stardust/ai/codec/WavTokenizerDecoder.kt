@@ -9,6 +9,8 @@ import org.pytorch.Tensor
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.time.measureTime
+import kotlin.math.max
+import kotlin.math.min
 
 class WavTokenizerDecoder(context: Context, pluginContext: Context) {
     private val TAG = "WavTokenizerDecoder"
@@ -58,7 +60,7 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
 
         // Apply audio normalization if we have previous data
         val alignedAudioData = if (previousSamples != null) {
-            alignAudio(unalignedAudio, previousSamples)
+            applyFades(unalignedAudio)
         } else {
             unalignedAudio
         }
@@ -90,6 +92,41 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
 
         return normalizedData
     }
+
+
+    /**
+     * Applies linear fade-in and fade-out to 16-bit PCM samples (ShortArray).
+     *
+     * @param samples      Audio buffer of 16-bit PCM values (−32768..32767)
+     * @param fadeSamples  Number of samples for fade-in/out (default: 500)
+     * @return The same ShortArray instance after applying fades
+     */
+    fun applyFades(samples: ShortArray, fadeSamples: Int = 500): ShortArray {
+        if (samples.isEmpty() || fadeSamples <= 0) return samples
+
+        val n = samples.size
+        val f = min(fadeSamples, n)
+        val denom = max(1, f - 1) // prevent divide by zero
+
+        // --- Fade-in: from 0 → 1 ---
+        for (i in 0 until f) {
+            val gain = i.toFloat() / denom
+            val faded = (samples[i] * gain).toInt()
+            samples[i] = faded.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+
+        // --- Fade-out: from 1 → 0 ---
+        val start = n - f
+        for (i in 0 until f) {
+            val gain = 1f - (i.toFloat() / denom)
+            val idx = start + i
+            val faded = (samples[idx] * gain).toInt()
+            samples[idx] = faded.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+        }
+
+        return samples
+    }
+
 
     private fun convertLongListToTensor(data: List<Long>): Tensor {
         require(data.isNotEmpty()) { "Input list must not be empty (PyTorch cannot create a tensor with a zero-sized last dimension in many models)." }

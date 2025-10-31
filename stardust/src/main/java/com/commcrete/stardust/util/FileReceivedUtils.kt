@@ -45,7 +45,7 @@ object FileReceivedUtils {
                 fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
                 bittelPackage.stardustControlByte.stardustDeliveryType) {
                 fileStart.dataList.add(bittelFilePackage)
-//                Log.d("fileReceived", "dataList.put : ${bittelFilePackage.current}")
+                Log.d("FileReceivedUtils", "dataList.put : ${bittelFilePackage.current}")
                 fileStart.updateProgress ()
                 fileStart.resetReceiveTimer()
             }
@@ -142,6 +142,7 @@ object FileReceivedUtils {
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
             val timesDelay = calculateDelay()
+            Log.d("FileReceivedUtils","timesDelay : $timesDelay" )
             handler.postDelayed(
                 runnable,
                 sendInterval * timesDelay
@@ -166,6 +167,7 @@ object FileReceivedUtils {
                     dataStart?.let {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
                         DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
+                        Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
                     }
                 }
                 checkData()
@@ -286,6 +288,10 @@ object FileReceivedUtils {
                         sortedList.find { it.current == index }?.data
                     }
                 }
+//                val reedSolomonAuto = ReedSolomon (totalDataPackets = total - parityPackets , totalParityPackets = parityPackets)
+//                val decodedReed = reedSolomonAuto.decode(receivedPackets = receivedWithNulls,
+//                    missingIndices = lostPackagesIndex.toIntArray() ).toMutableList()
+
                 val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
                 val decoded = ldpc.decode(
                     received = receivedWithNulls,
@@ -327,6 +333,7 @@ object FileReceivedUtils {
 
             // Optional: Print or log the result
             println("Missing packages: $lostPackagesIndex")
+            Log.d("FileReceivedUtils","Missing packages: $lostPackagesIndex" )
         }
 
         private fun checkIfMissingMain(): Boolean {

@@ -45,9 +45,9 @@ object FileSendUtils {
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-//            if(!randomMisses.contains(current.value?.toInt())) {
+            if(!randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
-//            }
+            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
@@ -66,6 +66,8 @@ object FileSendUtils {
 
         if(stardustAPIPackage.spare > 0) {
             val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
+//            Log.d("dataWithSpare", "dataWithSpare : ${stardustAPIPackage.spare}")
+//            saveTempFile(dataWithSpare)
            packages = dataWithSpare.first
             createStartPackage(fileStartParser,
                 numOfPackages, dest, stardustAPIPackage, dataWithSpare.second)
@@ -73,7 +75,7 @@ object FileSendUtils {
             createStartPackage(fileStartParser,
                 numOfPackages, dest, stardustAPIPackage, 0)
         }
-//        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
+        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
         mutablePackagesMap.clear()
         mutablePackagesMap.putAll(packages)
 //        testDecode(packages, stardustAPIPackage.spare)
@@ -93,7 +95,8 @@ object FileSendUtils {
     }
 
     private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
-        val count = maxOf(1, (kotlin.math.sqrt(spare.toDouble())).toInt())
+//        val count = maxOf(1, (kotlin.math.sqrt(spare.toDouble())).toInt())
+        val count = spare
         randomMisses = mutableSetOf<Int>()
 
         while (randomMisses.size < count) {
@@ -101,6 +104,7 @@ object FileSendUtils {
             randomMisses.add(rand)
         }
 
+        Log.d("randomMisses" , "randomMisses $randomMisses")
         return randomMisses.toList()
     }
 
@@ -237,6 +241,20 @@ object FileSendUtils {
         return Pair(bittelFileList, paddingAdded)
     }
 
+    private fun saveTempFile(dataWithSpare: Pair<Map<Float, StardustFilePackage>, Int>) {
+        val destDir = File("${DataManager.context.filesDir}/10000023/files")
+        if (!destDir.exists()) {
+            destDir.mkdirs()
+        }
+        val ts = System.currentTimeMillis()
+        val targetFile = File(destDir, "temm_save_$ts.txt")
+        val datas = dataWithSpare.first.values
+        FileOutputStream(targetFile).use { outputStream ->
+            for (data in datas) {
+                outputStream.write(data.data)
+            }
+        }
+    }
     private fun testDecode(packages: Map<Float, StardustFilePackage>, spare: Int) {
         val data = packages.values.map { it.data }
         val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
