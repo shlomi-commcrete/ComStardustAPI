@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.commcrete.stardust.R
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.messages.MessageItem
@@ -31,7 +32,7 @@ object SOSUtils {
                 text?.let {
                     data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
                 }
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
@@ -46,7 +47,7 @@ object SOSUtils {
     fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
@@ -60,7 +61,7 @@ object SOSUtils {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 var data : Array<Int> = arrayOf()
                 data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.SOS)
+                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
                     data = data)

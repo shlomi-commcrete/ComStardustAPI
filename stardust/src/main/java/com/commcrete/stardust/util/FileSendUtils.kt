@@ -8,6 +8,7 @@ import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository

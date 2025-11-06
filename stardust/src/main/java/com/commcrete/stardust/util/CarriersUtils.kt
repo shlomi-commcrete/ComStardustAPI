@@ -1,8 +1,9 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
-import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -88,6 +89,7 @@ object CarriersUtils {
 
     fun getRadioToSend (carrier: Carrier? = null, functionalityType: FunctionalityType) :
             Pair<Carrier?, StardustControlByte.StardustDeliveryType> {
+        // TODO: add: if functionality enabled here
         var selectedCarrier = carrier ?: getCarrierByFunctionalityType(functionalityType)
         val deliveryType = when (selectedCarrier?.index) {
             0 -> StardustControlByte.StardustDeliveryType.RD1
@@ -97,7 +99,7 @@ object CarriersUtils {
             else -> StardustControlByte.StardustDeliveryType.RD1 // Default case
         }
         when (functionalityType) {
-            FunctionalityType.SOS -> {
+            FunctionalityType.REPORTS -> {
                 if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
                     return getDefaultRadio(functionalityType)
                 }
@@ -132,6 +134,8 @@ object CarriersUtils {
                     return getDefaultRadio(functionalityType)
                 }
             }
+
+            FunctionalityType.ACK -> null // todo: return null
         }
         return Pair(selectedCarrier, deliveryType)
     }
@@ -151,7 +155,7 @@ object CarriersUtils {
 
     private fun getCarrierByFunctionalityType (functionalityType: FunctionalityType) : Carrier? {
         carrierList.value?.forEach {
-            if(it.functionalityTypeList.contains(functionalityType)) {
+            if(it.enabledFunctionalityTypeList.contains(functionalityType)) {
                 return it
             }
         }
@@ -162,15 +166,18 @@ object CarriersUtils {
         val carriers = carrierList.value
         carriers?.let {
             it.forEach {
+                val temp = it.enabledFunctionalityTypeList.toMutableSet()
                 if(it != carrier) {
-                    it.functionalityTypeList.remove(functionalityType)
+                    temp.remove(functionalityType)
                 } else {
-                    it.functionalityTypeList.add(functionalityType)
+                    temp.add(functionalityType)
                 }
+                it.enabledFunctionalityTypeList = temp
             }
             updateCarrierList(it.toMutableList())
         }
     }
+
 
     private fun updateCarrierList (mutableList : MutableList<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), mutableList, DataManager.context)
@@ -214,23 +221,20 @@ object CarriersUtils {
     }
 }
 
-enum class FunctionalityType (val bitwise : Int) {
-    SOS(64),
-    TEXT(2),
-    LOCATION(4),
-    PTT(1),
-    BFT(8),
-    FILE(16),
-    IMAGE(32)
-}
 
 data class Carrier (
     val index : Int,
     var type : StardustConfigurationParser.StardustTypeFunctionality,
     val name : String,
     var f : StardustConfigurationParser.StardustCarrier? = null,
-    var functionalityTypeList : MutableSet<FunctionalityType> = mutableSetOf()
+    val functionalityTypeList: Set<FunctionalityType> = emptySet()
 ) {
+
+    var enabledFunctionalityTypeList: Set<FunctionalityType> = filterEnabledFunctionalityTypes(functionalityTypeList)
+        set(value) {
+            field = filterEnabledFunctionalityTypes(value)
+        }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true // Reference equality
         if (other !is Carrier) return false // Type check
@@ -245,4 +249,13 @@ data class Carrier (
                 type.hashCode() * 31 +
                 name.hashCode()
     }
+
+    private fun filterEnabledFunctionalityTypes(functionalityTypeList: Set<FunctionalityType>): Set<FunctionalityType> {
+        return functionalityTypeList.filter { ft ->
+            UsersUtils.licensedFunctionalities.value?.any { licensed ->
+                ft.name == licensed.type.name && licensed.limitation == LimitationType.ENABLED
+            } == true
+        }.toSet()
+    }
+
 }

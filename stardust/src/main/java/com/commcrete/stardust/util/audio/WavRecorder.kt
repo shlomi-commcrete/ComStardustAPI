@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -28,7 +29,6 @@ import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
-import com.commcrete.stardust.util.FunctionalityType
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.ustadmobile.codec2.Codec2Decoder

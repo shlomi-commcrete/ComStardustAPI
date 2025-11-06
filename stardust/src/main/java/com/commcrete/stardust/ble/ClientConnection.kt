@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
+import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
@@ -31,6 +32,7 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -233,18 +235,7 @@ internal class ClientConnection(
                             if(src != null) {
                                 StardustInitConnectionHandler.start()
                                 StardustInitConnectionHandler.listener = object :
-                                    StardustInitConnectionHandler.InitConnectionListener {
-                                    override fun onInitFailed(reason: String) {
-                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.CANCELED)
-                                    }
-                                    override fun onInitDone() {
-                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
-                                    }
-
-                                    override fun running() {
-                                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
-                                    }
-                                }
+                                    StardustInitConnectionHandler.InitConnectionListener {}
 
 
 //                                val mPackage = StardustPackageUtils.getStardustPackage(
@@ -691,7 +682,7 @@ internal class ClientConnection(
     private var bleGatChar : BluetoothGattCharacteristic? = null
     @SuppressLint("MissingPermission")
     fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
-
+        // TODO: check if FunctionalityType is valid by licence here ??
         if(mutableAckAwaitingList.isNotEmpty() && isNeedAck(bittelPackage.stardustOpCode)) {
             Handler(Looper.getMainLooper()).postDelayed({
                 sendMessage(bittelPackage, randomID)

@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
@@ -23,6 +24,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.ButtonListener
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
@@ -101,18 +103,7 @@ object BittelUsbManager2 : BittelProtocol {
                 }
                 StardustInitConnectionHandler.start()
                 StardustInitConnectionHandler.listener = object :
-                    StardustInitConnectionHandler.InitConnectionListener {
-                    override fun onInitFailed(reason: String) {
-                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.CANCELED)
-                    }
-                    override fun onInitDone() {
-                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
-                    }
-
-                    override fun running() {
-                        DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
-                    }
-                }
+                    StardustInitConnectionHandler.InitConnectionListener {}
 
 //                val mPackage = StardustPackageUtils.getStardustPackage(
 //                    source = it , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)

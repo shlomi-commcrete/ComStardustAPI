@@ -1,7 +1,8 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.util.Carrier
-import com.commcrete.stardust.util.FunctionalityType
 
 class StardustConfigurationParser : StardustParser() {
 
@@ -144,6 +145,9 @@ class StardustConfigurationParser : StardustParser() {
         Carrier3(2, "Carrier 3")
     }
 
+
+
+
     fun parseConfiguration(StardustPackage: StardustPackage) : StardustConfigurationPackage? {
         StardustPackage.data?.let { intArray ->
             try {
@@ -243,6 +247,8 @@ class StardustConfigurationParser : StardustParser() {
                     batteryChargeStatus = StardustBatteryCharge.values()[byteArrayToInt(batteryChargeStatus)],
                     mcuTemperature = byteArrayToInt(mcuTemperature),
                     rdpLevel = StardustRDPLevel.values()[byteArrayToInt(rdpLevel)],
+                    licenseType = byteArrayToInt(licenceNumberBytes).let { licenceNumber ->
+                        LicenseType.entries.find { it.type == licenceNumber } ?: LicenseType.UNDEFINED }
                 )
                 return bittelConfigurationPackage
             }catch (e : Exception) {
@@ -378,7 +384,7 @@ class StardustConfigurationParser : StardustParser() {
         }
 
         fun getRadio (carrier: Carrier) : Carrier {
-            carrier.functionalityTypeList = getOptions().toMutableSet()
+            carrier.enabledFunctionalityTypeList = getOptions().toMutableSet()
             carrier.f = this.carrier
             carrier.type = this.functionality
             return carrier

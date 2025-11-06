@@ -38,6 +38,7 @@ import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileSendUtils
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
@@ -366,10 +367,11 @@ internal class StardustPackageHandler(private val context: Context ,
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
             UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
             bittelConfigurationPackage?. let {
-            ConfigurationUtils.setConfigFile(it)
-            setNewLocals(it)
-            AdminUtils.updateBittelAdminMode()
-        }
+                ConfigurationUtils.setConfigFile(it)
+                setNewLocals(it)
+                AdminUtils.updateBittelAdminMode()
+                UsersUtils.licensedFunctionalities.value = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(it.licenseType)
+            }
     }
     }
 

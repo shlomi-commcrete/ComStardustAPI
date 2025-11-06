@@ -24,6 +24,7 @@ import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.crypto.SecureKeyUtils
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message

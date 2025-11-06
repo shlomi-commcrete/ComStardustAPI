@@ -127,19 +127,7 @@ object DemoDataUtil {
                 return@launch
             }
             StardustInitConnectionHandler.start()
-            StardustInitConnectionHandler.listener = object :
-                StardustInitConnectionHandler.InitConnectionListener {
-                override fun onInitFailed(reason: String) {
-                    DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.CANCELED)
-                }
-                override fun onInitDone() {
-                    DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
-                }
-
-                override fun running() {
-                    DataManager.getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.RUNNING)
-                }
-            }
+            StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
         }
     }
 }

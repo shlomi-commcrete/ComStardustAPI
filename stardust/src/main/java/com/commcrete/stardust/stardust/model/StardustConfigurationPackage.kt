@@ -1,5 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.enums.LicenseType
+
 
 data class StardustConfigurationPackage(
 
@@ -28,6 +30,7 @@ data class StardustConfigurationPackage(
     var batteryChargeStatus : StardustConfigurationParser.StardustBatteryCharge,
     var mcuTemperature : Int,
     var rdpLevel : StardustConfigurationParser.StardustRDPLevel,
+    var licenseType: LicenseType
 ){
     fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios {
         val presetToCheck = preset?:currentPreset

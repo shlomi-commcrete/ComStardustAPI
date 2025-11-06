@@ -2,9 +2,9 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.provider.ContactsContract.Data
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -44,7 +44,9 @@ object StardustInitConnectionHandler {
         UPDATING_ADMIN_MODE,           // 6) update admin mode
         DONE, CANCELED,
         RUNNING,
-        SEARCHING
+        SEARCHING,
+        NO_LICENSE,
+        ENCRYPTION_KEY_ERROR
     }
 
     private const val MAX_ATTEMPTS = 3
@@ -57,9 +59,10 @@ object StardustInitConnectionHandler {
     private var timeoutJob: Job? = null
 
     interface InitConnectionListener {
-        fun onInitFailed(reason: String)
-        fun onInitDone()
-        fun running ()
+
+        fun onInitFailed(state: State, reason: String) {}
+        fun onInitDone(state: State) {}
+        fun running(state: State) {}
     }
 
 
@@ -72,7 +75,7 @@ object StardustInitConnectionHandler {
 
     fun start() {
         if (isRunning) return
-        listener?.running()
+        onInitRunning()
         attempts.clear()
         transitionTo(State.REQUESTING_ADDRESSES) { sendGetAddresses() }
     }
@@ -89,7 +92,7 @@ object StardustInitConnectionHandler {
         timeoutJob?.cancel()
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow done")
-        listener?.onInitDone()
+        onInitDone()
 
     }
 
@@ -115,7 +118,9 @@ object StardustInitConnectionHandler {
                     onAck = { afterUpdateAddressAck() },
                     onRetry = {
                         lastAddresses?.let { sendUpdateSmartphoneAddress(it) }
-                            ?: run { failAndStop("No addresses cached") }
+                            ?: run {
+                                state = State.ENCRYPTION_KEY_ERROR
+                                failAndStop("No addresses cached") }
                     }
                 ); return true
             }
@@ -167,7 +172,7 @@ object StardustInitConnectionHandler {
     // ───────────────────────── State helpers ─────────────────────────
 
     private fun transitionTo(next: State, send: () -> Unit) {
-        listener?.running()
+        onInitRunning()
         state = next
         val n = (attempts[next] ?: 0) + 1
         attempts[next] = n
@@ -234,7 +239,7 @@ object StardustInitConnectionHandler {
 
     private fun failAndStop(reason: String) {
         Timber.tag("InitHandler").w("Init flow failed: $reason")
-        listener?.onInitFailed(reason )
+        onInitFailed(reason)
         cancel()
     }
 
@@ -430,5 +435,26 @@ object StardustInitConnectionHandler {
             intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             intData.toIntArray().toTypedArray().reversedArray()
         }
+    }
+
+    private fun onInitFailed(reason: String) {
+        val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
+        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
+        listener?.onInitFailed(resultState, reason)
+    }
+
+    private fun onInitDone() {
+        val resultState = when {
+            UsersUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
+            else -> State.DONE
+        }
+        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
+        listener?.onInitDone(resultState)
+    }
+
+    private fun onInitRunning () {
+        val resultState = State.RUNNING
+        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
+        listener?.running(resultState)
     }
 }
