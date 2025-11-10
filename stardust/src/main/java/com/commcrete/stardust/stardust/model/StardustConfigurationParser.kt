@@ -1,5 +1,9 @@
 package com.commcrete.stardust.stardust.model
 
+import android.app.AlertDialog
+import android.content.DialogInterface
+import android.util.Log
+import android.widget.Toast
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.util.Carrier
@@ -224,31 +228,31 @@ class StardustConfigurationParser : StardustParser() {
                 offset += deviceTypeLength
 
                 val bittelConfigurationPackage = StardustConfigurationPackage(
+                    licenseType = byteArrayToInt(licenceNumberBytes).let { licenceNumber ->
+                        LicenseType.entries.find { it.type == licenceNumber } ?: LicenseType.UNDEFINED },
                     presets = presets,
                     powerLOTX = byteArrayToInt(LOTXPowerBytes.reversedArray()),
                     powerLORX = byteArrayToInt(LORXPowerBytes.reversedArray()),
                     frequencyLOTX = byteArrayToUInt32(LOTXFreqBytes.reversedArray()).toDouble().div(MHz),
                     frequencyLORX = byteArrayToUInt32(LORXFreqBytes.reversedArray()).toDouble().div(MHz),
 
-                    currentPreset = CurrentPreset.values()[byteArrayToInt(currentPresetBytes)],
+                    currentPreset = CurrentPreset.entries[byteArrayToInt(currentPresetBytes)],
 
-                    bittelType = StardustType.values()[byteArrayToInt(bittelType)],
+                    bittelType = StardustType.entries[byteArrayToInt(bittelType)],
                     portType = getPortType(byteArrayToInt(portType)),
                     crcType = byteArrayToInt(crcType),
                     serverByteType = byteArrayToInt(serverByteType),
                     debugIgnoreCanTransmit = byteArrayToBoolean(debugCanTrasmit),
-                    snifferMode = SnifferMode.values()[byteArrayToInt(snifferModeBytes)],
+                    snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
                     stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
-                    antenna = AntennaType.values()[byteArrayToInt(antennaBytes)],
+                    antenna = AntennaType.entries[byteArrayToInt(antennaBytes)],
                     radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
                     power12V = byteArrayToFloat(power12V.reversedArray()),
                     powerBattery = byteArrayToFloat(powerBattery.reversedArray()),
                     batteryChargeStatus = StardustBatteryCharge.values()[byteArrayToInt(batteryChargeStatus)],
                     mcuTemperature = byteArrayToInt(mcuTemperature),
-                    rdpLevel = StardustRDPLevel.values()[byteArrayToInt(rdpLevel)],
-                    licenseType = byteArrayToInt(licenceNumberBytes).let { licenceNumber ->
-                        LicenseType.entries.find { it.type == licenceNumber } ?: LicenseType.UNDEFINED }
+                    rdpLevel = StardustRDPLevel.entries[byteArrayToInt(rdpLevel)],
                 )
                 return bittelConfigurationPackage
             }catch (e : Exception) {
@@ -380,15 +384,17 @@ class StardustConfigurationParser : StardustParser() {
                     functionalityOptions.add(type)
                 }
             }
+
             return functionalityOptions
         }
 
-        fun getRadio (carrier: Carrier) : Carrier {
-            carrier.enabledFunctionalityTypeList = getOptions().toMutableSet()
-            carrier.f = this.carrier
-            carrier.type = this.functionality
-            return carrier
-        }
+//
+//        fun getRadio (carrier: Carrier) : Carrier {
+//            carrier.availableFunctionalityTypeList = getOptions().toMutableSet()
+//            carrier.f = this.carrier
+//            carrier.type = this.functionality
+//            return carrier
+//        }
     }
 
     data class Preset (

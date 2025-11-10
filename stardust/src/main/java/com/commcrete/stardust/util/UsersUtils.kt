@@ -5,8 +5,9 @@ import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.crypto.SecureKeyUtils
-import com.commcrete.stardust.data.SupportedFunctionality
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -47,7 +48,7 @@ object UsersUtils {
     val bittelVersion = MutableLiveData<String>()
     val bittelConfiguration = MutableLiveData<StardustConfigurationPackage>()
 
-    val licensedFunctionalities = MutableLiveData<List<SupportedFunctionality>>()
+    val licensedFunctionalities = MutableLiveData<Map<FunctionalityType, LimitationType>>()
 
     var user : User? = null
 

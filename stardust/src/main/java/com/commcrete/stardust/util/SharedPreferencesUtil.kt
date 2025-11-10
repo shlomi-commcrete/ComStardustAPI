@@ -15,7 +15,9 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
+import androidx.core.content.edit
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -98,10 +100,10 @@ object SharedPreferencesUtil {
     private const val KEY_INPUT_CODEC = "codec_type"
 
     //Carriers
-    private const val KEY_LAST_CARRIERS = "last_carriers"
-    private const val KEY_LAST_CARRIERS1 = "last_carriers1"
-    private const val KEY_LAST_CARRIERS2 = "last_carriers2"
-    private const val KEY_LAST_CARRIERS3 = "last_carriers3"
+    const val KEY_LAST_CARRIERS = "last_carriers"
+    const val KEY_LAST_CARRIERS1 = "last_carriers1"
+    const val KEY_LAST_CARRIERS2 = "last_carriers2"
+    const val KEY_LAST_CARRIERS3 = "last_carriers3"
     private const val KEY_LAST_PRESETS = "last_presets"
     private const val KEY_SOS_DEFAULT = "sos_default"
     private const val KEY_TEXT_DEFAULT = "text_default"
@@ -480,10 +482,9 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setPresets(context: Context, carriers: List<StardustConfigurationParser.Preset>) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_PRESETS, carriersJson).apply() // Save JSON as a string
+    fun setPresets(context: Context, preset: List<StardustConfigurationParser.Preset>) {
+        val presetJson = Gson().toJson(preset) // Convert list to JSON
+        getPrefs(context).edit().putString(KEY_LAST_PRESETS, presetJson).apply() // Save JSON as a string
     }
 
     fun getPresets(context: Context): List<StardustConfigurationParser.Preset>? {
@@ -498,10 +499,16 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers(context: Context, carriers: List<Carrier>) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_CARRIERS, carriersJson).apply() // Save JSON as a string
+    fun setCarriers(context: Context, carriers: List<Carrier>, key: String = KEY_LAST_CARRIERS) {
+        val gson = GsonBuilder()
+            .registerTypeAdapter(Carrier::class.java, CarrierSerializer())
+            .create()
+
+        val carriersJson = gson.toJson(carriers)
+
+        getPrefs(context).edit {
+            putString(key, carriersJson)
+        }
     }
 
     fun getCarriers(context: Context): List<Carrier>? {
@@ -516,12 +523,6 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers1(context: Context, carriers: List<Carrier>) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_CARRIERS1, carriersJson).apply() // Save JSON as a string
-    }
-
     fun getCarriers1(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS1, null)
@@ -534,11 +535,6 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers2(context: Context, carriers: List<Carrier>) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_CARRIERS2, carriersJson).apply() // Save JSON as a string
-    }
 
     fun getCarriers2(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
@@ -552,11 +548,6 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers3(context: Context, carriers: List<Carrier>) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = Gson().toJson(carriers) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_CARRIERS3, carriersJson).apply() // Save JSON as a string
-    }
 
     fun getCarriers3(context: Context): List<Carrier>? {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)

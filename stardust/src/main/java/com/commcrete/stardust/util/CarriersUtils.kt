@@ -2,13 +2,21 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.enums.FunctionalitySelectionState
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.google.gson.Gson
+import com.google.gson.JsonElement
+import com.google.gson.JsonSerializationContext
+import com.google.gson.JsonSerializer
 import kotlinx.coroutines.launch
+import java.lang.reflect.Type
+import kotlin.collections.forEach
 
 object CarriersUtils {
 
@@ -61,12 +69,10 @@ object CarriersUtils {
         val defaults1 = preset?.xcvrList?.get(0)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
         val defaults2 = preset?.xcvrList?.get(1)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
         val defaults3 = preset?.xcvrList?.get(2)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
-        mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset?.xcvrList?.get(0)?.carrier,
-            functionalityTypeList = defaults1))
-        mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset?.xcvrList?.get(1)?.carrier,
-            functionalityTypeList = defaults2))
-        mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset?.xcvrList?.get(2)?.carrier,
-            functionalityTypeList = defaults3))
+
+        mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset?.xcvrList?.get(0)?.carrier, presetActiveFunctionality = defaults1))
+        mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset?.xcvrList?.get(1)?.carrier, presetActiveFunctionality = defaults2))
+        mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset?.xcvrList?.get(2)?.carrier, presetActiveFunctionality = defaults3))
         mutableList.add(Carrier(3, StardustConfigurationParser.StardustTypeFunctionality.ST,  "RD4"))
         return mutableList
     }
@@ -135,7 +141,7 @@ object CarriersUtils {
                 }
             }
 
-            FunctionalityType.ACK -> null // todo: return null
+            FunctionalityType.ACK, FunctionalityType.SOS -> null // todo: return null
         }
         return Pair(selectedCarrier, deliveryType)
     }
@@ -154,35 +160,30 @@ object CarriersUtils {
     }
 
     private fun getCarrierByFunctionalityType (functionalityType: FunctionalityType) : Carrier? {
-        carrierList.value?.forEach {
-            if(it.enabledFunctionalityTypeList.contains(functionalityType)) {
-                return it
-            }
-        }
-        return null
+        return carrierList.value?.find { it.activeFunctionalities.contains(functionalityType) }
     }
 
-    fun updateFunctionalityToCarrier (functionalityType: FunctionalityType, carrier: Carrier) {
-        val carriers = carrierList.value
-        carriers?.let {
-            it.forEach {
-                val temp = it.enabledFunctionalityTypeList.toMutableSet()
-                if(it != carrier) {
-                    temp.remove(functionalityType)
-                } else {
-                    temp.add(functionalityType)
+
+    fun updateFunctionalityToCarrier (carrier: Carrier, functionality: FunctionalityType, isEnabled: Boolean) {
+        carrierList.value?.let { carriers ->
+            if(isEnabled) {
+                carriers.forEach { other ->
+                    other.functionalityStateMap[functionality]?.updateSelectionStatus(other.index == carrier.index)
                 }
-                it.enabledFunctionalityTypeList = temp
             }
-            updateCarrierList(it.toMutableList())
+            else {
+                carriers.find { c -> c.index == carrier.index }?.functionalityStateMap?.get(functionality)?.updateSelectionStatus(false)
+            }
+            updateCarrierList(carriers.toMutableList())
         }
     }
-
 
     private fun updateCarrierList (mutableList : MutableList<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), mutableList, DataManager.context)
         carrierList.value = mutableList
     }
+
+
 
     fun getCarrierByStardustPackage (stardustPackage: StardustPackage) : Carrier? {
         when (stardustPackage.stardustControlByte.stardustDeliveryType) {
@@ -214,26 +215,48 @@ object CarriersUtils {
 
     private fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>, context: Context) {
         when (preset) {
-            0 -> {SharedPreferencesUtil.setCarriers1(context, carriers)}
-            1 -> {SharedPreferencesUtil.setCarriers2(context, carriers)}
-            2 -> {SharedPreferencesUtil.setCarriers3(context, carriers)}
+            0 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS1)}
+            1 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS2)}
+            2 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS3)}
         }
     }
 }
 
-
 data class Carrier (
     val index : Int,
-    var type : StardustConfigurationParser.StardustTypeFunctionality,
+    var type : StardustTypeFunctionality,
     val name : String,
     var f : StardustConfigurationParser.StardustCarrier? = null,
-    val functionalityTypeList: Set<FunctionalityType> = emptySet()
+    private var presetActiveFunctionality: Set<FunctionalityType>? = null
 ) {
 
-    var enabledFunctionalityTypeList: Set<FunctionalityType> = filterEnabledFunctionalityTypes(functionalityTypeList)
-        set(value) {
-            field = filterEnabledFunctionalityTypes(value)
+    @Transient
+    private var _functionalityStateMap: Map<FunctionalityType, FunctionalityState>? = null
+
+    val functionalityStateMap: Map<FunctionalityType, FunctionalityState>
+        get() {
+            if (_functionalityStateMap == null) {
+                _functionalityStateMap = initFunctionalityStateMap()
+            }
+            return _functionalityStateMap!!
         }
+
+    val activeFunctionalities: Set<FunctionalityType>
+        get() {
+            return functionalityStateMap
+                .filterValues { state -> state.selectionState == FunctionalitySelectionState.SELECTED }
+                .keys
+        }
+
+    fun getExistingFunctionalityOptions() : Set<FunctionalityType> {
+        val functionalityOptions = when (type) {
+            StardustTypeFunctionality.HR -> FunctionalityType.entries
+            StardustTypeFunctionality.LR -> FunctionalityType.entries.filterNot { listOf(FunctionalityType.IMAGE, FunctionalityType.FILE, FunctionalityType.PTT).contains(it) }
+            StardustTypeFunctionality.ST -> listOf(FunctionalityType.IMAGE, FunctionalityType.FILE)
+        }
+
+        return functionalityOptions.toSet()
+    }
 
     override fun equals(other: Any?): Boolean {
         if (this === other) return true // Reference equality
@@ -250,12 +273,65 @@ data class Carrier (
                 name.hashCode()
     }
 
-    private fun filterEnabledFunctionalityTypes(functionalityTypeList: Set<FunctionalityType>): Set<FunctionalityType> {
-        return functionalityTypeList.filter { ft ->
-            UsersUtils.licensedFunctionalities.value?.any { licensed ->
-                ft.name == licensed.type.name && licensed.limitation == LimitationType.ENABLED
-            } == true
-        }.toSet()
+    private fun initFunctionalityStateMap(): Map<FunctionalityType, FunctionalityState> {
+
+        val result = getExistingFunctionalityOptions().associateWith { functionality ->
+            val limitation = UsersUtils.licensedFunctionalities.value?.get(functionality)
+
+            FunctionalityState(limitation).apply {
+                if(limitation == LimitationType.ENABLED) {
+                    selectionState = if(presetActiveFunctionality?.contains(functionality) == true) FunctionalitySelectionState.SELECTED else FunctionalitySelectionState.UNSELECTED
+                }
+            }
+        }
+        return result
+    }
+
+    fun updatePresetActiveFunctionality() {
+        presetActiveFunctionality = activeFunctionalities
+    }
+}
+
+
+class CarrierSerializer : JsonSerializer<Carrier> {
+
+    override fun serialize(
+        src: Carrier?,
+        typeOfSrc: Type?,
+        context: JsonSerializationContext?
+    ): JsonElement? {
+        src?.updatePresetActiveFunctionality()
+        return Gson().toJsonTree(src)
+    }
+}
+
+data class FunctionalityState(val limitation: LimitationType?) {
+
+    var selectionState: FunctionalitySelectionState = updateSelectionState(FunctionalitySelectionState.SELECTED)
+        set(value) {
+            field = updateSelectionState(value)
+        }
+
+    private fun updateSelectionState(state: FunctionalitySelectionState): FunctionalitySelectionState {
+        return when(limitation) {
+            LimitationType.ENABLED -> state
+            else -> FunctionalitySelectionState.DISABLED
+        }
+    }
+
+    fun updateSelectionStatus(
+        isActive: Boolean
+    ) {
+
+        if (selectionState == FunctionalitySelectionState.DISABLED) return
+
+        selectionState = if (isActive) {
+            FunctionalitySelectionState.SELECTED
+        } else {
+            FunctionalitySelectionState.UNSELECTED
+        }
     }
 
 }
+
+

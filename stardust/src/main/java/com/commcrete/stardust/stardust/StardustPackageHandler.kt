@@ -367,10 +367,10 @@ internal class StardustPackageHandler(private val context: Context ,
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
             UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
             bittelConfigurationPackage?. let {
+                UsersUtils.licensedFunctionalities.value = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(it.licenseType)
                 ConfigurationUtils.setConfigFile(it)
                 setNewLocals(it)
                 AdminUtils.updateBittelAdminMode()
-                UsersUtils.licensedFunctionalities.value = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(it.licenseType)
             }
     }
     }
