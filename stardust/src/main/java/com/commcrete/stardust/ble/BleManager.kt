@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
@@ -68,6 +70,7 @@ object BleManager {
         } else if (isBluetoothEnabled()) {
             DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.BLE)
         } else {
+            ConfigurationUtils.reset()
             DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.DISCONNECTED)
         }
     }

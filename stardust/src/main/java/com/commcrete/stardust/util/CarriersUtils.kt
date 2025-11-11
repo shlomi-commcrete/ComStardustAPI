@@ -94,62 +94,69 @@ object CarriersUtils {
     }
 
     fun getRadioToSend (carrier: Carrier? = null, functionalityType: FunctionalityType) :
-            Pair<Carrier?, StardustControlByte.StardustDeliveryType> {
-        // TODO: add: if functionality enabled here
-        var selectedCarrier = carrier ?: getCarrierByFunctionalityType(functionalityType)
-        val deliveryType = when (selectedCarrier?.index) {
+            Pair<Carrier, StardustControlByte.StardustDeliveryType>? {
+
+        val selectedCarrier = carrier?.takeIf { it.availableFunctionalities.contains(functionalityType) }
+            ?: getDefaultCarrierForFunctionalityType(functionalityType)
+            ?: return null
+
+        val deliveryType = when (selectedCarrier.index) {
             0 -> StardustControlByte.StardustDeliveryType.RD1
             1 -> StardustControlByte.StardustDeliveryType.RD2
             2 -> StardustControlByte.StardustDeliveryType.RD3
             3 -> StardustControlByte.StardustDeliveryType.RD4
             else -> StardustControlByte.StardustDeliveryType.RD1 // Default case
         }
-        when (functionalityType) {
-            FunctionalityType.REPORTS -> {
-                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.TEXT -> {
-                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.LOCATION -> {
-                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.PTT -> {
-                if (carrier?.type != StardustConfigurationParser.StardustTypeFunctionality.HR) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.BFT -> {
-                if (carrier?.type != StardustConfigurationParser.StardustTypeFunctionality.HR) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.FILE -> {
-                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.LR) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
-            FunctionalityType.IMAGE -> {
-                if (carrier?.type == StardustConfigurationParser.StardustTypeFunctionality.LR) {
-                    return getDefaultRadio(functionalityType)
-                }
-            }
 
-            FunctionalityType.ACK, FunctionalityType.SOS -> null // todo: return null
-        }
+//        when (functionalityType) {
+//            FunctionalityType.REPORTS -> {
+//                if (carrier?.type == StardustTypeFunctionality.ST) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.TEXT -> {
+//                if (carrier?.type == StardustTypeFunctionality.ST) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.LOCATION -> {
+//                if (carrier?.type == StardustTypeFunctionality.ST) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.PTT -> {
+//                if (carrier?.type != StardustTypeFunctionality.HR) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.BFT -> {
+//                if (carrier?.type != StardustTypeFunctionality.HR) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.FILE -> {
+//                if (carrier?.type == StardustTypeFunctionality.LR) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//            FunctionalityType.IMAGE -> {
+//                if (carrier?.type == StardustTypeFunctionality.LR) {
+//                    return getDefaultRadio(functionalityType)
+//                }
+//            }
+//
+//            FunctionalityType.ACK, FunctionalityType.SOS -> return null
+//        }
         return Pair(selectedCarrier, deliveryType)
     }
 
     private fun getDefaultRadio ( functionalityType: FunctionalityType) :
-            Pair<Carrier?, StardustControlByte.StardustDeliveryType> {
-        var selectedCarrier = getCarrierByFunctionalityType(functionalityType)
-        val deliveryType = when (selectedCarrier?.index) {
+            Pair<Carrier, StardustControlByte.StardustDeliveryType>? {
+
+        val selectedCarrier = getDefaultCarrierForFunctionalityType(functionalityType)
+        if(selectedCarrier == null) return null
+
+        val deliveryType = when (selectedCarrier.index) {
             0 -> StardustControlByte.StardustDeliveryType.RD1
             1 -> StardustControlByte.StardustDeliveryType.RD2
             2 -> StardustControlByte.StardustDeliveryType.RD3
@@ -159,7 +166,7 @@ object CarriersUtils {
         return Pair(selectedCarrier, deliveryType)
     }
 
-    private fun getCarrierByFunctionalityType (functionalityType: FunctionalityType) : Carrier? {
+    private fun getDefaultCarrierForFunctionalityType (functionalityType: FunctionalityType) : Carrier? {
         return carrierList.value?.find { it.activeFunctionalities.contains(functionalityType) }
     }
 
@@ -281,7 +288,7 @@ data class Carrier (
     private fun initFunctionalityStateMap(): Map<FunctionalityType, FunctionalityState> {
 
         val result = getExistingFunctionalityOptions().associateWith { functionality ->
-            val limitation = UsersUtils.licensedFunctionalities.value?.get(functionality)
+            val limitation = ConfigurationUtils.licensedFunctionalities.value?.get(functionality)
 
             FunctionalityState(limitation).apply {
                 if(limitation == LimitationType.ENABLED) {

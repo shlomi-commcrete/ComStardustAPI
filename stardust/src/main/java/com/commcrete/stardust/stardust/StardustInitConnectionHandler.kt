@@ -344,7 +344,7 @@ object StardustInitConnectionHandler {
         val cfg = StardustConfigurationParser().parseConfiguration(p)
             ?: return retryOrFail { requestConfiguration() } // parse failure → retry step 5
         Scopes.getMainCoroutine().launch {
-            UsersUtils.bittelConfiguration.value = cfg
+            ConfigurationUtils.bittelConfiguration.value = cfg
         }
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults(ctx)
@@ -401,7 +401,7 @@ object StardustInitConnectionHandler {
 
     private fun handleVersion(p: StardustPackage) {
         Scopes.getMainCoroutine().launch {
-            UsersUtils.bittelVersion.value = p.getDataAsString()
+            ConfigurationUtils.bittelVersion.value = p.getDataAsString()
         }
     }
 
@@ -445,7 +445,7 @@ object StardustInitConnectionHandler {
 
     private fun onInitDone() {
         val resultState = when {
-            UsersUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
+            ConfigurationUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
             else -> State.DONE
         }
         DataManager.getCallbacks()?.onDeviceInitialized(resultState)

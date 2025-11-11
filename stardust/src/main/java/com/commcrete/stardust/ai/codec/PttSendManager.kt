@@ -142,6 +142,8 @@ object PttSendManager {
     // Equivalent to private void SendData(byte[] data)
     private suspend fun sendData(data: ByteArray) {
         Log.d(TAG, "Send msg: ${data.size} data: ${data.toHexString()}")
+        val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
+
         Scopes.getDefaultCoroutine().launch {
             val bittelPackage = viewModel?.let {
                 val fullData = ByteArray(data.size + 1)
@@ -151,15 +153,13 @@ object PttSendManager {
                 StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
                     data = audioIntArray)
             }
-            val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT)
             val isLast = data.size != 30
-            bittelPackage?.stardustControlByte?.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
-            bittelPackage?.stardustControlByte?.stardustDeliveryType = radio.second
-            bittelPackage?.checkXor =
-                bittelPackage?.getStardustPackageToCheckXor()
-                    ?.let { StardustPackageUtils.getCheckXor(it) }
 
-            bittelPackage?.let {
+
+            bittelPackage?.let { bittelPackage ->
+                bittelPackage.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+                bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
+                bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
                 DataManager.sendDataToBle(bittelPackage)
             }
 

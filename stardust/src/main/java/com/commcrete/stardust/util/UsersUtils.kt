@@ -45,10 +45,6 @@ object UsersUtils {
     val updatedUsersList = MutableLiveData<MutableList<User>>()
     val chatContactList : MutableList<ChatContact> = mutableListOf()
 
-    val bittelVersion = MutableLiveData<String>()
-    val bittelConfiguration = MutableLiveData<StardustConfigurationPackage>()
-
-    val licensedFunctionalities = MutableLiveData<Map<FunctionalityType, LimitationType>>()
 
     var user : User? = null
 

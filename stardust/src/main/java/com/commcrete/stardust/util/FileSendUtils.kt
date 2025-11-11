@@ -191,7 +191,7 @@ object FileSendUtils {
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
-        )
+        )  ?: return
         DataManager.getClientConnection(DataManager.context).let {
             SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
                 val sosString = "STR"
@@ -330,8 +330,8 @@ object FileSendUtils {
         DataManager.getClientConnection(DataManager.context).let {
             val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
                 FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage?.carrier
-            )
-            this.sendInterval = if(radio.first != null && radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
+            )  ?: return
+            this.sendInterval = if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
                 300
             } else {
                 1300
