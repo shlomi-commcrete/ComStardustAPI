@@ -246,6 +246,13 @@ data class Carrier (
                 .keys
         }
 
+    val availableFunctionalities: Set<FunctionalityType>
+        get() {
+            return functionalityStateMap
+                .filterValues { state -> state.selectionState != FunctionalitySelectionState.DISABLED }
+                .keys
+        }
+
     fun getExistingFunctionalityOptions() : Set<FunctionalityType> {
         val functionalityOptions = when (type) {
             StardustTypeFunctionality.HR -> FunctionalityType.entries
