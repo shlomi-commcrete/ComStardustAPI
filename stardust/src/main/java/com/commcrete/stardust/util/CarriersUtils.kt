@@ -164,21 +164,19 @@ object CarriersUtils {
     }
 
 
-    fun updateFunctionalityToCarrier (carrier: Carrier, functionality: FunctionalityType, isEnabled: Boolean) {
-        carrierList.value?.let { carriers ->
-            if(isEnabled) {
-                carriers.forEach { other ->
-                    other.functionalityStateMap[functionality]?.updateSelectionStatus(other.index == carrier.index)
-                }
+    fun updateFunctionalityToCarrier (carrierList: List<Carrier>, carrier: Carrier, functionality: FunctionalityType, isEnabled: Boolean) {
+        if(isEnabled) {
+            carrierList.forEach { other ->
+                other.functionalityStateMap[functionality]?.updateSelectionStatus(other.index == carrier.index)
             }
-            else {
-                carriers.find { c -> c.index == carrier.index }?.functionalityStateMap?.get(functionality)?.updateSelectionStatus(false)
-            }
-            updateCarrierList(carriers.toMutableList())
         }
+        else {
+            carrierList.find { c -> c.index == carrier.index }?.functionalityStateMap?.get(functionality)?.updateSelectionStatus(false)
+        }
+        updateCarrierList(carrierList)
     }
 
-    private fun updateCarrierList (mutableList : MutableList<Carrier>) {
+    private fun updateCarrierList (mutableList : List<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), mutableList, DataManager.context)
         carrierList.value = mutableList
     }
@@ -307,9 +305,15 @@ class CarrierSerializer : JsonSerializer<Carrier> {
 
 data class FunctionalityState(val limitation: LimitationType?) {
 
+    var onSelectionChanged: ((selection: FunctionalitySelectionState) -> Unit)? = null
+
     var selectionState: FunctionalitySelectionState = updateSelectionState(FunctionalitySelectionState.SELECTED)
         set(value) {
-            field = updateSelectionState(value)
+            val newState = updateSelectionState(value)
+            if (field == newState) return  // no change, skip
+
+            field = newState
+            onSelectionChanged?.invoke(newState)
         }
 
     private fun updateSelectionState(state: FunctionalitySelectionState): FunctionalitySelectionState {
