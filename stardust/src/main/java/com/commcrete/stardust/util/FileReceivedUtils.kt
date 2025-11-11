@@ -241,10 +241,12 @@ object FileReceivedUtils {
             if (!destDir.exists()) {
                 destDir.mkdirs()
             }
-            val type = if(fileType == 0) ".txt" else ".jpg"
+            val name = dataStart?.fileName
+            val ending = dataStart?.fileEnding
+            val type = if(fileType == 0) ".$ending" else ".jpg"
             // Create the target file with a timestamp
             val ts = System.currentTimeMillis()
-            val targetFile = File(destDir, "$ts$type")
+            val targetFile = File(destDir, "$name$type")
 
             try {
                 // Step 1: Create a temporary file for the concatenated data

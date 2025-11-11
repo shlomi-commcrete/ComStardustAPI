@@ -1,5 +1,6 @@
 package com.commcrete.bittell.util.bittel_package.model
 
+import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustParser
@@ -14,6 +15,8 @@ class StardustFileStartParser : StardustParser() {
         const val totalLength = 2
         const val spareLength = 2
         const val spareDataLength = 1
+        const val fileEndingLength = 5
+        const val fileNameLength = 50
     }
 
     fun parseFileStart (bittelPackage: StardustPackage) : StardustFileStartPackage? {
@@ -30,10 +33,18 @@ class StardustFileStartParser : StardustParser() {
             val spareDataBytes = cutByteArray(byteArray, spareDataLength, offset)
             offset += spareDataLength
 
+            //file Data
+            val fileEndingBytes = cutByteArray(byteArray, fileEndingLength, offset)
+            offset += fileEndingLength
+            val fileNameBytes = cutByteArray(byteArray, fileNameLength, offset)
+            offset += fileNameLength
+
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
-                spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt())
+                spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
+                fileName = getCharValue(String(fileNameBytes)) ,
+                fileEnding = getCharValue(String(fileEndingBytes)) )
 
         }
         return null
@@ -53,10 +64,19 @@ class StardustFileStartParser : StardustParser() {
             val spareDataBytes = cutByteArray(byteArray, spareDataLength, offset)
             offset += spareDataLength
 
+            //file Data
+            val fileEndingBytes = cutByteArray(byteArray, fileEndingLength, offset)
+            offset += fileEndingLength
+            val fileNameBytes = cutByteArray(byteArray, fileNameLength, offset)
+            offset += fileNameLength
+
+
             return StardustFileStartPackage( type = byteArrayToInt(typeBytes), total =
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
-                spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt())
+                spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
+                fileName = getCharValue(String(fileNameBytes)) ,
+                fileEnding = getCharValue(String(fileEndingBytes)))
 
         }
         return null

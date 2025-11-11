@@ -4,7 +4,9 @@ data class StardustFileStartPackage(
     val type: Int,
     val total: Int,
     val spare: Int,
-    val spareData: Int
+    val spareData: Int,
+    val fileEnding : String,
+    val fileName : String
 ) {
     fun toArrayInt(): Array<Int> {
         require(type in 0..255) { "Type must fit in 1 byte (0-255)" }
@@ -14,17 +16,28 @@ data class StardustFileStartPackage(
 
         val totalHighByte = (total shr 8) and 0xFF
         val totalLowByte = total and 0xFF
-
         val spareHighByte = (spare shr 8) and 0xFF
         val spareLowByte = spare and 0xFF
 
-        return arrayOf(
-            type,               // 1 byte
-            totalHighByte,      // 1 byte
-            totalLowByte,       // 1 byte
-            spareHighByte,      // 1 byte
-            spareLowByte,       // 1 byte
-            spareData           // 1 byte (new)
+        val header = arrayOf(
+            type,
+            totalHighByte,
+            totalLowByte,
+            spareHighByte,
+            spareLowByte,
+            spareData
         )
+
+        val fileEndingBytes = fileEnding.toByteArray(Charsets.UTF_8).map { it.toInt() and 0xFF }
+        val fileNameBytes = fileName.toByteArray(Charsets.UTF_8).map { it.toInt() and 0xFF }
+
+        val fileEndingLength = fileEndingBytes.size
+        val fileNameLength = fileNameBytes.size
+
+        return header +
+                arrayOf(fileEndingLength) +
+                fileEndingBytes.toTypedArray() +
+                arrayOf(fileNameLength) +
+                fileNameBytes.toTypedArray()
     }
 }

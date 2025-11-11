@@ -70,10 +70,12 @@ object FileSendUtils {
 //            saveTempFile(dataWithSpare)
            packages = dataWithSpare.first
             createStartPackage(fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second)
+                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file)
         } else {
-            createStartPackage(fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, 0)
+            createStartPackage(
+                fileStartParser,
+                numOfPackages, dest, stardustAPIPackage, 0, file
+            )
         }
         getRandomMisses(stardustAPIPackage.spare, numOfPackages)
         mutablePackagesMap.clear()
@@ -175,18 +177,30 @@ object FileSendUtils {
             }
         }
     }
+
+    fun getFileNameAndType(file: File): Pair<String, String> {
+        val name = file.nameWithoutExtension
+        val ext = file.extension.ifBlank { "unknown" }
+
+        // Cut name to max 50 chars (avoid IndexOutOfBounds)
+        val safeName = if (name.length > 50) name.substring(0, 50) else name
+
+        return safeName to ext
+    }
     private fun createStartPackage (
         type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
         dest: String?,
         stardustAPIPackage: StardustAPIPackage,
-        spareData : Int
+        spareData: Int,
+        file: File
     ){
         if(dest == null) {
             return
         }
+        val (fileName, fileType) = getFileNameAndType(file)
         // TODO: Add encode and spare
-        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData)
+        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData, fileName, fileType)
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
