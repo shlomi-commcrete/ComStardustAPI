@@ -45,9 +45,9 @@ object FileSendUtils {
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-//            if(!randomMisses.contains(current.value?.toInt())) {
+            if(!randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
-//            }
+            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
@@ -211,7 +211,8 @@ object FileSendUtils {
         packages: Map<Float, StardustFilePackage>,
         spare: Int
     ): Pair<Map<Float, StardustFilePackage>, Int> {
-        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+//        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+        val reed = ReedSolomon(totalDataPackets = packages.size, totalParityPackets = spare)
         val dataList = packages.map { it.value.data }.toMutableList()
 
         var paddingAdded = 0
@@ -226,7 +227,7 @@ object FileSendUtils {
             }
         }
 
-        val newArray = ldpc.encode(dataList)
+        val newArray = reed.encode(dataList)
         val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
 
         for ((index, data) in newArray.withIndex()) {

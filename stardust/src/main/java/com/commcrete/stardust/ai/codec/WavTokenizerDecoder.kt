@@ -59,14 +59,82 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
         val unalignedAudio = floatArrayToPcm(audioData)
 
         // Apply audio normalization if we have previous data
+        // 🔹 Apply crossfade with previousSamples to remove "ticks"
         val alignedAudioData = if (previousSamples != null) {
-            applyFades(unalignedAudio)
+            crossfadePcmReturnOnlyNext(previousSamples, unalignedAudio, fadeMs = 10, sampleRate = 24000)
         } else {
             unalignedAudio
         }
 
         Log.d(TAG, "decode get size ${data.size } return ${alignedAudioData.size}")
         return alignedAudioData
+    }
+
+    fun crossfadePcmReturnOnlyNext(
+        prev: ShortArray,
+        next: ShortArray,
+        fadeMs: Int,
+        sampleRate: Int
+    ): ShortArray {
+        val fadeSamples = (sampleRate * fadeMs / 1000.0).toInt()
+        val fadeLen = minOf(fadeSamples, prev.size, next.size)
+        if (fadeLen <= 0) return next
+
+        val mixed = ShortArray(fadeLen)
+        val startPrev = prev.size - fadeLen
+
+        for (i in 0 until fadeLen) {
+            val prevSample = prev[startPrev + i].toInt()
+            val nextSample = next[i].toInt()
+
+            val fadeOut = (fadeLen - i).toFloat() / fadeLen
+            val fadeIn = 1f - fadeOut
+
+            val mixedSample = (prevSample * fadeOut + nextSample * fadeIn)
+                .toInt().coerceIn(-32768, 32767)
+            mixed[i] = mixedSample.toShort()
+        }
+
+        // result = blended head + remainder of next
+        val tailNext = next.copyOfRange(fadeLen, next.size)
+        val result = ShortArray(mixed.size + tailNext.size)
+        System.arraycopy(mixed, 0, result, 0, mixed.size)
+        System.arraycopy(tailNext, 0, result, mixed.size, tailNext.size)
+
+        return result
+    }
+
+    fun crossfadePcm(prev: ShortArray, next: ShortArray, fadeMs: Int, sampleRate: Int): ShortArray {
+        val fadeSamples = (sampleRate * fadeMs / 1000.0).toInt()
+        val fadeLen = minOf(fadeSamples, prev.size, next.size)
+        if (fadeLen <= 0) return prev + next
+
+        val mixed = ShortArray(fadeLen)
+        val startPrev = prev.size - fadeLen
+
+        for (i in 0 until fadeLen) {
+            val prevSample = prev[startPrev + i].toInt()
+            val nextSample = next[i].toInt()
+
+            val fadeOut = (fadeLen - i).toFloat() / fadeLen
+            val fadeIn = 1f - fadeOut
+
+            val mixedSample = (prevSample * fadeOut + nextSample * fadeIn)
+                .toInt().coerceIn(-32768, 32767)
+            mixed[i] = mixedSample.toShort()
+        }
+
+        // combine: prev (without its tail) + mixed + rest of next
+        val tailNext = next.copyOfRange(fadeLen, next.size)
+        val merged = ShortArray(prev.size - fadeLen + mixed.size + tailNext.size)
+        var idx = 0
+        System.arraycopy(prev, 0, merged, idx, prev.size - fadeLen)
+        idx += prev.size - fadeLen
+        System.arraycopy(mixed, 0, merged, idx, mixed.size)
+        idx += mixed.size
+        System.arraycopy(tailNext, 0, merged, idx, tailNext.size)
+
+        return merged
     }
 
     private fun alignAudio(currentSamples: ShortArray, previousSamples: ShortArray): ShortArray {
