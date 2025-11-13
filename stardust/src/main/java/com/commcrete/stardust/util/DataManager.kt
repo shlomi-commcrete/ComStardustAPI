@@ -21,6 +21,7 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.ble.BleManager.connectionStatus
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.crypto.SecureKeyUtils
@@ -325,8 +326,16 @@ object DataManager : StardustAPI, PttInterface{
 
     fun bondOnStartup (context: Context) {
         requireContext(context)
-        getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.SEARCHING)
-        getClientConnection(context).bondToBleDeviceStartup()
+
+        val bondedDevice = getPairedDevices(context)
+        if(bondedDevice != null) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+            getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.SEARCHING)
+            getClientConnection(context).bondToBleDeviceStartup(bondedDevice)
+        } else {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)
+            getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
+        }
     }
 
     override fun connectToDevice(context: Context, device: ScanResult) {
