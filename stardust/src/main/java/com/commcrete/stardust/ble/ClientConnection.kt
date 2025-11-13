@@ -331,7 +331,7 @@ internal class ClientConnection(
             override fun onChanged(isConnected: Boolean) {
                 if(!isConnected) {
                     disconnectFromDevice()
-                } else if(com.commcrete.stardust.ble.BleManager.autoConnectEnabled && !com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
+                } else if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
                 }
             }
@@ -380,7 +380,6 @@ internal class ClientConnection(
     fun connectDevice(device: BluetoothDevice) {
         if(!hasCallback) {
             device.connectGatt(context, true, getBleGattCallback(device))
-            com.commcrete.stardust.ble.BleManager.autoConnectEnabled = true
         }
     }
 
@@ -394,7 +393,6 @@ internal class ClientConnection(
         Scopes.getMainCoroutine().launch {
             Timber.tag("Bittel Disconnected").d("Called Function")
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
-            com.commcrete.stardust.ble.BleManager.autoConnectEnabled = false
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)

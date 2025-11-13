@@ -21,8 +21,6 @@ object BleManager {
     var isBluetoothToggleEnabled = true
 
     val connectionStatus = MutableLiveData(ConnectionStatus.DISCONNECTED)
-
-    var autoConnectEnabled: Boolean = true
     val bleConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isBleConnected)
     val usbConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isUSBConnected)
     val isPaired : MutableLiveData<Boolean> = MutableLiveData(false)
