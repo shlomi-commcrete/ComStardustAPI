@@ -10,6 +10,9 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS3
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
@@ -210,9 +213,9 @@ object CarriersUtils {
 
     private fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {
         val local = when (preset) {
-            0 -> {SharedPreferencesUtil.getCarriers1(context)}
-            1 -> {SharedPreferencesUtil.getCarriers2(context)}
-            2 -> {SharedPreferencesUtil.getCarriers3(context)}
+            0 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS1)}
+            1 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS2)}
+            2 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS3)}
             else -> { null}
         }
         return local

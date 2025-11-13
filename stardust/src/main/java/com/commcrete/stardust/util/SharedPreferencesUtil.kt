@@ -511,47 +511,8 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun getCarriers(context: Context): List<Carrier>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS, null)
-
-        return if (!carriersJson.isNullOrEmpty()) {
-            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
-        } else {
-            null
-        }
-    }
-
-    fun getCarriers1(context: Context): List<Carrier>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS1, null)
-
-        return if (!carriersJson.isNullOrEmpty()) {
-            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
-        } else {
-            null
-        }
-    }
-
-
-    fun getCarriers2(context: Context): List<Carrier>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS2, null)
-
-        return if (!carriersJson.isNullOrEmpty()) {
-            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
-        } else {
-            null
-        }
-    }
-
-
-    fun getCarriers3(context: Context): List<Carrier>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val carriersJson = getPrefs(context).getString(KEY_LAST_CARRIERS3, null)
+    fun getCarriers(context: Context, key: String = KEY_LAST_CARRIERS): List<Carrier>? {
+        val carriersJson = getPrefs(context).getString(key, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
