@@ -330,11 +330,9 @@ object DataManager : StardustAPI, PttInterface{
         val bondedDevice = getPairedDevices(context)
         if(bondedDevice != null) {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-            getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.SEARCHING)
             getClientConnection(context).bondToBleDeviceStartup(bondedDevice)
         } else {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)
-            getCallbacks()?.onDeviceInitialized(StardustInitConnectionHandler.State.DONE)
         }
     }
 
