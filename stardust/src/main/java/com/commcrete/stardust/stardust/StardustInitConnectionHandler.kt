@@ -451,7 +451,6 @@ object StardustInitConnectionHandler {
 
     private fun onInitFailed(reason: String) {
         val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.onInitFailed(resultState, reason)
     }
 
@@ -461,15 +460,12 @@ object StardustInitConnectionHandler {
             else -> State.DONE
         }
         state = resultState
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.onInitDone(resultState)
     }
 
     private fun onInitRunning () {
-        val resultState = State.RUNNING
-        state = resultState
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
-        listener?.running(resultState)
+        state = State.RUNNING
+        listener?.running(State.RUNNING)
     }
 
     fun hasConnectionError(): Boolean {
