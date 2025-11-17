@@ -340,6 +340,7 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun connectToDevice(context: Context, device: ScanResult) {
         requireContext(context)
+        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         getClientConnection(context).bondToBleDevice(device.device,device.scanRecord?.deviceName )
         val bleScanner = getBleScanner(this.context)
         bleScanner.stopScan()

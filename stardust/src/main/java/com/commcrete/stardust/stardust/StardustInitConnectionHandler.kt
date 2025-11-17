@@ -20,6 +20,7 @@ import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.Dispatchers
@@ -52,9 +53,6 @@ object StardustInitConnectionHandler {
 
     private const val MAX_ATTEMPTS = 3
     private const val STEP_TIMEOUT_MS = 15_000L
-
-    var state = MutableLiveData(State.IDLE)
-    private set
     private val attempts: MutableMap<State, Int> = mutableMapOf()
     private val ctx: Context get() = DataManager.context
     private val conn: ClientConnection get() = DataManager.getClientConnection(ctx)
@@ -70,8 +68,14 @@ object StardustInitConnectionHandler {
 
     var listener: InitConnectionListener? = null
 
+    private var state = State.IDLE
+        set(value) {
+            field = value
+            DataManager.getCallbacks()?.onDeviceInitialized(value)
+        }
+
     val isRunning: Boolean
-        get() = state.value !in setOf(State.IDLE, State.DONE, State.CANCELED)
+        get() = state !in setOf(State.IDLE, State.SEARCHING, State.DONE, State.CANCELED)
 
     // ───────────────────────── Lifecycle ─────────────────────────
 
@@ -83,7 +87,7 @@ object StardustInitConnectionHandler {
     }
 
     fun cancel() {
-        updateConnectionState(State.CANCELED)
+        state = State.CANCELED
 
         timeoutJob?.cancel()
         timeoutJob = null
@@ -91,7 +95,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun stop() {
-        updateConnectionState(State.DONE)
+        state = State.DONE
 
         timeoutJob?.cancel()
         timeoutJob = null
@@ -110,27 +114,27 @@ object StardustInitConnectionHandler {
         when (p.stardustOpCode) {
 
             // 1) Request address → expect GET_ADDRESSES
-            StardustPackageUtils.StardustOpCode.GET_ADDRESSES -> if (state.value == State.REQUESTING_ADDRESSES) {
+            StardustPackageUtils.StardustOpCode.GET_ADDRESSES -> if (state == State.REQUESTING_ADDRESSES) {
                 timeoutJob?.cancel()
                 handleAddressesReceived(p); return true
             }
 
             // 2) Update address → expect UPDATE_ADDRESS_RESPONSE (ACK)
-            StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> if (state.value == State.UPDATING_SMARTPHONE_ADDR) {
+            StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> if (state == State.UPDATING_SMARTPHONE_ADDR) {
                 handleAckOrRetry(
                     p,
                     onAck = { afterUpdateAddressAck() },
                     onRetry = {
                         lastAddresses?.let { sendUpdateSmartphoneAddress(it) }
                             ?: run {
-                                updateConnectionState(State.ENCRYPTION_KEY_ERROR)
+                                state = State.ENCRYPTION_KEY_ERROR
                                 failAndStop("No addresses cached") }
                     }
                 ); return true
             }
 
             // 3) Delete groups → expect DELETE_GROUPS_RESPONSE (ACK)
-            StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> if (state.value == State.DELETING_GROUPS) {
+            StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> if (state == State.DELETING_GROUPS) {
                 handleAckOrRetry(
                     p,
                     onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups() } },
@@ -139,7 +143,7 @@ object StardustInitConnectionHandler {
             }
 
             // 4) Add groups → expect ADD_GROUPS_RESPONSE (ACK)
-            StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> if (state.value == State.ADDING_GROUPS) {
+            StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> if (state == State.ADDING_GROUPS) {
                 handleAckOrRetry(
                     p,
                     onAck = { transitionTo(State.READING_CONFIGURATION) { requestConfiguration() } },
@@ -149,13 +153,13 @@ object StardustInitConnectionHandler {
 
             // 5) Get configuration → expect READ_CONFIGURATION_RESPONSE (or READ_STATUS echo)
             StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE,
-            StardustPackageUtils.StardustOpCode.READ_STATUS -> if (state.value == State.READING_CONFIGURATION) {
+            StardustPackageUtils.StardustOpCode.READ_STATUS -> if (state == State.READING_CONFIGURATION) {
                 timeoutJob?.cancel()
                 handleConfiguration(p); return true
             }
 
             // 6) Update admin mode → expect SET_ADMIN_MODE_RESPONSE (ACK)
-            StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> if (state.value == State.UPDATING_ADMIN_MODE) {
+            StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> if (state == State.UPDATING_ADMIN_MODE) {
                 handleAckOrRetry(
                     p,
                     onAck = { finishAdminModeUpdate() },
@@ -178,7 +182,7 @@ object StardustInitConnectionHandler {
     private fun transitionTo(next: State, send: () -> Unit) {
         onInitRunning()
 
-        updateConnectionState(next)
+        state = next
         val n = (attempts[next] ?: 0) + 1
         attempts[next] = n
         Timber.tag("InitHandler").d("Step $next - attempt $n/$MAX_ATTEMPTS")
@@ -187,7 +191,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun retryOrFail(send: () -> Unit) {
-        state.value?.let { state ->
+        state?.let { state ->
             val n = (attempts[state] ?: 0) + 1
             if (n > MAX_ATTEMPTS) {
                 failAndStop("Step $state exceeded $MAX_ATTEMPTS attempts")
@@ -208,7 +212,7 @@ object StardustInitConnectionHandler {
                 withTimeout(STEP_TIMEOUT_MS) { awaitCancellation() }
             } catch (e: TimeoutCancellationException) {
                 // Only act if we're still in the same step (avoid stale callbacks)
-                if (state.value != step) return@launch
+                if (state != step) return@launch
                 Timber.tag("InitHandler").w("$step timeout")
                 when (step) {
                     State.REQUESTING_ADDRESSES -> retryOrFail { sendGetAddresses() }
@@ -353,6 +357,7 @@ object StardustInitConnectionHandler {
         Scopes.getMainCoroutine().launch {
             ConfigurationUtils.bittelConfiguration.value = cfg
         }
+        ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults(ctx)
 
@@ -445,7 +450,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun onInitFailed(reason: String) {
-        val resultState = state.value.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
+        val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
         DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.onInitFailed(resultState, reason)
     }
@@ -455,30 +460,28 @@ object StardustInitConnectionHandler {
             ConfigurationUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
             else -> State.DONE
         }
-
-        updateConnectionState(resultState)
+        state = resultState
         DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.onInitDone(resultState)
     }
 
     private fun onInitRunning () {
         val resultState = State.RUNNING
-        updateConnectionState(resultState)
+        state = resultState
         DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.running(resultState)
     }
 
     fun hasConnectionError(): Boolean {
-        return state.value in setOf(State.CANCELED, State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
+        return state in setOf(State.CANCELED, State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
     }
 
     fun isConnected(): Boolean {
-        return hasConnectionError() || (state.value == State.DONE && BleManager.connectionStatus.value != ConnectionStatus.DISCONNECTED)
+        return hasConnectionError() || (state == State.DONE && BleManager.connectionStatus.value != ConnectionStatus.DISCONNECTED)
     }
 
     fun updateConnectionState(newState: State) {
-        Scopes.getMainCoroutine().launch {
-            state.value = newState
-        }
+        state = newState
     }
+
 }

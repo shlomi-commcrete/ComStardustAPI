@@ -363,9 +363,10 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handleConfiguration(mPackage: StardustPackage) {
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
-            ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
+
             bittelConfigurationPackage?. let {
-                ConfigurationUtils.licensedFunctionalities.value = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(it.licenseType)
+                ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
+                ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
                 ConfigurationUtils.setConfigFile(it)
                 setNewLocals(it)
                 AdminUtils.updateBittelAdminMode()
@@ -447,7 +448,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleLocationRequested(mPackage: StardustPackage, randomID: String){
-        if(ConfigurationUtils.licensedFunctionalities.value?.get(FunctionalityType.LOCATION) != LimitationType.ENABLED ) return
+        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
         Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         val src = mPackage.sourceBytes
         val dst = mPackage.destinationBytes
@@ -495,8 +496,8 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleAck(mPackage: StardustPackage) {
-        if(ConfigurationUtils.licensedFunctionalities.value?.get(FunctionalityType.ACK) != LimitationType.ENABLED ||
-            ConfigurationUtils.licensedFunctionalities.value?.get(FunctionalityType.LOCATION) != LimitationType.ENABLED ) return
+        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.ACK] != LimitationType.ENABLED ||
+            ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
 
         Scopes.getDefaultCoroutine().launch {
 

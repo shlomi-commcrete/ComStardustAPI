@@ -21,7 +21,7 @@ object ConfigurationUtils {
     var selectedPreset : StardustConfigurationParser.Preset? = null
     var presetsList : List<StardustConfigurationParser.Preset> = listOf()
 
-    val licensedFunctionalities = MutableLiveData<Map<FunctionalityType, LimitationType>>()
+    var licensedFunctionalities: Map<FunctionalityType, LimitationType> = mapOf()
 
     fun setConfigFile (config : StardustConfigurationPackage) {
         currentConfig = config
@@ -74,6 +74,10 @@ object ConfigurationUtils {
     }
 
     fun isPresetsChanged (presets : List<StardustConfigurationParser.Preset>, context: Context): Boolean {
+
+        /***
+         * TODO: add mediator for options
+         */
         val lastPresets = getLastPresets(context)
         setLastPresets(presets, context)
         return lastPresets != presets
@@ -103,8 +107,8 @@ object ConfigurationUtils {
         currentPreset = null
         selectedPreset = null
         presetsList = listOf()
+        licensedFunctionalities = mapOf()
         Scopes.getMainCoroutine().launch {
-            licensedFunctionalities.value = mapOf()
             bittelVersion.value = ""
             //bittelConfiguration.value = StardustConfigurationPackage()
         }

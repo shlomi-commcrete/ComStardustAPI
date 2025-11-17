@@ -385,6 +385,7 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun disconnectFromDevice () {
+        if(!StardustInitConnectionHandler.isConnected()) return
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null

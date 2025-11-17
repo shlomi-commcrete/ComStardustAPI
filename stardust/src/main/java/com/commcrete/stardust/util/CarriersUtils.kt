@@ -291,7 +291,7 @@ data class Carrier (
     private fun initFunctionalityStateMap(): Map<FunctionalityType, FunctionalityState> {
 
         val result = getExistingFunctionalityOptions().associateWith { functionality ->
-            val limitation = ConfigurationUtils.licensedFunctionalities.value?.get(functionality)
+            val limitation = ConfigurationUtils.licensedFunctionalities[functionality]
 
             FunctionalityState(limitation).apply {
                 if(limitation == LimitationType.ENABLED) {
@@ -302,8 +302,14 @@ data class Carrier (
         return result
     }
 
+    // for license 0-1 -> save preset as no active functionalities would be found
     fun updatePresetActiveFunctionality() {
-        presetActiveFunctionality = activeFunctionalities
+        if(!isInLimitedFunctionality()) presetActiveFunctionality = activeFunctionalities
+    }
+
+    private fun isInLimitedFunctionality(): Boolean {
+        return activeFunctionalities.isEmpty()
+                && functionalityStateMap.values.find { it.selectionState != FunctionalitySelectionState.DISABLED } == null
     }
 }
 
