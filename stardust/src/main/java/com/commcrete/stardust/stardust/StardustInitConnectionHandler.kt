@@ -87,8 +87,11 @@ object StardustInitConnectionHandler {
     }
 
     fun cancel() {
-        state = State.CANCELED
-
+        state = when(state) {
+            State.ENCRYPTION_KEY_ERROR -> state
+            State.UPDATING_SMARTPHONE_ADDR -> State.ENCRYPTION_KEY_ERROR
+            else -> State.CANCELED
+        }
         timeoutJob?.cancel()
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow canceled")
