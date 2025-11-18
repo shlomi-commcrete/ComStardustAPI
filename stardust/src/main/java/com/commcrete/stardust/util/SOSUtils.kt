@@ -19,7 +19,7 @@ import java.util.Date
 object SOSUtils {
 
     //added location from user
-    fun sendSos (type : Int, text : String ? = null, context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
+    fun sendAlert (type : Int, text : String ? = null, context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosString = "SOS"
@@ -32,7 +32,7 @@ object SOSUtils {
                 text?.let {
                     data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
                 }
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
+                val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.REPORTS) ?: return
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
@@ -47,10 +47,8 @@ object SOSUtils {
     fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
-                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
             }
         }
@@ -61,11 +59,9 @@ object SOSUtils {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 var data : Array<Int> = arrayOf()
                 data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-                val radio = CarriersUtils.getRadioToSend(functionalityType =  FunctionalityType.REPORTS)
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
                     data = data)
-                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(sosMessage)
                 saveSOSSent(context, 0 ,stardustAPIPackage, location)
 

@@ -480,6 +480,8 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun sendToBle(byteArray: ByteArray, isLast: Boolean = false, carrier: Carrier?) {
+        val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
+
         Scopes.getDefaultCoroutine().launch {
             val audioIntArray = StardustPackageUtils.byteArrayToIntArray(byteArray)
             val bittelPackage = viewModel?.let {
@@ -491,16 +493,12 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                     data = audioIntArray)
             }
-            val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT)
-            bittelPackage?.stardustControlByte?.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
-            bittelPackage?.stardustControlByte?.stardustDeliveryType = radio.second
-            bittelPackage?.checkXor =
-                bittelPackage?.getStardustPackageToCheckXor()
-                    ?.let { StardustPackageUtils.getCheckXor(it) }
 
-            bittelPackage?.let {
+            bittelPackage?.let { bittelPackage ->
+                bittelPackage.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+                bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
+                bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
                 DataManager.sendDataToBle(bittelPackage)
-//                sendWithTimer(it)
             }
 
         }

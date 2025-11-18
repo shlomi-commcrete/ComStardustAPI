@@ -2,7 +2,9 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
+import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.ble.BleManager.ConnectionStatus
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -18,9 +20,9 @@ import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -51,8 +53,6 @@ object StardustInitConnectionHandler {
 
     private const val MAX_ATTEMPTS = 3
     private const val STEP_TIMEOUT_MS = 15_000L
-
-    private var state: State = State.IDLE
     private val attempts: MutableMap<State, Int> = mutableMapOf()
     private val ctx: Context get() = DataManager.context
     private val conn: ClientConnection get() = DataManager.getClientConnection(ctx)
@@ -68,8 +68,14 @@ object StardustInitConnectionHandler {
 
     var listener: InitConnectionListener? = null
 
+    private var state = State.IDLE
+        set(value) {
+            field = value
+            DataManager.getCallbacks()?.onDeviceInitialized(value)
+        }
+
     val isRunning: Boolean
-        get() = state !in setOf(State.IDLE, State.DONE, State.CANCELED)
+        get() = state !in setOf(State.IDLE, State.SEARCHING, State.DONE, State.CANCELED)
 
     // ───────────────────────── Lifecycle ─────────────────────────
 
@@ -81,7 +87,11 @@ object StardustInitConnectionHandler {
     }
 
     fun cancel() {
-        state = State.CANCELED
+        state = when(state) {
+            State.ENCRYPTION_KEY_ERROR -> state
+            State.UPDATING_SMARTPHONE_ADDR -> State.ENCRYPTION_KEY_ERROR
+            else -> State.CANCELED
+        }
         timeoutJob?.cancel()
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow canceled")
@@ -89,6 +99,7 @@ object StardustInitConnectionHandler {
 
     private fun stop() {
         state = State.DONE
+
         timeoutJob?.cancel()
         timeoutJob = null
         Timber.tag("InitHandler").d("Init flow done")
@@ -173,6 +184,7 @@ object StardustInitConnectionHandler {
 
     private fun transitionTo(next: State, send: () -> Unit) {
         onInitRunning()
+
         state = next
         val n = (attempts[next] ?: 0) + 1
         attempts[next] = n
@@ -182,15 +194,17 @@ object StardustInitConnectionHandler {
     }
 
     private fun retryOrFail(send: () -> Unit) {
-        val n = (attempts[state] ?: 0) + 1
-        if (n > MAX_ATTEMPTS) {
-            failAndStop("Step $state exceeded $MAX_ATTEMPTS attempts")
-            return
+        state?.let { state ->
+            val n = (attempts[state] ?: 0) + 1
+            if (n > MAX_ATTEMPTS) {
+                failAndStop("Step $state exceeded $MAX_ATTEMPTS attempts")
+                return
+            }
+            attempts[state] = n
+            Timber.tag("InitHandler").w("Retrying $state (attempt $n/$MAX_ATTEMPTS)")
+            send()
+            startTimeoutFor(state)
         }
-        attempts[state] = n
-        Timber.tag("InitHandler").w("Retrying $state (attempt $n/$MAX_ATTEMPTS)")
-        send()
-        startTimeoutFor(state)
     }
 
     private fun startTimeoutFor(step: State) {
@@ -344,8 +358,9 @@ object StardustInitConnectionHandler {
         val cfg = StardustConfigurationParser().parseConfiguration(p)
             ?: return retryOrFail { requestConfiguration() } // parse failure → retry step 5
         Scopes.getMainCoroutine().launch {
-            UsersUtils.bittelConfiguration.value = cfg
+            ConfigurationUtils.bittelConfiguration.value = cfg
         }
+        ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults(ctx)
 
@@ -401,7 +416,7 @@ object StardustInitConnectionHandler {
 
     private fun handleVersion(p: StardustPackage) {
         Scopes.getMainCoroutine().launch {
-            UsersUtils.bittelVersion.value = p.getDataAsString()
+            ConfigurationUtils.bittelVersion.value = p.getDataAsString()
         }
     }
 
@@ -439,22 +454,33 @@ object StardustInitConnectionHandler {
 
     private fun onInitFailed(reason: String) {
         val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
         listener?.onInitFailed(resultState, reason)
     }
 
     private fun onInitDone() {
         val resultState = when {
-            UsersUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
+            ConfigurationUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
             else -> State.DONE
         }
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
+        state = resultState
         listener?.onInitDone(resultState)
     }
 
     private fun onInitRunning () {
-        val resultState = State.RUNNING
-        DataManager.getCallbacks()?.onDeviceInitialized(resultState)
-        listener?.running(resultState)
+        state = State.RUNNING
+        listener?.running(State.RUNNING)
     }
+
+    fun hasConnectionError(): Boolean {
+        return state in setOf(State.CANCELED, State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
+    }
+
+    fun isConnected(): Boolean {
+        return hasConnectionError() || (state == State.DONE && BleManager.connectionStatus.value != ConnectionStatus.DISCONNECTED)
+    }
+
+    fun updateConnectionState(newState: State) {
+        state = newState
+    }
+
 }

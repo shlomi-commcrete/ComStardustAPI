@@ -14,15 +14,12 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
-import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
-import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_HR
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -32,7 +29,6 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -232,17 +228,14 @@ internal class ClientConnection(
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             val src = it.appId
-                            if(src != null) {
+                            if(src != null && !StardustInitConnectionHandler.isConnected()) {
                                 StardustInitConnectionHandler.start()
                                 StardustInitConnectionHandler.listener = object :
                                     StardustInitConnectionHandler.InitConnectionListener {}
-
-
 //                                val mPackage = StardustPackageUtils.getStardustPackage(
 //                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
 //                                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
 //                                addMessageToQueue(mPackage)
-
 
                                 resetConnectionTimer()
                                 resetPingTimer()
@@ -338,10 +331,8 @@ internal class ClientConnection(
             override fun onChanged(isConnected: Boolean) {
                 if(!isConnected) {
                     disconnectFromDevice()
-                } else {
-                    if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
+                } else if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
-                    }
                 }
             }
 
@@ -394,6 +385,7 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun disconnectFromDevice () {
+        if(!StardustInitConnectionHandler.isConnected()) return
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null
@@ -404,6 +396,7 @@ internal class ClientConnection(
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)
             com.commcrete.stardust.ble.BleManager.updateStatus ()
             removeRSSITimer()
             removePingTimer()
@@ -455,16 +448,12 @@ internal class ClientConnection(
     }
 
     @SuppressLint("MissingPermission")
-    fun bondToBleDeviceStartup() {
-        val connectedDevice = getBleConnectedStardustDevice()
-        if(connectedDevice != null) {
-            Scopes.getMainCoroutine().launch {
-                com.commcrete.stardust.ble.BleManager.isPaired.value = true
-            }
-            connectDevice(connectedDevice)
-            this.deviceName = connectedDevice.name
-            return
+    fun bondToBleDeviceStartup(connectedDevice: BluetoothDevice) {
+        Scopes.getMainCoroutine().launch {
+            com.commcrete.stardust.ble.BleManager.isPaired.value = true
         }
+        connectDevice(connectedDevice)
+        this.deviceName = connectedDevice.name
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {

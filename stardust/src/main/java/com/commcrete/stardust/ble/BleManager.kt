@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
@@ -18,6 +19,8 @@ object BleManager {
     var isNetworkConnected = false
     var isNetworkToggleEnabled = true
     var isBluetoothToggleEnabled = true
+
+    val connectionStatus = MutableLiveData(ConnectionStatus.DISCONNECTED)
     val bleConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isBleConnected)
     val usbConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isUSBConnected)
     val isPaired : MutableLiveData<Boolean> = MutableLiveData(false)
@@ -60,15 +63,21 @@ object BleManager {
     }
 
     fun updateStatus () {
+        var status = ConnectionStatus.DISCONNECTED
         if(isUsbEnabled ()) {
-            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.USB)
+            status = ConnectionStatus.USB
             if(!isBluetoothToggleEnabled && isBleConnected) {
                 DataManager.getClientConnection(DataManager.context).disconnectFromDevice()
             }
         } else if (isBluetoothEnabled()) {
-            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.BLE)
+            status = ConnectionStatus.BLE
         } else {
-            DataManager.getCallbacks()?.connectionStatusChanged(ConnectionStatus.DISCONNECTED)
+            ConfigurationUtils.reset()
+        }
+        DataManager.getCallbacks()?.connectionStatusChanged(status)
+
+        Scopes.getMainCoroutine().launch {
+            connectionStatus.value = status
         }
     }
 

@@ -10,6 +10,8 @@ import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
@@ -132,7 +134,7 @@ internal class StardustPackageHandler(private val context: Context ,
                         handleConfiguration(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.RECEIVE_VERSION -> {
-                        handleVersion(mPackage)
+                        ConfigurationUtils.handleVersion(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ_RESPONSE -> {
                         handleUpdatePolygonFreqResponse(mPackage)
@@ -332,11 +334,7 @@ internal class StardustPackageHandler(private val context: Context ,
         StardustPolygonChange.startProcess("1", context)
     }
 
-    private fun handleVersion(mPackage: StardustPackage) {
-        Scopes.getMainCoroutine().launch {
-            UsersUtils.bittelVersion.value = mPackage.getDataAsString()
-        }
-    }
+
 
     private fun setOldLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
 //        if(CarriersUtils.isCarriersChanged(stardustConfigurationPackage) == true) {
@@ -366,12 +364,13 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handleConfiguration(mPackage: StardustPackage) {
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
-            UsersUtils.bittelConfiguration.value = bittelConfigurationPackage
+
             bittelConfigurationPackage?. let {
+                ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
+                ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
                 ConfigurationUtils.setConfigFile(it)
                 setNewLocals(it)
                 AdminUtils.updateBittelAdminMode()
-                UsersUtils.licensedFunctionalities.value = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(it.licenseType)
             }
     }
     }
@@ -450,6 +449,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleLocationRequested(mPackage: StardustPackage, randomID: String){
+        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
         Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         val src = mPackage.sourceBytes
         val dst = mPackage.destinationBytes
@@ -497,6 +497,9 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleAck(mPackage: StardustPackage) {
+        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.ACK] != LimitationType.ENABLED ||
+            ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
+
         Scopes.getDefaultCoroutine().launch {
 
             val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(

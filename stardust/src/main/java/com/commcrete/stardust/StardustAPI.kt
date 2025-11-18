@@ -1,6 +1,5 @@
 package com.commcrete.stardust
 
-import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
