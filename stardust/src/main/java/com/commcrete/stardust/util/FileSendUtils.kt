@@ -46,16 +46,17 @@ object FileSendUtils {
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null){
-//            if(!randomMisses.contains(current.value?.toInt())) {
+            if(!randomMisses.contains(current.value?.toInt())) {
                 sendPackage(mPackage, dest)
-//            }
+            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
         updateStep(mutablePackagesMap.size, )
     }
 
-    fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange) {
+    fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange
+                  , fileName : String = "", fileExt : String = "") {
         this.onFileStatusChange = onFileStatusChange
         this.stardustAPIPackage = stardustAPIPackage
         isSendingInProgress.value = true
@@ -71,10 +72,12 @@ object FileSendUtils {
 //            saveTempFile(dataWithSpare)
            packages = dataWithSpare.first
             createStartPackage(fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second)
+                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file, first50BytesUtf8(fileName), fileExt)
         } else {
-            createStartPackage(fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, 0)
+            createStartPackage(
+                fileStartParser,
+                numOfPackages, dest, stardustAPIPackage, 0, file, first50BytesUtf8(fileName), fileExt
+            )
         }
         getRandomMisses(stardustAPIPackage.spare, numOfPackages)
         mutablePackagesMap.clear()
@@ -83,7 +86,7 @@ object FileSendUtils {
         resetSendTimer()
         saveLocalMessages(
             stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
-            fileLocation = fileList[0].absolutePath)
+            fileLocation = fileList[0].absolutePath, file, fileName, fileExt)
     }
 
     private fun updateStep (numOfPackages: Int) {
@@ -109,11 +112,15 @@ object FileSendUtils {
         return randomMisses.toList()
     }
 
-    private fun saveLocalMessages (chatID : String, userId : String, fileTypeEnum: StardustFileStartParser.FileTypeEnum,
-                                   fileLocation : String) {
+    private fun saveLocalMessages (
+        chatID: String, userId: String, fileTypeEnum: StardustFileStartParser.FileTypeEnum,
+        fileLocation: String,
+        file: File
+        , fileName : String = "", fileExt : String = ""
+    ) {
         val context = DataManager.context
         Scopes.getDefaultCoroutine().launch {
-            val text = if (fileTypeEnum == StardustFileStartParser.FileTypeEnum.TXT) "File Sent" else "Image Sent"
+            val text = (if (fileTypeEnum == StardustFileStartParser.FileTypeEnum.TXT) "File Sent" else "Image Sent") +  ": $fileName" + ".${fileExt}"
             val isImage = (fileTypeEnum == StardustFileStartParser.FileTypeEnum.JPG)
             val isFile = (fileTypeEnum == StardustFileStartParser.FileTypeEnum.TXT)
 
@@ -126,7 +133,7 @@ object FileSendUtils {
             // Create the destination file
             val originalFile = File(fileLocation)
             // Determine the file extension
-            val fileExtension = if (isImage) ".jpg" else if (isFile) ".txt" else ""
+            val fileExtension = if (isImage) ".jpg" else if (isFile) ".${fileExt}" else ""
 
             // Create the destination file with the appropriate extension
             val destFile = File(destDir, "${File(fileLocation).nameWithoutExtension}$fileExtension")
@@ -176,18 +183,56 @@ object FileSendUtils {
             }
         }
     }
+
+    fun first50BytesUtf8(input: String): String {
+        val utf8 = input.toByteArray(Charsets.UTF_8)
+        if (utf8.size <= 50) return input
+
+        // Take only the first 50 bytes
+        val cut = utf8.copyOf(50)
+
+        // Now we need to avoid splitting a multi-byte char.
+        // We trim invalid trailing bytes.
+        var end = cut.size
+        while (end > 0) {
+            val tryString = try {
+                String(cut.copyOf(end), Charsets.UTF_8)
+            } catch (e: Exception) {
+                null
+            }
+            if (tryString != null) {
+                return tryString
+            }
+            end--
+        }
+
+        return "" // fallback, should never happen
+    }
+
+    fun getFileNameAndType(file: File): Pair<String, String> {
+        val name = trimUntilUnderscore(file.nameWithoutExtension)
+        val ext = file.extension.ifBlank { "unknown" }
+
+        // Cut name to max 50 chars (avoid IndexOutOfBounds)
+        val safeName = if (name.length > 50) name.substring(0, 50) else name
+
+        return safeName to ext
+    }
     private fun createStartPackage (
         type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
         dest: String?,
         stardustAPIPackage: StardustAPIPackage,
-        spareData : Int
+        spareData: Int,
+        file: File
+        , fileName : String, fileExt : String
     ){
         if(dest == null) {
             return
         }
+//        val (fileName, fileType) = getFileNameAndType(file)
         // TODO: Add encode and spare
-        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData)
+        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData, fileExt, fileName)
         sendType = type
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
@@ -212,7 +257,8 @@ object FileSendUtils {
         packages: Map<Float, StardustFilePackage>,
         spare: Int
     ): Pair<Map<Float, StardustFilePackage>, Int> {
-        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+//        val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
+        val reed = ReedSolomon(totalDataPackets = packages.size, totalParityPackets = spare)
         val dataList = packages.map { it.value.data }.toMutableList()
 
         var paddingAdded = 0
@@ -227,7 +273,7 @@ object FileSendUtils {
             }
         }
 
-        val newArray = ldpc.encode(dataList)
+        val newArray = reed.encode(dataList)
         val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
 
         for ((index, data) in newArray.withIndex()) {
@@ -315,6 +361,7 @@ object FileSendUtils {
         bittelFileStartPackage: StardustFileStartPackage,
         mPackage: StardustPackage
     ) {
+        Log.d("handleBittelFileRespons", "bittelFileStartPackage.fileName : ${bittelFileStartPackage.fileName}\nbittelFileStartPackage.fileEnding : ${bittelFileStartPackage.fileEnding}")
         FileReceivedUtils.getInitFile(bittelFileStartPackage, mPackage)
     }
 
@@ -427,4 +474,34 @@ object FileSendUtils {
         fun stopSending () {}
         fun updateStep (percentage : Int) {}
     }
+
+    fun calculateAddedPackages (numOfPackages: Int) : Int{
+        val factor = SharedPreferencesUtil.getResilience(DataManager.context)
+        return packageNumToAdd(numOfPackages, factor.value)
+    }
+}
+
+fun packageNumToAdd(packageNum: Int, factor: Int): Int {
+    require(factor in listOf(20, 60, 120)) { "Factor must be one of: 20, 60, or 120" }
+    require(packageNum > 0) { "packageNum must be > 0" }
+
+    // Step 1: raw percentage
+    var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
+
+    // Step 2: clamp between 5% and 100%
+    percent = percent.coerceIn(5.0, 100.0)
+
+    // Step 3: calculate packages to add
+    var toAdd = kotlin.math.ceil(packageNum * (percent / 100)).toInt()
+
+    // Step 4: enforce minimum 2 packages
+    toAdd = maxOf(2, toAdd)
+
+    return toAdd
+}
+
+enum class Resilience (val value : Int) {
+    Low (20),
+    Medium (60),
+    High (120),
 }

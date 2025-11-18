@@ -15,6 +15,7 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
+import org.w3c.dom.Text
 import java.io.File
 import java.io.FileOutputStream
 
@@ -22,7 +23,7 @@ object FileReceivedUtils {
 
     private val fileReceivedDataList : MutableList<FileReceivedData> = mutableListOf()
     private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
-
+    private val textLogger = TextLogger(DataManager.context)
     private fun getInit (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
         var haveFileStart = false
         for (fileStart in fileReceivedDataList) {
@@ -59,9 +60,10 @@ object FileReceivedUtils {
     fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
         getData(bittelFilePackage, bittelPackage)
     }
-    private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?) {
+    private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?, fileName : String) {
         Scopes.getDefaultCoroutine().launch {
-            val type = if(fileType == 0) "File Received" else "Image Received"
+            val mFileName = trimUntilUnderscore(fileName)
+            val type = (if(fileType == 0) "File Received" else "Image Received") + ": $mFileName"
             val isFile = (fileType == 0)
             val isImage = (fileType == 1)
             val userName = UsersUtils.getUserName(bittelPackage.getSourceAsString())
@@ -120,6 +122,10 @@ object FileReceivedUtils {
         private val sendInterval : Long = 2300
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
+            val totalPackages = dataStart?.total
+            val missing = lostPackagesIndex.count()
+            val text = "t:$totalPackages, m:$missing"
+            textLogger.logText(text)
             if(checkIfHaveEnough()) {
                 bittelPackage?.let { saveFile(it, dataStart?.type) }
                 Scopes.getMainCoroutine().launch {
@@ -187,6 +193,10 @@ object FileReceivedUtils {
                     }
                     handler.postDelayed( {removeFromFileReceivedList()}, 300)
                 } else {
+//                    Log.d("checkData", "it.total = ${it.total}")
+//                    Log.d("checkData", "it.spare = ${it.spare}")
+//                    Log.d("checkData", "dataList.size = ${dataList.size}")
+//                    Log.d("checkData", "dataList.last().current + 1 = ${dataList.last().current + 1}")
                     if(it.total == dataList.last().current + 1) {
                         bittelPackage?.let { saveFile(it, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
@@ -212,10 +222,18 @@ object FileReceivedUtils {
         }
 
         private fun updateFailure (failure: FileFailure) {
+            val totalPackages = dataStart?.total
+            val missing = lostPackagesIndex.count()
+            val text = "t:$totalPackages, m:$missing"
+            textLogger.logText(text)
             DataManager.getCallbacks()?.receiveFailure(failure)
         }
 
         private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {
+            val totalPackages = dataStart?.total
+            val missing = lostPackagesIndex.count()
+            val text = "t:$totalPackages, m:$missing"
+            textLogger.logText(text)
             val context = DataManager.context
             // Get the destination directory
             val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
@@ -224,10 +242,13 @@ object FileReceivedUtils {
             if (!destDir.exists()) {
                 destDir.mkdirs()
             }
-            val type = if(fileType == 0) ".txt" else ".jpg"
+            val name = dataStart?.fileName
+            val ending = dataStart?.fileEnding
+            val type = if(fileType == 0) ".$ending" else ".jpg"
             // Create the target file with a timestamp
             val ts = System.currentTimeMillis()
-            val targetFile = File(destDir, "$ts$type")
+            val completeFileName = "$ts"+ "_"+"$name$type"
+            val targetFile = File(destDir, "$completeFileName")
 
             try {
                 // Step 1: Create a temporary file for the concatenated data
@@ -254,7 +275,7 @@ object FileReceivedUtils {
                 }
 
                 println("File saved successfully at: ${targetFile.absolutePath}")
-                saveToMessages(bittelPackage, targetFile, fileType)
+                saveToMessages(bittelPackage, targetFile, fileType, completeFileName)
                 dataStart = null
                 dataList.clear()
                 removeReceiveTimer()
@@ -288,26 +309,26 @@ object FileReceivedUtils {
                         sortedList.find { it.current == index }?.data
                     }
                 }
-//                val reedSolomonAuto = ReedSolomon (totalDataPackets = total - parityPackets , totalParityPackets = parityPackets)
-//                val decodedReed = reedSolomonAuto.decode(receivedPackets = receivedWithNulls,
-//                    missingIndices = lostPackagesIndex.toIntArray() ).toMutableList()
+                val reedSolomonAuto = ReedSolomon (totalDataPackets = total - parityPackets , totalParityPackets = parityPackets)
+                val decodedReed = reedSolomonAuto.decode(receivedPackets = receivedWithNulls,
+                    missingIndices = lostPackagesIndex.toIntArray() ).toMutableList()
 
-                val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
-                val decoded = ldpc.decode(
-                    received = receivedWithNulls,
-                    lostIndices = lostPackagesIndex.toList()
-                ).toMutableList()
+//                val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
+//                val decoded = ldpc.decode(
+//                    received = receivedWithNulls,
+//                    lostIndices = lostPackagesIndex.toList()
+//                ).toMutableList()
 
 //                for (packageData in decoded) {
 //                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
 //                }
                 dataStart?.let {
                     val spare = it.spareData
-                    val lastIndex = decoded.lastIndex
-                    decoded[lastIndex] = decoded[lastIndex].copyOfRange(0, decoded[lastIndex].size - spare)
+                    val lastIndex = decodedReed.lastIndex
+                    decodedReed[lastIndex] = decodedReed[lastIndex].copyOfRange(0, decodedReed[lastIndex].size - spare)
                 }
 
-                for (packageData in decoded) {
+                for (packageData in decodedReed) {
 //                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
                     outputStream.write(packageData)
                 }
@@ -333,7 +354,7 @@ object FileReceivedUtils {
 
             // Optional: Print or log the result
             println("Missing packages: $lostPackagesIndex")
-            Log.d("FileReceivedUtils","Missing packages: $lostPackagesIndex" )
+            Log.d("checkData","Missing packages: $lostPackagesIndex" )
         }
 
         private fun checkIfMissingMain(): Boolean {
@@ -369,6 +390,10 @@ object FileReceivedUtils {
             ERROR
         }
     }
+}
+
+fun trimUntilUnderscore(input: String): String {
+    return input.substringAfter("_")
 }
 
 fun Packet.toHexString(): String =

@@ -307,13 +307,14 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleBittelFileResponse(mPackage: StardustPackage) {
-        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(9,83, 84, 82))) {
-            StardustFileStartParser().parseFileStart(bittelPackage = mPackage)
-                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
-            return
-        }
-        if (mPackage.data != null && mPackage.data!!.startsWith(arrayOf(83, 84, 82))) {
-            StardustFileStartParser().parseFileStar2(bittelPackage = mPackage)
+        val data = mPackage.data ?: return
+        val sig = listOf(83, 84, 82) // "STR"
+
+        val matchAt0 = data.matchesSignatureAt(0, sig)
+        val matchAt1 = data.matchesSignatureAt(1, sig)
+
+        if (matchAt0 || matchAt1) {
+            StardustFileStartParser().parseFileStart(mPackage)
                 ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
             return
         }
@@ -537,4 +538,9 @@ fun Array<Int>.startsWith(subArray: Array<Int>): Boolean {
     }
 
     return true
+}
+
+fun Array<Int>.matchesSignatureAt(pos: Int, sig: List<Int>): Boolean {
+    if (this.size < pos + sig.size) return false
+    return sig.indices.all { i -> this[pos + i] == sig[i] }
 }
