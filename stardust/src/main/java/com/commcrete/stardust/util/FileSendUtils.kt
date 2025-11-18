@@ -473,6 +473,11 @@ object FileSendUtils {
         fun stopSending () {}
         fun updateStep (percentage : Int) {}
     }
+
+    fun calculateAddedPackages (numOfPackages: Int) : Int{
+        val factor = SharedPreferencesUtil.getResilience(DataManager.context)
+        return packageNumToAdd(numOfPackages, factor.value)
+    }
 }
 
 fun packageNumToAdd(packageNum: Int, factor: Int): Int {
@@ -492,4 +497,10 @@ fun packageNumToAdd(packageNum: Int, factor: Int): Int {
     toAdd = maxOf(2, toAdd)
 
     return toAdd
+}
+
+enum class Resilience (val value : Int) {
+    Low (20),
+    Medium (60),
+    High (120),
 }

@@ -116,6 +116,9 @@ object SharedPreferencesUtil {
     private const val KEY_KEY_NAME = "key_name_crypto"
     private const val KEY_ERASE = "key_is_erased"
 
+    //Files
+    private const val KEY_RESILIENCE = "key_resilience"
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -624,6 +627,23 @@ object SharedPreferencesUtil {
     fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefs(context).edit().putInt(KEY_INPUT_CODEC, codecType.id).apply()
+    }
+
+    fun setResilience(context: Context, resilience: Resilience) {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        getPrefs(context).edit().putInt(KEY_RESILIENCE, resilience.value).apply()
+    }
+
+    fun getResilience(context: Context) : Resilience {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val savedLocal = getPrefs(context).getInt(KEY_RESILIENCE, 60)
+        val resilience = when (savedLocal) {
+            20 -> Resilience.Low
+            60 -> Resilience.Medium
+            120 -> Resilience.High
+            else -> Resilience.Medium
+        }
+        return  resilience
     }
 
     fun getCodecType(context: Context): RecorderUtils.CODE_TYPE {
