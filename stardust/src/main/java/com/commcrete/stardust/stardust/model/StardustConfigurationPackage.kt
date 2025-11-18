@@ -5,32 +5,34 @@ import com.commcrete.stardust.enums.LicenseType
 
 data class StardustConfigurationPackage(
 
-    val presets : List<StardustConfigurationParser.Preset>,
+    val presets: List<StardustConfigurationParser.Preset>,
     //LO Outputs
-    var frequencyLOTX : Double,
-    var frequencyLORX : Double,
-    var powerLOTX : Int,
-    var powerLORX : Int,
+    var frequencyLOTX: Double,
+    var frequencyLORX: Double,
+    var powerLOTX: Int,
+    var powerLORX: Int,
 
     //Current Preset
     val currentPreset: StardustConfigurationParser.CurrentPreset,
 
-    var bittelType : StardustConfigurationParser.StardustType,
-    var portType : StardustConfigurationParser.PortType,
-    var crcType : Int,
-    var serverByteType : Int,
-    var debugIgnoreCanTransmit : Boolean,
+    var bittelType: StardustConfigurationParser.StardustType,
+    var portType: StardustConfigurationParser.PortType,
+    var crcType: Int,
+    var serverByteType: Int,
+    var debugIgnoreCanTransmit: Boolean,
     var snifferMode: StardustConfigurationParser.SnifferMode,
-    var appId : String,
-    val antenna : StardustConfigurationParser.AntennaType,
-    var radioLODeduction : Float,
-    var stardustId : String,
-    var power12V : Float,
-    var powerBattery : Float,
-    var batteryChargeStatus : StardustConfigurationParser.StardustBatteryCharge,
-    var mcuTemperature : Int,
-    var rdpLevel : StardustConfigurationParser.StardustRDPLevel,
-    var licenseType: LicenseType
+    var appId: String,
+    val antenna: StardustConfigurationParser.AntennaType,
+    var radioLODeduction: Float,
+    var stardustId: String,
+    var power12V: Float,
+    var powerBattery: Float,
+    var batteryChargeStatus: StardustConfigurationParser.StardustBatteryCharge,
+    var mcuTemperature: Int,
+    var rdpLevel: StardustConfigurationParser.StardustRDPLevel,
+    var licenseType: LicenseType,
+    val deviceModel: String,
+    val deviceSerial: String
 ){
     fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios {
         val presetToCheck = preset?:currentPreset

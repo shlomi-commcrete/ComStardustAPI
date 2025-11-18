@@ -1,12 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
-import android.app.AlertDialog
-import android.content.DialogInterface
-import android.util.Log
-import android.widget.Toast
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
-import com.commcrete.stardust.util.Carrier
 
 class StardustConfigurationParser : StardustParser() {
 
@@ -235,9 +230,7 @@ class StardustConfigurationParser : StardustParser() {
                     powerLORX = byteArrayToInt(LORXPowerBytes.reversedArray()),
                     frequencyLOTX = byteArrayToUInt32(LOTXFreqBytes.reversedArray()).toDouble().div(MHz),
                     frequencyLORX = byteArrayToUInt32(LORXFreqBytes.reversedArray()).toDouble().div(MHz),
-
                     currentPreset = CurrentPreset.entries[byteArrayToInt(currentPresetBytes)],
-
                     bittelType = StardustType.entries[byteArrayToInt(bittelType)],
                     portType = getPortType(byteArrayToInt(portType)),
                     crcType = byteArrayToInt(crcType),
@@ -246,6 +239,8 @@ class StardustConfigurationParser : StardustParser() {
                     snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
                     stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
+                    deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
+                    deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
                     antenna = AntennaType.entries[byteArrayToInt(antennaBytes)],
                     radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
                     power12V = byteArrayToFloat(power12V.reversedArray()),
