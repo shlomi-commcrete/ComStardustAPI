@@ -3,6 +3,7 @@ package com.commcrete.stardust.util
 import android.content.Context
 import android.widget.Toast
 import com.commcrete.stardust.BuildConfig
+import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileWriter
 import java.io.IOException
@@ -20,8 +21,9 @@ class TextLogger(private val context: Context) {
             }
 
             // Show long toast with the text
-            Toast.makeText(context, text, Toast.LENGTH_LONG).show()
-
+            Scopes.getMainCoroutine().launch {
+                Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+            }
         } catch (e: IOException) {
             e.printStackTrace()
             Toast.makeText(context, "Error writing to file: ${e.message}", Toast.LENGTH_LONG).show()

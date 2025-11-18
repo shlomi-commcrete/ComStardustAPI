@@ -43,11 +43,15 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = getCharValue(String(fileNameBytes)) ,
-                fileEnding = getCharValue(String(fileEndingBytes)) )
+                fileName = String(removeZeros(fileNameBytes.reversedArray()) ) ,
+                fileEnding = String(removeZeros(fileEndingBytes.reversedArray())) )
 
         }
         return null
+    }
+
+    fun removeZeros(input: ByteArray): ByteArray {
+        return input.filter { it != 0.toByte() }.toByteArray()
     }
 
     fun parseFileStar2 (bittelPackage: StardustPackage) : StardustFileStartPackage? {
@@ -75,8 +79,8 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = getCharValue(String(fileNameBytes)) ,
-                fileEnding = getCharValue(String(fileEndingBytes)))
+                fileName = String(removeZeros(fileNameBytes.reversedArray())) ,
+                fileEnding = String(removeZeros(fileEndingBytes.reversedArray()), Charsets.UTF_16LE) )
 
         }
         return null
@@ -84,6 +88,6 @@ class StardustFileStartParser : StardustParser() {
 
     enum class FileTypeEnum (val type : Int){
         TXT (0),
-        JPG(1)
+        JPG(1),
     }
 }

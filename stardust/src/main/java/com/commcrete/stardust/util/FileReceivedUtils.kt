@@ -60,9 +60,10 @@ object FileReceivedUtils {
     fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
         getData(bittelFilePackage, bittelPackage)
     }
-    private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?) {
+    private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?, fileName : String) {
         Scopes.getDefaultCoroutine().launch {
-            val type = if(fileType == 0) "File Received" else "Image Received"
+            val mFileName = trimUntilUnderscore(fileName)
+            val type = (if(fileType == 0) "File Received" else "Image Received") + ": $mFileName"
             val isFile = (fileType == 0)
             val isImage = (fileType == 1)
             val userName = UsersUtils.getUserName(bittelPackage.getSourceAsString())
@@ -246,7 +247,8 @@ object FileReceivedUtils {
             val type = if(fileType == 0) ".$ending" else ".jpg"
             // Create the target file with a timestamp
             val ts = System.currentTimeMillis()
-            val targetFile = File(destDir, "$name$type")
+            val completeFileName = "$ts"+ "_"+"$name$type"
+            val targetFile = File(destDir, "$completeFileName")
 
             try {
                 // Step 1: Create a temporary file for the concatenated data
@@ -273,7 +275,7 @@ object FileReceivedUtils {
                 }
 
                 println("File saved successfully at: ${targetFile.absolutePath}")
-                saveToMessages(bittelPackage, targetFile, fileType)
+                saveToMessages(bittelPackage, targetFile, fileType, completeFileName)
                 dataStart = null
                 dataList.clear()
                 removeReceiveTimer()
@@ -388,6 +390,10 @@ object FileReceivedUtils {
             ERROR
         }
     }
+}
+
+fun trimUntilUnderscore(input: String): String {
+    return input.substringAfter("_")
 }
 
 fun Packet.toHexString(): String =

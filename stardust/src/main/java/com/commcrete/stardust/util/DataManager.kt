@@ -214,14 +214,16 @@ object DataManager : StardustAPI, PttInterface{
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
 
-    override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange) {
+    override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
+                           , fileName : String, fileExt : String) {
         requireContext(context)
-        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG,onFileStatusChange)
+        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG,onFileStatusChange, fileName, fileExt)
     }
 
-    override fun sendFile(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange) {
+    override fun sendFile(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
+                          , fileName : String, fileExt : String) {
         requireContext(context)
-        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT, onFileStatusChange)
+        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT, onFileStatusChange, fileName, fileExt)
     }
 
     override fun stopSendFile(context: Context) {
