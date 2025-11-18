@@ -80,7 +80,7 @@ class StardustFileStartParser : StardustParser() {
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
                 fileName = String(removeZeros(fileNameBytes.reversedArray())) ,
-                fileEnding = String(removeZeros(fileEndingBytes.reversedArray()), Charsets.UTF_16LE) )
+                fileEnding = String(removeZeros(fileEndingBytes.reversedArray())) )
 
         }
         return null
