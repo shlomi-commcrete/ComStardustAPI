@@ -1,5 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.bittell.util.text_utils.getAsciiValue
+
 data class StardustFileStartPackage(
     val type: Int,
     val total: Int,
@@ -22,8 +24,9 @@ data class StardustFileStartPackage(
         val header = arrayOf(type, totalHighByte, totalLowByte, spareHighByte, spareLowByte, spareData)
 
         // Convert strings to UTF-8 bytes
-        val fileEndingBytes = fileEnding.toByteArray(Charsets.UTF_8)
-        val fileNameBytes = fileName.toByteArray(Charsets.UTF_8)
+
+        val fileEndingBytes = getAsciiValue(fileEnding)
+        val fileNameBytes = getAsciiValue(fileName)
 
         // Pad or truncate to fixed sizes
         val paddedEnding = ByteArray(5)

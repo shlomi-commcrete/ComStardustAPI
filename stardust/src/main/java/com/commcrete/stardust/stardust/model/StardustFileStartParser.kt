@@ -1,5 +1,6 @@
 package com.commcrete.bittell.util.bittel_package.model
 
+import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -43,8 +44,8 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = String(removeZeros(fileNameBytes.reversedArray()) ) ,
-                fileEnding = String(removeZeros(fileEndingBytes.reversedArray())) )
+                fileName = getCharValue(String(removeZeros(fileNameBytes.reversedArray())) ) ,
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes.reversedArray()))) )
 
         }
         return null
@@ -79,8 +80,8 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = String(removeZeros(fileNameBytes.reversedArray())) ,
-                fileEnding = String(removeZeros(fileEndingBytes.reversedArray())) )
+                fileName = getCharValue(String(removeZeros(fileNameBytes.reversedArray())) ) ,
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes.reversedArray()))) )
 
         }
         return null
