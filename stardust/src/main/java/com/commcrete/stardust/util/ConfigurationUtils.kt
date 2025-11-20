@@ -14,7 +14,7 @@ object ConfigurationUtils {
 
 
     val bittelVersion = MutableLiveData<String>()
-    val bittelConfiguration = MutableLiveData<StardustConfigurationPackage>()
+    val bittelConfiguration = MutableLiveData<StardustConfigurationPackage?>()
 
     var currentConfig : StardustConfigurationPackage? = null
     var currentPreset : StardustConfigurationParser.CurrentPreset? = null
@@ -36,23 +36,20 @@ object ConfigurationUtils {
         setCurrentPreset()
     }
 
-    private fun setCurrentPreset () {
-        currentConfig?.let { config ->
-            currentPreset?.let {presetNum ->
-                if(presetsList.isNotEmpty()) {
-                    if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET1) {
-                        selectedPreset = config.presets.get(0)
-                    } else if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET2) {
-                        selectedPreset = config.presets.get(1)
-                    } else if (currentPreset == StardustConfigurationParser.CurrentPreset.PRESET3) {
-                        selectedPreset = config.presets.get(2)
-                    } else {
-                        selectedPreset = config.presets.get(0)
-                    }
-                }
-            }
-        }
+    private fun setCurrentPreset() {
+        val config = currentConfig ?: return
+        val preset = currentPreset ?: return
 
+        if (presetsList.isEmpty()) return
+
+        val index = when (preset) {
+            StardustConfigurationParser.CurrentPreset.PRESET1 -> 0
+            StardustConfigurationParser.CurrentPreset.PRESET2 -> 1
+            StardustConfigurationParser.CurrentPreset.PRESET3 -> 2
+        }
+        Scopes.getMainCoroutine().launch {
+            selectedPreset = config.presets.getOrNull(index)
+        }
     }
 
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
@@ -105,12 +102,12 @@ object ConfigurationUtils {
     fun reset() {
         currentConfig = null
         currentPreset = null
-        selectedPreset = null
         presetsList = listOf()
         licensedFunctionalities = mapOf()
+        selectedPreset = null
         Scopes.getMainCoroutine().launch {
             bittelVersion.value = ""
-            //bittelConfiguration.value = StardustConfigurationPackage()
+            bittelConfiguration.value = null
         }
     }
 
