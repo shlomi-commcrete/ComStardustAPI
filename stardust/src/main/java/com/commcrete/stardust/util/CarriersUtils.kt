@@ -266,7 +266,7 @@ data class Carrier (
     fun getExistingFunctionalityOptions() : Set<FunctionalityType> {
         val functionalityOptions = when (type) {
             StardustTypeFunctionality.HR -> FunctionalityType.entries
-            StardustTypeFunctionality.LR -> FunctionalityType.entries.filterNot { listOf(FunctionalityType.IMAGE, FunctionalityType.FILE, FunctionalityType.PTT).contains(it) }
+            StardustTypeFunctionality.LR -> FunctionalityType.entries.filterNot { listOf(FunctionalityType.IMAGE, FunctionalityType.FILE, FunctionalityType.PTT, FunctionalityType.BFT).contains(it) }
             StardustTypeFunctionality.ST -> listOf(FunctionalityType.IMAGE, FunctionalityType.FILE)
         }
 
