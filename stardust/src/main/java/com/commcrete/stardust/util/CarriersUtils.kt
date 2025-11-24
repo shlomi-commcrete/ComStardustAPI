@@ -228,6 +228,16 @@ object CarriersUtils {
             2 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS3)}
         }
     }
+
+
+    fun reset() {
+        carrierList1 = listOf()
+        carrierList2 = listOf()
+        carrierList3 = listOf()
+        Scopes.getMainCoroutine().launch {
+            carrierList.value = listOf()
+        }
+    }
 }
 
 data class Carrier (
@@ -311,6 +321,8 @@ data class Carrier (
         return activeFunctionalities.isEmpty()
                 && functionalityStateMap.values.find { it.selectionState != FunctionalitySelectionState.DISABLED } == null
     }
+
+
 }
 
 
@@ -358,6 +370,7 @@ data class FunctionalityState(val limitation: LimitationType?) {
             FunctionalitySelectionState.UNSELECTED
         }
     }
+
 
 }
 

@@ -4,6 +4,9 @@ import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
+import com.commcrete.stardust.enums.ConnectionType
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
@@ -20,7 +23,7 @@ object BleManager {
     var isNetworkToggleEnabled = true
     var isBluetoothToggleEnabled = true
 
-    val connectionStatus = MutableLiveData(ConnectionStatus.DISCONNECTED)
+    private var connectionStatus: ConnectionType? = null
     val bleConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isBleConnected)
     val usbConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isUSBConnected)
     val isPaired : MutableLiveData<Boolean> = MutableLiveData(false)
@@ -62,29 +65,26 @@ object BleManager {
         return isBleConnected && isBluetoothToggleEnabled
     }
 
-    fun updateStatus () {
-        var status = ConnectionStatus.DISCONNECTED
-        if(isUsbEnabled ()) {
-            status = ConnectionStatus.USB
-            if(!isBluetoothToggleEnabled && isBleConnected) {
-                DataManager.getClientConnection(DataManager.context).disconnectFromDevice()
+    fun updateStatus() {
+        val newStatus = when {
+            isUsbEnabled() -> {
+                if (!isBluetoothToggleEnabled && isBleConnected) {
+                    DataManager.getClientConnection(DataManager.context).disconnectFromBLEDevice(true)
+                }
+                ConnectionType.USB
             }
-        } else if (isBluetoothEnabled()) {
-            status = ConnectionStatus.BLE
-        } else {
-            ConfigurationUtils.reset()
-        }
-        DataManager.getCallbacks()?.connectionStatusChanged(status)
 
-        Scopes.getMainCoroutine().launch {
-            connectionStatus.value = status
+            isBluetoothEnabled() -> ConnectionType.BLE
+
+            else -> {
+                ConfigurationUtils.reset()
+                CarriersUtils.reset()
+                StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+                null
+            }
         }
+        connectionStatus = newStatus
+        DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
     }
 
-    enum class ConnectionStatus {
-        USB,
-        BLE,
-        BLE_USB,
-        DISCONNECTED
-    }
 }

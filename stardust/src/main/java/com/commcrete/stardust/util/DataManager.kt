@@ -21,7 +21,6 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.ble.BleManager.connectionStatus
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.crypto.SecureKeyUtils
@@ -334,7 +333,7 @@ object DataManager : StardustAPI, PttInterface{
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
             getClientConnection(context).bondToBleDeviceStartup(bondedDevice)
         } else {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SUCCESS)
         }
     }
 
@@ -349,7 +348,7 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun disconnectFromDevice(context: Context) {
         requireContext(context)
-        getClientConnection(context).disconnectFromDevice()
+        getClientConnection(context).disconnectFromBLEDevice()
     }
 
     override fun readChats(context: Context): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {

@@ -2,9 +2,7 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
-import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.ble.BleManager.ConnectionStatus
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -44,11 +42,12 @@ object StardustInitConnectionHandler {
         ADDING_GROUPS,                 // 4) add groups
         READING_CONFIGURATION,         // 5) get configuration
         UPDATING_ADMIN_MODE,           // 6) update admin mode
-        DONE, CANCELED,
+        SUCCESS, CANCELED,
         RUNNING,
         SEARCHING,
         NO_LICENSE,
-        ENCRYPTION_KEY_ERROR
+        ENCRYPTION_KEY_ERROR,
+        DISCONNECTED
     }
 
     private const val MAX_ATTEMPTS = 3
@@ -68,14 +67,15 @@ object StardustInitConnectionHandler {
 
     var listener: InitConnectionListener? = null
 
-    private var state = State.IDLE
+    private var state = State.DISCONNECTED
         set(value) {
             field = value
             DataManager.getCallbacks()?.onDeviceInitialized(value)
         }
 
     val isRunning: Boolean
-        get() = state !in setOf(State.IDLE, State.SEARCHING, State.DONE, State.CANCELED)
+        get() = state !in setOf(State.IDLE, State.SEARCHING, State.SUCCESS, State.CANCELED, State.DISCONNECTED,
+            State.NO_LICENSE, State.ENCRYPTION_KEY_ERROR)
 
     // ───────────────────────── Lifecycle ─────────────────────────
 
@@ -98,7 +98,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun stop() {
-        state = State.DONE
+        state = State.SUCCESS
 
         timeoutJob?.cancel()
         timeoutJob = null
@@ -194,7 +194,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun retryOrFail(send: () -> Unit) {
-        state?.let { state ->
+        state.let { state ->
             val n = (attempts[state] ?: 0) + 1
             if (n > MAX_ATTEMPTS) {
                 failAndStop("Step $state exceeded $MAX_ATTEMPTS attempts")
@@ -281,6 +281,8 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleAddressesReceived(p: StardustPackage) {
+        DataManager.getClientConnection(ctx).removeConnectionTimer()
+
         val addresses = StardustAddressesParser().parseAddresses(p)
             ?: return failAndStop("Failed to parse addresses")
         lastAddresses = addresses
@@ -310,7 +312,6 @@ object StardustInitConnectionHandler {
     private fun afterUpdateAddressAck() {
         // Your existing local side-effects:
         GroupsUtils.deleteAllGroups(ctx)
-        DataManager.getClientConnection(ctx).removeConnectionTimer()
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
@@ -460,7 +461,7 @@ object StardustInitConnectionHandler {
     private fun onInitDone() {
         val resultState = when {
             ConfigurationUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
-            else -> State.DONE
+            else -> State.SUCCESS
         }
         state = resultState
         listener?.onInitDone(resultState)
@@ -471,12 +472,16 @@ object StardustInitConnectionHandler {
         listener?.running(State.RUNNING)
     }
 
+    fun isSyncing(): Boolean {
+        return state in setOf(State.RUNNING, State.REQUESTING_ADDRESSES, State.UPDATING_SMARTPHONE_ADDR, State.DELETING_GROUPS, State.ADDING_GROUPS, State.READING_CONFIGURATION, State.UPDATING_ADMIN_MODE)
+    }
+
     fun hasConnectionError(): Boolean {
         return state in setOf(State.CANCELED, State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
     }
 
     fun isConnected(): Boolean {
-        return hasConnectionError() || (state == State.DONE && BleManager.connectionStatus.value != ConnectionStatus.DISCONNECTED)
+        return hasConnectionError() || state == State.SUCCESS
     }
 
     fun updateConnectionState(newState: State) {

@@ -47,9 +47,7 @@ object ConfigurationUtils {
             StardustConfigurationParser.CurrentPreset.PRESET2 -> 1
             StardustConfigurationParser.CurrentPreset.PRESET3 -> 2
         }
-        Scopes.getMainCoroutine().launch {
-            selectedPreset = config.presets.getOrNull(index)
-        }
+        selectedPreset = config.presets.getOrNull(index)
     }
 
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
@@ -71,15 +69,10 @@ object ConfigurationUtils {
     }
 
     fun isPresetsChanged (presets : List<StardustConfigurationParser.Preset>, context: Context): Boolean {
-
-        /***
-         * TODO: add mediator for options
-         */
         val lastPresets = getLastPresets(context)
         setLastPresets(presets, context)
         return lastPresets != presets
     }
-
     fun setDefaults (context: Context) {
         currentConfig?.let {config ->
             if(isPresetsChanged(config.presets, context)) {

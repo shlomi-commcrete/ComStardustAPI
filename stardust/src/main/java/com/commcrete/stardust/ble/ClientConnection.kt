@@ -26,6 +26,8 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.BittelProtocol
+import com.commcrete.stardust.util.CarriersUtils
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -228,7 +230,7 @@ internal class ClientConnection(
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             val src = it.appId
-                            if(src != null && !StardustInitConnectionHandler.isConnected()) {
+                            if(src != null) {
                                 StardustInitConnectionHandler.start()
                                 StardustInitConnectionHandler.listener = object :
                                     StardustInitConnectionHandler.InitConnectionListener {}
@@ -330,7 +332,7 @@ internal class ClientConnection(
         BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
             override fun onChanged(isConnected: Boolean) {
                 if(!isConnected) {
-                    disconnectFromDevice()
+                    disconnectFromBLEDevice(true)
                 } else if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
                 }
@@ -384,20 +386,21 @@ internal class ClientConnection(
     }
 
     @SuppressLint("MissingPermission")
-    fun disconnectFromDevice () {
-        if(!StardustInitConnectionHandler.isConnected()) return
+    fun disconnectFromBLEDevice (disconnectByForce: Boolean = false) {
+        if(!disconnectByForce && !StardustInitConnectionHandler.isConnected()) return
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null
         gattConnection = null
         hasCallback = false
+        ConfigurationUtils.reset()
+        CarriersUtils.reset()
         Scopes.getMainCoroutine().launch {
             Timber.tag("Bittel Disconnected").d("Called Function")
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
             com.commcrete.stardust.ble.BleManager.isBleConnected = false
             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DONE)
-            com.commcrete.stardust.ble.BleManager.updateStatus ()
+            com.commcrete.stardust.ble.BleManager.updateStatus()
             removeRSSITimer()
             removePingTimer()
         }
@@ -481,8 +484,7 @@ internal class ClientConnection(
                             }
                         }
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
-
-                        disconnectFromDevice()
+                        disconnectFromBLEDevice()
                     } else{
                         device?.let {
                             try {
@@ -491,7 +493,7 @@ internal class ClientConnection(
                                 e.printStackTrace()
                             }
                         }
-                        disconnectFromDevice()
+                        disconnectFromBLEDevice()
                     }
                 }
             }
@@ -508,7 +510,7 @@ internal class ClientConnection(
     fun removeBittelBond () {
         mDevice?.let {
             try {
-                disconnectFromDevice()
+                disconnectFromBLEDevice(true)
                 it::class.java.getMethod("removeBond").invoke(it)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -961,14 +963,14 @@ internal class ClientConnection(
 
 
     fun reconnectToDevice () {
-        disconnectFromDevice ()
+        disconnectFromBLEDevice (true)
         Handler(Looper.myLooper()!!).postDelayed({
             mDevice?.let { connectDevice(it) }
         },2000)
     }
 
     fun reconnectToDeviceFast () {
-        disconnectFromDevice ()
+        disconnectFromBLEDevice ()
         Handler(Looper.myLooper()!!).postDelayed({
             mDevice?.let { connectDevice(it) }
         },100)

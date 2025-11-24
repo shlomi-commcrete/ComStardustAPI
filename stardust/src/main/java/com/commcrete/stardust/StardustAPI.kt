@@ -6,6 +6,7 @@ import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
@@ -56,7 +57,7 @@ interface StardustAPICallbacks {
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFileStatus (index : Int, percentage : Int)
-    fun connectionStatusChanged (connectionStatus: BleManager.ConnectionStatus)
+    fun connectionStatusChanged (connectionType: ConnectionType?)
     fun onRSSIChanged (rssi : Int)
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
