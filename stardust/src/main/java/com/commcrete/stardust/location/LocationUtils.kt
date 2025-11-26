@@ -215,11 +215,6 @@ object LocationUtils  {
             val text = "latitude : ${location.latitude.getAfterDot(4)}\n" +
                     "longitude : ${location.longitude.getAfterDot(6)}\naltitude : ${location.altitude.getAfterDot(0)}"
             saveLocationSent(sender = mPackage.getDestAsString(), chatId = mPackage.getSourceAsString() , locationText = text, senderName = "" , idNumber = id)
-            Scopes.getMainCoroutine().launch {
-                val logObject = LogUtils.getLogObject(src = mPackage.getDestAsString(), dst = mPackage.getSourceAsString()
-                    , event = LOG_EVENT.LOCATION_SENT.type ,location = location)
-                LogUtils.saveLog(logObject, context)
-            }
         }
     }
 

@@ -477,7 +477,11 @@ object StardustInitConnectionHandler {
     }
 
     fun hasConnectionError(): Boolean {
-        return state in setOf(State.CANCELED, State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
+        return state == State.CANCELED || hasUnsyncableError()
+    }
+
+    fun hasUnsyncableError(): Boolean {
+        return state in setOf(State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
     }
 
     fun isConnected(): Boolean {

@@ -230,7 +230,7 @@ internal class ClientConnection(
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             val src = it.appId
-                            if(src != null) {
+                            if(src != null && !StardustInitConnectionHandler.hasUnsyncableError()) {
                                 StardustInitConnectionHandler.start()
                                 StardustInitConnectionHandler.listener = object :
                                     StardustInitConnectionHandler.InitConnectionListener {}
