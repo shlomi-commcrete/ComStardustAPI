@@ -78,22 +78,19 @@ object LocationUtils  {
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var sender : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let { it ->
                     val contact = it
                     var whoSent = ""
                     var displayName = contact.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
+                    val srcID = bittelPackage.getSourceAsString()
+                    if(GroupsUtils.isGroup(srcID)){
                         whoSent = bittelPackage.getDestAsString()
-                        sender = chatsRepo.getChatByBittelID(whoSent)
-                        sender?.let {
+                        chatsRepo.getChatByBittelID(whoSent)?.let {
                             displayName = it.name
                         }
-                    }else {
+                    } else {
                         whoSent = bittelPackage.getSourceAsString()
-                        sender = chatsRepo.getChatByBittelID(whoSent)
-
                     }
                     contact.lastUpdateTS = Date().time
                     contact.lat = bittelLocationPackage.latitude.toDouble()
@@ -108,20 +105,22 @@ object LocationUtils  {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
-                    sender?.let {
-                        it.message = Message(senderID = whoSent, text = "Location Received", seen = false)
-                        chatsRepo.addChat(it)
-                        val numOfUnread = it.numOfUnseenMessages
+                    chatsRepo.getChatByBittelID(srcID)?.let { sender ->
+                        sender.message = Message(senderID = whoSent, text = "Location Received", seen = false)
+                        chatsRepo.addChat(sender)
+                        val numOfUnread = sender.numOfUnseenMessages
                         chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                     }
                     val pollingUtils = DataManager.getPollingUtils(DataManager.context)
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
                     }
-                    var location = Location(whoSent)
-                    location.latitude = bittelLocationPackage.latitude.toDouble()
-                    location.longitude = bittelLocationPackage.longitude.toDouble()
-                    location.altitude = bittelLocationPackage.height.toDouble()
+                    val location = Location(whoSent).apply {
+                        latitude = bittelLocationPackage.latitude.toDouble()
+                        longitude = bittelLocationPackage.longitude.toDouble()
+                        altitude = bittelLocationPackage.height.toDouble()
+                    }
+
                     PlayerUtils.playNotificationSound (DataManager.context)
                     DataManager.getCallbacks()?.receiveLocation(
                         StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByStardustPackage(bittelPackage)),

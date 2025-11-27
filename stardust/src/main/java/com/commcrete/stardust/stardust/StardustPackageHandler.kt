@@ -315,11 +315,18 @@ internal class StardustPackageHandler(private val context: Context ,
         val matchAt0 = data.matchesSignatureAt(0, sig)
         val matchAt1 = data.matchesSignatureAt(1, sig)
 
-        if (matchAt0 || matchAt1) {
+        if (matchAt1) {
+            StardustFileStartParser().parseFileStar2(mPackage)
+                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
+            return
+        }
+        if (matchAt0) {
             StardustFileStartParser().parseFileStart(mPackage)
                 ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
             return
         }
+
+
         StardustFileParser().parseFile(bittelPackage = mPackage)
             ?.let { FileSendUtils.handleFileReceive(it, mPackage) }
     }

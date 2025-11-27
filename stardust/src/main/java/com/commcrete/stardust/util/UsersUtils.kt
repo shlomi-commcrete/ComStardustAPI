@@ -148,10 +148,12 @@ object UsersUtils {
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(),  isSOS = true,
                         sosType = bittelSOSPackage.sosType)
                     MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
-                    var location = Location(whoSent)
-                    location.latitude = bittelSOSPackage.latitude.toDouble()
-                    location.longitude = bittelSOSPackage.longitude.toDouble()
-                    location.altitude = bittelSOSPackage.height.toDouble()
+
+                    val location = Location(whoSent).apply {
+                        latitude = bittelSOSPackage.latitude.toDouble()
+                        longitude = bittelSOSPackage.longitude.toDouble()
+                        altitude = bittelSOSPackage.height.toDouble()
+                    }
                     PlayerUtils.playNotificationSound (DataManager.context)
 
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),

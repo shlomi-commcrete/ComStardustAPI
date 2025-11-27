@@ -256,16 +256,15 @@ object PcmStreamPlayer {
     }
 
 
-    private fun updateAudioReceived(chatId: String, isAudioReceived : Boolean){
+    private fun updateAudioReceived(chatId: String, senderId: String, isAudioReceived : Boolean){
         if(chatId.isEmpty()) {
             return
         }
         Scopes.getDefaultCoroutine().launch {
-            val newChatID = if( GroupsUtils.isGroup(source)) source else chatId
-            PlayerUtils.chatsRepository.updateAudioReceived(newChatID, isAudioReceived)
-            val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(newChatID)
+            PlayerUtils.chatsRepository.updateAudioReceived(chatId, isAudioReceived)
+            val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(chatId)
             chatItem?.let {
-                chatItem.message = Message(senderID = chatId, text = "Ptt Received",
+                chatItem.message = Message(senderID = senderId, text = "Ptt Received",
                     seen = true)
                 PlayerUtils.chatsRepository.addChat(it)
             }
@@ -280,8 +279,8 @@ object PcmStreamPlayer {
         }
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         this.destination = destinations
-        val realDest = if   (GroupsUtils.isGroup(this.source)) this.source else destination
-        updateAudioReceived(destination, true)
+        val realDest = if   (GroupsUtils.isGroup(source)) source else destination
+        updateAudioReceived(realDest, destination, true)
         val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
         val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/${ts}-$source.pcm")
         if(directory!=null){
