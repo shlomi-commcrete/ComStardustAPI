@@ -73,10 +73,10 @@ object DataManager : StardustAPI, PttInterface{
 
     fun requireContext (context: Context){
         this.context = context
-       if(!hasTimber) {
-            Timber.plant(Timber.DebugTree())
-            hasTimber = true
-        }
+//       if(!hasTimber) { // TODO: for debug only
+//            Timber.plant(Timber.DebugTree())
+//            hasTimber = true
+//        }
         SharedPreferencesUtil.getIsErased(context).let {
             if(it) {
                 throw IllegalStateException("Device is erased, please reset the device")

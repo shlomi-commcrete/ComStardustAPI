@@ -9,10 +9,13 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
@@ -260,6 +263,7 @@ object PcmStreamPlayer {
         if(chatId.isEmpty()) {
             return
         }
+
         Scopes.getDefaultCoroutine().launch {
             PlayerUtils.chatsRepository.updateAudioReceived(chatId, isAudioReceived)
             val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(chatId)
@@ -267,6 +271,7 @@ object PcmStreamPlayer {
                 chatItem.message = Message(senderID = senderId, text = "Ptt Received",
                     seen = true)
                 PlayerUtils.chatsRepository.addChat(it)
+                ChatsRepository(ChatsDatabase.getDatabase(context.applicationContext).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages+1)
             }
         }
     }
@@ -281,6 +286,7 @@ object PcmStreamPlayer {
         this.destination = destinations
         val realDest = if   (GroupsUtils.isGroup(source)) source else destination
         updateAudioReceived(realDest, destination, true)
+
         val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
         val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/${ts}-$source.pcm")
         if(directory!=null){

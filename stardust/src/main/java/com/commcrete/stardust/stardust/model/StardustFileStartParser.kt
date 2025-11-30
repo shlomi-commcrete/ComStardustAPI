@@ -44,8 +44,8 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = getCharValue(String(removeZeros(fileNameBytes.reversedArray())) ) ,
-                fileEnding = getCharValue(String(removeZeros(fileEndingBytes.reversedArray()))) )
+                fileName = getCharValue(String(removeZeros(fileNameBytes)) ) ,
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))) )
 
         }
         return null
@@ -80,8 +80,8 @@ class StardustFileStartParser : StardustParser() {
             byteArrayToUInt(totalBytes.reversedArray()).toInt(),
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
-                fileName = getCharValue(String(removeZeros(fileNameBytes.reversedArray())) ) ,
-                fileEnding = getCharValue(String(removeZeros(fileEndingBytes.reversedArray()))) )
+                fileName = getCharValue(String(removeZeros(fileNameBytes)) ) ,
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))) )
 
         }
         return null

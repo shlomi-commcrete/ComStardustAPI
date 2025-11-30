@@ -565,6 +565,7 @@ object PlayerUtils : BleMediaConnector() {
                         val message = "PTT From : $chatName"
                         Scopes.getMainCoroutine().launch {
                             isPttReceived.value = message
+                            DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination), byteArrayOf())
                         }
                     }
                 }

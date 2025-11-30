@@ -235,45 +235,38 @@ object FileReceivedUtils {
             val text = "t:$totalPackages, m:$missing"
             textLogger.logText(text)
             val context = DataManager.context
-            // Get the destination directory
+// Get the destination directory
             val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
-
-            // Ensure the directory exists
+// Ensure the directory exists
             if (!destDir.exists()) {
                 destDir.mkdirs()
             }
             val name = dataStart?.fileName
             val ending = dataStart?.fileEnding
             val type = if(fileType == 0) ".$ending" else ".jpg"
-            // Create the target file with a timestamp
+// Create the target file with a timestamp
             val ts = System.currentTimeMillis()
             val completeFileName = "$ts"+ "_"+"$name$type"
             val targetFile = File(destDir, "$completeFileName")
-
             try {
-                // Step 1: Create a temporary file for the concatenated data
+// Step 1: Create a temporary file for the concatenated data
                 val tempOutputFile = File.createTempFile("output_temp", null, context.cacheDir)
+// Write concatenated data to the temporary file
 
-                // Write concatenated data to the temporary file
-
-
-
-                //After i get all the packages.
+//After i get all the packages.
                 if(fileType == 0) {
                     FileOutputStream(tempOutputFile).use { outputStream ->
                         writeDataToFile(outputStream)
                     }
-                    // Step 2: Decompress the temporary file into the target file
+// Step 2: Decompress the temporary file into the target file
                     FileSendUtils.decompressTextFile(tempOutputFile, targetFile)
-                    // Clean up: Delete the temporary file
+// Clean up: Delete the temporary file
                     tempOutputFile.delete()
-
                 } else {
                     FileOutputStream(targetFile).use { outputStream ->
                         writeDataToFile(outputStream)
                     }
                 }
-
                 println("File saved successfully at: ${targetFile.absolutePath}")
                 saveToMessages(bittelPackage, targetFile, fileType, completeFileName)
                 dataStart = null
