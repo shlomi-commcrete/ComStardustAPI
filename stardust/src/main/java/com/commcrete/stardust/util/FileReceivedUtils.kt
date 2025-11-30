@@ -125,7 +125,7 @@ object FileReceivedUtils {
             val totalPackages = dataStart?.total
             val missing = lostPackagesIndex.count()
             val text = "t:$totalPackages, m:$missing"
-            textLogger.logText(text)
+            //textLogger.logText(text)
             if(checkIfHaveEnough()) {
                 bittelPackage?.let { saveFile(it, dataStart?.type) }
                 Scopes.getMainCoroutine().launch {
