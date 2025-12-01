@@ -121,6 +121,8 @@ object SharedPreferencesUtil {
     //Files
     private const val KEY_RESILIENCE = "key_resilience"
 
+    var onUserUpdatedListener: OnUserUpdated? = null
+
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -213,11 +215,13 @@ object SharedPreferencesUtil {
     }
 
     fun setAppUser (context: Context , appUser : RegisterUser) {
-        getPrefs(context).edit().putString(KEY_APP_USER, appUser.toJson()).apply()
+        getPrefs(context).edit { putString(KEY_APP_USER, appUser.toJson()) }
+        onUserUpdatedListener?.onUpdated(appUser)
     }
 
     fun removeAppUser (context: Context) : Boolean{
-        getPrefs(context).edit().remove(KEY_APP_USER).apply()
+        getPrefs(context).edit { remove(KEY_APP_USER) }
+        onUserUpdatedListener?.onUpdated(null)
         return true
     }
 
@@ -607,4 +611,8 @@ object SharedPreferencesUtil {
             else -> return RecorderUtils.CODE_TYPE.CODEC2
         }
     }
+}
+
+interface OnUserUpdated {
+    fun onUpdated(appUser: RegisterUser?)
 }
