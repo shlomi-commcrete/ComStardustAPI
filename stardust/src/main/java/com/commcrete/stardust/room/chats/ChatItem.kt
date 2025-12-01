@@ -2,8 +2,8 @@ package com.commcrete.stardust.room.chats
 
 import android.os.Parcelable
 import androidx.room.*
-import com.commcrete.stardust.request_objects.model.user_list.User
 import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.request_objects.model.user_list.User
 import kotlinx.android.parcel.Parcelize
 import org.json.JSONObject
 
@@ -94,6 +94,10 @@ fun ChatItem.getSmartphoneBittelIDS() : Map<String, String>  {
             emptyMap()
         }
     }
+}
+
+fun ChatItem.getDeviceID(): String? {
+    return if (isBittel) chat_id else bittelIDS
 }
 
 
