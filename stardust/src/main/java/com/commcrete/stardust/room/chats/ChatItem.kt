@@ -1,3 +1,4 @@
+@file:JvmName("ChatItemHelper")
 package com.commcrete.stardust.room.chats
 
 import android.os.Parcelable
@@ -95,6 +96,7 @@ fun ChatItem.getSmartphoneBittelIDS() : Map<String, String>  {
         }
     }
 }
+
 
 fun ChatItem.getDeviceID(): String? {
     return if (isBittel) chat_id else bittelIDS
