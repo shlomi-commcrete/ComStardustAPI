@@ -340,12 +340,10 @@ object UsersUtils {
             val clearMessagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).clearData()
             val clearPhone = SharedPreferencesUtil.removePhone(DataManager.context)
             val clearPassword = SharedPreferencesUtil.removePassword(DataManager.context)
-            val clearBittelDevice = SharedPreferencesUtil.removeBittelDevice(DataManager.context)
-            val clearBittelDeviceName = SharedPreferencesUtil.removeBittelDeviceName(DataManager.context)
             val clearAppUser = SharedPreferencesUtil.removeAppUser(DataManager.context)
             val clearUser = SharedPreferencesUtil.removeUser(DataManager.context)
             return@async clearBittelUserRepository && clearChatsRepository && clearContactsRepository && clearFriendsRepository && clearMessagesRepository
-                    && clearPhone && clearPassword && clearBittelDevice && clearBittelDeviceName && clearAppUser && clearUser
+                    && clearPhone && clearPassword && clearAppUser && clearUser
         }
         return bittelUserList.await()
     }

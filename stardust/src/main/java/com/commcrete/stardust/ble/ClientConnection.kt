@@ -511,6 +511,10 @@ internal class ClientConnection(
         mDevice?.let {
             try {
                 disconnectFromBLEDevice(true)
+                Scopes.getDefaultCoroutine().launch {
+                    SharedPreferencesUtil.removeBittelDevice(DataManager.context)
+                    SharedPreferencesUtil.removeBittelDeviceName(DataManager.context)
+                }
                 it::class.java.getMethod("removeBond").invoke(it)
             } catch (e: Exception) {
                 e.printStackTrace()
