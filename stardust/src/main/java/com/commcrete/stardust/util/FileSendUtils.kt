@@ -19,6 +19,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -57,6 +58,7 @@ object FileSendUtils {
 
     fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange
                   , fileName : String = "", fileExt : String = "") {
+
         this.onFileStatusChange = onFileStatusChange
         this.stardustAPIPackage = stardustAPIPackage
         isSendingInProgress.value = true
@@ -64,26 +66,29 @@ object FileSendUtils {
         val numOfPackages = calculateNumOfPackages(fileList, stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending()
         dest = stardustAPIPackage.destination
-        var packages =  createPackages(fileList)
+        Scopes.getDefaultCoroutine().launch {
+            var packages =  createPackages(fileList)
 
-        if(stardustAPIPackage.spare > 0) {
-            val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
+            if(stardustAPIPackage.spare > 0) {
+                val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
 //            Log.d("dataWithSpare", "dataWithSpare : ${stardustAPIPackage.spare}")
 //            saveTempFile(dataWithSpare)
-           packages = dataWithSpare.first
-            createStartPackage(fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file, first50BytesUtf8(fileName), fileExt)
-        } else {
-            createStartPackage(
-                fileStartParser,
-                numOfPackages, dest, stardustAPIPackage, 0, file, first50BytesUtf8(fileName), fileExt
-            )
-        }
-        getRandomMisses(stardustAPIPackage.spare, numOfPackages)
-        mutablePackagesMap.clear()
-        mutablePackagesMap.putAll(packages)
+                packages = dataWithSpare.first
+                createStartPackage(fileStartParser,
+                    numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file, first50BytesUtf8(fileName), fileExt)
+            } else {
+                createStartPackage(
+                    fileStartParser,
+                    numOfPackages, dest, stardustAPIPackage, 0, file, first50BytesUtf8(fileName), fileExt
+                )
+            }
+            getRandomMisses(stardustAPIPackage.spare, numOfPackages)
+            mutablePackagesMap.clear()
+            mutablePackagesMap.putAll(packages)
 //        testDecode(packages, stardustAPIPackage.spare)
-        resetSendTimer()
+            resetSendTimer()
+        }
+
         saveLocalMessages(
             stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
             fileLocation = fileList[0].absolutePath, file, fileName, fileExt)

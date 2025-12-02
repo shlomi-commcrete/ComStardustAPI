@@ -161,16 +161,14 @@ object DataManager : StardustAPI, PttInterface{
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = getChatsRepo(context)
             val messagesRepository = getMessagesRepo(context)
-            Scopes.getDefaultCoroutine().launch{
-                val chatItem = chatsRepo.getChatByBittelID(userId)
-                chatItem?.message = Message(
-                    senderID = userId,
-                    text = text,
-                    seen = false
-                )
-                chatItem?.let { chatsRepo.addChat(it) }
-                messagesRepository.addContact(messageItem)
-            }
+            val chatItem = chatsRepo.getChatByBittelID(userId)
+            chatItem?.message = Message(
+                senderID = userId,
+                text = text,
+                seen = false
+            )
+            chatItem?.let { chatsRepo.addChat(it) }
+            messagesRepository.addContact(messageItem)
         }
     }
 
