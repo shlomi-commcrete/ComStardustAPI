@@ -1,28 +1,29 @@
 package com.commcrete.stardust.crypto
 
+import android.content.Context
 import com.commcrete.stardust.BuildConfig
 import com.commcrete.stardust.util.DataManager
 
 object CryptoUtils {
 
-    fun encryptData (value : ByteArray) : ByteArray {
+    fun encryptData (context: Context, value : ByteArray) : ByteArray {
         val crypt = Crypt(
             paddingNone = true,
             enforceLegacy255Limit = false
         )
 
-        val cryptBytes = SecureKeyUtils.getSecuredKey(DataManager.context)
+        val cryptBytes = SecureKeyUtils.getSecuredKey(context)
         val out = crypt.encryptBuf(cryptBytes, value)
         return out
     }
 
-    fun decryptData (value : ByteArray) : ByteArray {
+    fun decryptData (context: Context, value : ByteArray) : ByteArray {
         val crypt = Crypt(
             paddingNone = true,
             enforceLegacy255Limit = false
         )
 
-        val cryptBytes = SecureKeyUtils.getSecuredKey(DataManager.context)
+        val cryptBytes = SecureKeyUtils.getSecuredKey(context)
         val out = crypt.decryptBuf(cryptBytes, value)
         return out
     }

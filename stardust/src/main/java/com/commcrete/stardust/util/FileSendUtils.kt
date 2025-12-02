@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -46,9 +47,9 @@ object FileSendUtils {
     var randomMisses : MutableSet<Int> = mutableSetOf()
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
-        if(mPackage != null){
+        if(mPackage != null) {
 //            if(!randomMisses.contains(current.value?.toInt())) {
-                sendPackage(mPackage, dest)
+                sendPackage(DataManager.context, mPackage, dest)
 //            }
         }
         current.value = current.value?.plus(1)
@@ -56,7 +57,7 @@ object FileSendUtils {
         updateStep(mutablePackagesMap.size, )
     }
 
-    fun sendFile (stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange
+    fun sendFile (context: Context, stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange
                   , fileName : String = "", fileExt : String = "") {
 
         this.onFileStatusChange = onFileStatusChange
@@ -74,10 +75,11 @@ object FileSendUtils {
 //            Log.d("dataWithSpare", "dataWithSpare : ${stardustAPIPackage.spare}")
 //            saveTempFile(dataWithSpare)
                 packages = dataWithSpare.first
-                createStartPackage(fileStartParser,
+                createStartPackage(context, fileStartParser,
                     numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file, first50BytesUtf8(fileName), fileExt)
             } else {
                 createStartPackage(
+                    context,
                     fileStartParser,
                     numOfPackages, dest, stardustAPIPackage, 0, file, first50BytesUtf8(fileName), fileExt
                 )
@@ -224,6 +226,7 @@ object FileSendUtils {
         return safeName to ext
     }
     private fun createStartPackage (
+        context: Context,
         type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
         dest: String?,
@@ -242,8 +245,8 @@ object FileSendUtils {
         val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
             FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
         )  ?: return
-        DataManager.getClientConnection(DataManager.context).let {
-            SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
+        DataManager.getClientConnection(context).let {
+            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosString = "STR"
                 val sosBytes = sosString.toByteArray()
                 var data : Array<Int> = arrayOf()
@@ -251,7 +254,10 @@ object FileSendUtils {
                 data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
                 data = data.plus(fileStart.toArrayInt())
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+                    context,
+                    source = appId,
+                    destenation = dest,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = data)
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(fileStartMessage)
@@ -375,11 +381,11 @@ object FileSendUtils {
         FileReceivedUtils.getFile(bittelFilePackage, mPackage)
     }
 
-    private fun sendPackage (stardustFilePackage: StardustFilePackage, dest : String?) {
+    private fun sendPackage (context: Context, stardustFilePackage: StardustFilePackage, dest : String?) {
         if(dest == null) {
             return
         }
-        DataManager.getClientConnection(DataManager.context).let {
+        DataManager.getClientConnection(context).let {
             val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
                 FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage?.carrier
             )  ?: return
@@ -388,9 +394,12 @@ object FileSendUtils {
             } else {
                 1300
             }
-            SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let { appId ->
+            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = dest, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+                    context = context,
+                    source = appId,
+                    destenation = dest,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = stardustFilePackage.toArrayInt())
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
                 if(stardustFilePackage.isLast) {

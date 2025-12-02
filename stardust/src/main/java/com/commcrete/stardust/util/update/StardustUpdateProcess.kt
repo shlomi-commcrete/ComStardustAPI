@@ -52,7 +52,10 @@ object StardustUpdateProcess {
                 val dst = it.bittelId
                 if(src != null && dst != null) {
                     val versionPackage = StardustPackageUtils.getStardustPackage(
-                        source = src, destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION,
+                        context = context,
+                        source = src,
+                        destenation = dst,
+                        stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION,
                         data = getBittelUpdateFilePackage()
                     )
                     clientConnection.addMessageToQueue(versionPackage)
@@ -68,7 +71,10 @@ object StardustUpdateProcess {
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
-                    source = src, destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS
                 )
                 clientConnection.addMessageToQueue(versionPackage)
             }
@@ -104,7 +110,10 @@ object StardustUpdateProcess {
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
-                    source = src, destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.BURN_BITTEL_VERSION,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.BURN_BITTEL_VERSION,
                     data = getBittelUpdateDataFile()
                 )
                 clientConnection.addMessageToQueue(versionPackage)

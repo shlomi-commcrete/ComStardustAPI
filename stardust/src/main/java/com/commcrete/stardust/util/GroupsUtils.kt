@@ -20,7 +20,10 @@ object GroupsUtils {
             intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
                     data = intData.toIntArray().toTypedArray())
                 clientConnection?.addMessageToQueue(deletePackage)
             }
@@ -34,7 +37,10 @@ object GroupsUtils {
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_GET_ALL_GROUPS)
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_GET_ALL_GROUPS)
                 clientConnection?.addMessageToQueue(deletePackage)
             }
         }
@@ -55,7 +61,10 @@ object GroupsUtils {
 
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
                     data = intData.toIntArray().toTypedArray().reversedArray())
                 clientConnection?.addMessageToQueue(deletePackage)
             }
@@ -76,8 +85,11 @@ object GroupsUtils {
 
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_REMOVE_GROUPS
-                            ,data = intData.toIntArray().toTypedArray().reversedArray())
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_REMOVE_GROUPS,
+                    data = intData.toIntArray().toTypedArray().reversedArray())
                 clientConnection?.addMessageToQueue(deletePackage)
             }
         }

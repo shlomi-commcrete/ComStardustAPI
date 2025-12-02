@@ -99,7 +99,11 @@ internal class PollingUtils (private val context: Context){
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { myId ->
                 nextUser?.let { nextUser ->
                     client.sendMessage(
-                        StardustPackageUtils.getStardustPackage(source = myId, destenation = nextUser , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
+                        StardustPackageUtils.getStardustPackage(
+                            context = context,
+                            source = myId,
+                            destenation = nextUser,
+                            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
                     )
                 }
             }

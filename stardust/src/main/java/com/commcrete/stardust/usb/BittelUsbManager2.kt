@@ -150,7 +150,9 @@ object BittelUsbManager2 : BittelProtocol {
 
     fun sendDataToUart (bittelPackage: StardustPackage) {
 //        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
-        uartManager?.send(bittelPackage.getStardustPackageToSend())
+        context?.let { context ->
+            uartManager?.send(bittelPackage.getStardustPackageToSend(context))
+        }
     }
 
 
@@ -201,7 +203,7 @@ object BittelUsbManager2 : BittelProtocol {
                 Timber.tag("SerialInputOutputManager").d("onNewData uartManager")
 //                Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
-                processReceivedData(data)
+                processReceivedData(context, data)
                 Scopes.getMainCoroutine().launch {
                     BleManager.isUSBConnected = true
                     BleManager.usbConnectionStatus.value = true
@@ -229,10 +231,10 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
-    fun processReceivedData(data: ByteArray) {
+    fun processReceivedData(context: Context, data: ByteArray) {
         try {
 //            Timber.tag("SerialInputOutputManager").d("Received data: %s", "")
-            StardustPackageUtils.handlePackageReceived(data, "USB")
+            StardustPackageUtils.handlePackageReceived(context, data, "USB")
         }catch (e : Exception) {
             e.printStackTrace()
         }
@@ -269,7 +271,10 @@ object BittelUsbManager2 : BittelProtocol {
                     val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_USB.type).intToByteArray().reversedArray()
                     val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
                     val txPackage = StardustPackageUtils.getStardustPackage(
-                        source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
+                        context = context,
+                        source = src ,
+                        destenation = dst,
+                        stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
                         data = data)
                     DataManager.getClientConnection(context)?.addMessageToQueue(txPackage)
                 }
@@ -285,7 +290,10 @@ object BittelUsbManager2 : BittelProtocol {
                 val dst = it.bittelId
                 if(src != null && dst != null) {
                     val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                        source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+                        context = context,
+                        source = src ,
+                        destenation = dst,
+                        stardustOpCode =StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                     DataManager.getClientConnection(context)?.addMessageToQueue(configurationSavePackage)
                 }
             }

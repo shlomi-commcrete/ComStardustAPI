@@ -60,7 +60,10 @@ object StardustPolygonChange {
                         frequencyHRRadioTXBytes + frequencyLRSatelliteTXBytes + frequencyHRSatelliteRXBytes +
                         frequencyHRRadioRXBytes +  frequencyLRSatelliteRXBytes)
                 val txPackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ,
                     data = data)
                 clientConnection.addMessageToQueue(txPackage)
             }
@@ -78,7 +81,10 @@ object StardustPolygonChange {
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                 clientConnection.addMessageToQueue(configurationSavePackage)
             }
         }

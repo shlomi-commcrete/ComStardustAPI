@@ -490,7 +490,11 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     audioIntArray[audioIntArray.size-1] = num
                     audioIntArray[audioIntArray.size-2] = num
                 }
-                StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
+                StardustPackageUtils.getStardustPackage(
+                    context = context,
+                    source = it.getSource(),
+                    destenation = it.getDestenation() ?: "" ,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                     data = audioIntArray)
             }
 

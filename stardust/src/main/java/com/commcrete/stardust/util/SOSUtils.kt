@@ -34,7 +34,10 @@ object SOSUtils {
                 }
                 val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.REPORTS) ?: return
                 val sosMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+                    context = context,
+                    source = appId,
+                    destenation = stardustAPIPackage.destination,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
                 sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
@@ -48,7 +51,10 @@ object SOSUtils {
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
+                    context = context,
+                    source = appId,
+                    destenation = stardustAPIPackage.destination,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
                 it.addMessageToQueue(sosMessage)
             }
         }
@@ -60,7 +66,10 @@ object SOSUtils {
                 var data : Array<Int> = arrayOf()
                 data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
                 val sosMessage = StardustPackageUtils.getStardustPackage(
-                    source = appId , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
+                    context = context,
+                    source = appId,
+                    destenation = stardustAPIPackage.destination,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
                     data = data)
                 it.addMessageToQueue(sosMessage)
                 saveSOSSent(context, 0 ,stardustAPIPackage, location)

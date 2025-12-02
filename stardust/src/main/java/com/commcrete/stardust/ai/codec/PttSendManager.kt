@@ -69,7 +69,7 @@ object PttSendManager {
         }
 
         this.viewModel = viewModel
-        startEncodingJob()
+        startEncodingJob(context)
 
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
@@ -97,7 +97,7 @@ object PttSendManager {
         saveTofile(byteArrayOf(), finish = true) // Need to delete
     }
 
-    private fun startEncodingJob() {
+    private fun startEncodingJob(context: Context) {
         if (!aiEnabled) return  // hard guard everywhere you might touch PyTorch
         encodingJob = coroutineScope.launch {
             while (isActive) { // Keep the decoding loop active
@@ -107,7 +107,7 @@ object PttSendManager {
                     val pcmArray = toEncodeQueue.tryReceive().getOrNull() // Attempt to receive without suspending
 
                     if (pcmArray != null) {
-                        handleTokenizerChunk(pcmArray)
+                        handleTokenizerChunk(context, pcmArray)
                         Log.d(TAG, "Codec decoding loop iteration completed.")
                     }
 
@@ -126,7 +126,7 @@ object PttSendManager {
         }
     }
 
-    private suspend fun handleTokenizerChunk(pcmArray: ShortArray) {
+    private fun handleTokenizerChunk(context: Context, pcmArray: ShortArray) {
         Log.d(TAG_ENCODE, "Encoding PCM chunk of size")
         val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
         Log.d(TAG_ENCODE, "Tokenizer encoded chunk size")
@@ -134,13 +134,13 @@ object PttSendManager {
 
         val packedData = BitPacking12.pack12(chunkCodes.toList())
 
-        sendData(packedData)
+        sendData(context, packedData)
 
         saveTofile(packedData) // Need to delete
     }
 
     // Equivalent to private void SendData(byte[] data)
-    private suspend fun sendData(data: ByteArray) {
+    private fun sendData(context: Context, data: ByteArray) {
         Log.d(TAG, "Send msg: ${data.size} data: ${data.toHexString()}")
         val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
 
@@ -150,7 +150,11 @@ object PttSendManager {
                 fullData[0] = 0x00
                 System.arraycopy(data, 0, fullData, 1, data.size)
                 val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
-                StardustPackageUtils.getStardustPackage(source = it.getSource(), destenation = it.getDestenation() ?: "" , stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
+                StardustPackageUtils.getStardustPackage(
+                    context = context,
+                    source = it.getSource(),
+                    destenation = it.getDestenation() ?: "" ,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
                     data = audioIntArray)
             }
             val isLast = data.size != 30

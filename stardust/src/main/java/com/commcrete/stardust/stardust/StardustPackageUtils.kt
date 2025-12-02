@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -583,13 +584,15 @@ object StardustPackageUtils {
     }
 
 
-        fun getStardustPackage (source : String, destenation : String, stardustOpCode: StardustOpCode, data : Array<Int>? = null) : StardustPackage {
+    fun getStardustPackage (context: Context, source : String, destenation : String, stardustOpCode: StardustOpCode, data : Array<Int>? = null) : StardustPackage {
         val bittelPackage = StardustPackage(
-            syncBytes = SYNC_BYTES, stardustOpCode = stardustOpCode, stardustControlByte = stardustOpCode.stardustControlByte,
-        length = if(data.isNullOrEmpty()) 0 else data.size,
-            destinationBytes = hexStringToByteArray(destenation), sourceBytes = hexStringToByteArray(
-                source
-            )
+            context = context,
+            syncBytes = SYNC_BYTES,
+            stardustOpCode = stardustOpCode,
+            stardustControlByte = stardustOpCode.stardustControlByte,
+            length = if(data.isNullOrEmpty()) 0 else data.size,
+            destinationBytes = hexStringToByteArray(destenation),
+            sourceBytes = hexStringToByteArray(source)
         )
         bittelPackage.data = data
         bittelPackage.checkXor = getCheckXor(bittelPackage.getStardustPackageToCheckXor())
@@ -700,7 +703,7 @@ object StardustPackageUtils {
         return hexArray
     }
 
-    fun handlePackageReceived (byteArray: ByteArray, randomID: String) {
+    fun handlePackageReceived (context: Context, byteArray: ByteArray, randomID: String) {
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
             lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
@@ -720,7 +723,7 @@ object StardustPackageUtils {
             }
         Log.d("handlePackageReceived $randomID", "add")
 
-        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
+        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(context, byteArray)
         Log.d("handlePackageReceived $randomID", "isFinished")
         val mPackage =  packagesList[packagesList.lastIndex]
             if(isFinished == StardustPackageParser.PackageState.VALID){
@@ -728,7 +731,7 @@ object StardustPackageUtils {
                 val bittelPackage = dataForStardustPackage.mPackage
                 dataForStardustPackage.spareData?.let {
                     if(it.isNotEmpty()){
-                        handlePackageReceived(it, randomID)
+                        handlePackageReceived(context, it, randomID)
                     }
                 }
                 bittelPackage?.let {

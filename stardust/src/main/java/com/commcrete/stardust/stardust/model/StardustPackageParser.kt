@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
+import android.content.Context
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import timber.log.Timber
@@ -24,7 +25,7 @@ class StardustPackageParser : StardustParser() {
         const val checkXorBytesLength = 1
     }
 
-    fun populateByteBuffer(byteArray: ByteArray?) : PackageState {
+    fun populateByteBuffer(context: Context, byteArray: ByteArray?) : PackageState {
         try{
             if(byteBuffer == null) {
                 byteBuffer = ByteBuffer.allocate(2048)
@@ -33,7 +34,7 @@ class StardustPackageParser : StardustParser() {
                 byteBuffer?.limit(byteBuffer?.position()?.plus(100) ?: 30000)
                 byteBuffer?.put(it)
             }
-            mPackage = getStardustPackageFromBuffer()
+            mPackage = getStardustPackageFromBuffer(context)
         }catch (e : Exception){
             e.printStackTrace()
         }
@@ -52,7 +53,7 @@ class StardustPackageParser : StardustParser() {
         return byteArray
     }
 
-    fun getStardustPackageFromBuffer() : StardustPackage?{
+    fun getStardustPackageFromBuffer(context: Context) : StardustPackage?{
         byteBuffer?.let { buffer ->
             val byteArray = readFromByteBuffer(buffer)
 //            logByteArray("getStardustPackageFromBuffer", byteArray)
@@ -82,7 +83,7 @@ class StardustPackageParser : StardustParser() {
             var decryptData = byteArrayOf()
             if(openControl.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
                 val encryptedBytes = byteArray.copyOfRange(offset, cryptLength+offset)
-                decryptData = CryptoUtils.decryptData(encryptedBytes)
+                decryptData = CryptoUtils.decryptData(context,encryptedBytes)
             } else {
                 decryptData = byteArray.copyOfRange(offset, cryptLength+offset)
             }
@@ -145,6 +146,7 @@ class StardustPackageParser : StardustParser() {
                 return null
             }
             val StardustPackage = StardustPackage(
+                context = context,
                 syncBytes = StardustPackageUtils.byteArrayToIntArray(syncBytes),
                 destinationBytes = StardustPackageUtils.byteArrayToIntArray(destinationBytes),
                 sourceBytes = StardustPackageUtils.byteArrayToIntArray(sourceBytes),

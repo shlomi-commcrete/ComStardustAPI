@@ -71,7 +71,7 @@ object DataManager : StardustAPI, PttInterface{
     private var hasTimber = false
     var isPlayPttFromSdk = true
 
-    fun requireContext (context: Context){
+    fun requireContext (context: Context) {
         this.context = context
 //       if(!hasTimber) { // TODO: for debug only
 //            Timber.plant(Timber.DebugTree())
@@ -141,7 +141,11 @@ object DataManager : StardustAPI, PttInterface{
         Scopes.getDefaultCoroutine().launch {
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
-                    source = stardustAPIPackage.source , destenation = stardustAPIPackage.destination, stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE, data =  split)
+                    context = context,
+                    source = stardustAPIPackage.source,
+                    destenation = stardustAPIPackage.destination,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+                    data =  split)
                 mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
                 mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
@@ -206,7 +210,11 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
         requireContext(context)
-        val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
+        val stardustPackage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = stardustAPIPackage.destination,
+            destenation = stardustAPIPackage.source ,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
@@ -214,13 +222,13 @@ object DataManager : StardustAPI, PttInterface{
     override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
                            , fileName : String, fileExt : String) {
         requireContext(context)
-        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG,onFileStatusChange, fileName, fileExt)
+        FileSendUtils.sendFile(context, stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG,onFileStatusChange, fileName, fileExt)
     }
 
     override fun sendFile(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
                           , fileName : String, fileExt : String) {
         requireContext(context)
-        FileSendUtils.sendFile(stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT, onFileStatusChange, fileName, fileExt)
+        FileSendUtils.sendFile(context, stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT, onFileStatusChange, fileName, fileExt)
     }
 
     override fun stopSendFile(context: Context) {
@@ -231,7 +239,11 @@ object DataManager : StardustAPI, PttInterface{
     override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {
         requireContext(context)
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
-        val stardustPackage = StardustPackageUtils.getStardustPackage(source = stardustAPIPackage.destination, destenation = stardustAPIPackage.source , stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
+        val stardustPackage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = stardustAPIPackage.destination,
+            destenation = stardustAPIPackage.source,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
@@ -260,18 +272,22 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun setSecurityKey(context: Context, key: String, name : String) {
+        requireContext(context)
         SecureKeyUtils.setSecuredKey(context, key, name)
     }
 
     override fun setSecurityKeyDefault(context: Context) {
+        requireContext(context)
         SecureKeyUtils.setSecuredKeyDefault(context)
     }
 
     override fun getSecurityKey(context: Context): ByteArray {
+        requireContext(context)
         return SecureKeyUtils.getSecuredKey(context)
     }
 
     override fun reconnectToCurrentDevice(context: Context) {
+        requireContext(context)
         getClientConnection(context).reconnectToDeviceFast()
     }
 

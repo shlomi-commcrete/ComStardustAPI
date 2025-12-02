@@ -268,6 +268,7 @@ object StardustInitConnectionHandler {
         val (src, dst) = requireSrcDstOrNull() ?: (null to null)
         if (src != null && dst != null) {
             val pkg = StardustPackageUtils.getStardustPackage(
+                context = ctx,
                 source = src,
                 destenation = dst,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS
@@ -300,6 +301,7 @@ object StardustInitConnectionHandler {
             add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         }
         val pkg = StardustPackageUtils.getStardustPackage(
+            context = ctx,
             source = appId,
             destenation = addr.stardustID,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
@@ -320,7 +322,9 @@ object StardustInitConnectionHandler {
         val (src, dst) = requireSrcDst() ?: return
         val payload = buildDeleteGroupsPayload() // TODO: replace with your real payload
         val pkg = StardustPackageUtils.getStardustPackage(
-            source = src, destenation = dst,
+            context = ctx,
+            source = src,
+            destenation = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
             data = payload
         )
@@ -334,6 +338,7 @@ object StardustInitConnectionHandler {
             val payload = buildAddGroupsPayload()
             val (src, dst) = requireSrcDst() ?: return@launch
             val pkg = StardustPackageUtils.getStardustPackage(
+                context = ctx,
                 source = src, destenation = dst,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
                 data = payload
@@ -347,6 +352,7 @@ object StardustInitConnectionHandler {
     private fun requestConfiguration() {
         val (src, dst) = requireSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
+            context = ctx,
             source = src,
             destenation = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.READ_STATUS
@@ -372,6 +378,7 @@ object StardustInitConnectionHandler {
     private fun sendUpdateAdminMode() {
         val (src, dst) = requireSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
+            context = ctx,
             source = src,
             destenation = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE
@@ -382,7 +389,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun finishAdminModeUpdate() {
-        AdminUtils.updateBittelAdminMode()
+        AdminUtils.updateBittelAdminMode(ctx)
         if (BleManager.isUsbEnabled()) {
             BittelUsbManager2.updateBlePort()
             Timber.tag("startUpdatingPort").d("updateUsbPort (init)")

@@ -104,7 +104,10 @@ object LogUtils {
                 val logToBytes = numOfLogs.intToByteArray().reversedArray()
                 val logSizeData = StardustPackageUtils.byteArrayToIntArray(logToBytes)
                 val logPackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS,
                     data = logSizeData)
                 clientConnection.addMessageToQueue(logPackage)
             }

@@ -95,7 +95,10 @@ internal class ClientConnection(
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
-                    source = src, destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
                 addMessageToQueue(versionPackage)
             }
         }
@@ -274,7 +277,7 @@ internal class ClientConnection(
 //                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
                     characteristic.value?.let {
 //                        Timber.tag("onCharacteristicChanged").d("without Value")
-                        StardustPackageUtils.handlePackageReceived(it, randomID)
+                        StardustPackageUtils.handlePackageReceived(context, it, randomID)
                         clearTimer()
                     }
                 }
@@ -741,7 +744,7 @@ internal class ClientConnection(
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     val write = gattConnection?.writeCharacteristic(
                         bluetoothGattCharacteristic,
-                        bittelPackage.getStardustPackageToSend(),
+                        bittelPackage.getStardustPackageToSend(context),
                         WRITE_TYPE_DEFAULT
                     )
                     write?.let {
@@ -755,7 +758,7 @@ internal class ClientConnection(
                         }
                     }
                 } else {
-                    bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                    bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
                     val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
                     write?.let {
                         if(!it){
@@ -768,7 +771,7 @@ internal class ClientConnection(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 val write = gattConnection?.writeCharacteristic(
                     bluetoothGattCharacteristic,
-                    bittelPackage.getStardustPackageToSend(),
+                    bittelPackage.getStardustPackageToSend(context),
                     WRITE_TYPE_DEFAULT
                 )
                 write?.let {
@@ -782,7 +785,7 @@ internal class ClientConnection(
                     }
                 }
             } else {
-                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
                 val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
                 write?.let {
                     if(!it){
@@ -988,7 +991,10 @@ internal class ClientConnection(
                 val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
                 val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
                 val txPackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
+                    context = context,
+                    source = src ,
+                    destenation = dst,
+                    stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
                     data = data)
                 addMessageToQueue(txPackage)
             }
@@ -1001,7 +1007,10 @@ internal class ClientConnection(
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+                    context = context,
+                    source = src ,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                 addMessageToQueue(configurationSavePackage)
             }
         }

@@ -28,7 +28,7 @@ object AdminUtils {
         return adminLocal == AdminLocal.SuperUser
     }
 
-    fun updateBittelAdminMode () {
+    fun updateBittelAdminMode (context: Context) {
         val adminMode = getAdminMode(DataManager.context)
         val clientConnection = DataManager.getClientConnection(DataManager.context)
         SharedPreferencesUtil.getAppUser(DataManager.context)?.let {
@@ -38,7 +38,10 @@ object AdminUtils {
             intData.add(adminMode.type)
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE,
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE,
                     data = intData.toIntArray().toTypedArray().reversedArray())
                 clientConnection.addMessageToQueue(deletePackage)
             }

@@ -2,10 +2,11 @@ package com.commcrete.stardust.crypto
 
 import android.content.Context
 import android.util.Base64
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
 
-class SecureKeyStore(context: Context) {
+class SecureKeyStore(val context: Context) {
 
 
     // 1.0.0 API: MasterKeys
@@ -26,6 +27,7 @@ class SecureKeyStore(context: Context) {
 
     @Synchronized
     fun getKey(): ByteArray {
+        Log.d("DEBUGTEST", "getKey: context $context")
         val b64 = prefs.getString(KEY_NAME, null)
         if (b64.isNullOrEmpty()) {
             saveBytes(DEFAULT_KEY)

@@ -180,7 +180,10 @@ object LocationUtils  {
         // TODO: change xor check
         Scopes.getDefaultCoroutine().launch {
             val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(
-                source = mPackage.getDestAsString() , destenation = mPackage.getSourceAsString(), stardustOpCode =
+                context = context,
+                source = mPackage.getDestAsString(),
+                destenation = mPackage.getSourceAsString(),
+                stardustOpCode =
                 if(opCode == null) mPackage.stardustOpCode else opCode, data =  CoordinatesUtil().packEmptyLocation()
             )
 
@@ -198,10 +201,12 @@ object LocationUtils  {
 
         Scopes.getDefaultCoroutine().launch {
             val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(
-                source = mPackage.getDestAsString() , destenation = mPackage.getSourceAsString(), stardustOpCode =
+                context = context,
+                source = mPackage.getDestAsString(),
+                destenation = mPackage.getSourceAsString(),
+                stardustOpCode =
                 if(opCode == null) StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION else opCode,
-                data =
-                CoordinatesUtil().packLocation(location)
+                data = CoordinatesUtil().packLocation(location)
             )
             val id = Random.nextLong(Long.MAX_VALUE)
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK

@@ -289,7 +289,10 @@ internal class StardustPackageHandler(private val context: Context ,
             val dst = it.bittelId
             if(src != null && dst != null) {
                 val configurationPackage = StardustPackageUtils.getStardustPackage(
-                    source = src , destenation = dst, stardustOpCode =StardustPackageUtils.StardustOpCode.READ_STATUS)
+                    context = context,
+                    source = src,
+                    destenation = dst,
+                    stardustOpCode =StardustPackageUtils.StardustOpCode.READ_STATUS)
                 clientConnection?.addMessageToQueue(configurationPackage)
             }
         }
@@ -377,7 +380,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
                 ConfigurationUtils.setConfigFile(it)
                 setNewLocals(it)
-                AdminUtils.updateBittelAdminMode()
+                AdminUtils.updateBittelAdminMode(context)
             }
     }
     }
@@ -408,7 +411,9 @@ internal class StardustPackageHandler(private val context: Context ,
             data.add(0)
             data.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             val mPackage = StardustPackageUtils.getStardustPackage(
-                source = it , destenation = addressesPackage.stardustID,
+                context = context,
+                source = it,
+                destenation = addressesPackage.stardustID,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
                 data = data.toIntArray().toTypedArray()
             )
@@ -510,7 +515,11 @@ internal class StardustPackageHandler(private val context: Context ,
         Scopes.getDefaultCoroutine().launch {
 
             val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(
-                source = mPackage.getSourceAsString() , destenation = mPackage.getDestAsString(), stardustOpCode = mPackage.stardustOpCode, data =  arrayOf(StardustPackageUtils.Ack, 0x00)
+                context = context,
+                source = mPackage.getSourceAsString(),
+                destenation = mPackage.getDestAsString(),
+                stardustOpCode = mPackage.stardustOpCode,
+                data =  arrayOf(StardustPackageUtils.Ack, 0x00)
             )
             bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             bittelPackageToReturn.stardustControlByte.stardustDeliveryType = mPackage.stardustControlByte.stardustDeliveryType
