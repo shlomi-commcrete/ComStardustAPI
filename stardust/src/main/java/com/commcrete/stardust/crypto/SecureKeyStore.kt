@@ -27,7 +27,6 @@ class SecureKeyStore(val context: Context) {
 
     @Synchronized
     fun getKey(): ByteArray {
-        Log.d("DEBUGTEST", "getKey: context $context")
         val b64 = prefs.getString(KEY_NAME, null)
         if (b64.isNullOrEmpty()) {
             saveBytes(DEFAULT_KEY)
