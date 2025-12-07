@@ -19,6 +19,12 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         val modelAssetName = "wav_to_codes_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
+
+    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Log.d(TAG, "Loading WavTokenizerEncoder model")
+        val modelAssetName = "wav_to_codes_large_android.ptl"
+        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+    }
     init {
         // If your model is in assets: just put the asset name here.
     }
@@ -94,6 +100,7 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     fun initModule() {
         Log.d(TAG, "WavTokenizerEncoder module initialized")
         module
+//        moduleEnglish
         Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
     }
 }
