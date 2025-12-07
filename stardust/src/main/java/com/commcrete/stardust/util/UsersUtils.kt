@@ -30,6 +30,7 @@ import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
+import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.*
 import java.util.Date
@@ -333,6 +334,7 @@ object UsersUtils {
 
     suspend fun logout () : Boolean{
         val bittelUserList = GlobalScope.async {
+            unpairDeviceBLE(DataManager.context)
             val clearBittelUserRepository = BittelUserRepository(BittelUserDatabase.getDatabase(DataManager.context).bittelUserDao()).clearData()
             val clearChatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).clearData()
             val clearContactsRepository = ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).clearData()
