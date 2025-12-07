@@ -60,7 +60,7 @@ object RecorderUtils {
                 canRecord.value = false
             }
             Log.d("AudioRecorder", "AI Enhanced Recording Started")
-            PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context, pttInterface)
+            PttSendManager.init(DataManager.context,  pttInterface)
             Log.d("AudioRecorder", "PttSendManager.init")
             DataManager.getSource().let {
                 file = createFile(DataManager.fileLocation, destination, it)

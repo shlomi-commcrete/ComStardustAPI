@@ -421,6 +421,11 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         Combined
     }
 
+    enum class ModelType {
+        General,
+        English
+    }
+
     fun initModule() {
         Log.d(TAG, "WavTokenizerDecoder module initialized")
         module
