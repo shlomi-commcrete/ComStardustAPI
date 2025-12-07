@@ -15,7 +15,10 @@ class ContactsRepository (private val contactsDao: ContactsDao) {
     fun  getChatContactByPhone(phone : String) : ChatContact = contactsDao.getChatContactByPhone(phone)
 
 
-    fun  getChatContactByBittelID(bittelID : String) : ChatContact? = contactsDao.getChatContactByBittelID(bittelID)
+    fun  getChatContactByBittelID(bittelID : String) : ChatContact? {
+        return contactsDao.getChatContactByAppBittelID(bittelID) ?:
+            contactsDao.getChatContactByBittelID(bittelID)
+    }
 
     fun  getChatContactByAppBittelID(bittelID : String) : ChatContact? = contactsDao.getChatContactByAppBittelID(bittelID)
 

@@ -23,7 +23,7 @@ class DemoUsers {
         for (chat in userList) {
             val chatObj = chat as JsonObject
             for ((key, value) in chatObj.entrySet()) {
-                val appId = key
+                val appId = key.getSrcDestMin4Bytes()
                 val data = value as JsonObject
                 val bittelId = data.get("bittelId").asString
                 val name = data.get("chat_name").asString
@@ -40,9 +40,9 @@ class DemoUsers {
                 if(data.has("image")){
                     image = data.get("image").asString
                 }
-                mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
+                mutableUserList.add(getChatItem(appId, name , bittelId, userId, isSniffer,isGroup, isBittel, image))
 //                mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
-                mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
+                mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel, bittelId))
                 loop++
             }
         }
@@ -52,7 +52,7 @@ class DemoUsers {
         var loop = 0
         for (chat in demoList) {
             val appId = chat.id
-            val bittelId = chat.deviceId
+            val bittelId = chat.deviceId.getSrcDestMin4Bytes()
             val name = chat.name
             val isSniffer = chat.type == "sniffer"
             var isGroup = chat.type == "group"
@@ -62,9 +62,9 @@ class DemoUsers {
             if(chat.deviceId.isNotEmpty()) {
                 createDeviceUser(chat, userId, loop)
             }
-            mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId.getSrcDestMin4Bytes(), userId, isSniffer,isGroup, isBittel, image))
+            mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , bittelId, userId, isSniffer,isGroup, isBittel, image))
 //            mutableMessagesList.add(getMessageItem(appId, appId, loop, userId ))
-            mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
+            mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel, bittelId))
             loop++
         }
     }
@@ -77,7 +77,7 @@ class DemoUsers {
         var isBittel = true
         var image = chat.image
         mutableUserList.add(getChatItem(appId.getSrcDestMin4Bytes(), name , "", userId, isSniffer,isGroup, isBittel, image))
-        mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel))
+        mutableContactsList.add(getContact(appId, name, loop, userId ,isSniffer, isGroup, isBittel, ""))
     }
 
     private fun getContact (
@@ -87,9 +87,10 @@ class DemoUsers {
         userId: String,
         isSniffer: Boolean,
         isGroup: Boolean,
-        isBittel: Boolean
+        isBittel: Boolean,
+        bittelId: String
     ) : ChatContact {
-        return ChatContact(displayName = getName(userId, appId, name), number = "$loop" , bittelId = appId, smartphoneBittelId = appId,
+        return ChatContact(displayName = getName(userId, appId, name), number = "$loop" , bittelId = bittelId, smartphoneBittelId = appId,
             isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel)
     }
 
