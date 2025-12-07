@@ -166,6 +166,8 @@ object PttSendManager {
         startRecording = 0L
         needToRun = true
         frameBuffer.clear()
+        lastPCM = null
+        lastTokens = null
     }
 
     private fun ByteArray.toHexString(): String =
@@ -175,7 +177,8 @@ object PttSendManager {
     private var startRecording = 0L
     private var needToRun = true;
     private val frameBuffer = mutableListOf<ShortArray>()
-
+    private var lastPCM  : ShortArray? = null
+    private var lastTokens  : List<Long>? = null
     private fun saveTofile(packData: ByteArray, finish : Boolean = false) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
         if (!needToRun) return
@@ -186,9 +189,11 @@ object PttSendManager {
         }
         Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
         val unpack = BitPacking12.unpack12(packData)
-        val finalPcmData = wavTokenizerDecoder.decode(unpack)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM)
         Log.d(TAG_DECODE, "Decoded PCM data size")
         frameBuffer.add(finalPcmData)
+        lastTokens = unpack
+        lastPCM = finalPcmData
 
         if ((System.currentTimeMillis() - startRecording > 45000) || finish) {
             Log.d(TAG, "3 seconds elapsed, saving to file.")
