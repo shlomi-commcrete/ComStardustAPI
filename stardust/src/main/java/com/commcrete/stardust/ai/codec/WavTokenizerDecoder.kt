@@ -2,24 +2,36 @@ package com.commcrete.aiaudio.codecs
 
 import android.content.Context
 import android.util.Log
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import org.pytorch.IValue
 import org.pytorch.LiteModuleLoader
 import org.pytorch.Module
 import org.pytorch.Tensor
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.time.measureTime
+import java.io.IOException
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.time.measureTime
 
-class WavTokenizerDecoder(context: Context, pluginContext: Context) {
+
+class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     private val TAG = "WavTokenizerDecoder"
 
+    private var index = 0
+    private var cutTokens = 0
+
+    private var loop = 0
+    val outFile = File(context.cacheDir, "decoded_data.txt")
+    val listEnergy = mutableListOf<String>()
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerDecoder model")
         val modelAssetName = "codes_to_wav_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
+
+
     init {
         // If your model is in assets: just put the asset name here.
     }
@@ -30,6 +42,8 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
     // also add 3 fake tokens at the end to help the model
     fun decode(data: List<Long>, previousTokens: List<Long>? = null, previousSamples: ShortArray? = null) : ShortArray {
         // Combine previous data with current data if previous data exists
+
+        val decodeType = SharedPreferencesUtil.getAudioDecodeType(context)
         val combinedData = if (previousTokens != null) {
             previousTokens + data
         } else {
@@ -37,7 +51,7 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
         }
 
         // Add 3 fake values at the end
-        val fixedData = combinedData + listOf(0, 0, 0)
+        val fixedData = combinedData + listOf(0, 0, 0, 0)
 
         val codes = convertLongListToTensor(fixedData)
 
@@ -45,29 +59,179 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
         val duration = measureTime {
             output = module.forward(IValue.from(codes)).toTensor()
         }
-        Log.d(TAG, "Decoding took $duration")
+        //        Log.d(TAG, "Decoding took $duration")
 
-        // Remove the last 1800 samples
-        var audioData = output!!.dataAsFloatArray.dropLast(1800).toFloatArray()
+        // Remove the last 2400 samples
+        var audioData = output!!.dataAsFloatArray.dropLast(2400).toFloatArray()
 
+        //get index
+        // to cut after
+        //slice previous tokens
+
+//        val tensor = Tensor
         // Return only the new part after alignment
-        if (previousTokens != null) {
-            val sliceIndexStart = previousTokens.size * 600
-            audioData = audioData.sliceArray(sliceIndexStart until audioData.size)
+        if(decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
+            handleSmart(previousTokens, audioData, fixedData, output)
         }
-
-        val unalignedAudio = floatArrayToPcm(audioData)
 
         // Apply audio normalization if we have previous data
         // 🔹 Apply crossfade with previousSamples to remove "ticks"
-        val alignedAudioData = if (previousSamples != null) {
-            crossfadePcmReturnOnlyNext(previousSamples, unalignedAudio, fadeMs = 10, sampleRate = 24000)
+
+        var unalignedAudio: ShortArray
+        if(decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
+            val alignedAudioData = if (previousSamples != null) {
+                fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
+            } else {
+                audioData
+            }
+            unalignedAudio = floatArrayToPcm(alignedAudioData)
         } else {
-            unalignedAudio
+            unalignedAudio = floatArrayToPcm(audioData)
         }
 
-        Log.d(TAG, "decode get size ${data.size } return ${alignedAudioData.size}")
-        return alignedAudioData
+
+
+
+        Log.d(TAG, "decode get size ${data.size } return ${unalignedAudio.size}")
+        loop ++
+        return unalignedAudio
+    }
+
+    fun shortArrayToFloatArray(input: ShortArray): FloatArray {
+        return FloatArray(input.size) { i ->
+            input[i].toFloat()
+        }
+    }
+
+    fun handleSmart(
+        previousTokens: List<Long>?,
+        audioData: FloatArray,
+        fixedData: List<Long>,
+        output: Tensor?
+    ): FloatArray {
+
+        var trimmed = audioData   // <-- local mutable copy
+
+        if (previousTokens != null) {
+            Log.d(TAG, "last Index $index")
+            val cutFrom = (20 - cutTokens) * 600
+            Log.d(TAG, "cutFrom $cutFrom")
+
+            if (cutFrom in 0 until trimmed.size) {
+                trimmed = trimmed.sliceArray(cutFrom until trimmed.size)
+                Log.d(TAG, "Trimmed head → new size = ${trimmed.size}")
+            } else {
+                Log.w(TAG, "cutFrom out of range → no trimming")
+            }
+        }
+
+        Log.d(TAG, "audioData.size ${trimmed.size}")
+
+        val bestBoundaryToken = findLowestEnergyTokenBoundary(trimmed)
+
+        saveDecodedData(output!!.dataAsFloatArray, fixedData)
+
+        index = bestBoundaryToken
+        val totalTokens = trimmed.size / 600
+        cutTokens = (totalTokens - index)
+        Log.d(TAG, "cutTokens $cutTokens")
+
+        // Trim AFTER boundary
+        val cutoff = index * 600
+        if (cutoff in 1 until trimmed.size) {
+            trimmed = trimmed.sliceArray(0 until cutoff)
+            Log.d(TAG, "Trimmed audioData to boundary → new size = ${trimmed.size}")
+        }
+
+        return trimmed
+    }
+
+    fun fixAudioAlignment2(
+        previousSamples: FloatArray,
+        currentChunk: FloatArray
+    ): FloatArray {
+        val numSamples = 400
+        val lastIndex = previousSamples.size - 1
+
+        for (i in 0 until numSamples) {
+            val diff =
+                (previousSamples[lastIndex - i] - currentChunk[i]) *
+                        ((numSamples - i).toFloat() / numSamples)
+
+            currentChunk[i] += diff
+        }
+
+        return currentChunk
+    }
+
+    private fun floatArrayToTensor(audio: FloatArray): Tensor {
+        val shape = longArrayOf(1, audio.size.toLong())   // [batch, samples]
+        return Tensor.fromBlob(audio, shape)
+    }
+
+    fun findLowestEnergyTokenBoundary(
+        chunk: FloatArray,
+        numTokensToCheck: Int = 4,
+        samplesPerToken: Int = 600
+    ): Int {
+        listEnergy.clear()
+        val totalSamples = chunk.size
+
+        // If 1D, treat as batch=1
+        val samples = chunk
+
+        val totalTokens = totalSamples / samplesPerToken
+        var tokensToCheck = minOf(numTokensToCheck, totalTokens - 1)
+
+        if (tokensToCheck < 1) {
+            Log.d(TAG, "Warning: Not enough tokens to check boundaries")
+            return totalTokens - 1
+        }
+
+//        Log.d(TAG, "\nAnalyzing $tokensToCheck token boundaries:")
+        Log.d(TAG, "Total tokens in chunk: $totalTokens")
+//        Log.d(TAG, "Checking last $tokensToCheck tokens\n")
+
+        val energies = mutableListOf<Float>()
+        val tokenIndices = mutableListOf<Int>()
+
+        for (i in 0 until tokensToCheck) {
+
+            // Token index from the end
+            val tokenIdx = totalTokens - tokensToCheck + i
+
+            val boundarySample = tokenIdx * samplesPerToken
+            val startSample = boundarySample - 100
+            val endSample = boundarySample + 100
+
+            // Extract window safely
+            val safeStart = maxOf(startSample, 0)
+            val safeEnd = minOf(endSample, totalSamples)
+
+            var energy = 0f
+            for (s in safeStart until safeEnd) {
+                val v = samples[s]
+                energy += abs(v)
+            }
+
+            energies.add(energy)
+            tokenIndices.add(tokenIdx)
+
+            val text = "Token %3d boundary (samples %6d to %6d): Energy = %.6f"
+                .format(tokenIdx, startSample, endSample, energy)
+            Log.d(TAG,
+                text
+            )
+            listEnergy.add(text)
+        }
+
+        // Find lowest-energy token
+        val minIndex = energies.indexOf(energies.minOrNull()!!)
+        val bestToken = tokenIndices[minIndex]
+
+        Log.d(TAG, "\n✓ Lowest energy found at token $bestToken with energy %.6f".format(energies[minIndex]))
+
+        return bestToken
     }
 
     fun crossfadePcmReturnOnlyNext(
@@ -154,7 +318,7 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
         for (i in 0 until numSamples - 1) {
             val nextIndex = i + 1
             val diff = (normalizedData[i] - normalizedData[nextIndex]) *
-                       ((numSamples - i - 1).toFloat() / numSamples)
+                    ((numSamples - i - 1).toFloat() / numSamples)
             normalizedData[nextIndex] = (normalizedData[nextIndex] + diff.toInt().toShort()).toShort()
         }
 
@@ -216,13 +380,45 @@ class WavTokenizerDecoder(context: Context, pluginContext: Context) {
     }
 
     private fun floatArrayToPcm(floatArray: FloatArray): ShortArray {
-        val shortArray = ShortArray(floatArray.size)
+        val out = ShortArray(floatArray.size)
         for (i in floatArray.indices) {
-            // Clamp and convert to 16-bit
-            val clampedValue = floatArray[i].coerceIn(-1.0f, 1.0f)
-            shortArray[i] = (clampedValue * Short.MAX_VALUE + 0.5f).toInt().toShort()
+            val v = floatArray[i].coerceIn(-1f, 1f)
+            out[i] = (v * 32767f).toInt().toShort()
         }
-        return shortArray
+        return out
+    }
+
+    private fun saveDecodedData (byteArray: FloatArray, fixedData: List<Long>, ) {
+        try {
+            FileOutputStream(outFile, true).use { fos ->
+                // Write each int16 value on its own line
+                val sb = StringBuilder()
+                sb.append("\n").append("Loop number $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
+                sb.append("\n").append("Tokens $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
+                for (sample in fixedData) {
+                    sb.append(sample.toInt()).append("\n")
+                }
+                sb.append("\n").append("Energy $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
+                for (energy in listEnergy) {
+                    sb.append(energy).append("\n")
+                }
+                sb.append("\n").append("Data $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
+                for (sample in byteArray) {
+                    sb.append(sample).append("\n")
+                }
+                fos.write(sb.toString().toByteArray(Charsets.UTF_8))
+            }
+            Log.e("WavHelper", "Finished writing RAW TXT file to ${outFile.absolutePath}")
+        } catch (e: IOException) {
+            Log.e("WavHelper", "Error writing raw txt file", e)
+        }
+
+    }
+
+    enum class DecodeMode {
+        Aligned,
+        Smart,
+        Combined
     }
 
     fun initModule() {

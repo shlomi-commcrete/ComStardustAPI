@@ -18,6 +18,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import androidx.core.content.edit
+import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -120,7 +121,8 @@ object SharedPreferencesUtil {
 
     //Files
     private const val KEY_RESILIENCE = "key_resilience"
-
+    //Audio Ai
+    private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -605,6 +607,25 @@ object SharedPreferencesUtil {
             RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
             RecorderUtils.CODE_TYPE.AI.id -> return RecorderUtils.CODE_TYPE.AI
             else -> return RecorderUtils.CODE_TYPE.CODEC2
+        }
+    }
+
+    fun setAudioDecodeType(context: Context, decodeMode: WavTokenizerDecoder.DecodeMode) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit()
+            .putString(KEY_DEFAULT_AUDIO_DECODE_TYPE, decodeMode.name) // save enum as string
+            .apply()
+    }
+
+    fun getAudioDecodeType(context: Context): WavTokenizerDecoder.DecodeMode {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val saved = prefs.getString(KEY_DEFAULT_AUDIO_DECODE_TYPE, null)
+
+        return try {
+            if (saved != null) WavTokenizerDecoder.DecodeMode.valueOf(saved)
+            else WavTokenizerDecoder.DecodeMode.Combined   // default value
+        } catch (e: Exception) {
+            WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
         }
     }
 }

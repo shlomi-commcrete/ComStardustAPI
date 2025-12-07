@@ -40,8 +40,8 @@ object PttSendManager {
     private var coroutineScope = CoroutineScope(Dispatchers.Default) // Scope for decoding and frame dropping
     private var encodingJob: Job? = null
     private var toEncodeQueue = Channel<ShortArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
-    private lateinit var wavTokenizerEncoder: WavTokenizerEncoder
-    lateinit var wavTokenizerDecoder: WavTokenizerDecoder
+    private var wavTokenizerEncoder: WavTokenizerEncoder= AIModuleInitializer.wavTokenizerEncoder
+    private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
     private lateinit var cacheDir: File
     private var fileToSave: File? = null
     var carrier : Carrier? = null
@@ -49,41 +49,12 @@ object PttSendManager {
     private var viewModel : PttInterface? = null
     var aiEnabled = false
 
-    fun init(context: Context, pluginContext: Context, viewModel : PttInterface? = null) {
+    fun init(context: Context, viewModel : PttInterface? = null) {
         cacheDir = context.cacheDir
-        aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
-        if (!aiEnabled) {
-            Log.d(TAG, "AI Codec not enabled for this process.")
-            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
-            return
-        }
-        Scopes.getDefaultCoroutine().launch {
-
-            if(!::wavTokenizerEncoder.isInitialized) {
-                wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
-            }
-            delay(1000)
-            if(!::wavTokenizerDecoder.isInitialized) {
-                wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
-            }
-        }
-
         this.viewModel = viewModel
         startEncodingJob()
 
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
-    }
-
-    fun initModules () {
-        Scopes.getDefaultCoroutine().launch {
-            if(::wavTokenizerEncoder.isInitialized) {
-                wavTokenizerEncoder.initModule()
-            }
-            delay(1000)
-            if(::wavTokenizerDecoder.isInitialized) {
-                wavTokenizerDecoder.initModule()
-            }
-        }
     }
 
     fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, chatID: String? = null) {
