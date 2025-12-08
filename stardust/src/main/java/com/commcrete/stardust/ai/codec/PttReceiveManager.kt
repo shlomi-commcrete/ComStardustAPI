@@ -20,7 +20,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.io.File
 
 object PttReceiveManager {
@@ -30,7 +29,7 @@ object PttReceiveManager {
     private var decodingJob: Job? = null
     private var toDecodeQueue = Channel<ByteArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
 
-    private lateinit var wavTokenizerDecoder: WavTokenizerDecoder
+    private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
 
     // Variables to track last unpack and timestamp
     private var lastUnpack: List<Long>? = null
@@ -39,24 +38,8 @@ object PttReceiveManager {
     private var from = ""
     private var source : String? = ""
 
-    fun init(context: Context, pluginContext: Context) {
-
-        PttSendManager.aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
-        if (!PttSendManager.aiEnabled) {
-            Log.d(TAG, "AI Codec not enabled for this process.")
-            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
-            return
-        }
-        if(!::wavTokenizerDecoder.isInitialized) {
-            wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
-        }
+    fun init() {
         startDecodingJob()
-    }
-
-    fun initModules () {
-        Scopes.getDefaultCoroutine().launch {
-            wavTokenizerDecoder = PttSendManager.wavTokenizerDecoder
-        }
     }
 
     fun addNewData(data: ByteArray, from : String, source : String? = null) {
@@ -102,12 +85,12 @@ object PttReceiveManager {
 
         // Check if last unpack was received within 800ms
         val currentTime = System.currentTimeMillis()
-        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 800) {
+        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
             lastUnpack
         } else {
             null
         }
-        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 800) {
+        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
             lastDecodedSamples
         } else {
             null
@@ -126,6 +109,36 @@ object PttReceiveManager {
             delay(BUFFERING_TIME_MS)
 
         PcmStreamPlayer.enqueue(finalPcmData, 24000, from, source)
+    }
+
+    suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {
+
+        // Check if last unpack was received within 800ms
+        val currentTime = System.currentTimeMillis()
+        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
+            lastUnpack
+        } else {
+            null
+        }
+        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
+            lastDecodedSamples
+        } else {
+            null
+        }
+
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample)
+        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
+
+        // Save current unpack and timestamp for next iteration
+        lastUnpack = unpack
+        lastDecodedSamples = finalPcmData
+        lastUnpackTime = currentTime
+
+        // Add buffering delay only if there was no previous unpack (first packet)
+        if (previousUnpack == null)
+            delay(BUFFERING_TIME_MS)
+
+        PcmStreamPlayer.enqueue(finalPcmData, 24000, "from", "source")
     }
 
     private fun ByteArray.toHexString(): String =

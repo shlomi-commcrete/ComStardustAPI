@@ -18,6 +18,7 @@ import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ble.BleManager
@@ -184,15 +185,7 @@ object DataManager : StardustAPI, PttInterface{
 
     fun initModules (context: Context) {
         requireContext(context)
-        Scopes.getDefaultCoroutine().launch {
-            PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
-            delay(1000)
-            PttReceiveManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
-            delay(1000)
-            PttSendManager.initModules()
-            delay(1000)
-            PttReceiveManager.initModules()
-        }
+        AIModuleInitializer.initModules(context)
     }
     @SuppressLint("MissingPermission")
     override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {

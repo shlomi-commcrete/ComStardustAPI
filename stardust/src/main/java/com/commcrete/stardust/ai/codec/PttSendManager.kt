@@ -40,8 +40,8 @@ object PttSendManager {
     private var coroutineScope = CoroutineScope(Dispatchers.Default) // Scope for decoding and frame dropping
     private var encodingJob: Job? = null
     private var toEncodeQueue = Channel<ShortArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
-    private lateinit var wavTokenizerEncoder: WavTokenizerEncoder
-    lateinit var wavTokenizerDecoder: WavTokenizerDecoder
+    private var wavTokenizerEncoder: WavTokenizerEncoder= AIModuleInitializer.wavTokenizerEncoder
+    private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
     private lateinit var cacheDir: File
     private var fileToSave: File? = null
     var carrier : Carrier? = null
@@ -49,41 +49,12 @@ object PttSendManager {
     private var viewModel : PttInterface? = null
     var aiEnabled = false
 
-    fun init(context: Context, pluginContext: Context, viewModel : PttInterface? = null) {
+    fun init(context: Context, viewModel : PttInterface? = null) {
         cacheDir = context.cacheDir
-        aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
-        if (!aiEnabled) {
-            Log.d(TAG, "AI Codec not enabled for this process.")
-            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
-            return
-        }
-        Scopes.getDefaultCoroutine().launch {
-
-            if(!::wavTokenizerEncoder.isInitialized) {
-                wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
-            }
-            delay(1000)
-            if(!::wavTokenizerDecoder.isInitialized) {
-                wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
-            }
-        }
-
         this.viewModel = viewModel
         startEncodingJob(context)
 
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
-    }
-
-    fun initModules () {
-        Scopes.getDefaultCoroutine().launch {
-            if(::wavTokenizerEncoder.isInitialized) {
-                wavTokenizerEncoder.initModule()
-            }
-            delay(1000)
-            if(::wavTokenizerDecoder.isInitialized) {
-                wavTokenizerDecoder.initModule()
-            }
-        }
     }
 
     fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, chatID: String? = null) {
@@ -199,6 +170,8 @@ object PttSendManager {
         startRecording = 0L
         needToRun = true
         frameBuffer.clear()
+        lastPCM = null
+        lastTokens = null
     }
 
     private fun ByteArray.toHexString(): String =
@@ -208,7 +181,8 @@ object PttSendManager {
     private var startRecording = 0L
     private var needToRun = true;
     private val frameBuffer = mutableListOf<ShortArray>()
-
+    private var lastPCM  : ShortArray? = null
+    private var lastTokens  : List<Long>? = null
     private fun saveTofile(packData: ByteArray, finish : Boolean = false) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
         if (!needToRun) return
@@ -219,9 +193,11 @@ object PttSendManager {
         }
         Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
         val unpack = BitPacking12.unpack12(packData)
-        val finalPcmData = wavTokenizerDecoder.decode(unpack)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM)
         Log.d(TAG_DECODE, "Decoded PCM data size")
         frameBuffer.add(finalPcmData)
+        lastTokens = unpack
+        lastPCM = finalPcmData
 
         if ((System.currentTimeMillis() - startRecording > 45000) || finish) {
             Log.d(TAG, "3 seconds elapsed, saving to file.")
