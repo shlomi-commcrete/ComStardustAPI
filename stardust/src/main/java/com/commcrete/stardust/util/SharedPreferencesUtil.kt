@@ -630,22 +630,22 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setAudioModelType(context: Context, decodeMode: WavTokenizerDecoder.DecodeMode) {
+    fun setAudioModelType(context: Context, model: WavTokenizerDecoder.ModelType) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         prefs.edit()
-            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, decodeMode.name) // save enum as string
+            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
             .apply()
     }
 
-    fun getAudioModelType(context: Context): WavTokenizerDecoder.DecodeMode {
+    fun getAudioModelType(context: Context): WavTokenizerDecoder.ModelType {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
 
         return try {
-            if (saved != null) WavTokenizerDecoder.DecodeMode.valueOf(saved)
-            else WavTokenizerDecoder.DecodeMode.Combined   // default value
+            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
+            else WavTokenizerDecoder.ModelType.General   // default value
         } catch (e: Exception) {
-            WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
+            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
         }
     }
 
