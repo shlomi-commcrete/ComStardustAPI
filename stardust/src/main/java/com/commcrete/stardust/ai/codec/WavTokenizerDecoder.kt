@@ -77,7 +77,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 //        val tensor = Tensor
         // Return only the new part after alignment
         if(decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
-            handleSmart(previousTokens, audioData, fixedData, output)
+            audioData = handleSmart(previousTokens, audioData, fixedData, output)
         }
 
         // Apply audio normalization if we have previous data
