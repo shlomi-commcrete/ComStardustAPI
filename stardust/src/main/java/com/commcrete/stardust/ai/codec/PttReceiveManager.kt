@@ -85,12 +85,12 @@ object PttReceiveManager {
 
         // Check if last unpack was received within 800ms
         val currentTime = System.currentTimeMillis()
-        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 800) {
+        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
             lastUnpack
         } else {
             null
         }
-        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 800) {
+        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
             lastDecodedSamples
         } else {
             null

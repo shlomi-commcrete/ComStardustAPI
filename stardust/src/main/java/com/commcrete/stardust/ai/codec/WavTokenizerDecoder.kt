@@ -105,7 +105,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
     fun shortArrayToFloatArray(input: ShortArray): FloatArray {
         return FloatArray(input.size) { i ->
-            input[i].toFloat()
+            input[i] / 32767f   // normalize to -1.0..1.0
         }
     }
 
@@ -162,7 +162,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         for (i in 0 until numSamples) {
             val diff =
                 (previousSamples[lastIndex - i] - currentChunk[i]) *
-                        ((numSamples - i).toFloat() / numSamples)
+                        ((numSamples - i).toFloat() / numSamples.toFloat())
 
             currentChunk[i] += diff
         }
