@@ -15,9 +15,9 @@ object AIModuleInitializer {
     private val TAG = "AIModuleInitializer"
 
 
-    fun initModules (context: Context) {
+    fun initModules (context: Context, pluginContext: Context) {
         Scopes.getDefaultCoroutine().launch {
-            init(context)
+            init(context, pluginContext)
             delay(1000)
             initModules()
             delay(1000)
@@ -48,7 +48,7 @@ object AIModuleInitializer {
         }
     }
 
-    fun init(context: Context) {
+    fun init(context: Context, pluginContext: Context) {
         aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
         if (!aiEnabled) {
             Log.d(TAG, "AI Codec not enabled for this process.")
@@ -58,11 +58,11 @@ object AIModuleInitializer {
         Scopes.getDefaultCoroutine().launch {
 
             if(!::wavTokenizerEncoder.isInitialized) {
-                wavTokenizerEncoder = WavTokenizerEncoder(context, context)
+                wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
             }
             delay(1000)
             if(!::wavTokenizerDecoder.isInitialized) {
-                wavTokenizerDecoder = WavTokenizerDecoder(context, context)
+                wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
             }
         }
     }

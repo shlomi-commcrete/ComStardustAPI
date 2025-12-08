@@ -181,9 +181,9 @@ object DataManager : StardustAPI, PttInterface{
 
     }
 
-    fun initModules (context: Context) {
+    fun initModules (context: Context, pluginContext: Context) {
         requireContext(context)
-        AIModuleInitializer.initModules(context)
+        AIModuleInitializer.initModules(context, pluginContext)
     }
     @SuppressLint("MissingPermission")
     override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
