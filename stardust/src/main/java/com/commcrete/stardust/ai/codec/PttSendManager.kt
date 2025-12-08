@@ -53,7 +53,7 @@ object PttSendManager {
         cacheDir = context.cacheDir
         this.viewModel = viewModel
         startEncodingJob()
-
+        aiEnabled = true
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
