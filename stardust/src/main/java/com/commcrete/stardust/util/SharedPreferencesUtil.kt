@@ -123,6 +123,7 @@ object SharedPreferencesUtil {
     private const val KEY_RESILIENCE = "key_resilience"
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
+    private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
     }
@@ -628,4 +629,24 @@ object SharedPreferencesUtil {
             WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
         }
     }
+
+    fun setAudioModelType(context: Context, decodeMode: WavTokenizerDecoder.DecodeMode) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit()
+            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, decodeMode.name) // save enum as string
+            .apply()
+    }
+
+    fun getAudioModelType(context: Context): WavTokenizerDecoder.DecodeMode {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
+
+        return try {
+            if (saved != null) WavTokenizerDecoder.DecodeMode.valueOf(saved)
+            else WavTokenizerDecoder.DecodeMode.Combined   // default value
+        } catch (e: Exception) {
+            WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
+        }
+    }
+
 }
