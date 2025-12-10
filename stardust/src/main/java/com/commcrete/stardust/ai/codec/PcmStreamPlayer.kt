@@ -8,12 +8,12 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
@@ -21,14 +21,10 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.util.audio.WavRecorder
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
-import timber.log.Timber
 import java.io.File
-import kotlin.text.compareTo
-import kotlin.times
 
 /**
  * Simplest possible streaming PCM16 mono player.
@@ -271,7 +267,7 @@ object PcmStreamPlayer {
                 chatItem.message = Message(senderID = senderId, text = "Ptt Received",
                     seen = true)
                 PlayerUtils.chatsRepository.addChat(it)
-                ChatsRepository(ChatsDatabase.getDatabase(context.applicationContext).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages+1)
+                ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages+1)
             }
         }
     }
@@ -322,6 +318,8 @@ object PcmStreamPlayer {
                     )
                 )
             }
+
+            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(destination, realDest), file)
         }
 
         return file

@@ -320,6 +320,7 @@ object PlayerUtils : BleMediaConnector() {
         val dataOutputStream = DataOutputStream(bufferedOutputStream)
         dataOutputStream.write(pttAudio)
         dataOutputStream.close()
+
     }
 
     private fun writePTTReceivedData(pttAudio: String, file: File ){
@@ -371,6 +372,7 @@ object PlayerUtils : BleMediaConnector() {
                                 chatId = realDest, text = "", fileLocation = file.absolutePath,
                                 isAudio = true)
                         )
+                        DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(destination, realDest), file)
                     }
                 }
                 isFileInit = true
@@ -419,11 +421,14 @@ object PlayerUtils : BleMediaConnector() {
                             sniffed.add(tempReceiver)
                             sniffed.add(tempSender)
                         }
+
+                        val senderID = sniffed[0].chatUserId ?: ""
+                        val receiverID = sniffed[1].chatUserId ?: ""
+
                         repo.addContact(
                             SnifferItem(
-
-                            senderID = sniffed!![0].chatUserId ?: "",
-                            receiverID = sniffed!![1].chatUserId ?: "",
+                            senderID = senderID,
+                            receiverID = receiverID,
                             senderName = sniffed!![0].displayName ?: "",
                             receiverName = sniffed!![1].displayName ?: "",
                             epochTimeMs = ts.toLong(),
@@ -433,6 +438,7 @@ object PlayerUtils : BleMediaConnector() {
                             isAudio = true
                         )
                         )
+                        DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(senderID, receiverID), file)
                     }
                 }
             }

@@ -24,7 +24,7 @@ abstract class SnifferDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     SnifferDatabase::class.java,
                     "sniffer_database"
                 ).fallbackToDestructiveMigration().build()

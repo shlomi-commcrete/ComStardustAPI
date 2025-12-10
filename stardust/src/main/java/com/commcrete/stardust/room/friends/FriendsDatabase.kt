@@ -24,7 +24,7 @@ abstract class FriendsDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     FriendsDatabase::class.java,
                     "friends_database"
                 ).fallbackToDestructiveMigration().build()

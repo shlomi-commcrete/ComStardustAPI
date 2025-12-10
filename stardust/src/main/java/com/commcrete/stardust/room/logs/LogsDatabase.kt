@@ -20,7 +20,7 @@ abstract class LogsDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     LogsDatabase::class.java,
                     "logs_database"
                 ).fallbackToDestructiveMigration().build()

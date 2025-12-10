@@ -20,7 +20,7 @@ abstract class BittelUserDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     BittelUserDatabase::class.java,
                     "bittel_user_database"
                 ).fallbackToDestructiveMigration().build()

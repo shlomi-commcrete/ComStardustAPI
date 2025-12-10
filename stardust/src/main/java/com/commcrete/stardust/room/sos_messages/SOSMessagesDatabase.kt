@@ -21,7 +21,7 @@ abstract class SOSMessagesDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     SOSMessagesDatabase::class.java,
                     "sos_messages_database"
                 ).fallbackToDestructiveMigration().build()

@@ -5,7 +5,6 @@ import android.content.Context
 import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -54,6 +53,7 @@ interface StardustAPICallbacks {
     fun receiveRealSOS (stardustAPIPackage: StardustAPIPackage, location: Location)
     fun handleSOSAck (stardustAPIPackage: StardustAPIPackage)
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
+    fun startedReceivingPTT (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFileStatus (index : Int, percentage : Int)

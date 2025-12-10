@@ -25,7 +25,7 @@ abstract class ChatsDatabase : RoomDatabase() {
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context.applicationContext,
+                    context,
                     ChatsDatabase::class.java,
                     "chats_database"
                 ).fallbackToDestructiveMigration().build()
