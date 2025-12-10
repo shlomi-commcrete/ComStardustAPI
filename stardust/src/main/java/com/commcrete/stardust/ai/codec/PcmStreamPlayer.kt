@@ -276,45 +276,54 @@ object PcmStreamPlayer {
         }
     }
 
-    private suspend fun initPttInputFile(context: Context, destinations: String, source: String
-                                         , snifferContacts: List<ChatContact>?) : File? {
-        Log.d("PcmStreamPlayer", "initPttInputFile called with destinations: $destinations, source: $source")
-        if(snifferContacts != null) {
+    private suspend fun initPttInputFile(
+        context: Context,
+        destinations: String,
+        source: String,
+        snifferContacts: List<ChatContact>?
+    ): File? {
+        if (snifferContacts != null) {
             return PlayerUtils.initPttSnifferFile(context, destinations, snifferContacts)
         }
+
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         this.destination = destinations
-        val realDest = if   (GroupsUtils.isGroup(source)) source else destination
+        val realDest = if (GroupsUtils.isGroup(source)) source else destination
         updateAudioReceived(realDest, destination, true)
 
-        val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
-        val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/${ts}-$source.pcm")
-        if(directory!=null){
-            if(!directory.exists()){
-                directory.mkdir()
-            }
-            if (file != null) {
-                if(!file.exists()){
-                    file.createNewFile()
-                    fileToWrite = file
-                    Scopes.getDefaultCoroutine().launch {
-                        val userName = UsersUtils.getUserName(destination)
-                        try {
-                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
-                        }catch (e :Exception){
-                            e.printStackTrace()
-                        }
-                        PlayerUtils.messagesRepository.savePttMessage(
-                            MessageItem(senderID = destination,
-                                epochTimeMs = ts.toLong(), senderName = userName ,
-                                chatId = realDest, text = "", fileLocation = file.absolutePath,
-                                isAudio = true, audioType = RecorderUtils.CODE_TYPE.AI.id)
-                        )
-                    }
-                }
-                isFileInit = true
+        val dir = File(context.filesDir, destination)
+
+        if (!dir.exists()) {
+            if (!dir.mkdirs()) {
+                Log.e("PcmStreamPlayer", "Failed to create directory: ${dir.absolutePath}")
+                return null
             }
         }
+
+        val file = fileToWrite ?: File(dir, "$ts-$source.pcm")
+
+        if (!file.exists()) {
+            file.createNewFile()
+            fileToWrite = file
+            isFileInit = true
+
+            Scopes.getDefaultCoroutine().launch {
+                val userName = UsersUtils.getUserName(destination)
+                PlayerUtils.messagesRepository.savePttMessage(
+                    MessageItem(
+                        senderID = destination,
+                        epochTimeMs = ts.toLong(),
+                        senderName = userName,
+                        chatId = realDest,
+                        text = "",
+                        fileLocation = file.absolutePath,
+                        isAudio = true,
+                        audioType = RecorderUtils.CODE_TYPE.AI.id
+                    )
+                )
+            }
+        }
+
         return file
     }
 
