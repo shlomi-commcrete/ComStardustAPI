@@ -19,6 +19,7 @@ import androidx.annotation.OptIn
 import androidx.annotation.RawRes
 import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.util.UnstableApi
+import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.bittell.room.sniffer.SnifferDatabase
 import com.commcrete.bittell.room.sniffer.SnifferItem
 import com.commcrete.bittell.room.sniffer.SnifferRepository
@@ -552,9 +553,11 @@ object PlayerUtils : BleMediaConnector() {
                     val byteArray = intArrayToByteArray(dataArray.toMutableList())
                     Log.d("PlayerUtils", "Received PTT AI data size: ${byteArray.size}")
                     if (byteArray.size > 1) {
+                        val model = byteArray.copyOfRange(0, 1)
+                        val selectedModule = getModel(model[0].toInt())
                         val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
                         Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
-                        PttReceiveManager.addNewData(byteArray, from, bittelPackage.getSourceAsString())
+                        PttReceiveManager.addNewData(byteArray, from, bittelPackage.getSourceAsString(), selectedModule)
                     }
                 }
                 val chatItem = chatsRepo.getChatByBittelID(from)
@@ -571,6 +574,10 @@ object PlayerUtils : BleMediaConnector() {
                 }
             }
         }
+    }
+
+    private fun getModel(modelValue: Int): WavTokenizerDecoder.ModelType? {
+        return WavTokenizerDecoder.ModelType.fromInt(modelValue)
     }
 
     private fun handleBittelAudioMessage(audioData: List<Int>?): String? {

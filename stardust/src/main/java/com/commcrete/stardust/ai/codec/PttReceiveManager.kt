@@ -9,8 +9,10 @@ import com.commcrete.aiaudio.media.PcmStreamPlayer
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
@@ -37,12 +39,13 @@ object PttReceiveManager {
     private var lastUnpackTime: Long = 0L
     private var from = ""
     private var source : String? = ""
-
+    private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
     fun init() {
         startDecodingJob()
     }
 
-    fun addNewData(data: ByteArray, from : String, source : String? = null) {
+    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null) {
+        selectedModel = modelType ?: WavTokenizerDecoder.ModelType.General
         this.from = from
         this.source = source
         toDecodeQueue.trySend(data)
@@ -96,7 +99,7 @@ object PttReceiveManager {
             null
         }
 
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
         Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
         // Save current unpack and timestamp for next iteration
@@ -125,8 +128,9 @@ object PttReceiveManager {
         } else {
             null
         }
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
 
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, modelTypeSelected)
         Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
         // Save current unpack and timestamp for next iteration

@@ -2,6 +2,7 @@ package com.commcrete.aiaudio.codecs
 
 import android.content.Context
 import android.util.Log
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import org.pytorch.IValue
 import org.pytorch.LiteModuleLoader
@@ -46,10 +47,12 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     // If previousData is provided, it will be used for audio normalization (take the last
     // samples from previous decode to align the new audio)
     // also add 3 fake tokens at the end to help the model
-    fun decode(data: List<Long>, previousTokens: List<Long>? = null, previousSamples: ShortArray? = null) : ShortArray {
+    fun decode(data: List<Long>, previousTokens: List<Long>? = null, previousSamples: ShortArray? = null, modelType: ModelType = ModelType.General) : ShortArray {
         // Combine previous data with current data if previous data exists
 
         val decodeType = SharedPreferencesUtil.getAudioDecodeType(context)
+        val selectedModule = getSelectedModule(modelType)
+
         val combinedData = if (previousTokens != null) {
             previousTokens + data
         } else {
@@ -63,7 +66,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
         var output: Tensor?
         val duration = measureTime {
-            output = module.forward(IValue.from(codes)).toTensor()
+            output = selectedModule.forward(IValue.from(codes)).toTensor()
         }
         //        Log.d(TAG, "Decoding took $duration")
 
@@ -420,6 +423,15 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         }
 
     }
+    fun getSelectedModule (modelTypeSelected: ModelType) : Module{
+
+        val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
+            moduleEnglish
+        } else {
+            module
+        }
+        return modelType
+    }
 
     enum class DecodeMode {
         Aligned,
@@ -427,15 +439,20 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         Combined
     }
 
-    enum class ModelType {
-        General,
-        English
+    enum class ModelType (val type : Int) {
+        General (0x00),
+        English (0x01);
+        companion object {
+            fun fromInt(value: Int): ModelType? {
+                return entries.firstOrNull { it.type == value }
+            }
+        }
     }
 
     fun initModule() {
         Log.d(TAG, "WavTokenizerDecoder module initialized")
         module
-//        moduleEnglish
+        moduleEnglish
         Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
     }
 }

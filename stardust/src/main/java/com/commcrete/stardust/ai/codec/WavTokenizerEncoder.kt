@@ -2,6 +2,8 @@ package com.commcrete.aiaudio.codecs
 
 import android.content.Context
 import android.util.Log
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import org.pytorch.*
 import java.io.File
 import java.io.FileOutputStream
@@ -34,6 +36,7 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
             throw IllegalArgumentException("Expected not more than 12,000 samples, got ${audioSamples.size}")
         }
         Log.d(TAG, "Encoding ${audioSamples.size} audio samples")
+        val selectedModule = getSelectedModule(DataManager.context)
 
         // Convert ShortArray to FloatArray in range [-1.0, 1.0]
         val floatSamples = shortArrayToFloatArray(audioSamples)
@@ -48,7 +51,7 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         // Run the model, the result are the tokens
         var moduleOutputTensor: Tensor?
         val duration = measureTime {
-            moduleOutputTensor = module.forward(IValue.from(inputTensor)).toTensor()
+            moduleOutputTensor = selectedModule.forward(IValue.from(inputTensor)).toTensor()
         }
         Log.d(TAG, "Encoding took $duration")
 
@@ -97,10 +100,22 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         return outFile.absolutePath
     }
 
+
+    fun getSelectedModule (context: Context) : Module{
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
+
+        val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
+            moduleEnglish
+        } else {
+            module
+        }
+        return modelType
+    }
+
     fun initModule() {
         Log.d(TAG, "WavTokenizerEncoder module initialized")
         module
-//        moduleEnglish
+        moduleEnglish
         Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
     }
 }

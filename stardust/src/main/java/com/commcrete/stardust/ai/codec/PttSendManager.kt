@@ -193,7 +193,8 @@ object PttSendManager {
         }
         Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
         val unpack = BitPacking12.unpack12(packData)
-        val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM)
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM, modelTypeSelected)
         Log.d(TAG_DECODE, "Decoded PCM data size")
         frameBuffer.add(finalPcmData)
         lastTokens = unpack
