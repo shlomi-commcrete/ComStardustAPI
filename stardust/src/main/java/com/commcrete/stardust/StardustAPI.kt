@@ -56,7 +56,15 @@ interface StardustAPICallbacks {
     fun startedReceivingPTT (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
-    fun receiveFileStatus (index : Int, percentage : Int)
+    fun receiveFileStatus (
+        index: Int,
+        percentage: Int,
+        source: String,
+        destination: String,
+        fileName: String,
+        fileEnding: String,
+        fileType: Int?
+    )
     fun connectionStatusChanged (connectionType: ConnectionType?)
     fun onRSSIChanged (rssi : Int)
     fun onBatteryChanged (battery : Int)

@@ -69,7 +69,7 @@ internal class StardustPackageHandler(private val context: Context ,
 //        StardustPackageUtils.packageLiveData.observeForever(observer)
     }
 
-    fun handleStardustPackage(bittelPackage: StardustPackage?, randomID: String) {
+    fun handleStardustPackage(context: Context, bittelPackage: StardustPackage?, randomID: String) {
         if(bittelPackage != null){
             val mPackage = bittelPackage
             val tempSavedPackage = savedPackage
@@ -108,30 +108,30 @@ internal class StardustPackageHandler(private val context: Context ,
                 when(mPackageOpCode){
                     StardustPackageUtils.StardustOpCode.SEND_MESSAGE -> {
                         if(mPackageControl.stardustPackageType == StardustControlByte.StardustPackageType.DATA) {
-                            handleText(mPackage)
+                            handleText(context, mPackage)
                         }else {
-                            handlePTT(mPackage)
+                            handlePTT(context, mPackage)
                         }
                     }
                     StardustPackageUtils.StardustOpCode.SEND_PTT -> {
-                        handlePTT(mPackage)
+                        handlePTT(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SEND_PTT_AI -> {
-                        handlePTTAI(mPackage)
+                        handlePTTAI(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.REQUEST_LOCATION -> {
-                        handleLocationRequested(mPackage, randomID)
+                        handleLocationRequested(context, mPackage, randomID)
                     }
 
                     StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION -> {
-                        handleLocationReceived(mPackage)
+                        handleLocationReceived(context, mPackage)
                     }
 
                     StardustPackageUtils.StardustOpCode.GET_ADDRESSES -> {
-                        handleAddressesReceived(mPackage)
+                        handleAddressesReceived(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE -> {
-                        handleConfiguration(mPackage)
+                        handleConfiguration(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.RECEIVE_VERSION -> {
                         ConfigurationUtils.handleVersion(mPackage)
@@ -140,56 +140,56 @@ internal class StardustPackageHandler(private val context: Context ,
                         handleUpdatePolygonFreqResponse(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> {
-                        handleUpdateAddressResponse(mPackage)
+                        handleUpdateAddressResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SEND_FILE -> {
-                        handleBittelFileResponse(mPackage)
+                        handleBittelFileResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_INTERRUPT -> {
-                        handleUpdatePolygonFreq(mPackage)
+                        handleUpdatePolygonFreq(context)
                     }
                     StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE -> {
                         DataManager.getClientConnection(context).handleAckReceived()
-                        handleLocationReceived(mPackage)
+                        handleLocationReceived(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.GET_POLYGON_RESPONSE -> {
-                        handleUpdatePolygonFreq(mPackage)
+                        handleUpdatePolygonFreq(context)
                     }
                     StardustPackageUtils.StardustOpCode.SAVE_CONFIG_RESPONSE -> {
                         handleSaveConfigResponse(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION_RESPONSE -> {
-                        handleBittelUpdateResponse(mPackage)
+                        handleBittelUpdateResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION_PACKAGE_RESPONSE -> {
-                        handleBittelUpdateDataResponse(mPackage)
+                        handleBittelUpdateDataResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS_RESPONSE -> {
-                        handleBittelGetBittelBootAddressResponse(mPackage)
+                        handleBittelGetBittelBootAddressResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.PING_RESPONSE -> {
-                        handlePingResponse(mPackage)
+                        handlePingResponse(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS_RESPONSE -> {
                         handleBittelLog(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> {
-                        handleAdminModeResponse(mPackage)
+                        handleAdminModeResponse(context)
                     }
                     StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> {
-                        handleAddGroupsResponse(mPackage)
+                        handleAddGroupsResponse(context)
                     }
                     StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> {
-                        handleDeleteGroupsResponse(mPackage)
+                        handleDeleteGroupsResponse(context)
                     }
                     StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT -> {
-                        handleRealSOS(mPackage)
+                        handleRealSOS(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SOS_ACK -> {
                         handleSOSAck(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT -> {
-                        handleAppEvent(mPackage)
+                        handleAppEvent(context, mPackage)
                     }
                     else -> {}
                 } }
@@ -197,7 +197,7 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleAppEvent(mPackage: StardustPackage) {
+    private fun handleAppEvent(context: Context, mPackage: StardustPackage) {
         val bittelAppEventPackage = StardustAppEventParser().parseAppEvent(mPackage)
         bittelAppEventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
@@ -208,7 +208,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 TXBufferFull -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
                 PresetChange -> {sdPackage.getCurrentPreset()?.let {
                     ConfigurationUtils.setCurrentPresetLocal(it)
-                    ConfigurationUtils.setDefaults(DataManager.context)
+                    ConfigurationUtils.setDefaults(context)
                 }}
                 ArmDelete -> {
                     if(sdPackage.armDelete == ArmDelete.type) {
@@ -233,39 +233,39 @@ internal class StardustPackageHandler(private val context: Context ,
             destination = mPackage.getDestAsString(), false, null))
     }
 
-    private fun handleRealSOS(mPackage: StardustPackage) {
+    private fun handleRealSOS(context: Context, mPackage: StardustPackage) {
         val sosPackage = StardustLocationParser().parseSOSReal(mPackage)
-        sosPackage?.let { UsersUtils.saveBittelUserSOSReal(mPackage, it) }
+        sosPackage?.let { UsersUtils.saveBittelUserSOSReal(context, mPackage, it) }
     }
 
-    private fun handleBittelUpdateResponse(mPackage: StardustPackage) {
+    private fun handleBittelUpdateResponse(context: Context, mPackage: StardustPackage) {
         if(mPackage.isAck() && StardustUpdateProcess.isProcessRunning){
-            StardustUpdateProcess.startSendingUpdateData(DataManager.context)
+            StardustUpdateProcess.startSendingUpdateData(context)
         }
     }
 
-    private fun handleBittelUpdateDataResponse(mPackage: StardustPackage) {
+    private fun handleBittelUpdateDataResponse(context: Context, mPackage: StardustPackage) {
         if(mPackage.isAck() && StardustUpdateProcess.isProcessRunning){
-            StardustUpdateProcess.startSendingUpdateData(DataManager.context)
+            StardustUpdateProcess.startSendingUpdateData(context)
         }else {
             StardustUpdateProcess.cancelProcess()
             // TODO: get Data at position 1 and handle text errors
         }
     }
 
-    private fun handleBittelGetBittelBootAddressResponse(mPackage: StardustPackage) {
+    private fun handleBittelGetBittelBootAddressResponse(context: Context, mPackage: StardustPackage) {
         StardustUpdateProcess.sendInitUpdateProcess(mPackage.data, context)
     }
 
-    private fun handlePingResponse (mPackage: StardustPackage) {
-        DataManager.getPortUtils(DataManager.context).onPingReceived()
+    private fun handlePingResponse (context: Context, mPackage: StardustPackage) {
+        DataManager.getPortUtils(context).onPingReceived()
         val bittelBatteryPackage = StardustBatteryParser().parseBattery(mPackage)
         bittelBatteryPackage.let {
             AppEvents.updateBattery(it)
         }
     }
 
-    private fun handleAdminModeResponse(mPackage: StardustPackage) {
+    private fun handleAdminModeResponse(context: Context) {
         if(BleManager.isUsbEnabled()){
             BittelUsbManager2.updateBlePort()
             Timber.tag("startUpdatingPort").d("updateUsbPort")
@@ -275,16 +275,16 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleDeleteGroupsResponse(mPackage: StardustPackage) {
-        GroupsUtils.addAllGroups(DataManager.context)
+    private fun handleDeleteGroupsResponse(context: Context) {
+        GroupsUtils.addAllGroups(context)
     }
 
-    private fun handleAddGroupsResponse(mPackage: StardustPackage) {
-        getConfiguration ()
+    private fun handleAddGroupsResponse(context: Context) {
+        getConfiguration(context)
     }
 
-    private fun getConfiguration () {
-        SharedPreferencesUtil.getAppUser(DataManager.context)?.let {
+    private fun getConfiguration (context: Context, ) {
+        SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
             val dst = it.bittelId
             if(src != null && dst != null) {
@@ -304,14 +304,14 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
+    private fun handleUpdateAddressResponse (context: Context, mPackage: StardustPackage) {
         if(mPackage.isAck()) {
             GroupsUtils.deleteAllGroups(context)
             DataManager.getClientConnection(context).removeConnectionTimer()
         }
     }
 
-    private fun handleBittelFileResponse(mPackage: StardustPackage) {
+    private fun handleBittelFileResponse(context: Context, mPackage: StardustPackage) {
         val data = mPackage.data ?: return
         val sig = listOf(83, 84, 82) // "STR"
 
@@ -331,7 +331,7 @@ internal class StardustPackageHandler(private val context: Context ,
 
 
         StardustFileParser().parseFile(bittelPackage = mPackage)
-            ?.let { FileSendUtils.handleFileReceive(it, mPackage) }
+            ?.let { FileSendUtils.handleFileReceive(context, it, mPackage) }
     }
 
     private fun handleUpdatePolygonFreqResponse(mPackage: StardustPackage) {
@@ -340,7 +340,7 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleUpdatePolygonFreq(mPackage: StardustPackage) {
+    private fun handleUpdatePolygonFreq(context: Context, ) {
         StardustPolygonChange.startProcess("1", context)
     }
 
@@ -371,7 +371,7 @@ internal class StardustPackageHandler(private val context: Context ,
 //        }
     }
 
-    private fun handleConfiguration(mPackage: StardustPackage) {
+    private fun handleConfiguration(context: Context, mPackage: StardustPackage) {
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
 
@@ -390,16 +390,16 @@ internal class StardustPackageHandler(private val context: Context ,
         sosPackage?.let { UsersUtils.saveBittelUserSOS(mPackage, it) }
     }
 
-    private fun handleAddressesReceived(mPackage: StardustPackage) {
+    private fun handleAddressesReceived(context: Context, mPackage: StardustPackage) {
         val addressesPackage = StardustAddressesParser().parseAddresses(mPackage)
         addressesPackage?.let {
             registerBittel(addressesPackage.stardustID)
-            updateBittelSmartphoneAddress(addressesPackage)
+            updateBittelSmartphoneAddress(context, addressesPackage)
 //            updateLocalBittelID ()
         }
     }
 
-    private fun updateBittelSmartphoneAddress(addressesPackage: StardustAddressesPackage) {
+    private fun updateBittelSmartphoneAddress(context: Context, addressesPackage: StardustAddressesPackage) {
         // Added fix , push the id i have in my app
         val user = SharedPreferencesUtil.getAppUser(context)
         user?.appId?.let {
@@ -451,16 +451,16 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
 
-    private fun handleLocationReceived(mPackage: StardustPackage){
+    private fun handleLocationReceived(context: Context, mPackage: StardustPackage){
         if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK){
             mPackage.stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE
             handleAck(mPackage)
         }
         val locationPackage = StardustLocationParser().parseLocation(mPackage)
-        locationPackage?.let { LocationUtils.saveBittelUserLocation(mPackage, it) }
+        locationPackage?.let { LocationUtils.saveBittelUserLocation(context, mPackage, it) }
     }
 
-    private fun handleLocationRequested(mPackage: StardustPackage, randomID: String){
+    private fun handleLocationRequested(context: Context, mPackage: StardustPackage, randomID: String){
         if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
         Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         val src = mPackage.sourceBytes
@@ -474,7 +474,7 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handlePTTAI(mPackage: StardustPackage) {
+    private fun handlePTTAI(context: Context, mPackage: StardustPackage) {
         PlayerUtils.saveBittelPTTAiToDatabase(bittelPackage = mPackage)
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
@@ -485,8 +485,8 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handlePTT(mPackage: StardustPackage) {
-        PlayerUtils.saveBittelMessageToDatabase(bittelPackage = mPackage)
+    private fun handlePTT(context: Context, mPackage: StardustPackage) {
+        PlayerUtils.saveBittelMessageToDatabase(context, bittelPackage = mPackage)
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
@@ -496,7 +496,7 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleText(mPackage: StardustPackage) {
+    private fun handleText(context: Context, mPackage: StardustPackage) {
         if(mPackage.data !=null && mPackage.data!!.startsWith(arrayOf(83,79,83))) {
             handleSOS(mPackage)
         }else {
@@ -504,7 +504,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 mPackage.stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE
                 handleAck(mPackage)
             }
-            UsersUtils.saveBittelMessageToDatabase(mPackage)
+            UsersUtils.saveBittelMessageToDatabase(context, mPackage)
         }
     }
 

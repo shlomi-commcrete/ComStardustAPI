@@ -376,9 +376,9 @@ object FileSendUtils {
         FileReceivedUtils.getInitFile(bittelFileStartPackage, mPackage)
     }
 
-    fun handleFileReceive (bittelFilePackage : StardustFilePackage,
+    fun handleFileReceive (context: Context, bittelFilePackage : StardustFilePackage,
                            mPackage: StardustPackage) {
-        FileReceivedUtils.getFile(bittelFilePackage, mPackage)
+        FileReceivedUtils.getFile(context, bittelFilePackage, mPackage)
     }
 
     private fun sendPackage (context: Context, stardustFilePackage: StardustFilePackage, dest : String?) {

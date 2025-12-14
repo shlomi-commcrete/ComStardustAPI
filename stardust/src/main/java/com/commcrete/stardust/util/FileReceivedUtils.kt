@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util
 
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -37,7 +38,7 @@ object FileReceivedUtils {
         }
     }
 
-    private fun getData (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
+    private fun getData (context: Context, bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
 
         for (fileStart in fileReceivedDataList) {
             if(fileStart.bittelPackage != null &&
@@ -47,7 +48,7 @@ object FileReceivedUtils {
                 bittelPackage.stardustControlByte.stardustDeliveryType) {
                 fileStart.dataList.add(bittelFilePackage)
                 Log.d("FileReceivedUtils", "dataList.put : ${bittelFilePackage.current}")
-                fileStart.updateProgress ()
+                fileStart.updateProgress (context)
                 fileStart.resetReceiveTimer()
             }
         }
@@ -57,10 +58,10 @@ object FileReceivedUtils {
         getInit(bittelFileStartPackage, bittelPackage)
     }
 
-    fun getFile (bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
-        getData(bittelFilePackage, bittelPackage)
+    fun getFile (context: Context, bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
+        getData(context, bittelFilePackage, bittelPackage)
     }
-    private fun saveToMessages (bittelPackage: StardustPackage, file: File, fileType: Int?, fileName : String) {
+    private fun saveToMessages (context: Context, bittelPackage: StardustPackage, file: File, fileType: Int?, fileName : String) {
         Scopes.getDefaultCoroutine().launch {
             val mFileName = trimUntilUnderscore(fileName)
             val type = (if(fileType == 0) "File Received" else "Image Received") + ": $mFileName"
@@ -71,7 +72,7 @@ object FileReceivedUtils {
                 epochTimeMs = System.currentTimeMillis(), senderName = userName ,
                 chatId = bittelPackage.getSourceAsString(), text = type, fileLocation = file.absolutePath,
                 isFile = isFile, isImage = isImage)
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
             if(chatItem == null) {
                 chatItem = UsersUtils.createNewBittelUserSender(chatsRepo, bittelPackage)
@@ -96,12 +97,12 @@ object FileReceivedUtils {
                                 seen = true)
                             chatsRepo.addChat(chat)
                             messagesRepository.saveFileMessage( messageItem )
-                            UsersUtils.saveMessageToDatabase(appIdArray[0], messageItem)
+                            UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
                             val numOfUnread = chat.numOfUnseenMessages
                             chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                             Scopes.getMainCoroutine().launch {
                                 UsersUtils.messageReceived.value = messageItem
-                                PlayerUtils.playNotificationSound (DataManager.context)
+                                PlayerUtils.playNotificationSound (context)
                             }
                         }
                     }
@@ -127,21 +128,21 @@ object FileReceivedUtils {
             val text = "t:$totalPackages, m:$missing"
             //textLogger.logText(text)
             if(checkIfHaveEnough()) {
-                bittelPackage?.let { saveFile(it, dataStart?.type) }
+                bittelPackage?.let { saveFile(DataManager.context, it, dataStart?.type) }
                 Scopes.getMainCoroutine().launch {
                     isReceivingInProgress = false
-                    DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                    DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
                 }
                 handler.postDelayed( {removeFromFileReceivedList()}, 300)
             } else {
 
             }
-            dataStart = null
-            dataList.clear()
             Scopes.getMainCoroutine().launch {
-                DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
             }
             removeFromFileReceivedList()
+            dataStart = null
+            dataList.clear()
         }
 
         fun resetReceiveTimer() {
@@ -166,47 +167,41 @@ object FileReceivedUtils {
             }
         }
 
-        fun updateProgress () {
+        fun updateProgress (context: Context) {
             checkMissingPackages()
             if(dataStart != null ) {
                 Scopes.getMainCoroutine().launch {
                     dataStart?.let {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
-                        DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage)
+                        DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
                         Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
                     }
                 }
-                checkData()
+                checkData(context)
             }
         }
 
-        private fun checkData () {
+        private fun checkData (context: Context) {
             dataStart?.let {
                 if(lostPackagesIndex.size > (it.total-it.spare) ) {
                     updateFailure(FileFailure.MISSING)
                 }
                 if(checkIfMissingMain()) {
-                    bittelPackage?.let { saveFile(it, dataStart?.type) }
+                    bittelPackage?.let { bittelPackage -> saveFile(context, bittelPackage, dataStart?.type) }
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
-                        DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                        DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
                     }
                     handler.postDelayed( {removeFromFileReceivedList()}, 300)
-                } else {
-//                    Log.d("checkData", "it.total = ${it.total}")
-//                    Log.d("checkData", "it.spare = ${it.spare}")
-//                    Log.d("checkData", "dataList.size = ${dataList.size}")
-//                    Log.d("checkData", "dataList.last().current + 1 = ${dataList.last().current + 1}")
-                    if(it.total == dataList.last().current + 1) {
-                        bittelPackage?.let { saveFile(it, dataStart?.type) }
+                } else if(it.total == dataList.last().current + 1) {
+                        bittelPackage?.let { bittelPackage ->saveFile(context, bittelPackage, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
-                            DataManager.getCallbacks()?.receiveFileStatus(index, 0)
+                            DataManager.getCallbacks()?.receiveFileStatus(index, 100, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
                         }
                         handler.postDelayed( {removeFromFileReceivedList()}, 300)
-                    } else {
                     }
-                }
+                else {}
             }
         }
         private fun calculateDelay(): Int {
@@ -229,12 +224,11 @@ object FileReceivedUtils {
             DataManager.getCallbacks()?.receiveFailure(failure)
         }
 
-        private fun saveFile (bittelPackage: StardustPackage, fileType: Int?) {
+        private fun saveFile (context: Context, bittelPackage: StardustPackage, fileType: Int?) {
             val totalPackages = dataStart?.total
             val missing = lostPackagesIndex.count()
             val text = "t:$totalPackages, m:$missing"
             textLogger.logText(text)
-            val context = DataManager.context
 // Get the destination directory
             val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
 // Ensure the directory exists
@@ -249,12 +243,13 @@ object FileReceivedUtils {
             val completeFileName = "$ts"+ "_"+"$name$type"
             val targetFile = File(destDir, "$completeFileName")
             try {
-// Step 1: Create a temporary file for the concatenated data
-                val tempOutputFile = File.createTempFile("output_temp", null, context.cacheDir)
+
+                if(fileType == 0) {
+                    // Step 1: Create a temporary file for the concatenated data
+                    val tempOutputFile = File.createTempFile("output_temp", null)
 // Write concatenated data to the temporary file
 
 //After i get all the packages.
-                if(fileType == 0) {
                     FileOutputStream(tempOutputFile).use { outputStream ->
                         writeDataToFile(outputStream)
                     }
@@ -268,17 +263,21 @@ object FileReceivedUtils {
                     }
                 }
                 println("File saved successfully at: ${targetFile.absolutePath}")
-                saveToMessages(bittelPackage, targetFile, fileType, completeFileName)
+                saveToMessages(context, bittelPackage, targetFile, fileType, completeFileName)
+                val packageData = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString())
+                Log.d("DEBUGTEST", "targetFile ${targetFile.absolutePath}")
+                if(fileType == 0) {
+                    DataManager.getCallbacks()?.receiveFile(packageData, targetFile)
+                } else {
+                    DataManager.getCallbacks()?.receiveImage(packageData, targetFile)
+                }
                 dataStart = null
                 dataList.clear()
                 removeReceiveTimer()
-                if(fileType == 0) {
-                    DataManager.getCallbacks()?.receiveFile(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
-                } else {
-                    DataManager.getCallbacks()?.receiveImage(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),), targetFile)
-                }
+
             } catch (e: Exception) {
                 e.printStackTrace()
+                Log.d("DEBUGTEST", "e.printStackTrace() ${e.message}")
                 println("Error saving file: ${e.message}")
                 dataStart = null
                 dataList.clear()

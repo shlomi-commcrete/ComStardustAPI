@@ -521,11 +521,11 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    fun saveBittelMessageToDatabase(bittelPackage: StardustPackage){
+    fun saveBittelMessageToDatabase(context: Context, bittelPackage: StardustPackage){
         Scopes.getDefaultCoroutine().launch {
 
             if(bittelPackage.getSourceAsString().isNotEmpty()){
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
                 var from = bittelPackage.getSourceAsString()
                 if(GroupsUtils.isGroup(from)) {
                     from = bittelPackage.getDestAsString()

@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util
 
+import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
@@ -224,10 +225,10 @@ object UsersUtils {
         }
     }
 
-    fun saveBittelUserSOSReal(bittelPackage: StardustPackage, bittelSOSPackage: StardustSOSPackage, isCreateNewUser : Boolean = true){
+    fun saveBittelUserSOSReal(context: Context, bittelPackage: StardustPackage, bittelSOSPackage: StardustSOSPackage, isCreateNewUser : Boolean = true){
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var sender : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let {
@@ -257,7 +258,7 @@ object UsersUtils {
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
-                    MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
+                    MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
                     var location = Location(whoSent)
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
@@ -284,10 +285,10 @@ object UsersUtils {
             }
         }
     }
-    fun saveBittelMessageToDatabase(bittelPackage: StardustPackage, isSOS : Boolean = false){
+    fun saveBittelMessageToDatabase(context: Context, bittelPackage: StardustPackage, isSOS : Boolean = false){
         Scopes.getDefaultCoroutine().launch {
             if(bittelPackage.getSourceAsString().isNotEmpty()){
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
                 var chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                 if(chatItem == null) {
                     chatItem = createNewBittelUserSender(chatsRepo, bittelPackage)
@@ -316,10 +317,10 @@ object UsersUtils {
                                 val messageItem =
                                     MessageItem(senderID = whoSent, text = text, epochTimeMs = Date().time,
                                         chatId = appIdArray[0], seen = SeenStatus.SEEN, senderName = displayName, isSOS = isSOS)
-                                saveMessageToDatabase(appIdArray[0], messageItem)
+                                saveMessageToDatabase(context, appIdArray[0], messageItem)
                                 val numOfUnread = chat.numOfUnseenMessages
                                 chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
-                                PlayerUtils.playNotificationSound (DataManager.context)
+                                PlayerUtils.playNotificationSound (context)
                                 Scopes.getMainCoroutine().launch {
                                     messageReceived.value = messageItem
                                 }
@@ -350,10 +351,10 @@ object UsersUtils {
         return bittelUserList.await()
     }
 
-    fun saveMessageToDatabase(chatID : String, message: MessageItem){
+    fun saveMessageToDatabase(context: Context, chatID : String, message: MessageItem){
         Scopes.getDefaultCoroutine().launch {
 //            message.senderName = getSenderName(chatID, message.senderID)
-            MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
+            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
         }
     }
 

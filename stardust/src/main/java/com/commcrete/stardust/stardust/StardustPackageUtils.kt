@@ -735,7 +735,7 @@ object StardustPackageUtils {
                     }
                 }
                 bittelPackage?.let {
-                    bittelPackageHandler?.handleStardustPackage(it, randomID)
+                    bittelPackageHandler?.handleStardustPackage(context, it, randomID)
                     packagesList.remove(mPackage)
                 }
             } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {

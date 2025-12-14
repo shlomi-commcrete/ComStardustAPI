@@ -73,7 +73,7 @@ object LocationUtils  {
         return contactsRepository.getUserNameByUserId(senderID)
     }
 
-    fun saveBittelUserLocation(bittelPackage: StardustPackage, bittelLocationPackage: StardustLocationPackage, isCreateNewUser : Boolean = true,
+    fun saveBittelUserLocation(context: Context, bittelPackage: StardustPackage, bittelLocationPackage: StardustLocationPackage, isCreateNewUser : Boolean = true,
                                isSOS : Boolean = false){
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
@@ -111,7 +111,7 @@ object LocationUtils  {
                         val numOfUnread = sender.numOfUnseenMessages
                         chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
                     }
-                    val pollingUtils = DataManager.getPollingUtils(DataManager.context)
+                    val pollingUtils = DataManager.getPollingUtils(context)
                     if(pollingUtils.isRunning) {
                         pollingUtils.handleResponse(bittelPackage)
                     }
@@ -121,14 +121,14 @@ object LocationUtils  {
                         altitude = bittelLocationPackage.height.toDouble()
                     }
 
-                    PlayerUtils.playNotificationSound (DataManager.context)
+                    PlayerUtils.playNotificationSound (context)
                     DataManager.getCallbacks()?.receiveLocation(
                         StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByStardustPackage(bittelPackage)),
                         location)
                 }
             } else if(isCreateNewUser) {
                 createNewContact(bittelPackage)
-                saveBittelUserLocation(bittelPackage, bittelLocationPackage, false)
+                saveBittelUserLocation(context, bittelPackage, bittelLocationPackage, false)
             }
         }
     }
