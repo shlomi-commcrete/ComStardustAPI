@@ -319,7 +319,7 @@ object PcmStreamPlayer {
                 )
             }
 
-            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(destination, realDest), file)
+            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
         }
 
         return file
