@@ -97,9 +97,7 @@ object LocationUtils  {
                     contact.lon = bittelLocationPackage.longitude.toDouble()
                     contact.isSOS = false
                     contactsRepository?.addContact(contact)
-                    Scopes.getMainCoroutine().launch {
-                        Toast.makeText(context, "Location Received From : ${contact.displayName  }", Toast.LENGTH_LONG ).show()
-                    }
+
                     val text = "latitude : ${bittelLocationPackage.latitude}\n" +
                             "longitude : ${bittelLocationPackage.longitude}\naltitude : ${bittelLocationPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,

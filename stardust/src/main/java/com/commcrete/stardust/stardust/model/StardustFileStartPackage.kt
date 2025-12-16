@@ -1,6 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
 import com.commcrete.bittell.util.text_utils.getAsciiValue
+import com.commcrete.stardust.util.FileUtils
 
 data class StardustFileStartPackage(
     val type: Int,
@@ -39,6 +40,11 @@ data class StardustFileStartPackage(
 
         // Return header + ending + name (no dynamic length fields)
         return header + fileEndingInts.toTypedArray() + fileNameInts.toTypedArray()
+    }
+
+    val fileType: FileUtils.FileType = when (type) {
+        0 -> FileUtils.FileType.FILE
+        else -> FileUtils.FileType.IMAGE
     }
 
 }

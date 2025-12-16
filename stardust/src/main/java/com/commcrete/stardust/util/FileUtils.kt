@@ -226,4 +226,10 @@ object FileUtils {
 
         return context.contentResolver.getType(uri) ?: "application/octet-stream"
     }
+
+    enum class FileType {
+        UNKNOWN,
+        FILE,
+        IMAGE
+    }
 }

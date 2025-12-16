@@ -12,6 +12,7 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceivedUtils
 import com.commcrete.stardust.util.FileSendUtils
+import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
 
@@ -63,7 +64,7 @@ interface StardustAPICallbacks {
         destination: String,
         fileName: String,
         fileEnding: String,
-        fileType: Int?
+        fileType: FileUtils.FileType
     )
     fun connectionStatusChanged (connectionType: ConnectionType?)
     fun onRSSIChanged (rssi : Int)

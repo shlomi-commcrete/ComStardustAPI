@@ -131,14 +131,14 @@ object FileReceivedUtils {
                 bittelPackage?.let { saveFile(DataManager.context, it, dataStart?.type) }
                 Scopes.getMainCoroutine().launch {
                     isReceivingInProgress = false
-                    DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
+                    DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                 }
                 handler.postDelayed( {removeFromFileReceivedList()}, 300)
             } else {
 
             }
             Scopes.getMainCoroutine().launch {
-                DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
+                DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
             }
             removeFromFileReceivedList()
             dataStart = null
@@ -173,7 +173,7 @@ object FileReceivedUtils {
                 Scopes.getMainCoroutine().launch {
                     dataStart?.let {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
-                        DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
+                        DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                         Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
                     }
                 }
@@ -190,14 +190,14 @@ object FileReceivedUtils {
                     bittelPackage?.let { bittelPackage -> saveFile(context, bittelPackage, dataStart?.type) }
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
-                        DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
+                        DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                     }
                     handler.postDelayed( {removeFromFileReceivedList()}, 300)
                 } else if(it.total == dataList.last().current + 1) {
                         bittelPackage?.let { bittelPackage ->saveFile(context, bittelPackage, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
-                            DataManager.getCallbacks()?.receiveFileStatus(index, 100, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.type ?: -1)
+                            DataManager.getCallbacks()?.receiveFileStatus(index, 100, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                         }
                         handler.postDelayed( {removeFromFileReceivedList()}, 300)
                     }
