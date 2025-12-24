@@ -16,7 +16,6 @@ import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
-import org.w3c.dom.Text
 import java.io.File
 import java.io.FileOutputStream
 
@@ -67,11 +66,6 @@ object FileReceivedUtils {
             val type = (if(fileType == 0) "File Received" else "Image Received") + ": $mFileName"
             val isFile = (fileType == 0)
             val isImage = (fileType == 1)
-            val userName = UsersUtils.getUserName(bittelPackage.getSourceAsString())
-            val messageItem = MessageItem(senderID = bittelPackage.getSourceAsString(),
-                epochTimeMs = System.currentTimeMillis(), senderName = userName ,
-                chatId = bittelPackage.getSourceAsString(), text = type, fileLocation = file.absolutePath,
-                isFile = isFile, isImage = isImage)
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
             if(chatItem == null) {
@@ -83,19 +77,26 @@ object FileReceivedUtils {
                     contact.appId?.let { appIdArray ->
                         var whoSent = ""
                         var displayName = contact.displayName
-                        if(chat.isGroup){
+
+                        val srcID = bittelPackage.getSourceAsString()
+
+                        if(GroupsUtils.isGroup(srcID)){
                             whoSent = bittelPackage.getDestAsString()
-                            val sender = chatsRepo.getChatByBittelID(whoSent)
-                            sender?.let {
+                            chatsRepo.getChatByBittelID(whoSent)?.let {
                                 displayName = it.name
                             }
-                        }else {
-                            whoSent = appIdArray[0]
+                        } else {
+                            whoSent = bittelPackage.getSourceAsString()
                         }
-                        if(appIdArray.isNotEmpty()){
+
+                        if(appIdArray.isNotEmpty()) {
                             chat.message = Message(senderID = whoSent, text = type,
                                 seen = true)
                             chatsRepo.addChat(chat)
+                            val messageItem = MessageItem(senderID = whoSent,
+                                epochTimeMs = System.currentTimeMillis(), senderName = displayName ,
+                                chatId = bittelPackage.getSourceAsString(), text = type, fileLocation = file.absolutePath,
+                                isFile = isFile, isImage = isImage)
                             messagesRepository.saveFileMessage( messageItem )
                             UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
                             val numOfUnread = chat.numOfUnseenMessages
@@ -221,7 +222,7 @@ object FileReceivedUtils {
             val missing = lostPackagesIndex.count()
             val text = "t:$totalPackages, m:$missing"
             textLogger.logText(text)
-            DataManager.getCallbacks()?.receiveFailure(failure)
+            DataManager.getCallbacks()?.receiveFailure(failure, dataStart)
         }
 
         private fun saveFile (context: Context, bittelPackage: StardustPackage, fileType: Int?) {
@@ -265,7 +266,6 @@ object FileReceivedUtils {
                 println("File saved successfully at: ${targetFile.absolutePath}")
                 saveToMessages(context, bittelPackage, targetFile, fileType, completeFileName)
                 val packageData = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString())
-                Log.d("DEBUGTEST", "targetFile ${targetFile.absolutePath}")
                 if(fileType == 0) {
                     DataManager.getCallbacks()?.receiveFile(packageData, targetFile)
                 } else {
@@ -277,7 +277,6 @@ object FileReceivedUtils {
 
             } catch (e: Exception) {
                 e.printStackTrace()
-                Log.d("DEBUGTEST", "e.printStackTrace() ${e.message}")
                 println("Error saving file: ${e.message}")
                 dataStart = null
                 dataList.clear()

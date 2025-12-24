@@ -9,6 +9,7 @@ import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
+import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceivedUtils
 import com.commcrete.stardust.util.FileSendUtils
@@ -71,6 +72,9 @@ interface StardustAPICallbacks {
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)
-    fun receiveFailure (failure: FileReceivedUtils.FileReceivedData.FileFailure)
+    fun receiveFailure (
+        failure: FileReceivedUtils.FileReceivedData.FileFailure,
+        dataStart: StardustFileStartPackage?
+    )
     fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
 }
