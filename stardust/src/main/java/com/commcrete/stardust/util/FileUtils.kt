@@ -54,7 +54,7 @@ object FileUtils {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
+
     fun openFile(context : Context, filePath: String) {
         val file = File(filePath)
         if (!file.exists()) {
@@ -77,7 +77,7 @@ object FileUtils {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
+
     fun openImage(context : Context, imagePath: String) {
         val imageFile = File(imagePath)
         if (!imageFile.exists()) {
@@ -100,7 +100,7 @@ object FileUtils {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.Q)
+
     fun getContentUriForFile(context: Context, file: File): Uri {
         val values = ContentValues()
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, file.name)
@@ -111,7 +111,11 @@ object FileUtils {
         ) // Saves to Downloads folder
 
         val resolver = context.contentResolver
-        val contentUri = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        val contentUri: Uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Files.getContentUri("external")
+        }
         val uri = resolver.insert(contentUri, values)
 
         try {
