@@ -15,6 +15,46 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
         return messagesDao.getAllMessagesByChatIdPTT(chatid)
     }
 
+    suspend fun getAllMessagesByChatId(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long
+    ): List<MessageItem> {
+        return messagesDao.getAllMessagesByChatId(
+            chatId = chatId,
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp
+        )
+    }
+
+    suspend fun getMessagesByChatInRange(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long,
+        limit: Int
+    ): List<MessageItem> {
+        return messagesDao.getMessagesByChatInRange(
+            chatId = chatId,
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp,
+            limit = limit
+        )
+    }
+
+    suspend fun getPTTMessagesForChatInRange(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long,
+        limit: Int
+    ): List<MessageItem> {
+        return messagesDao.getPTTMessagesForChatInRange(
+            chatId = chatId,
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp,
+            limit = limit
+        )
+    }
+
 
     suspend fun addContact(messageItem: MessageItem) {
         messagesDao.addMessage(messageItem)
@@ -59,5 +99,17 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
     suspend fun clearData () : Boolean {
         messagesDao.clearData()
         return true
+    }
+
+    suspend fun clearChatInRange(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long
+    ) {
+        return messagesDao.clearChatInRange(
+            chatId = chatId,
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp
+        )
     }
 }
