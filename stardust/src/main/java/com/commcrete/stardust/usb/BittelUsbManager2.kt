@@ -15,11 +15,13 @@ import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
+import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.BittelProtocol
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.Scopes
@@ -158,32 +160,32 @@ object BittelUsbManager2 : BittelProtocol {
 
     private fun connectToAudioDevice (context: Context, device: UsbDevice) {
         if(!isConnectedAudio){
-            Timber.tag("SerialInputOutputManager").d("connectToAudioDevice : ${device.productName}")
+            Timber.tag("SerialInOutputManager").d("connectToAudioDevice : ${device.productName}")
             uartManagerAudio = UARTManager(context)
             val connectionStatus = uartManagerAudio?.connectDevice(object : SerialInputOutputManager.Listener {
                 override fun onNewData(data: ByteArray) {
                     if (data.toHex() == echoPackage.toHex()) {
 //                        removeConnectionTimer()
-                        Timber.tag("SerialInputOutputManager").d("uartManagerAudio : Found PTT Device")
+                        Timber.tag("SerialInOutputManager").d("uartManagerAudio : Found PTT Device")
                         audioDevice = device
                         tempDevice = null
                         isConnectedAudio = true
 //                        continueConnectingDevices ()
                     }else {
-                        Timber.tag("SerialInputOutputManager").d("uartManagerAudio : Not PTT Device")
+                        Timber.tag("SerialInOutputManager").d("uartManagerAudio : Not PTT Device")
 //                        connectToDevice(context, device)
                     }
                     // Handle incoming data
                 }
 
                 override fun onRunError(e: Exception) {
-                    Timber.tag("SerialInputOutputManager").d("onRunError uartManagerAudio")
-                    Timber.tag("SerialInputOutputManager").d(e.message)
+                    Timber.tag("SerialInOutputManager").d("onRunError uartManagerAudio")
+                    Timber.tag("SerialInOutputManager").d(e.message)
                     // Handle errors
                 }
             }, device.deviceId, object : UARTManager.CTSChange {
                 override fun onCTSChanged(isActive: Boolean) {
-                    Timber.tag("SerialInputOutputManager").d("onCTSChanged : $isActive")
+                    Timber.tag("SerialInOutputManager").d("onCTSChanged : $isActive")
                     Timber.tag("notifyData PTT").d("onCTSChanged : ${isActive}")
                     ButtonListener.notifyData(isActive)
                 }
@@ -194,13 +196,13 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     private fun connectToDevice(context: Context, device: UsbDevice) {
-        Timber.tag("SerialInputOutputManager").d("connectToDevice : ${device.productName}")
+        Timber.tag("SerialInOutputManager").d("connectToDevice : ${device.productName}")
         uartManager = UARTManager(context)
         val connectionStatus = uartManager?.connectDevice(object : SerialInputOutputManager.Listener {
             override fun onNewData(data: ByteArray) {
-                Timber.tag("SerialInputOutputManager").d("onNewData : ${device.productName}")
+                Timber.tag("SerialInOutputManager").d("onNewData : ${device.productName}")
 
-                Timber.tag("SerialInputOutputManager").d("onNewData uartManager")
+                Timber.tag("SerialInOutputManager").d("onNewData uartManager")
 //                Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
                 processReceivedData(context, data)
@@ -212,12 +214,12 @@ object BittelUsbManager2 : BittelProtocol {
 
             }
             override fun onRunError(e: Exception) {
-                Timber.tag("SerialInputOutputManager").d("onRunError uartManager")
-                Timber.tag("SerialInputOutputManager").d(e.message)
+                Timber.tag("SerialInOutputManager").d("onRunError uartManager")
+                Timber.tag("SerialInOutputManager").d(e.message)
                 // Handle errors
             }
         }, device.deviceId)
-        Timber.tag("SerialInputOutputManager").d("connectionStatus : $connectionStatus")
+        Timber.tag("SerialInOutputManager").d("connectionStatus : $connectionStatus")
         if(connectionStatus == true) {
             stardustDevice = device
             Scopes.getMainCoroutine().launch {
@@ -227,7 +229,7 @@ object BittelUsbManager2 : BittelProtocol {
                 BleManager.updateStatus ()
             }
         }else {
-            Timber.tag("SerialInputOutputManager").d("cant connect")
+            Timber.tag("SerialInOutputManager").d("cant connect")
         }
     }
 
@@ -261,6 +263,14 @@ object BittelUsbManager2 : BittelProtocol {
         context.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
     }
 
+    private fun getUartPortType(): StardustConfigurationParser.PortType {
+        return when(ConfigurationUtils.bittelConfiguration.value?.portType) {
+            StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_BLE,
+            StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_USB -> StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_USB
+            else -> StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_USB
+        }
+    }
+
     override fun updateBlePort() {
         context?.let {
             context ->
@@ -268,7 +278,7 @@ object BittelUsbManager2 : BittelProtocol {
                 val src = it.appId
                 val dst = it.bittelId
                 if(src != null && dst != null) {
-                    val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_USB.type).intToByteArray().reversedArray()
+                    val uartPort = getUartPortType().type.intToByteArray().reversedArray()
                     val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
                     val txPackage = StardustPackageUtils.getStardustPackage(
                         context = context,
@@ -276,7 +286,7 @@ object BittelUsbManager2 : BittelProtocol {
                         destenation = dst,
                         stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
                         data = data)
-                    DataManager.getClientConnection(context)?.addMessageToQueue(txPackage)
+                    DataManager.getClientConnection(context).addMessageToQueue(txPackage)
                 }
             }
         }
