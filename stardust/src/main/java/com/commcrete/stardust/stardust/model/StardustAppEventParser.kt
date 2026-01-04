@@ -4,11 +4,8 @@ class StardustAppEventParser : StardustParser(){
     companion object{
         const val eventTypeLength = 1
         const val eventDataLength = 1
-        const val eventRssiTotalLength = 12
-        const val eventRssiLength = 3
-        const val eventRssiSingleLength = 1
-        const val eventSnrSingleLength = 1
-        const val eventRssiSignalLength = 1
+        const val senderIDLength = 4
+        const val rssiLength = 1
     }
 
 
@@ -36,16 +33,33 @@ class StardustAppEventParser : StardustParser(){
                     StardustAppEventPackage.StardustAppEventType.Delete -> parseDelete(eventTypeBytes, bittelAppEventPackage)
                     null -> {}
                 }
-                val rssiDataBytes = cutByteArray(byteArray,
-                    eventRssiTotalLength, offset)
-                val rssiList : MutableList<StardustAppEventPackage.RSSIPackage> = mutableListOf()
-                for (i in 0 until 4) {
-                    val rssiXcvrDataBytes = cutByteArray(rssiDataBytes,
-                        eventRssiLength, offset)
-                    rssiList.add(parseXcvrRssi(rssiXcvrDataBytes))
-                    offset+= eventRssiLength
+
+                when (bittelAppEventPackage.eventType) {
+                    StardustAppEventPackage.StardustAppEventType.RXSuccess -> {
+                        val appIDBytes = cutByteArray(byteArray,
+                            senderIDLength, offset)
+                        parseIDSender(appIDBytes, bittelAppEventPackage)
+                        val rssi = cutByteArray(byteArray,
+                            rssiLength, offset)
+                        parseRSSI(rssi, bittelAppEventPackage)
+                    }
+                    StardustAppEventPackage.StardustAppEventType.RXFail -> {}
+                    StardustAppEventPackage.StardustAppEventType.TXStart -> {}
+                    StardustAppEventPackage.StardustAppEventType.TXFinish -> {}
+                    StardustAppEventPackage.StardustAppEventType.TXBufferFull -> {}
+                    StardustAppEventPackage.StardustAppEventType.PresetChange -> {}
+                    StardustAppEventPackage.StardustAppEventType.ArmDelete -> {
+                        val appIDBytes = cutByteArray(byteArray,
+                            senderIDLength, offset)
+                        parseIDSender(appIDBytes, bittelAppEventPackage)
+                    }
+                    StardustAppEventPackage.StardustAppEventType.Delete -> {
+                        val appIDBytes = cutByteArray(byteArray,
+                            senderIDLength, offset)
+                        parseIDSender(appIDBytes, bittelAppEventPackage)
+                    }
+                    null -> {}
                 }
-                bittelAppEventPackage.listRSSIPackage = rssiList
             }
         }catch ( e : Exception) {
             e.printStackTrace()
@@ -65,25 +79,12 @@ class StardustAppEventParser : StardustParser(){
         bittelAppEventPackage.armDelete = byteArrayToInt(byteArray.reversedArray())
     }
 
-    private fun parseXcvrRssi (byteArray: ByteArray) : StardustAppEventPackage.RSSIPackage {
-        val rssiPackage = StardustAppEventPackage.RSSIPackage()
-        var offset = 0
-        try {
-            val eventRssiSingleBytes = cutByteArray(byteArray,
-                eventRssiSingleLength, offset)
-            rssiPackage.rssi = byteArrayToInt(eventRssiSingleBytes.reversedArray())
-            offset += eventRssiSingleLength
-            val eventSnrSingleBytes = cutByteArray(byteArray,
-                eventSnrSingleLength, offset)
-            rssiPackage.snr = byteArrayToInt(eventSnrSingleBytes.reversedArray())
-            offset += eventSnrSingleLength
-            val eventRssiSignalSingleBytes = cutByteArray(byteArray,
-                eventRssiSignalLength, offset)
-            rssiPackage.signalRssi = byteArrayToInt(eventRssiSignalSingleBytes.reversedArray())
-            offset += eventRssiSignalLength
-        }catch (e : Exception) {
-            e.printStackTrace()
-        }
-        return rssiPackage
+    private fun parseIDSender (byteArray: ByteArray, bittelAppEventPackage: StardustAppEventPackage) {
+        bittelAppEventPackage.senderID = byteArray.reversedArray().toHex().substring(0,8)
+    }
+
+    private fun parseRSSI (byteArray: ByteArray, bittelAppEventPackage: StardustAppEventPackage) {
+        bittelAppEventPackage.rssi = (byteArrayToInt(byteArray.reversedArray()).times(-1))
+
     }
 }
