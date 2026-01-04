@@ -7,6 +7,8 @@ data class StardustAppEventPackage(
     var preset : Int? = null,
     var listRSSIPackage: List<RSSIPackage> = mutableListOf(),
     var armDelete : Int = 0,
+    var senderID : String = "",
+    var rssi : Int = 0
 ) {
     enum class StardustAppEventType (val type : Int) {
         RXSuccess (0),
