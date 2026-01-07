@@ -17,6 +17,9 @@ interface ChatsDao {
     @Query("SELECT * FROM chats_table ORDER BY epochTimeMs DESC")
     fun getAllChats() : LiveData<List<ChatItem>>
 
+    @Query("SELECT chat_id FROM chats_table")
+    fun getAllChatsIds(): List<String>
+
     @Query("SELECT * FROM chats_table ORDER BY epochTimeMs DESC")
     fun readChats() : List<ChatItem>
     @Query("""
@@ -40,6 +43,19 @@ interface ChatsDao {
     suspend fun updateNumOfUnseenMessages(chatId: String, numOfUnsentMessages: Int)
     @Query("UPDATE chats_table SET enable_background_ptt=:enableBackgroundPtt WHERE  chat_id=:chatId")
     suspend fun updateChatBackgroundPttEnable(chatId: String, enableBackgroundPtt : Boolean)
+
+    @Query("""
+        UPDATE chats_table
+        SET last_message_id = '',
+            audio_received = 0,
+            numOfUnseenMessages = 0,
+            senderID = NULL,
+            text = NULL,
+            epochTimeMs = NULL,
+            seen = NULL
+           """)
+    suspend fun resetChatsMessages()
+
 
 //    @Query("UPDATE chats_table SET online=:isOnline WHERE  chat_id=:chatId")
 //    suspend fun updateOnlineStatus(chatId: String, isOnline : Boolean)

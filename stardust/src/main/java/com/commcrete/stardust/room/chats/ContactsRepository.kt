@@ -11,6 +11,10 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
         return chatsDao.readChats()
     }
 
+    fun getAllChatsIds(): List<String> {
+        return chatsDao.getAllChatsIds()
+    }
+
     fun readChat(chatID : String) : LiveData<ChatItem>{
         return chatsDao.getChat(chatID)
     }
@@ -40,6 +44,10 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
     suspend fun clearData () : Boolean {
         chatsDao.clearData()
         return true
+    }
+
+    suspend fun resetChatsMessages() {
+        chatsDao.resetChatsMessages()
     }
 
     fun getAllGroupIds() : List<String> {

@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 import kotlinx.parcelize.Parcelize
 
 @Entity(tableName = "messages_table", indices = [Index(value = ["epochTimeMs"], unique = true),
-    Index(value = ["time"], unique = true)])
+    Index(value = ["time"], unique = true), Index("isArchived")])
 @Parcelize
 data class MessageItem (
     @PrimaryKey(autoGenerate = true)
@@ -50,7 +50,9 @@ data class MessageItem (
     @ColumnInfo(name = "message_number")
     var messageNumber : Int = 1,
     @ColumnInfo(name = "id_number")
-    var idNumber : Long = 1
+    var idNumber : Long = 1,
+    @ColumnInfo(name = "isArchived")
+    val isArchived: Boolean = false
 ) : Parcelable {
     fun getTextToShow () : String {
         return if (isLocation == true) "Location Sent" else text

@@ -1,10 +1,22 @@
 package com.commcrete.stardust.room.messages
 
+import android.content.Context
 import androidx.lifecycle.LiveData
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDao
+import com.commcrete.stardust.util.SharedPreferencesUtil
 
 class MessagesRepository (private val messagesDao: MessagesDao) {
+
+    suspend fun archiveMessages(chatId: String? = null,
+                                startTimestamp: Long,
+                                endTimestamp: Long,
+                                isArchived : Boolean = true) {
+        return messagesDao.updateMessagesArchivedState(
+            chatId = chatId,
+            startTimestamp = startTimestamp,
+            endTimestamp = endTimestamp,
+            isArchived = isArchived
+        )
+    }
 
     fun readAllMessagesByChatId(chatid : String) : LiveData<MutableList<MessageItem>> {
         return messagesDao.getAllMessagesByChatId(chatid)
@@ -55,7 +67,6 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
         )
     }
 
-
     suspend fun addContact(messageItem: MessageItem) {
         messagesDao.addMessage(messageItem)
     }
@@ -64,8 +75,9 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
         messagesDao.addMessages(messageItems)
     }
 
-    suspend fun savePttMessage(messageItem: MessageItem) {
-        messagesDao.addMessage(messageItem)
+    suspend fun savePttMessage(context: Context, messageItem: MessageItem) {
+        val requiredToSave = SharedPreferencesUtil.getSavePTTFiles(context)
+        if(requiredToSave) messagesDao.addMessage(messageItem)
     }
 
     suspend fun saveFileMessage(messageItem: MessageItem) {
