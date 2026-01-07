@@ -5,19 +5,17 @@ import android.content.SharedPreferences
 import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
 import android.preference.PreferenceManager
+import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
-import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.google.android.gms.location.LocationRequest
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
-import androidx.core.content.edit
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 
 object SharedPreferencesUtil {
@@ -45,6 +43,7 @@ object SharedPreferencesUtil {
     private const val KEY_SELECT_CONNECTIVITY_OPTIONS = "select_connectivity_options"
     private const val KEY_BITTEL_ACK = "enable_bittel_ack"
     private const val KEY_PTT_TIMEOUT = "ptt_timeout"
+    private const val KEY_SAVE_PTT_FILES = "save_ptt_files"
 
     //Record type Values
     private const val KEY_RECORDING_TYPE_DEFAULT = "Default"
@@ -139,8 +138,6 @@ object SharedPreferencesUtil {
 
     }
 
-
-
     fun getUserID(context: Context): String? {
         return getPrefs(context).getString(KEY_USER_ID, null)
     }
@@ -219,12 +216,12 @@ object SharedPreferencesUtil {
     }
 
     fun setAppUser (context: Context , appUser : RegisterUser) {
-        getPrefs(context).edit { putString(KEY_APP_USER, appUser.toJson()) }
+        getPrefs(context).edit().putString(KEY_APP_USER, appUser.toJson()).apply()
         onUserUpdatedListener?.onUpdated(appUser)
     }
 
     fun removeAppUser (context: Context) : Boolean{
-        getPrefs(context).edit { remove(KEY_APP_USER) }
+        getPrefs(context).edit().remove(KEY_APP_USER).apply()
         onUserUpdatedListener?.onUpdated(null)
         return true
     }
@@ -402,6 +399,16 @@ object SharedPreferencesUtil {
         }
         return getPreferencesInt(context, KEY_EQ_BAND+bandNum, default) *100
     }
+
+
+    fun setSavePTTFiles(context: Context, save: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SAVE_PTT_FILES, save).apply()
+    }
+
+    fun getSavePTTFiles(context: Context) : Boolean {
+        return getPrefs(context).getBoolean(KEY_SAVE_PTT_FILES, true)
+    }
+
     fun getPTTTimeout (context: Context) : Int {
         val value = getPreferencesInt(context, KEY_PTT_TIMEOUT, 45)
         return value.times(1000)
@@ -517,9 +524,7 @@ object SharedPreferencesUtil {
 
         val carriersJson = gson.toJson(carriers)
 
-        getPrefs(context).edit {
-            putString(key, carriersJson)
-        }
+        getPrefs(context).edit().putString(KEY_LAST_CARRIERS, carriersJson).apply()
     }
 
     fun getCarriers(context: Context, key: String = KEY_LAST_CARRIERS): List<Carrier>? {
@@ -616,42 +621,48 @@ object SharedPreferencesUtil {
         }
     }
 
+    @Deprecated("As there is no option to update this value from app now this function is unavailable")
     fun setAudioDecodeType(context: Context, decodeMode: WavTokenizerDecoder.DecodeMode) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        prefs.edit()
-            .putString(KEY_DEFAULT_AUDIO_DECODE_TYPE, decodeMode.name) // save enum as string
-            .apply()
+//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+//        prefs.edit()
+//            .putString(KEY_DEFAULT_AUDIO_DECODE_TYPE, decodeMode.name) // save enum as string
+//            .apply()
     }
 
+    @Deprecated("As there is no option to update this value from app now it will return WavTokenizerDecoder.DecodeMode.Combined")
     fun getAudioDecodeType(context: Context): WavTokenizerDecoder.DecodeMode {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val saved = prefs.getString(KEY_DEFAULT_AUDIO_DECODE_TYPE, null)
-
-        return try {
-            if (saved != null) WavTokenizerDecoder.DecodeMode.valueOf(saved)
-            else WavTokenizerDecoder.DecodeMode.Combined   // default value
-        } catch (e: Exception) {
-            WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
-        }
+//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+//        val saved = prefs.getString(KEY_DEFAULT_AUDIO_DECODE_TYPE, null)
+//
+//        return try {
+//            if (saved != null) WavTokenizerDecoder.DecodeMode.valueOf(saved)
+//            else WavTokenizerDecoder.DecodeMode.Combined   // default value
+//        } catch (e: Exception) {
+//            WavTokenizerDecoder.DecodeMode.Combined        // fallback if corrupted
+//        }
+        return WavTokenizerDecoder.DecodeMode.Combined
     }
 
+    @Deprecated("As there is no option to update this value from app now this function is unavailable")
     fun setAudioModelType(context: Context, model: WavTokenizerDecoder.ModelType) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        prefs.edit()
-            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
-            .apply()
+//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+//        prefs.edit()
+//            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
+//            .apply()
     }
 
+    @Deprecated("As there is no option to update this value from app now it will return WavTokenizerDecoder.ModelType.General")
     fun getAudioModelType(context: Context): WavTokenizerDecoder.ModelType {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
-
-        return try {
-            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
-            else WavTokenizerDecoder.ModelType.General   // default value
-        } catch (e: Exception) {
-            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
-        }
+//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+//        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
+//
+//        return try {
+//            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
+//            else WavTokenizerDecoder.ModelType.General   // default value
+//        } catch (e: Exception) {
+//            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
+//        }
+        return WavTokenizerDecoder.ModelType.General
     }
 
 }
