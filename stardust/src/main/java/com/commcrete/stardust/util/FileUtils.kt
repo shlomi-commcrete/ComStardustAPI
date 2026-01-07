@@ -10,7 +10,6 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.webkit.MimeTypeMap
 import android.widget.Toast
-import androidx.annotation.RequiresApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,7 +20,20 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
-
+import androidx.sqlite.db.SupportSQLiteDatabase
+import com.commcrete.bittell.room.sniffer.SnifferDatabase
+import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.contacts.ContactsDatabase
+import com.commcrete.stardust.room.friends.FriendsDatabase
+import com.commcrete.stardust.room.logs.LogsDatabase
+import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.sos_messages.SOSMessagesDatabase
+import java.io.BufferedOutputStream
+import java.io.FileWriter
+import java.io.OutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 object FileUtils {
     fun createFile(context : Context, folderName : String = "logs"
@@ -231,9 +243,250 @@ object FileUtils {
         return context.contentResolver.getType(uri) ?: "application/octet-stream"
     }
 
+    fun getAllChatFilesDirs(context: Context, chatIDs: List<String>): List<File> {
+        val rootDir = context.filesDir
+
+        return rootDir.listFiles()
+            ?.filter { it.isDirectory && chatIDs.contains(it.name)}
+            ?.sortedBy { it.name }
+            ?: emptyList()
+    }
+
+
+    fun exportAppLogcat(
+        context: Context,
+        fileName: String = "app_logs_${System.currentTimeMillis()}.logcat"
+    ): File {
+
+        val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val logFile = File(outputDir, fileName)
+
+        val pid = android.os.Process.myPid()
+
+        // Clear buffer first (optional but recommended)
+        Runtime.getRuntime().exec("logcat -c")
+
+        val command = arrayOf(
+            "logcat",
+            "--pid=$pid",
+            "-d",                 // dump and exit
+            "-v", "time"          // timestamped format
+        )
+
+        val process = Runtime.getRuntime().exec(command)
+
+        process.inputStream.use { input ->
+            FileOutputStream(logFile).use { output ->
+                input.copyTo(output)
+            }
+        }
+
+        return logFile
+    }
+
+    fun zipData(
+        sourceItems: List<ZipItem>,
+        outputStream: OutputStream,
+        onFinished: (() -> Unit)? = null
+    ) {
+        ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
+            sourceItems.forEach { items ->
+                items.files.forEach { file ->
+                    if (file.exists()) {
+                        if (file.isDirectory) {
+                            zipDirRecursive(file, file, zipOut, items.wrapperFolder)
+                        } else {
+                            zipSingleFile(file, zipOut, items.wrapperFolder)
+                        }
+                        if(items.removeWhenZipped) file.delete()
+                    }
+                }
+            }
+        }
+        onFinished?.invoke()
+    }
+
+    fun zipSingleFile(
+        file: File,
+        zipOut: ZipOutputStream,
+        wrapperFolder: String? = null
+    ) {
+        if (!file.exists() || !file.isFile) return
+
+        // Build the entry name, optionally adding the wrapper folder
+        val entryName = if (wrapperFolder != null) {
+            "$wrapperFolder/${file.name}"
+        } else {
+            file.name
+        }
+
+        zipOut.putNextEntry(ZipEntry(entryName))
+        file.inputStream().use { input ->
+            input.copyTo(zipOut)
+        }
+        zipOut.closeEntry()
+    }
+
+    fun zipDirRecursive(
+        rootDir: File,
+        currentFile: File,
+        zipOut: ZipOutputStream,
+        wrapperFolder: String? = null
+    ) {
+        val files = currentFile.listFiles() ?: return
+
+        for (file in files) {
+            val relativePath = file.relativeTo(rootDir).path
+            val entryName = if (wrapperFolder != null) {
+                "$wrapperFolder/${currentFile.name}/$relativePath"
+            } else {
+                "$relativePath"
+            }
+
+            if (file.isDirectory) {
+                zipDirRecursive(rootDir, file, zipOut, wrapperFolder)
+            } else {
+                zipOut.putNextEntry(ZipEntry(entryName))
+                file.inputStream().use { it.copyTo(zipOut) }
+                zipOut.closeEntry()
+            }
+        }
+    }
+
+    fun zipFoldersWithWrapper(
+        sourceDirs: List<File>,
+        wrapperFolder: String,
+        outputStream: OutputStream
+    ) {
+        ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
+            sourceDirs.forEach { dir ->
+                if (dir.exists() && dir.isDirectory) {
+                    zipDirRecursive(dir, dir, zipOut, wrapperFolder)
+                }
+            }
+        }
+    }
+
+    fun zipFolder(exportDir: File): File {
+        val zipFile = File(exportDir.parent, "${exportDir.name}.zip")
+        ZipOutputStream(zipFile.outputStream()).use { zip ->
+            exportDir.listFiles()?.forEach { file ->
+                zip.putNextEntry(ZipEntry(file.name))
+                file.inputStream().copyTo(zip)
+                zip.closeEntry()
+            }
+        }
+        return zipFile
+    }
+
+    fun exportAllDatabasesToCsv(
+        context: Context,
+        exportFolderName: String = "databases_export"
+    ): File {
+        val data = listOf(
+            ContactsDatabase.getDatabase(context),
+            ChatsDatabase.getDatabase(context),
+            MessagesDatabase.getDatabase(context),
+        ).associate {
+            "${it.openHelper.databaseName}" to it.openHelper.readableDatabase
+        }
+
+        return  exportMultipleDatabasesToCsv(
+            context = context,
+            databases = data,
+            exportFolderName = exportFolderName
+        )
+    }
+
+    /**
+     * Export multiple databases to CSV files.
+     *
+     * @param context App context
+     * @param databases Map of database name -> SQLiteDatabase
+     * @param exportFolderName Name of folder under filesDir to store CSVs
+     * @return The root export directory
+     */
+    fun exportMultipleDatabasesToCsv(
+        context: Context,
+        databases: Map<String, SupportSQLiteDatabase>,
+        exportFolderName: String = "databases"
+    ): File {
+        val exportRoot = File(context.getExternalFilesDir(null), exportFolderName)
+        if (!exportRoot.exists()) exportRoot.mkdirs()
+
+        databases.forEach { (dbName, db) ->
+            val dbExportDir = File(exportRoot, dbName)
+            if (!dbExportDir.exists()) dbExportDir.mkdirs()
+
+            exportDatabaseToCsv(db, dbExportDir)
+        }
+
+        return exportRoot
+    }
+
+    private fun exportDatabaseToCsv(database: SupportSQLiteDatabase, exportDir: File) {
+        val tableCursor = database.query(
+            """
+        SELECT name FROM sqlite_master
+        WHERE type='table'
+        AND name NOT LIKE 'sqlite_%'
+        AND name != 'android_metadata'
+        """.trimIndent()
+        )
+
+        tableCursor.use { cursor ->
+            while (cursor.moveToNext()) {
+                val tableName = cursor.getString(0)
+                exportTableToCsv(database, tableName, exportDir)
+            }
+        }
+    }
+
+    private fun exportTableToCsv(
+        database: SupportSQLiteDatabase,
+        tableName: String,
+        exportDir: File
+    ) {
+        val csvFile = File(exportDir, "$tableName.csv")
+        val writer = FileWriter(csvFile)
+
+        val cursor = database.query("SELECT * FROM $tableName")
+        cursor.use {
+            val columns = it.columnNames
+            // Header
+            writer.append(columns.joinToString(","))
+            writer.append("\n")
+
+            while (it.moveToNext()) {
+                val row = buildString {
+                    for (i in columns.indices) {
+                        val value = it.getString(i)
+                            ?.replace("\"", "\"\"")
+                            ?.replace("\n", " ")
+                            ?: ""
+                        append("\"$value\"")
+                        if (i < columns.size - 1) append(",")
+                    }
+                }
+                writer.append(row)
+                writer.append("\n")
+            }
+        }
+
+        writer.flush()
+        writer.close()
+    }
+
+
     enum class FileType {
         UNKNOWN,
         FILE,
         IMAGE
     }
+
+    data class ZipItem(
+        val files: List<File>,         // files or directories to include
+        val wrapperFolder: String? = null, // optional folder name inside the ZIP
+        val removeWhenZipped: Boolean = false
+    )
 }
