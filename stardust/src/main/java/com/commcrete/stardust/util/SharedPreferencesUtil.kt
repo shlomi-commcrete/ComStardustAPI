@@ -400,12 +400,17 @@ object SharedPreferencesUtil {
         return getPreferencesInt(context, KEY_EQ_BAND+bandNum, default) *100
     }
 
-
-    fun setSavePTTFiles(context: Context, save: Boolean) {
+    /**
+     * Use it from DataManager.updateSavePTTFilesRequired only!!!
+     * */
+    internal fun setSavePTTFiles(context: Context, save: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_SAVE_PTT_FILES, save).apply()
     }
 
-    fun getSavePTTFiles(context: Context) : Boolean {
+    /**
+     * Use it from DataManager.getSavePTTFilesRequired only!!!
+     * */
+    internal fun getSavePTTFiles(context: Context) : Boolean {
         return getPrefs(context).getBoolean(KEY_SAVE_PTT_FILES, true)
     }
 

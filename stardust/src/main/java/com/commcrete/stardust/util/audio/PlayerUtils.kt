@@ -38,6 +38,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -367,6 +368,7 @@ object PlayerUtils : BleMediaConnector() {
                             e.printStackTrace()
                         }
                         messagesRepository.savePttMessage(
+                            context = context,
                             MessageItem(senderID = destination,
                                 epochTimeMs = ts.toLong(), senderName = userName ,
                                 chatId = realDest, text = "", fileLocation = file.absolutePath,
@@ -390,7 +392,7 @@ object PlayerUtils : BleMediaConnector() {
         val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations")
         val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations/$ts.pcm")
 
-        if(directory!=null){
+        if(directory != null){
             if(!directory.exists()){
                 directory.mkdir()
             }
@@ -402,7 +404,7 @@ object PlayerUtils : BleMediaConnector() {
                         // TODO: Change to sniffer message
                         try {
                             Timber.tag("savePTT").d("ts : ${ts.toLong()}")
-                        }catch (e :Exception){
+                        } catch (e :Exception){
                             e.printStackTrace()
                         }
 
@@ -414,7 +416,7 @@ object PlayerUtils : BleMediaConnector() {
                         snifferContacts?.get(1)?.let {
                             sniffed.add(it)
                         }
-                        if(snifferContacts != null && snifferContacts[0].isGroup == true) {
+                        if(snifferContacts != null && snifferContacts[0].isGroup) {
                             val tempSender = snifferContacts[0]
                             val tempReceiver = snifferContacts[1]
                             sniffed = mutableListOf()
@@ -429,14 +431,13 @@ object PlayerUtils : BleMediaConnector() {
                             SnifferItem(
                             senderID = senderID,
                             receiverID = receiverID,
-                            senderName = sniffed!![0].displayName ?: "",
-                            receiverName = sniffed!![1].displayName ?: "",
+                            senderName = sniffed[0].displayName,
+                            receiverName = sniffed[1].displayName,
                             epochTimeMs = ts.toLong(),
                             chatId = destinations,
                             text = "",
                             fileLocation = file.absolutePath,
-                            isAudio = true
-                        )
+                            isAudio = true)
                         )
                         DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(senderID, receiverID), file)
                     }
@@ -860,7 +861,7 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun updateAudioReceived(chatId: String, isAudioReceived : Boolean){
-        if(chatId.isEmpty()) {
+        if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) {
             return
         }
         Scopes.getDefaultCoroutine().launch {

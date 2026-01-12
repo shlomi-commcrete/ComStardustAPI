@@ -256,9 +256,7 @@ object PcmStreamPlayer {
 
 
     private fun updateAudioReceived(chatId: String, senderId: String, isAudioReceived : Boolean){
-        if(chatId.isEmpty()) {
-            return
-        }
+        if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) { return }
 
         Scopes.getDefaultCoroutine().launch {
             PlayerUtils.chatsRepository.updateAudioReceived(chatId, isAudioReceived)
@@ -306,6 +304,7 @@ object PcmStreamPlayer {
             Scopes.getDefaultCoroutine().launch {
                 val userName = UsersUtils.getUserName(destination)
                 PlayerUtils.messagesRepository.savePttMessage(
+                    context = context,
                     MessageItem(
                         senderID = destination,
                         epochTimeMs = ts.toLong(),

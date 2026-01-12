@@ -2,17 +2,15 @@ package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.example.chunkrecorder.AudioRecorderAI
-import com.google.android.gms.common.api.Scope
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -21,7 +19,7 @@ import java.io.File
 
 object RecorderUtils {
 
-    var file : File? = null
+    //var file : File? = null
     var ts : Long = 0
     private val LOG_TAG = "AudioRecordTest"
 
@@ -41,90 +39,141 @@ object RecorderUtils {
         wavRecorder?.sendAudioTest(DataManager.context)
     }
 
+
+    // ----------------------------------------
+    // Start Recording
+    // ----------------------------------------
     @RequiresPermission(RECORD_AUDIO)
-    fun onRecord(start: Boolean, destination : String, carrier: Carrier?, codeType: CODE_TYPE? = CODE_TYPE.CODEC2) = if (start) {
-        Log.d("AudioRecorder", "onRecord $start")
-        if(codeType == CODE_TYPE.CODEC2) {
-            //Works with computer codec2
-//            wavRecorder?.kill()
-            Scopes.getMainCoroutine().launch {
-                canRecord.value = false
-            }
-            wavRecorder = WavRecorder(DataManager.context, pttInterface)
-            DataManager.getSource().let {
-                file = createFile(DataManager.fileLocation, destination, it)
-            }
-            wavRecorder?.startRecording(file?.absolutePath?:"", destination, carrier)
+    fun startRecording(
+        destination: String,
+        carrier: Carrier?,
+        codeType: CODE_TYPE?
+    ): File? {
+        Log.d("AudioRecorder", "Start recording")
+
+        Scopes.getMainCoroutine().launch { canRecord.value = false }
+
+        return if (codeType == CODE_TYPE.CODEC2) {
+            startCodec2Recording(destination, carrier)
         } else {
-            Scopes.getMainCoroutine().launch {
-                canRecord.value = false
-            }
-            Log.d("AudioRecorder", "AI Enhanced Recording Started")
-            PttSendManager.init(DataManager.context,  pttInterface)
-            Log.d("AudioRecorder", "PttSendManager.init")
-            DataManager.getSource().let {
-                file = createFile(DataManager.fileLocation, destination, it)
-            }
-            Log.d("AudioRecorder", "File Created")
-            PttSendManager.restart()
-            file?.let {
-                aiRecorder = AudioRecorderAI(
-                    context = DataManager.context,
-                    chunkDurationMs = 500,
-                    filesDirProvider = { it},
-                )
-                Log.d("AudioRecorder", "AudioRecorderAI Created")
-                Log.d("AudioRecorder", "start ${aiRecorder}")
-                aiRecorder?.onChunkReady = { pcmArray, chunkIndex ->
-                    PttSendManager.addNewFrame(pcmArray, it, carrier, destination)
-                }
+            startAIRecording(destination, carrier)
+        }
+    }
 
-                aiRecorder?.onPartialFinalChunk = { pcmArray, chunkIndex ->
-                    PttSendManager.addNewFrame(pcmArray, it, carrier, destination)
-                }
-
-                aiRecorder?.onError = { throwable ->
-                    Log.d("AudioRecorder", "error ${throwable}")
-                    aiRecorder?.stop()
-                }
-                aiRecorder?.onStateChanged = { recording ->
-                    Log.d(LOG_TAG, "Recording state changed: $recording")
-                    if(!recording) {
-                        Scopes.getDefaultCoroutine().launch {
-                            delay(3000)
-                            PttSendManager.finish()
-                        }
-                    }
-                }
-                Log.d("AudioRecorder", "AudioRecorderAI Start")
-                aiRecorder?.start()
+    private fun startCodec2Recording(destination: String, carrier: Carrier?): File? {
+        wavRecorder = WavRecorder(DataManager.context, pttInterface)
+        wavRecorder ?: return null
+        val file: File? = if (!DataManager.getSavePTTFilesRequired(DataManager.context)) {
+            FileUtils.withTempFile(
+                context = DataManager.context,
+                prefix = destination,
+                suffix = DataManager.getSource()
+            ) { tempFile ->
+                wavRecorder?.startRecording(tempFile, carrier)
+            }
+        } else {
+            createFile(DataManager.fileLocation, destination, DataManager.getSource())?.also {
+                wavRecorder?.startRecording(it, carrier)
             }
         }
+        return file
+    }
 
+    private fun startAIRecording(destination: String, carrier: Carrier?): File? {
+        Log.d("AudioRecorder", "NAE Recording Started")
+        PttSendManager.init(DataManager.context, pttInterface)
 
-    } else {
-        Log.d("AudioRecorder", "onRecord $start")
-        if(codeType == CODE_TYPE.CODEC2) {
-            wavRecorder?.stopRecording(retry = 0,destination, file?.absolutePath?:"", DataManager.context, carrier)
+        // Determine which file to use
+        val file: File? = if (!DataManager.getSavePTTFilesRequired(DataManager.context)) {
+            // Use temporary file
+            FileUtils.withTempFile(
+                context = DataManager.context,
+                prefix = destination,
+                suffix = DataManager.getSource()
+            ) { tempFile ->
+                setupAIRecorder(tempFile, destination, carrier)
+            }
+        } else {
+            // Use persistent file
+            val persistentFile = createFile(DataManager.fileLocation, destination, DataManager.getSource())
+            persistentFile?.let { setupAIRecorder(it, destination, carrier) }
+            persistentFile
+        }
+
+        return file
+    }
+
+    private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
+        PttSendManager.restart()
+
+        aiRecorder = AudioRecorderAI(
+            context = DataManager.context,
+            chunkDurationMs = 500,
+            filesDirProvider = { file }
+        ).apply {
+            onChunkReady = { pcmArray, _ ->
+                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+            }
+            onPartialFinalChunk = { pcmArray, _ ->
+                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+            }
+            onError = { throwable ->
+                Log.d("AudioRecorder", "error $throwable")
+                stop()
+            }
+            onStateChanged = { recording ->
+                Log.d(LOG_TAG, "Recording state changed: $recording")
+                if (!recording) finishAIRecording(DataManager.context)
+            }
+            start()
+        }
+
+        Log.d("AudioRecorder", "AudioRecorderAI started")
+    }
+    private fun finishAIRecording(context: Context) {
+        Scopes.getDefaultCoroutine().launch {
+            delay(3000)
+            PttSendManager.finish(context)
+        }
+    }
+
+    // ----------------------------------------
+    // Stop Recording
+    // ----------------------------------------
+    fun stopRecording(
+        destination: String,
+        carrier: Carrier?,
+        codeType: CODE_TYPE?,
+        file: File?
+    ) {
+        Log.d("AudioRecorder", "Stop recording")
+
+        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(destination, carrier, file)
+        else stopAIRecording()
+
+        Scopes.getMainCoroutine().launch {
+            delay(300)
+            canRecord.value = true
+        }
+    }
+
+    private fun stopCodec2Recording(destination: String, carrier: Carrier?, file: File?) {
+        wavRecorder?.run {
+            file?.let { stopRecording(retry = 0, destination, it.absolutePath, DataManager.context, carrier) }
             Scopes.getDefaultCoroutine().launch {
-                delay (50)
+                delay(50)
                 wavRecorder = null
             }
-        } else {
-            Log.d("AudioRecorder", "stop AI")
-            aiRecorder?.stop()
-            Scopes.getDefaultCoroutine().launch {
-                delay (50)
-                aiRecorder = null
-            }
-
         }
-            Scopes.getMainCoroutine().launch {
-                delay(300)
-                canRecord.value = true
-            }
+    }
 
-
+    private fun stopAIRecording() {
+        Log.d("AudioRecorder", "Stop AI Recording")
+        aiRecorder?.stop()
+        Scopes.getDefaultCoroutine().launch {
+            delay(50)
+            aiRecorder = null
+        }
     }
 
     enum class CodecValues(val mode : Int,val sampleRate: Int, val charNumOutput : Int){
@@ -133,11 +182,11 @@ object RecorderUtils {
         MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
         MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
     }
-    private fun createFile(context: String, chatID: String, userId: String) : File?{
+    private fun createFile(fileDir: String, chatID: String, userId: String) : File?{
         try{
             ts = System.currentTimeMillis()
-            val directory = File("$context/$chatID")
-            val newFile = File("$context/$chatID/$ts-$userId.pcm")
+            val directory = File("$fileDir/$chatID")
+            val newFile = File("$fileDir/$chatID/$ts-$userId.pcm")
             if(!directory.exists()){
                 directory.mkdir()
             }
@@ -167,6 +216,6 @@ object RecorderUtils {
     }
 
     enum class CODE_TYPE (val id : Int, val codecName: String){
-        AI(1, "AI Enhanced"), CODEC2(0, "Default")
+        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Default")
     }
 }

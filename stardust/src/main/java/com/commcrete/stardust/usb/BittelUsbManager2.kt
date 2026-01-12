@@ -34,6 +34,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
+
 @SuppressLint("StaticFieldLeak")
 object BittelUsbManager2 : BittelProtocol {
 
@@ -162,7 +164,8 @@ object BittelUsbManager2 : BittelProtocol {
         if(!isConnectedAudio){
             Timber.tag("SerialInOutputManager").d("connectToAudioDevice : ${device.productName}")
             uartManagerAudio = UARTManager(context)
-            val connectionStatus = uartManagerAudio?.connectDevice(object : SerialInputOutputManager.Listener {
+            val connectionStatus = uartManagerAudio?.connectDevice(
+                object : SerialInputOutputManager.Listener {
                 override fun onNewData(data: ByteArray) {
                     if (data.toHex() == echoPackage.toHex()) {
 //                        removeConnectionTimer()
@@ -171,7 +174,7 @@ object BittelUsbManager2 : BittelProtocol {
                         tempDevice = null
                         isConnectedAudio = true
 //                        continueConnectingDevices ()
-                    }else {
+                    } else {
                         Timber.tag("SerialInOutputManager").d("uartManagerAudio : Not PTT Device")
 //                        connectToDevice(context, device)
                     }
@@ -183,11 +186,13 @@ object BittelUsbManager2 : BittelProtocol {
                     Timber.tag("SerialInOutputManager").d(e.message)
                     // Handle errors
                 }
-            }, device.deviceId, object : UARTManager.CTSChange {
+            },
+                device.deviceId,
+                object : UARTManager.CTSChange {
                 override fun onCTSChanged(isActive: Boolean) {
                     Timber.tag("SerialInOutputManager").d("onCTSChanged : $isActive")
                     Timber.tag("notifyData PTT").d("onCTSChanged : ${isActive}")
-                    ButtonListener.notifyData(isActive)
+                    ButtonListener.notifyData(isActive, DataManager.context)
                 }
 
             })

@@ -21,14 +21,9 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import androidx.sqlite.db.SupportSQLiteDatabase
-import com.commcrete.bittell.room.sniffer.SnifferDatabase
-import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.contacts.ContactsDatabase
-import com.commcrete.stardust.room.friends.FriendsDatabase
-import com.commcrete.stardust.room.logs.LogsDatabase
 import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.sos_messages.SOSMessagesDatabase
 import java.io.BufferedOutputStream
 import java.io.FileWriter
 import java.io.OutputStream
@@ -422,6 +417,59 @@ object FileUtils {
         }
 
         return exportRoot
+    }
+
+    /**
+     * Get (or create) a temporary directory for your app.
+     * This directory is inside the cache folder and can be cleared anytime.
+     */
+    fun getTempDir(context: Context): File {
+        val tempDir = File(context.cacheDir, "temp_files")
+        if (!tempDir.exists()) {
+            tempDir.mkdirs()
+        }
+        return tempDir
+    }
+
+    /**
+     * Creates a temporary file, passes it to [block], then deletes the file automatically.
+     * Example usage:
+     * ```
+     * TempFileUtil.withTempFile(context, ".txt") { file ->
+     *     file.writeText("Hello")
+     *     // do stuff with file
+     * } // file is deleted automatically here
+     * ```
+     */
+    fun <T> withTempFile(
+        context: Context,
+        prefix: String = "temp_",
+        suffix: String? = null,
+        block: (File) -> T
+    ): File {
+        val tempFile = File.createTempFile(prefix, suffix, getTempDir(context))
+        try {
+            block(tempFile)
+        } finally {
+            tempFile.delete()
+        }
+        return tempFile
+    }
+
+    /**
+     * Create a temporary file inside the temp directory.
+     * The file will have a unique name and optional extension.
+     */
+    fun createTempFile(context: Context, prefix: String = "temp_", suffix: String? = null): File {
+        return File.createTempFile(prefix, suffix, getTempDir(context))
+    }
+
+    /**
+     * Delete all temp files in the temp directory.
+     */
+    fun clearTempDir(context: Context) {
+        val tempDir = getTempDir(context)
+        tempDir.listFiles()?.forEach { it.delete() }
     }
 
     private fun exportDatabaseToCsv(database: SupportSQLiteDatabase, exportDir: File) {

@@ -18,10 +18,12 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
 
 
 object ButtonListener {
 
+    private var currentFile: File? = null
     private var isClicked = false
     private var receivedAlready = false
     val isPlayPTT : CountingLiveData<Boolean> = CountingLiveData(false)
@@ -56,41 +58,45 @@ object ButtonListener {
         }
     }
 
-    fun notifyData (isClicked : Boolean) {
+    fun notifyData(isClicked: Boolean, context: Context) {
+        // Update LiveData on main thread
         Scopes.getMainCoroutine().launch {
             isPlayPTT.value = isClicked
         }
-        Scopes.getDefaultCoroutine().launch{
-            val userID = SharedPreferencesUtil.getLastUser(DataManager.context)
-            if(userID.isNotEmpty()) {
-                recordAndStop(isClicked, userID)
+
+        // Start or stop PTT recording on background thread
+        Scopes.getDefaultCoroutine().launch {
+            val uid = SharedPreferencesUtil.getLastUser(context)
+            if (uid.isEmpty()) return@launch
+
+            if (isClicked) {
+                // Start recording
+                currentFile = startPttRecord(context, uid)
+                Timber.tag("isPlayPTT").d("startRecording")
+            } else {
+                // Stop recording
+                currentFile?.let { dismissPttRecording(context, uid, it) }
+                Timber.tag("isPlayPTT").d("finishRecording")
+                currentFile = null
             }
         }
     }
 
+    fun getCurrentFile(): File? = currentFile
 
     @SuppressLint("MissingPermission")
-    fun dismissPttRecording (context: Context, chatID : String) {
+    fun dismissPttRecording (context: Context, chatID: String, file: File?) {
         val registerUser = getAppUser(context)
         registerUser?.appId?.let {
-            stopPTT(context,StardustAPIPackage(it, chatID, false, null), SharedPreferencesUtil.getCodecType(DataManager.context))
+            stopPTT(context, StardustAPIPackage(it, chatID, false, null), SharedPreferencesUtil.getCodecType(DataManager.context), file)
         }
     }
 
     @SuppressLint("MissingPermission")
-    fun startPttRecord(context: Context, chatID : String) {
+    fun startPttRecord(context: Context, chatID : String): File? {
         val registerUser = getAppUser(context)
-        registerUser?.appId?.let {
+        return registerUser?.appId?.let {
             startPTT(context,StardustAPIPackage(it, chatID, false, null), SharedPreferencesUtil.getCodecType(DataManager.context))
-        }
-    }
-    private fun recordAndStop (isClicked: Boolean, userID: String) {
-        if(isClicked) {
-            startPttRecord(DataManager.context, userID)
-            Timber.tag("isPlayPTT").d("startRecording")
-        }else {
-            Timber.tag("isPlayPTT").d("finishRecording")
-            dismissPttRecording(DataManager.context, userID)
         }
     }
 
@@ -98,39 +104,41 @@ object ButtonListener {
         // Initialize MediaSessionCompat
         mediaSession = MediaSessionCompat(context, "MediaButtonReceiver")
 
-        // Enable callbacks for media buttons
-        mediaSession!!.setMediaButtonReceiver(null)
+        mediaSession?.let {
+            // Enable callbacks for media buttons
+            it.setMediaButtonReceiver(null)
 
-        // Set a callback for handling media button events
-        mediaSession!!.setCallback(object : MediaSessionCompat.Callback() {
-            override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
-                val keyEvent = mediaButtonEvent?.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
-                if (keyEvent?.action == KeyEvent.ACTION_DOWN) {
-                    when (keyEvent.keyCode) {
-                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                            // Handle play/pause button press
-                            Timber.d("Play/Pause button pressed")
-                            return true
-                        }
-                        KeyEvent.KEYCODE_VOLUME_UP -> {
-                            // Handle volume up button press
-                            Timber.d("Volume Up button pressed")
-                            return true
-                        }
-                        KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                            // Handle volume down button press
-                            Timber.d("Volume Down button pressed")
-                            return true
+            // Set a callback for handling media button events
+            it.setCallback(object : MediaSessionCompat.Callback() {
+                override fun onMediaButtonEvent(mediaButtonEvent: Intent?): Boolean {
+                    val keyEvent = mediaButtonEvent?.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
+                    if (keyEvent?.action == KeyEvent.ACTION_DOWN) {
+                        when (keyEvent.keyCode) {
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
+                                // Handle play/pause button press
+                                Timber.d("Play/Pause button pressed")
+                                return true
+                            }
+                            KeyEvent.KEYCODE_VOLUME_UP -> {
+                                // Handle volume up button press
+                                Timber.d("Volume Up button pressed")
+                                return true
+                            }
+                            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                                // Handle volume down button press
+                                Timber.d("Volume Down button pressed")
+                                return true
+                            }
                         }
                     }
+                    return super.onMediaButtonEvent(mediaButtonEvent)
                 }
-                return super.onMediaButtonEvent(mediaButtonEvent)
-            }
-        })
+            })
 
-        // Activate the session
-        mediaSession!!.isActive = true
-        requestAudioFocus(context)
+            // Activate the session
+            it.isActive = true
+            requestAudioFocus(context)
+        }
     }
 
     private fun requestAudioFocus(context: Context) {

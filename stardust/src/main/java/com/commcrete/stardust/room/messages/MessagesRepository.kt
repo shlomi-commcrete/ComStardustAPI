@@ -2,6 +2,7 @@ package com.commcrete.stardust.room.messages
 
 import android.content.Context
 import androidx.lifecycle.LiveData
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 
 class MessagesRepository (private val messagesDao: MessagesDao) {
@@ -76,8 +77,7 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
     }
 
     suspend fun savePttMessage(context: Context, messageItem: MessageItem) {
-        val requiredToSave = SharedPreferencesUtil.getSavePTTFiles(context)
-        if(requiredToSave) messagesDao.addMessage(messageItem)
+        if(DataManager.getSavePTTFilesRequired(context)) messagesDao.addMessage(messageItem)
     }
 
     suspend fun saveFileMessage(messageItem: MessageItem) {

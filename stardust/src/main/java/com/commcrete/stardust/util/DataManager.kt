@@ -29,9 +29,15 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
+import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.contacts.ContactsDatabase
+import com.commcrete.stardust.room.contacts.ContactsRepository
+import com.commcrete.stardust.room.friends.FriendsDatabase
+import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
@@ -46,8 +52,12 @@ import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.util.Date
@@ -63,11 +73,14 @@ object DataManager : StardustAPI, PttInterface{
     private var pollingUtils : PollingUtils? = null
     lateinit var context : Context
     lateinit var fileLocation : String
+
     private var bleScanner : BleScanner? = null
     private var source : String? = null
     private var destination : String? = null
     private var stardustAPICallbacks : StardustAPICallbacks? = null
     var pluginContext: Context? = null
+
+    private var savePTTFiles: Boolean? = null
 
     private var hasTimber = false
     var isPlayPttFromSdk = true
@@ -188,17 +201,17 @@ object DataManager : StardustAPI, PttInterface{
         AIModuleInitializer.initModules(context, pluginContext)
     }
     @SuppressLint("MissingPermission")
-    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
+    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File? {
         requireContext(context)
         this.source = stardustAPIPackage.source
         this.destination = stardustAPIPackage.destination
         RecorderUtils.init(this)
-        RecorderUtils.onRecord(true, stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
+        return RecorderUtils.startRecording(stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE) {
+    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?) {
         requireContext(context)
-        RecorderUtils.onRecord(false, stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
+        RecorderUtils.stopRecording(stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType, file)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
@@ -454,14 +467,61 @@ object DataManager : StardustAPI, PttInterface{
         return MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao())
     }
 
-
-
-    fun getCallbacks () : StardustAPICallbacks? {
+    fun getCallbacks() : StardustAPICallbacks? {
         return stardustAPICallbacks
+    }
+
+    fun getSavePTTFilesRequired(context: Context): Boolean {
+        if(savePTTFiles == null) {
+            savePTTFiles = SharedPreferencesUtil.getSavePTTFiles(context)
+        }
+        return savePTTFiles != false
+    }
+
+    fun updateSavePTTFilesRequired(context: Context, isRequired: Boolean) {
+        savePTTFiles = isRequired
+        SharedPreferencesUtil.setSavePTTFiles(context, isRequired)
     }
 
     fun initRemoteConfig(context: Context) {
         requireContext(context)
         RemoteConfigUtils.initLocalDefaults(context)
     }
+
+    suspend fun cleanAllDatabases(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                val user = async {
+                    BittelUserRepository(
+                        BittelUserDatabase.getDatabase(context).bittelUserDao()
+                    ).clearData()
+                }
+
+                val chats = async {
+                    ChatsRepository(
+                        ChatsDatabase.getDatabase(context).chatsDao()
+                    ).clearData()
+                }
+
+                val contacts = async {
+                    ContactsRepository(
+                        ContactsDatabase.getDatabase(context).contactsDao()
+                    ).clearData()
+                }
+
+                val friends = async {
+                    FriendsRepository(
+                        FriendsDatabase.getDatabase(context).friendsDao()
+                    ).clearData()
+                }
+
+                val messages = async {
+                    MessagesRepository(
+                        MessagesDatabase.getDatabase(context).messagesDao()
+                    ).clearData()
+                }
+
+                user.await() && chats.await() && contacts.await() && friends.await() && messages.await()
+            }
+        }
 }

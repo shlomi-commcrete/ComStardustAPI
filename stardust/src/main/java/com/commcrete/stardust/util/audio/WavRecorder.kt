@@ -12,6 +12,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.provider.ContactsContract
 import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
@@ -36,6 +37,7 @@ import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
@@ -86,7 +88,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     @SuppressLint("MissingPermission")
-    fun startRecording(path: String, destination: String, carrier: Carrier?) {
+    fun startRecording(file: File, carrier: Carrier?) {
         val audioSource = SharedPreferencesUtil.getAudioSource(DataManager.context)
         recorder = AudioRecord(
             audioSource,
@@ -105,7 +107,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         isRecording = true
 
         recordingThread = thread(true) {
-            writeAudioDataToFile(path, carrier)
+            writeAudioDataToFile(file, carrier)
         }
     }
 
@@ -207,7 +209,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 }
             }
             // ✅ Save PTT regardless of whether recorder was null
-            savePtt(chatID, path, context)
+            saveOrRemovePttFile(chatID, path, context)
         } catch (e: Exception) {
             e.printStackTrace()
             Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
@@ -230,15 +232,13 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
     }
 
-    private fun writeAudioDataToFile(path: String, carrier: Carrier?) {
-
-
-        val targetGain = (SharedPreferencesUtil.getGain(DataManager.context)/100f)
+    private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
+        val targetGain = (SharedPreferencesUtil.getGain(DataManager.context) / 100f)
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
-            if(path.isNotEmpty()){
-                os = FileOutputStream(path)
+            if(file.exists()){
+                os = FileOutputStream(file)
             }
 
         } catch (e: FileNotFoundException) {
@@ -283,15 +283,15 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
 
                 if(BleManager.isNetworkEnabled()){
-                    handleBlePackage(byteaArray, null)
+                    handleBlePackage(byteaArray, null, file)
                 }
                 else if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
 //                    send to BLE
-                    handleBlePackage(byteaArray, carrier)
+                    handleBlePackage(byteaArray, carrier, file)
                 }else {
-                    Scopes.getMainCoroutine().launch {
+//                    Scopes.getMainCoroutine().launch {
 //                        viewModel?.error?.value = "Unable To Send Message - No Connection"
-                    }
+//                    }
                 }
             } catch (e: IOException) {
                 e.printStackTrace()
@@ -425,26 +425,31 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
 
-    private fun savePtt(chatID : String, path : String, context: Context){
+    private fun saveOrRemovePttFile(chatID : String, path : String, context: Context){
         Scopes.getDefaultCoroutine().launch {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-                val chatsRepo = DataManager.getChatsRepo(context)
-                val chatItem = chatsRepo.getChatByBittelID(chatID)
-                chatItem?.message = Message(
-                    senderID = it,
-                    text = "PTT Sent",
-                    seen = true
-                )
-                chatItem?.let { chatsRepo.addChat(it) }
-                MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
-                    MessageItem(senderID = it,
-                        epochTimeMs = RecorderUtils.ts, senderName = "" ,
-                        chatId = chatID, text = "", fileLocation = path,
-                        isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
-                )
+            if(!DataManager.getSavePTTFilesRequired(context)) {
+                File(path).takeIf { it.exists() }?.delete()
+                return@launch
+            } else {
+                SharedPreferencesUtil.getAppUser(context)?.appId?.let {
+                    val chatsRepo = DataManager.getChatsRepo(context)
+                    val chatItem = chatsRepo.getChatByBittelID(chatID)
+                    chatItem?.message = Message(
+                        senderID = it,
+                        text = "PTT Sent",
+                        seen = true
+                    )
+                    chatItem?.let { item -> chatsRepo.addChat(item) }
+                    MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
+                        context = context,
+                        MessageItem(senderID = it,
+                            epochTimeMs = RecorderUtils.ts, senderName = "" ,
+                            chatId = chatID, text = "", fileLocation = path,
+                            isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
+                    )
+                }
+                RecorderUtils.ts = 0
             }
-            RecorderUtils.ts = 0
-            RecorderUtils.file = null
         }
     }
 
@@ -512,14 +517,14 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         return Random.nextInt(0, 41) // 41 is exclusive
     }
 
-    private fun appendToArray (byteArray: ByteArray?, carrier: Carrier?){
+    private fun appendToArray (byteArray: ByteArray?, carrier: Carrier?, file: File){
         val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
         if(numOfPackage.times(880) > maxSecondsPTT){
             DataManager.getCallbacks()?.pttMaxTimeoutReached()
             viewModel?.let {
                 it.getDestenation()
                     ?.let { it1 ->
-                        RecorderUtils.file?.absolutePath?.let { it2 ->
+                        file.absolutePath.let { it2 ->
                         stopRecording(
                             retry = 0,
                             it1,
@@ -569,7 +574,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         return byteShift1.toByte() or byteShift2.toByte()
     }
 
-    private fun handleBlePackage (byteArray: ByteArray?, carrier: Carrier?){
+    private fun handleBlePackage (byteArray: ByteArray?, carrier: Carrier?, file: File){
         byteArray?.let { logByteArray("handleBlePackage", it) }
         if(savedByteArray == null){
             savedByteArray = byteArray
@@ -578,7 +583,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 byteArray?.let {
                     val concatenatedByteArray = concatenateByteArraysWithIgnoring(mArray, it)
                     logByteArray("handleBlePackageconcate", concatenatedByteArray)
-                    appendToArray(concatenatedByteArray, carrier)
+                    appendToArray(concatenatedByteArray, carrier, file)
                 }
             }
             savedByteArray = null

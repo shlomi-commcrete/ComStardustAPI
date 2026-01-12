@@ -64,8 +64,8 @@ object PttSendManager {
         this.chatID = chatID
     }
 
-    fun finish() {
-        saveTofile(byteArrayOf(), finish = true) // Need to delete
+    fun finish(context: Context) {
+        saveTofile(context, byteArrayOf(), finish = true) // Need to delete
     }
 
     private fun startEncodingJob(context: Context) {
@@ -107,7 +107,7 @@ object PttSendManager {
 
         sendData(context, packedData)
 
-        saveTofile(packedData) // Need to delete
+        saveTofile(context, packedData) // Need to delete
     }
 
     // Equivalent to private void SendData(byte[] data)
@@ -154,6 +154,7 @@ object PttSendManager {
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
                 MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
+                    context = context,
                     MessageItem(senderID = it,
                         epochTimeMs = RecorderUtils.ts, senderName = "" ,
                         chatId = chatID, text = "", fileLocation = path,
@@ -161,7 +162,6 @@ object PttSendManager {
                 )
             }
             RecorderUtils.ts = 0
-            RecorderUtils.file = null
         }
     }
 
@@ -183,9 +183,9 @@ object PttSendManager {
     private val frameBuffer = mutableListOf<ShortArray>()
     private var lastPCM  : ShortArray? = null
     private var lastTokens  : List<Long>? = null
-    private fun saveTofile(packData: ByteArray, finish : Boolean = false) {
+    private fun saveTofile(context: Context, packData: ByteArray, finish : Boolean = false) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
-        if (!needToRun) return
+        if (!needToRun || !DataManager.getSavePTTFilesRequired(context)) return
 
         if (isFirst) {
             isFirst = false

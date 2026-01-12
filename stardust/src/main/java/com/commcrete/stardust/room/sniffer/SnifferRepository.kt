@@ -1,6 +1,9 @@
 package com.commcrete.bittell.room.sniffer
 
+import android.content.Context
 import androidx.lifecycle.LiveData
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.SharedPreferencesUtil
 
 class SnifferRepository (private val messagesDao: SnifferDao) {
 
@@ -22,8 +25,8 @@ class SnifferRepository (private val messagesDao: SnifferDao) {
         messagesDao.addMessages(messageItems)
     }
 
-    suspend fun savePttMessage(messageItem: SnifferItem) {
-        messagesDao.addMessage(messageItem)
+    suspend fun savePttMessage(context: Context, messageItem: SnifferItem) {
+        if(DataManager.getSavePTTFilesRequired(context)) messagesDao.addMessage(messageItem)
     }
 
     suspend fun updatePttMessage(chatID : String, messageItem: SnifferItem) {

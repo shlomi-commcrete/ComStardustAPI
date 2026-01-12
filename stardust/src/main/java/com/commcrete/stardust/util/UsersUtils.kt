@@ -31,6 +31,7 @@ import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
+import com.commcrete.stardust.util.DataManager.cleanAllDatabases
 import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.*
@@ -333,23 +334,26 @@ object UsersUtils {
         }
     }
 
-    suspend fun logout () : Boolean{
-        val bittelUserList = GlobalScope.async {
-            unpairDeviceBLE(DataManager.context)
-            val clearBittelUserRepository = BittelUserRepository(BittelUserDatabase.getDatabase(DataManager.context).bittelUserDao()).clearData()
-            val clearChatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).clearData()
-            val clearContactsRepository = ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).clearData()
-            val clearFriendsRepository = FriendsRepository(FriendsDatabase.getDatabase(DataManager.context).friendsDao()).clearData()
-            val clearMessagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).clearData()
-            val clearPhone = SharedPreferencesUtil.removePhone(DataManager.context)
-            val clearPassword = SharedPreferencesUtil.removePassword(DataManager.context)
-            val clearAppUser = SharedPreferencesUtil.removeAppUser(DataManager.context)
-            val clearUser = SharedPreferencesUtil.removeUser(DataManager.context)
-            return@async clearBittelUserRepository && clearChatsRepository && clearContactsRepository && clearFriendsRepository && clearMessagesRepository
-                    && clearPhone && clearPassword && clearAppUser && clearUser
+    suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
+            coroutineScope {
+                // BLE unpair first (side-effect, usually must complete)
+                unpairDeviceBLE(DataManager.context)
+
+                val databases = async { cleanAllDatabases(DataManager.context) }
+                val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
+                val password = async { SharedPreferencesUtil.removePassword(DataManager.context) }
+                val appUser = async { SharedPreferencesUtil.removeAppUser(DataManager.context) }
+                val user = async { SharedPreferencesUtil.removeUser(DataManager.context) }
+
+                databases.await() &&
+                        phone.await() &&
+                        password.await() &&
+                        appUser.await() &&
+                        user.await()
+            }
         }
-        return bittelUserList.await()
-    }
+
+
 
     fun saveMessageToDatabase(context: Context, chatID : String, message: MessageItem){
         Scopes.getDefaultCoroutine().launch {
