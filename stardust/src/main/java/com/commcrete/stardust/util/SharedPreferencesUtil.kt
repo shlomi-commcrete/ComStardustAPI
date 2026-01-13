@@ -44,6 +44,7 @@ object SharedPreferencesUtil {
     private const val KEY_BITTEL_ACK = "enable_bittel_ack"
     private const val KEY_PTT_TIMEOUT = "ptt_timeout"
     private const val KEY_SAVE_PTT_FILES = "save_ptt_files"
+    private const val KEY_EXPORT_SESSION_DATA_ON_LOGOUT = "export_session_data_on_logout"
 
     //Record type Values
     private const val KEY_RECORDING_TYPE_DEFAULT = "Default"
@@ -398,6 +399,20 @@ object SharedPreferencesUtil {
             else -> {0}
         }
         return getPreferencesInt(context, KEY_EQ_BAND+bandNum, default) *100
+    }
+
+    /**
+     * Use it from DataManager.updateSavePTTFilesRequired only!!!
+     * */
+    internal fun setExportDataOnLogout(context: Context, save: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, save).apply()
+    }
+
+    /**
+     * Use it from DataManager.getSavePTTFilesRequired only!!!
+     * */
+    internal fun getExportDataOnLogout(context: Context) : Boolean {
+        return getPrefs(context).getBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, true)
     }
 
     /**

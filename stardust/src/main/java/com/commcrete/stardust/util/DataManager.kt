@@ -19,8 +19,6 @@ import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
-import com.commcrete.stardust.ai.codec.PttReceiveManager
-import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
@@ -52,13 +50,11 @@ import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 import java.io.File
 import java.util.Date
 import kotlin.random.Random
@@ -81,6 +77,7 @@ object DataManager : StardustAPI, PttInterface{
     var pluginContext: Context? = null
 
     private var savePTTFiles: Boolean? = null
+    private var exportDataOnLogout: Boolean? = null
 
     private var hasTimber = false
     var isPlayPttFromSdk = true
@@ -376,10 +373,10 @@ object DataManager : StardustAPI, PttInterface{
         emit(chats)
     }
 
-    override fun logout(context: Context) {
+    override fun logout(context: Context, withDelete: Boolean) {
         requireContext(context)
         Scopes.getDefaultCoroutine().launch {
-            UsersUtils.logout()
+            UsersUtils.logout(withDelete)
         }
     }
 
@@ -471,6 +468,18 @@ object DataManager : StardustAPI, PttInterface{
         return stardustAPICallbacks
     }
 
+    fun getExportFilesOnLogoutRequired(context: Context): Boolean {
+        if(exportDataOnLogout == null) {
+            exportDataOnLogout = SharedPreferencesUtil.getExportDataOnLogout(context)
+        }
+        return exportDataOnLogout != false
+    }
+
+    fun updateExportFilesOnLogoutRequired(context: Context, isRequired: Boolean) {
+        exportDataOnLogout = isRequired
+        SharedPreferencesUtil.setExportDataOnLogout(context, isRequired)
+    }
+
     fun getSavePTTFilesRequired(context: Context): Boolean {
         if(savePTTFiles == null) {
             savePTTFiles = SharedPreferencesUtil.getSavePTTFiles(context)
@@ -524,4 +533,32 @@ object DataManager : StardustAPI, PttInterface{
                 user.await() && chats.await() && contacts.await() && friends.await() && messages.await()
             }
         }
+
+    suspend fun archiveAllDatabases(context: Context): Boolean =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+
+//                val chats = async {
+//                    ChatsRepository(
+//                        ChatsDatabase.getDatabase(context).chatsDao()
+//                    ).archiveData()
+//                }
+//
+//                val contacts = async {
+//                    ContactsRepository(
+//                        ContactsDatabase.getDatabase(context).contactsDao()
+//                    ).archiveData()
+//                }
+//
+//                val messages = async {
+//                    MessagesRepository(
+//                        MessagesDatabase.getDatabase(context).messagesDao()
+//                    ).archiveData()
+//                }
+//
+//                chats.await() && contacts.await() && messages.await()
+                true
+            }
+        }
+
 }
