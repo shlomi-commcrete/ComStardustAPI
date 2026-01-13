@@ -55,7 +55,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import java.io.File
+import java.io.RandomAccessFile
 import java.util.Date
 import kotlin.random.Random
 
@@ -77,7 +79,6 @@ object DataManager : StardustAPI, PttInterface{
     var pluginContext: Context? = null
 
     private var savePTTFiles: Boolean? = null
-    private var exportDataOnLogout: Boolean? = null
 
     private var hasTimber = false
     var isPlayPttFromSdk = true
@@ -373,10 +374,10 @@ object DataManager : StardustAPI, PttInterface{
         emit(chats)
     }
 
-    override fun logout(context: Context, withDelete: Boolean) {
+    override fun logout(context: Context) {
         requireContext(context)
         Scopes.getDefaultCoroutine().launch {
-            UsersUtils.logout(withDelete)
+            UsersUtils.logout()
         }
     }
 
@@ -468,18 +469,6 @@ object DataManager : StardustAPI, PttInterface{
         return stardustAPICallbacks
     }
 
-    fun getExportFilesOnLogoutRequired(context: Context): Boolean {
-        if(exportDataOnLogout == null) {
-            exportDataOnLogout = SharedPreferencesUtil.getExportDataOnLogout(context)
-        }
-        return exportDataOnLogout != false
-    }
-
-    fun updateExportFilesOnLogoutRequired(context: Context, isRequired: Boolean) {
-        exportDataOnLogout = isRequired
-        SharedPreferencesUtil.setExportDataOnLogout(context, isRequired)
-    }
-
     fun getSavePTTFilesRequired(context: Context): Boolean {
         if(savePTTFiles == null) {
             savePTTFiles = SharedPreferencesUtil.getSavePTTFiles(context)
@@ -507,9 +496,10 @@ object DataManager : StardustAPI, PttInterface{
                 }
 
                 val chats = async {
-                    ChatsRepository(
-                        ChatsDatabase.getDatabase(context).chatsDao()
-                    ).clearData()
+                    val repo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+                    val chatIds = repo.getAllChatsIds()
+                    deleteChatFiles(DataManager.context, chatIds)
+                    repo.clearData()
                 }
 
                 val contacts = async {
@@ -534,31 +524,50 @@ object DataManager : StardustAPI, PttInterface{
             }
         }
 
-    suspend fun archiveAllDatabases(context: Context): Boolean =
-        withContext(Dispatchers.IO) {
-            coroutineScope {
+    suspend fun deleteChatFiles(
+        context: Context,
+        chatIds: List<String>
+    ): CleanResult = withContext(Dispatchers.IO) {
 
-//                val chats = async {
-//                    ChatsRepository(
-//                        ChatsDatabase.getDatabase(context).chatsDao()
-//                    ).archiveData()
-//                }
-//
-//                val contacts = async {
-//                    ContactsRepository(
-//                        ContactsDatabase.getDatabase(context).contactsDao()
-//                    ).archiveData()
-//                }
-//
-//                val messages = async {
-//                    MessagesRepository(
-//                        MessagesDatabase.getDatabase(context).messagesDao()
-//                    ).archiveData()
-//                }
-//
-//                chats.await() && contacts.await() && messages.await()
-                true
+        withProcessFileLock(context, "clean_user_files") {
+
+            val dirs = FileUtils.getAllChatFilesDirs(context, chatIds)
+            val failed = mutableListOf<File>()
+
+            dirs.forEachIndexed { index, dir ->
+                try {
+                    if (dir.exists() && !dir.deleteRecursively()) {
+                        failed += dir
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed deleting ${dir.absolutePath}")
+                    failed += dir
+                }
+            }
+
+
+            CleanResult(
+                success = failed.isEmpty(),
+                failedDirs = failed
+            )
+        }
+    }
+
+    inline fun <T> withProcessFileLock(
+        context: Context,
+        lockName: String,
+        block: () -> T
+    ): T {
+        val lockFile = File(context.filesDir, "$lockName.lock")
+        RandomAccessFile(lockFile, "rw").channel.use { channel ->
+            channel.lock().use {
+                return block()
             }
         }
+    }
 
+    data class CleanResult(
+        val success: Boolean,
+        val failedDirs: List<File>
+    )
 }

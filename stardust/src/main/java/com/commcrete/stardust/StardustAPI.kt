@@ -34,7 +34,7 @@ interface StardustAPI {
     fun connectToDevice(context: Context,device: ScanResult)
     fun disconnectFromDevice(context: Context,)
     fun readChats (context: Context,) : LiveData<List<ChatItem>>
-    fun logout(context: Context,)
+    fun logout(context: Context)
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (context: Context) : List<Carrier>?
     fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location)

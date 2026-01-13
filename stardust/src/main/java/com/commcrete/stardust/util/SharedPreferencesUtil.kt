@@ -401,17 +401,11 @@ object SharedPreferencesUtil {
         return getPreferencesInt(context, KEY_EQ_BAND+bandNum, default) *100
     }
 
-    /**
-     * Use it from DataManager.updateSavePTTFilesRequired only!!!
-     * */
-    internal fun setExportDataOnLogout(context: Context, save: Boolean) {
+    fun setExportDataOnLogout(context: Context, save: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, save).apply()
     }
 
-    /**
-     * Use it from DataManager.getSavePTTFilesRequired only!!!
-     * */
-    internal fun getExportDataOnLogout(context: Context) : Boolean {
+    fun getExportDataOnLogout(context: Context) : Boolean {
         return getPrefs(context).getBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, true)
     }
 

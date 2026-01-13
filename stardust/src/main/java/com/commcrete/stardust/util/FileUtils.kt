@@ -247,6 +247,20 @@ object FileUtils {
             ?: emptyList()
     }
 
+    suspend fun exportDataAsZip(zipFile: MediaStoreFile, dataToZip: List<ZipItem>, onExportFinished: (zipFile: MediaStoreFile) -> Unit, onError: (e: Exception) -> Unit) {
+        try {
+            zipData(dataToZip, zipFile.outputStream) {
+                dataToZip.forEach { item ->
+                    if(item.removeWhenZipped) {
+                        item.files.forEach { if(it.exists()) it.delete() }
+                    }
+                }
+                onExportFinished.invoke(zipFile)
+            }
+        } catch (e: Exception) {
+            onError.invoke(e)
+        }
+    }
 
     fun exportAppLogcat(
         context: Context,
@@ -537,4 +551,6 @@ object FileUtils {
         val wrapperFolder: String? = null, // optional folder name inside the ZIP
         val removeWhenZipped: Boolean = false
     )
+
+    class MediaStoreFile(val uri: Uri, val outputStream: OutputStream)
 }

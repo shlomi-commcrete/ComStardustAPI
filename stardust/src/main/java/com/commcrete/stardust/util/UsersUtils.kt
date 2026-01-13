@@ -5,10 +5,6 @@ import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.crypto.SecureKeyUtils
-import com.commcrete.stardust.enums.FunctionalityType
-import com.commcrete.stardust.enums.LicenseType
-import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -22,13 +18,10 @@ import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.friends.FriendsDatabase
-import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
-import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
 import com.commcrete.stardust.util.DataManager.cleanAllDatabases
@@ -338,7 +331,6 @@ object UsersUtils {
             coroutineScope {
                 // BLE unpair first (side-effect, usually must complete)
                 unpairDeviceBLE(DataManager.context)
-
                 val databases = async { cleanAllDatabases(DataManager.context) }
                 val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
                 val password = async { SharedPreferencesUtil.removePassword(DataManager.context) }
