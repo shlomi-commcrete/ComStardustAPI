@@ -40,15 +40,31 @@ object PttReceiveManager {
     private var from = ""
     private var source : String? = ""
     private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
+    private var aiDecodeData: AIDecodeData? = null
     fun init() {
         startDecodingJob()
     }
 
-    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null) {
+    data class AIDecodeData (
+        val data: ByteArray,
+        val from: String = "",
+        val source: String = "",
+        val modelType: WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General,
+        val onPcmReady: ((ShortArray) -> Unit)? = null
+    )
+
+    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null,
+                   onPcmReady: ((ShortArray) -> Unit)? = null) {
         selectedModel = modelType ?: WavTokenizerDecoder.ModelType.General
         this.from = from
         this.source = source
         toDecodeQueue.trySend(data)
+
+    }
+
+    fun addNewData(aiDecodeData: AIDecodeData) {
+        this.aiDecodeData = aiDecodeData
+        toDecodeQueue.trySend(aiDecodeData.data)
 
     }
 
@@ -99,7 +115,7 @@ object PttReceiveManager {
             null
         }
 
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData?.modelType ?: WavTokenizerDecoder.ModelType.General)
         Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
         // Save current unpack and timestamp for next iteration
@@ -111,7 +127,8 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, from, source)
+        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
+//        PcmStreamPlayer.enqueue(finalPcmData, 24000, aiDecodeData?.from ?: "", aiDecodeData?.source ?: "")
     }
 
     suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {

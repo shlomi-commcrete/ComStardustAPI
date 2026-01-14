@@ -7,6 +7,10 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
+import android.media.audiofx.NoiseSuppressor
+import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat.getSystemService
 import com.commcrete.stardust.util.audio.AudioRecordManager
@@ -106,7 +110,7 @@ class AudioRecorderAI(
 
         val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
         val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
+            MediaRecorder.AudioSource.VOICE_RECOGNITION,
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
@@ -114,7 +118,17 @@ class AudioRecorderAI(
         )
 
         try {
-//            AudioRecordManager.register(audioRecord)
+            val sessionId = audioRecord.audioSessionId
+
+            if (AutomaticGainControl.isAvailable()) {
+                AutomaticGainControl.create(sessionId)?.enabled = false
+            }
+            if (NoiseSuppressor.isAvailable()) {
+                NoiseSuppressor.create(sessionId)?.enabled = false
+            }
+            if (AcousticEchoCanceler.isAvailable()) {
+                AcousticEchoCanceler.create(sessionId)?.enabled = false
+            }
         }catch ( e : Exception) {
             e.printStackTrace()
         }
