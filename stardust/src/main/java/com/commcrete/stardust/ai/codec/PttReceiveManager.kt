@@ -114,8 +114,8 @@ object PttReceiveManager {
         } else {
             null
         }
-
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData?.modelType ?: WavTokenizerDecoder.ModelType.General)
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
+//        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData?.modelType ?: WavTokenizerDecoder.ModelType.General)
         Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
         // Save current unpack and timestamp for next iteration
@@ -127,8 +127,8 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
-//        PcmStreamPlayer.enqueue(finalPcmData, 24000, aiDecodeData?.from ?: "", aiDecodeData?.source ?: "")
+//        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
+        PcmStreamPlayer.enqueue(finalPcmData, 24000, aiDecodeData?.from ?: "", aiDecodeData?.source ?: "")
     }
 
     suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {

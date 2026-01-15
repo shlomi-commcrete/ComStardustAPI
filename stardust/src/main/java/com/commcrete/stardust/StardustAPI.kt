@@ -56,6 +56,7 @@ interface StardustAPICallbacks {
     fun handleSOSAck (stardustAPIPackage: StardustAPIPackage)
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun startedReceivingPTT (stardustAPIPackage: StardustAPIPackage, file: File)
+    fun stopReceivingPTT (stardustAPIPackage: StardustAPIPackage)
     fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
     fun receiveFileStatus (

@@ -1,20 +1,38 @@
 package com.commcrete.stardust.audio
 
+import android.content.Context
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
+import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.io.File
 
 object AudioReceiverManager {
+
+    val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
 
     data class PlayerInfo(
         val audioTrack: AudioTrack?,
         val codeType: RecorderUtils.CODE_TYPE,
         val source: String,
-        val pendingData: MutableList<StardustPackage> = mutableListOf()
+        val destination: String,
+        val pendingData: MutableList<StardustPackage> = mutableListOf(),
+        val frameBuffer : MutableList<Any> = mutableListOf(),
+        val fileToSave: File? = null
     ) {
         private val timeout: Long = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) 1200 else 800
         private val handler: Handler = Handler(Looper.getMainLooper())
@@ -38,16 +56,50 @@ object AudioReceiverManager {
         }
         fun onFinish() {
             removeTimer()
-            Handler(Looper.getMainLooper()).postDelayed({
-                AudioPlayerGenerator.stopAudio(audioTrack)
-                saveToFile()            // Remove from manager
-                removePlayer(this)
-            }, 880)
+            saveToFile(source, destination)
+            AudioPlayerGenerator.stopAudio(audioTrack)
+            removePlayer(this)
         }
 
-        private fun saveToFile () {
-
+        private fun saveToFile (source: String, destination : String) {
+            if(!DataManager.getSavePTTFilesRequired(DataManager.context) || destination.isEmpty()) {
+                return
+            }
+            val file = getFile(source, destination)
+            saveChatAndMessage(file, source, destination)
         }
+
+        private fun getFile (source: String, destination : String) : File {
+            val context = DataManager.context
+            val ts = System.currentTimeMillis()
+            val directory = File("${context.filesDir}/$destination")
+            val file = File("${context.filesDir}/$destination/${ts}-$source.pcm")
+            if (!directory.exists()) {
+                directory.mkdir()
+                if(!file.exists()) {
+                    file.createNewFile()
+                }
+            }
+            return file
+        }
+
+        private fun saveChatAndMessage (file: File, source: String, destination : String) {
+            val context = DataManager.context
+            val realDest = if   (GroupsUtils.isGroup(source)) source else destination
+            PlayerUtils.updateAudioReceived(destination, true)
+            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
+            Scopes.getDefaultCoroutine().launch {
+                val userName = UsersUtils.getUserName(destination)
+                messagesRepository.savePttMessage(
+                    context = context,
+                    MessageItem(senderID = destination,
+                        epochTimeMs = PlayerUtils.ts.toLong(), senderName = userName ,
+                        chatId = realDest, text = "", fileLocation = file.absolutePath,
+                        isAudio = true)
+                )
+            }
+        }
+
     }
 
     var playerList: MutableList<PlayerInfo> = mutableListOf()
@@ -72,7 +124,7 @@ object AudioReceiverManager {
         } else {
             source
         }
-        val playerInfo = getPlayerInfo(from, codeType)
+        val playerInfo = getPlayerInfo(from,stardustPackage.getSourceAsString(), codeType )
         playerInfo?.let { info ->
             info.resetTimer()
             if(codeType == RecorderUtils.CODE_TYPE.AI) {
@@ -82,16 +134,18 @@ object AudioReceiverManager {
                 } else {
                     AIDecoder().decode(stardustPackage, onPcmReady = { pcmData ->
                         AudioPlayerGenerator.appendAudio(info.audioTrack, pcmData)
+                        info.frameBuffer.add(pcmData)
                     })
                 }
             } else {
-                AudioPlayerGenerator.appendAudio(info.audioTrack, Codec2Decoder().decode(stardustPackage))
+                val decoded = Codec2Decoder().decode(stardustPackage)
+                AudioPlayerGenerator.appendAudio(info.audioTrack, decoded)
+                info.frameBuffer.add(decoded)
             }
-            isFinish(info, stardustPackage)
         }
     }
 
-    private fun getPlayerInfo(source: String, codeType: RecorderUtils.CODE_TYPE): PlayerInfo? {
+    private fun getPlayerInfo(source: String,destination : String ,codeType: RecorderUtils.CODE_TYPE): PlayerInfo? {
         return playerList.firstOrNull {
             it.source == source && it.codeType == codeType
         }
@@ -100,6 +154,7 @@ object AudioReceiverManager {
                     audioTrack = audioTrack,
                     codeType = codeType,
                     source = source,
+                    destination = destination,
                     pendingData = mutableListOf()
                 )
                 playerList.add(newPlayer)
