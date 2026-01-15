@@ -1,6 +1,5 @@
 package com.commcrete.stardust
 
-import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.Carrier
 
 data class StardustAPIPackage(
@@ -10,4 +9,9 @@ data class StardustAPIPackage(
     val carrier: Carrier? = null,
     val isGroup: Boolean = false,
     val spare : Int = 0
-    )
+    ) {
+
+    fun getRealSourceId(): String {
+        return if(isGroup) destination else source
+    }
+}
