@@ -1,20 +1,12 @@
 package com.commcrete.stardust.ai.codec
 
-import android.content.Context
 import android.media.MediaCodec
 import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.media.PcmStreamPlayer
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.GroupsUtils
-import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
-import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +14,6 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 
 object PttReceiveManager {
     private const val TAG = "PttManager"

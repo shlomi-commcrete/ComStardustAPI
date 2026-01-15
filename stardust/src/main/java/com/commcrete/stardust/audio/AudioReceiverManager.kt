@@ -1,11 +1,9 @@
 package com.commcrete.stardust.audio
 
-import android.content.Context
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
@@ -18,7 +16,6 @@ import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.io.File
 
 object AudioReceiverManager {
