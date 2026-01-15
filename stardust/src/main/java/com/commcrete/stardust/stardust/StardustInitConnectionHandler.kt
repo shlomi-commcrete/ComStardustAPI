@@ -452,9 +452,12 @@ object StardustInitConnectionHandler {
             ).getAllGroupIds()
 
             val intData = arrayListOf<Int>()
-            for (group in groupsList) {
-                intData.addAll(StardustPackageUtils.hexStringToByteArray(group).reversedArray())
-            }
+            if(groupsList.isNotEmpty()) {
+                for (group in groupsList) {
+                    intData.addAll(StardustPackageUtils.hexStringToByteArray(group).reversedArray())
+                }
+            } else { intData.addAll(listOf(0, 0, 0, 0)) }
+
             intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             intData.toIntArray().toTypedArray().reversedArray()
         }

@@ -65,7 +65,7 @@ interface ChatsDao {
 //    suspend fun updateEnablePtt(chatId: String, isPTTEnable : Boolean)
 
     @Query("SELECT chat_id FROM chats_table WHERE is_group = 1 ")
-    fun getAllGroupIds() : List<String>
+    suspend fun getAllGroupIds() : List<String>
 
     @Query("""
       SELECT * 
@@ -73,11 +73,11 @@ interface ChatsDao {
        WHERE LOWER(appId) LIKE '%' || LOWER(:bittelID) || '%' 
        LIMIT 1
     """)
-    fun getChatContactByBittelID(bittelID: String): ChatItem?
+    suspend fun getChatContactByBittelID(bittelID: String): ChatItem?
 
     @Query("DELETE FROM chats_table")
-    fun clearData()
+    suspend fun clearData()
 
     @Query("DELETE FROM chats_table WHERE chat_id=:chatId")
-    fun deleteUser(chatId: String)
+    suspend fun deleteUser(chatId: String)
 }

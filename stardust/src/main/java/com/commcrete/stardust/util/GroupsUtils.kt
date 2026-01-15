@@ -137,6 +137,10 @@ object GroupsUtils {
         groupsIds.clear()
     }
 
+    fun addGroupIds(data: List<String>) {
+        groupsIds.addAll(data)
+    }
+
     fun resetGroupIds(data: List<String>) {
         groupsIds.clear()
         groupsIds.addAll(data)
