@@ -331,7 +331,10 @@ object UsersUtils {
             coroutineScope {
                 // BLE unpair first (side-effect, usually must complete)
                 unpairDeviceBLE(DataManager.context)
-                val databases = async { cleanAllDatabases(DataManager.context) }
+                val databases = async {
+                    GroupsUtils.clearData()
+                    cleanAllDatabases(DataManager.context)
+                }
                 val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
                 val password = async { SharedPreferencesUtil.removePassword(DataManager.context) }
                 val appUser = async { SharedPreferencesUtil.removeAppUser(DataManager.context) }

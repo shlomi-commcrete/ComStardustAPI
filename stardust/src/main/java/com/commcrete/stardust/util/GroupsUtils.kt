@@ -11,7 +11,11 @@ import timber.log.Timber
 
 object GroupsUtils {
 
+    private val groupsIds: MutableList<String> = mutableListOf()
+
+
     fun deleteAllGroups (context: Context) {
+        groupsIds.clear()
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
@@ -72,6 +76,7 @@ object GroupsUtils {
     }
 
     fun deleteGroups (context: Context, groupId : List<String>) {
+        groupsIds.clear()
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
@@ -99,20 +104,23 @@ object GroupsUtils {
         Scopes.getDefaultCoroutine().launch {
             val groupsList = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getAllGroupIds()
             addGroups(context, groupsList)
+            resetGroupIds(groupsList)
         }
     }
 
     fun isGroup (context: Context, id : String, onGroupCallback : (Boolean) -> Unit) {
-        Scopes.getDefaultCoroutine().launch {
-            val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
-            val isGroup = user?.isGroup ?: false
-            onGroupCallback(isGroup)
-        }
+        return onGroupCallback(groupsIds.contains(id))
+//        Scopes.getDefaultCoroutine().launch {
+//            val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
+//            val isGroup = user?.isGroup ?: false
+//            onGroupCallback(isGroup)
+//        }
     }
 
     suspend fun isGroup (context: Context, id : String) : Boolean {
-        val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
-        return user?.isGroup ?: false
+//        val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
+//        return user?.isGroup ?: false
+        return groupsIds.contains(id)
     }
 
 
@@ -120,7 +128,24 @@ object GroupsUtils {
         if(id == null) {
             return false
         }
-        val user = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).getChatByBittelID(id)
-        return user?.isGroup ?: false
+//        val user = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).getChatByBittelID(id)
+//        return user?.isGroup ?: false
+        return groupsIds.contains(id)
+    }
+
+    fun clearData() {
+        groupsIds.clear()
+    }
+
+    fun resetGroupIds(data: List<String>) {
+        groupsIds.clear()
+        groupsIds.addAll(data)
+    }
+
+    fun resetGroupIds(context: Context) {
+        Scopes.getDefaultCoroutine().launch {
+            val groups = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getAllGroupIds()
+            resetGroupIds(groups)
+        }
     }
 }

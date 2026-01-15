@@ -303,6 +303,7 @@ object DataManager : StardustAPI, PttInterface{
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
         requireFileLocation(fileLocation)
+        GroupsUtils.resetGroupIds(context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {
