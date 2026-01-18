@@ -17,6 +17,10 @@ interface ChatsDao {
     @Query("SELECT * FROM chats_table ORDER BY epochTimeMs DESC")
     fun getAllChats() : LiveData<List<ChatItem>>
 
+
+    @Query("SELECT * FROM chats_table WHERE is_bittel=0 ORDER BY epochTimeMs DESC")
+    suspend fun getAllAppChats() : List<ChatItem>
+
     @Query("SELECT chat_id FROM chats_table")
     fun getAllChatsIds(): List<String>
 

@@ -8,6 +8,11 @@ import com.commcrete.stardust.util.GroupsUtils
 class ChatsRepository (private val chatsDao: ChatsDao) {
 
     val readAllChats : LiveData<List<ChatItem>> = chatsDao.getAllChats()
+
+    suspend fun  getAllAppChats () : List<ChatItem> {
+        return chatsDao.getAllAppChats()
+    }
+
     suspend fun  getAllChats () : List<ChatItem> {
         return chatsDao.readChats()
     }
