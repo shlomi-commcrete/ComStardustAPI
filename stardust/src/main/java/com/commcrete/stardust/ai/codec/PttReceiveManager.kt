@@ -119,7 +119,7 @@ object PttReceiveManager {
             delay(BUFFERING_TIME_MS)
 
 //        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, aiDecodeData?.from ?: "", aiDecodeData?.source ?: "")
+        PcmStreamPlayer.enqueue(finalPcmData, 24000, this.from, this.source)
     }
 
     suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {

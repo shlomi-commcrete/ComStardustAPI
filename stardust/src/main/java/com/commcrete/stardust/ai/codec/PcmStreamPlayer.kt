@@ -282,7 +282,7 @@ object PcmStreamPlayer {
 
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         this.destination = destinations
-        val realDest = if (GroupsUtils.isGroup(source)) source else destination
+        val realDest = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser.value?.appId)) source else destination
         updateAudioReceived(realDest, destination, true)
 
         val dir = File(context.filesDir, destination)
