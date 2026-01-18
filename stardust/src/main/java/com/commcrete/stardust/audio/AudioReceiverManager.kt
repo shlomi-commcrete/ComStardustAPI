@@ -3,6 +3,8 @@ package com.commcrete.stardust.audio
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
+import com.commcrete.aiaudio.media.PcmStreamPlayer
+import com.commcrete.aiaudio.media.WavHelper
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
@@ -16,6 +18,8 @@ import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
 
 object AudioReceiverManager {
@@ -28,7 +32,8 @@ object AudioReceiverManager {
         val source: String,
         val destination: String,
         val pendingData: MutableList<StardustPackage> = mutableListOf(),
-        val frameBuffer : MutableList<Any> = mutableListOf(),
+        val codecFrameBuffer : MutableList<ByteArray> = mutableListOf(),
+        val AIFrameBuffer : MutableList<ShortArray> = mutableListOf(),
         val fileToSave: File? = null
     ) {
         private val timeout: Long = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) 1200 else 800
@@ -53,9 +58,16 @@ object AudioReceiverManager {
         }
         fun onFinish() {
             removeTimer()
-            saveToFile(source, destination)
             AudioPlayerGenerator.stopAudio(audioTrack)
-            removePlayer(this)
+            Scopes.getDefaultCoroutine().launch {
+                try {
+                    handlePendingData()          // suspend: waits sequentially per packet
+                    saveToFile(source, destination) // after pending data is added to buffer + wav written
+                } finally {
+                    // 4) always remove player at the end (even if decode/save throws)
+                    removePlayer(this@PlayerInfo)
+                }
+            }
         }
 
         private fun saveToFile (source: String, destination : String) {
@@ -63,6 +75,7 @@ object AudioReceiverManager {
                 return
             }
             val file = getFile(source, destination)
+            writeToFile(file)
             saveChatAndMessage(file, source, destination)
         }
 
@@ -78,6 +91,25 @@ object AudioReceiverManager {
                 }
             }
             return file
+        }
+
+        private fun writeToFile (file: File) {
+            when(codeType) {
+                RecorderUtils.CODE_TYPE.CODEC2 -> writeCodec2ToFile(file)
+                RecorderUtils.CODE_TYPE.AI     -> writeAIToFile(file)
+            }
+        }
+
+        private fun writeCodec2ToFile(file: File) {
+            val sampleArray = codecFrameBuffer.flatMap { it.asIterable() }.toByteArray()
+            val sampleRate = 8000
+            WavHelper.createWavFile(sampleArray, sampleRate, file)
+        }
+
+        private fun writeAIToFile(file: File) {
+            val sampleArray = AIFrameBuffer.flatMap { it.asIterable() }.toShortArray()
+            val sampleRate = 24000
+            WavHelper.createWavFile(sampleArray, sampleRate, file)
         }
 
         private fun saveChatAndMessage (file: File, source: String, destination : String) {
@@ -97,6 +129,20 @@ object AudioReceiverManager {
             }
         }
 
+        private suspend fun handlePendingData () {
+            for (pending in pendingData) {
+                val pcmData = decodeAwait(pending)   // ⏳ waits for callback
+                AIFrameBuffer.add(0, pcmData)          // prepend
+
+            }
+        }
+
+        private suspend fun decodeAwait(pending: StardustPackage): ShortArray =
+            suspendCancellableCoroutine { cont ->
+                AIDecoder().decode(pending, onPcmReady = { pcmData ->
+                    if (cont.isActive) cont.resume(pcmData)
+                })
+            }
     }
 
     var playerList: MutableList<PlayerInfo> = mutableListOf()
@@ -131,13 +177,13 @@ object AudioReceiverManager {
                 } else {
                     AIDecoder().decode(stardustPackage, onPcmReady = { pcmData ->
                         AudioPlayerGenerator.appendAudio(info.audioTrack, pcmData)
-                        info.frameBuffer.add(pcmData)
+                        info.AIFrameBuffer.add(pcmData)
                     })
                 }
             } else {
                 val decoded = Codec2Decoder().decode(stardustPackage)
                 AudioPlayerGenerator.appendAudio(info.audioTrack, decoded)
-                info.frameBuffer.add(decoded)
+                info.codecFrameBuffer.add(decoded)
             }
         }
     }

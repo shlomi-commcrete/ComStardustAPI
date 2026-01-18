@@ -185,6 +185,31 @@ object WavHelper {
         }
     }
 
+    fun createWavFile(pcmData: ByteArray, sampleRate: Int, file: File) {
+        try {
+            FileOutputStream(file).use { fos ->
+                val dataSize = pcmData.size * 2 // 16-bit samples
+                val header = createWavHeader(
+                    totalAudioBytes = dataSize,
+                    sampleRate = sampleRate,
+                    channels = 1,
+                    bitsPerSample = 16
+                )
+                fos.write(header)
+
+                // Write PCM data
+                val bb = ByteBuffer.allocate(pcmData.size * 2).order(ByteOrder.LITTLE_ENDIAN)
+                for (sample in pcmData) {
+                    bb.put(sample)
+                }
+                fos.write(bb.array())
+                Log.e("WavHelper", "Finish Writeing WAV file to ${file.absolutePath}" )
+            }
+        } catch (e: IOException) {
+            Log.e("WavHelper", "Error creating WAV file", e)
+        }
+    }
+
     fun createTempWavFile(pcmData: ShortArray, sampleRate: Int, file: File): File {
         val tempFile = File.createTempFile("temp_chunk", ".wav", file)
 
