@@ -121,7 +121,7 @@ object FileReceivedUtils {
         val bittelPackage: StardustPackage? = null,
         val lostPackagesIndex : MutableSet<Int> = mutableSetOf()
     ) {
-        private val sendInterval : Long = 2300
+        private val sendInterval : Long = 1800
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
             val totalPackages = dataStart?.total

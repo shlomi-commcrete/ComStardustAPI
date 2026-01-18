@@ -36,7 +36,7 @@ object FileSendUtils {
     private var isComplete : MutableLiveData<Boolean> = MutableLiveData(false)
     private val mutablePackagesMap : MutableMap<Float,StardustFilePackage > = mutableMapOf()
     private var current : MutableLiveData<Float> = MutableLiveData(0f)
-    private var sendInterval : Long = 1300
+    private var sendInterval : Long = 900
 
     private var packagesSent = 0
     private var dest : String? = null
@@ -392,7 +392,7 @@ object FileSendUtils {
             this.sendInterval = if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
                 300
             } else {
-                1300
+                900
             }
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
@@ -429,7 +429,7 @@ object FileSendUtils {
 
     private fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
         var length = 0
-        val chunkSize = 130
+        val chunkSize = 60
         for (file in files) {
             length = length + (file.length().div(chunkSize)).toInt()
             if(file.length().mod(chunkSize) != 0) {
@@ -466,7 +466,7 @@ object FileSendUtils {
         isComplete.value = false
         this.onFileStatusChange?.stopSending()
         sendType = null
-        sendInterval = 1300
+        sendInterval = 900
     }
 
     private fun finishSending() {
@@ -479,7 +479,7 @@ object FileSendUtils {
         isComplete.value = true
         this.onFileStatusChange?.finishSending()
         sendType = null
-        sendInterval = 1300
+        sendInterval = 900
     }
 
     interface OnFileStatusChange {
