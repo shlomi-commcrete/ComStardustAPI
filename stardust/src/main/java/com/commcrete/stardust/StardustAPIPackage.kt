@@ -2,6 +2,7 @@ package com.commcrete.stardust
 
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 
 data class StardustAPIPackage(
     val source : String,
@@ -14,6 +15,6 @@ data class StardustAPIPackage(
     val isGroup: Boolean = GroupsUtils.isGroup(source)
 
     fun getRealSourceId(): String {
-        return if(isGroup) destination else source
+        return if(isGroup && (destination != mRegisterUser.value?.appId)) destination else source
     }
 }

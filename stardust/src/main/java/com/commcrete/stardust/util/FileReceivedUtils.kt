@@ -14,6 +14,7 @@ import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
 import java.io.File
@@ -80,7 +81,7 @@ object FileReceivedUtils {
 
                         val srcID = bittelPackage.getSourceAsString()
 
-                        if(GroupsUtils.isGroup(srcID)){
+                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
                             whoSent = bittelPackage.getDestAsString()
                             chatsRepo.getChatByBittelID(whoSent)?.let {
                                 displayName = it.name

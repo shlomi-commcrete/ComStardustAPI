@@ -38,6 +38,7 @@ import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.PermissionTracking
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.google.android.gms.location.*
 import kotlinx.coroutines.Job
@@ -84,7 +85,7 @@ object LocationUtils  {
                     var whoSent = ""
                     var displayName = contact.displayName
                     val srcID = bittelPackage.getSourceAsString()
-                    if(GroupsUtils.isGroup(srcID)){
+                    if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         chatsRepo.getChatByBittelID(whoSent)?.let {
                             displayName = it.name

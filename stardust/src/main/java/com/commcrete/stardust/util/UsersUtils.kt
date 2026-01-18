@@ -118,7 +118,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                         receiver = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
@@ -229,7 +229,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
@@ -294,7 +294,7 @@ object UsersUtils {
 
                             var whoSent = ""
                             var displayName = contact.displayName
-                            if(chat.isGroup){
+                            if(chat.isGroup && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
                                 whoSent = bittelPackage.getDestAsString()
                                 val sender = chatsRepo.getChatByBittelID(whoSent)
                                 sender?.let {
