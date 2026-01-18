@@ -1,6 +1,11 @@
 package com.commcrete.stardust.ble
 
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import android.content.Intent
+import android.provider.Settings
+import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
@@ -9,6 +14,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.PermissionTracking
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -16,6 +22,8 @@ import kotlinx.coroutines.launch
 object BleManager {
 
     const val CONNECTION_TAG = "connection_tag"
+
+    const val REQUEST_ENABLE_BT = 10100
 
     var isBleConnected = false
     var isUSBConnected = false
@@ -85,6 +93,21 @@ object BleManager {
         }
         connectionStatus = newStatus
         DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
+    }
+
+    fun redirectUserToTurnOnBLE(context: Activity) {
+        try {
+            val enableBtIntent = Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE)
+            context.startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT)
+        } catch (e: SecurityException) {
+            try {
+                val settingsIntent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS)
+                context.startActivity(settingsIntent)
+            } catch (ex: Exception) {
+                // fallback: settings unavailable
+                Toast.makeText(context, "Unable to open Bluetooth settings", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
 }
