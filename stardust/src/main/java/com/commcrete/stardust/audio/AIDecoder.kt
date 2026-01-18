@@ -5,13 +5,15 @@ import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 
 class AIDecoder {
 
     fun decode (stardustPackage: StardustPackage, onPcmReady: ((ShortArray) -> Unit)? = null) {
         var from = stardustPackage.getSourceAsString()
-        if(GroupsUtils.isGroup(from)) {
+        val sentAsUserInGroup = GroupsUtils.isGroup(from) && (stardustPackage.getDestAsString() != mRegisterUser?.appId)
+        if(sentAsUserInGroup) {
             from = stardustPackage.getDestAsString()
         }
         stardustPackage.data?.let { dataArray -> //dataArray = Array<Int>

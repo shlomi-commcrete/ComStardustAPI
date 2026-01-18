@@ -81,7 +81,7 @@ object FileReceivedUtils {
 
                         val srcID = bittelPackage.getSourceAsString()
 
-                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
+                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                             whoSent = bittelPackage.getDestAsString()
                             chatsRepo.getChatByBittelID(whoSent)?.let {
                                 displayName = it.name

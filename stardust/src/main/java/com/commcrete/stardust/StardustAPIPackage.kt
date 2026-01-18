@@ -15,6 +15,6 @@ data class StardustAPIPackage(
     val isGroup: Boolean = GroupsUtils.isGroup(source)
 
     fun getRealSourceId(): String {
-        return if(isGroup && (destination != mRegisterUser.value?.appId)) destination else source
+        return if(isGroup && (destination != mRegisterUser?.appId)) destination else source
     }
 }

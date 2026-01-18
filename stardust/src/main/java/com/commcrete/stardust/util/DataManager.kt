@@ -303,6 +303,7 @@ object DataManager : StardustAPI, PttInterface{
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
         requireFileLocation(fileLocation)
+        UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
         GroupsUtils.resetGroupIds(context)
     }
 

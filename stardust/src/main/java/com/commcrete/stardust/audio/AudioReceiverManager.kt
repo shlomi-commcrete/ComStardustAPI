@@ -14,6 +14,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.launch
@@ -113,7 +114,9 @@ object AudioReceiverManager {
 
         private fun saveChatAndMessage (file: File, source: String, destination : String) {
             val context = DataManager.context
-            val realDest = if   (GroupsUtils.isGroup(source)) source else destination
+
+            val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
+            val realDest = if (sentAsUserInGroup) destination else source
             PlayerUtils.updateAudioReceived(destination, true)
             DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
             Scopes.getDefaultCoroutine().launch {
@@ -161,7 +164,8 @@ object AudioReceiverManager {
         val source = stardustPackage.getSourceAsString()
         if (source.isEmpty()) return
 
-        val from = if (GroupsUtils.isGroup(source)) {
+        val sentAsUserInGroup = GroupsUtils.isGroup(source) && (stardustPackage.getDestAsString() != mRegisterUser?.appId)
+        val from = if (sentAsUserInGroup) {
             stardustPackage.getDestAsString()
         } else {
             source

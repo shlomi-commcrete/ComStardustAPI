@@ -43,6 +43,7 @@ import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
 import timber.log.Timber
@@ -346,9 +347,11 @@ object PlayerUtils : BleMediaConnector() {
             return initPttSnifferFile(context ,destinations,  snifferContacts)
         }
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
-        //Todo stuck?
+        //Todo here?
         this.destination = destinations
-        val realDest = if   (GroupsUtils.isGroup(this.source)) this.source else destination
+
+        val sentAsUserInGroup = GroupsUtils.isGroup(this.source) && (destination != mRegisterUser?.appId)
+        val realDest = if(sentAsUserInGroup) destination else this.source
         updateAudioReceived(destination, true)
         val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
         val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/$ts-$source.pcm")
@@ -370,8 +373,11 @@ object PlayerUtils : BleMediaConnector() {
                         messagesRepository.savePttMessage(
                             context = context,
                             MessageItem(senderID = destination,
-                                epochTimeMs = ts.toLong(), senderName = userName ,
-                                chatId = realDest, text = "", fileLocation = file.absolutePath,
+                                epochTimeMs = ts.toLong(),
+                                senderName = userName ,
+                                chatId = realDest,
+                                text = "",
+                                fileLocation = file.absolutePath,
                                 isAudio = true)
                         )
                         DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
@@ -528,7 +534,8 @@ object PlayerUtils : BleMediaConnector() {
             if(bittelPackage.getSourceAsString().isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
                 var from = bittelPackage.getSourceAsString()
-                if(GroupsUtils.isGroup(from)) {
+                val sentAsUserInGroup = GroupsUtils.isGroup(from) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                if(sentAsUserInGroup) {
                     from = bittelPackage.getDestAsString()
                 }
                 getPackageByFrames(bittelPackage, from)
@@ -536,7 +543,7 @@ object PlayerUtils : BleMediaConnector() {
                 chatItem?.let { chat ->
                     val chatContact = chat.user
                     chatContact?.let { contact ->
-                        val chatName = if(!GroupsUtils.isGroup(bittelPackage.getSourceAsString())) contact.displayName else "${contact.displayName} to Group"
+                        val chatName = if(sentAsUserInGroup) "${contact.displayName} to Group" else contact.displayName
                         val message = "PTT From : $chatName"
                         Scopes.getMainCoroutine().launch {
                             isPttReceived.value = message
@@ -549,11 +556,12 @@ object PlayerUtils : BleMediaConnector() {
 
     fun saveBittelPTTAiToDatabase(bittelPackage: StardustPackage){
         Scopes.getDefaultCoroutine().launch {
-
-            if(bittelPackage.getSourceAsString().isNotEmpty()){
+            val source = bittelPackage.getSourceAsString()
+            if(source.isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-                var from = bittelPackage.getSourceAsString()
-                if(GroupsUtils.isGroup(from)) {
+                var from = source
+                val sentAsUserInGroup = GroupsUtils.isGroup(from) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                if(sentAsUserInGroup) {
                     from = bittelPackage.getDestAsString()
                 }
                 bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
@@ -564,14 +572,14 @@ object PlayerUtils : BleMediaConnector() {
                         val selectedModule = getModel(model[0].toInt())
                         val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
                         Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
-                        PttReceiveManager.addNewData(byteArray, from, bittelPackage.getSourceAsString(), selectedModule)
+                        PttReceiveManager.addNewData(byteArray, from, source, selectedModule)
                     }
                 }
                 val chatItem = chatsRepo.getChatByBittelID(from)
                 chatItem?.let { chat ->
                     val chatContact = chat.user
                     chatContact?.let { contact ->
-                        val chatName = if(!GroupsUtils.isGroup(bittelPackage.getSourceAsString())) contact.displayName else "${contact.displayName} to Group"
+                        val chatName = if(sentAsUserInGroup) "${contact.displayName} to Group" else contact.displayName
                         val message = "PTT From : $chatName"
                         Scopes.getMainCoroutine().launch {
                             isPttReceived.value = message
@@ -865,12 +873,13 @@ object PlayerUtils : BleMediaConnector() {
             return
         }
         Scopes.getDefaultCoroutine().launch {
-            val newChatID = if( GroupsUtils.isGroup(source)) source else chatId
+            val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
+            val newChatID = if(sentAsUserInGroup) chatId else source
+            // TODO: here?
             chatsRepository.updateAudioReceived(newChatID, isAudioReceived)
             val chatItem = chatsRepository.getChatByBittelID(newChatID)
             chatItem?.let {
-                chatItem.message = Message(senderID = chatId, text = "Ptt Received",
-                    seen = true)
+                chatItem.message = Message(senderID = chatId, text = "Ptt Received", seen = true)
                 chatsRepository.addChat(it)
             }
         }

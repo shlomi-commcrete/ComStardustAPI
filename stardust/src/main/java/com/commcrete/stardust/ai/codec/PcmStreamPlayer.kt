@@ -262,8 +262,7 @@ object PcmStreamPlayer {
             PlayerUtils.chatsRepository.updateAudioReceived(chatId, isAudioReceived)
             val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(chatId)
             chatItem?.let {
-                chatItem.message = Message(senderID = senderId, text = "Ptt Received",
-                    seen = true)
+                chatItem.message = Message(senderID = senderId, text = "Ptt Received", seen = true)
                 PlayerUtils.chatsRepository.addChat(it)
                 ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages+1)
             }
@@ -282,8 +281,8 @@ object PcmStreamPlayer {
 
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         this.destination = destinations
-        val realDest = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser.value?.appId)) source else destination
-        updateAudioReceived(realDest, destination, true)
+        val realDest = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser?.appId)) destination else source
+        updateAudioReceived(source, realDest, true)
 
         val dir = File(context.filesDir, destination)
 

@@ -443,14 +443,6 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun updateLocalBittelID () {
-        val savedUser = SharedPreferencesUtil.getAppUser(context)
-        savedUser?.let {
-            UsersUtils.updateRegisteredUser(it)
-        }
-    }
-
-
     private fun handleLocationReceived(context: Context, mPackage: StardustPackage){
         if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK){
             mPackage.stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE

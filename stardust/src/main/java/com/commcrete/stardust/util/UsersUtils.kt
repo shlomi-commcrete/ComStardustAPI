@@ -44,7 +44,7 @@ object UsersUtils {
 
     var user : User? = null
 
-    val mRegisterUser : MutableLiveData<RegisterUser> = MutableLiveData()
+    internal var mRegisterUser : RegisterUser? = null
 
     suspend fun getBittelUserList() : List<BittelUser>{
         val bittelUserList = GlobalScope.async {
@@ -118,7 +118,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                         receiver = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
@@ -154,7 +154,10 @@ object UsersUtils {
 
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString())) {
+
+                    val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+
+                    if(sentAsUserInGroup) {
                         receiver?.let {
                             saveChatItemSOS(it, bittelSOSPackage, chatsRepo)
                         }
@@ -229,7 +232,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                         sender?.let {
@@ -294,7 +297,7 @@ object UsersUtils {
 
                             var whoSent = ""
                             var displayName = contact.displayName
-                            if(chat.isGroup && (bittelPackage.getDestAsString() != mRegisterUser.value?.appId)){
+                            if(chat.isGroup && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                                 whoSent = bittelPackage.getDestAsString()
                                 val sender = chatsRepo.getChatByBittelID(whoSent)
                                 sender?.let {
@@ -368,12 +371,6 @@ object UsersUtils {
         return ""
     }
 
-    fun updateRegisteredUser (registerUser: RegisterUser) {
-        Scopes.getMainCoroutine().launch {
-            mRegisterUser.value = registerUser
-        }
-
-    }
 
     fun onUserAcquired() {
     }
