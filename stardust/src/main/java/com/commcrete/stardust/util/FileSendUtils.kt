@@ -44,6 +44,8 @@ object FileSendUtils {
     private var sendType : StardustFileStartParser.FileTypeEnum? = null
     private var stardustAPIPackage : StardustAPIPackage? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
+
+    private const val FILE_CHUNK_SIZE = 60
     var randomMisses : MutableSet<Int> = mutableSetOf()
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
@@ -278,9 +280,9 @@ object FileSendUtils {
         if (dataList.isNotEmpty()) {
             val lastIndex = dataList.lastIndex
             val originalSize = dataList[lastIndex].size
-            if (originalSize < 130) {
-                paddingAdded = 130 - originalSize
-                dataList[lastIndex] = dataList[lastIndex].copyOf(130) // Pads with zeros
+            if (originalSize < FILE_CHUNK_SIZE) {
+                paddingAdded = FILE_CHUNK_SIZE - originalSize
+                dataList[lastIndex] = dataList[lastIndex].copyOf(FILE_CHUNK_SIZE) // Pads with zeros
             }
         }
 
@@ -323,7 +325,6 @@ object FileSendUtils {
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
         var packageIndex = 0
         var packageData = 0
-        val chunkSize = 130
         val bittelFileList = mutableMapOf<Float, StardustFilePackage>()
 
         for ((fileIndex, file) in files.withIndex()) { // Iterate with index
@@ -332,11 +333,11 @@ object FileSendUtils {
 
             var offset = 0
             while (offset < fileBytes.size) {
-                val end = minOf(offset + chunkSize, fileBytes.size) // Calculate end of the chunk
+                val end = minOf(offset + FILE_CHUNK_SIZE, fileBytes.size) // Calculate end of the chunk
                 val chunk = fileBytes.copyOfRange(offset, end) // Create the chunk
 
                 packageData += chunk.size
-                val isLast = (offset + chunkSize >= fileBytes.size) && (fileIndex == files.lastIndex) // Check if last package
+                val isLast = (offset + FILE_CHUNK_SIZE >= fileBytes.size) && (fileIndex == files.lastIndex) // Check if last package
 
                 bittelFileList[packageIndex.toFloat()] = StardustFilePackage(
                     current = packageIndex,
@@ -346,7 +347,7 @@ object FileSendUtils {
 
                 Timber.tag("FileUpload").d("chunk : ${chunk.size}, isLast: $isLast")
 
-                offset += chunkSize
+                offset += FILE_CHUNK_SIZE
                 packageIndex++
             }
         }
@@ -429,7 +430,7 @@ object FileSendUtils {
 
     private fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
         var length = 0
-        val chunkSize = 60
+        val chunkSize = FILE_CHUNK_SIZE
         for (file in files) {
             length = length + (file.length().div(chunkSize)).toInt()
             if(file.length().mod(chunkSize) != 0) {
@@ -441,8 +442,8 @@ object FileSendUtils {
 
     private fun calculateSendTime(numOfPackages: Int): String {
         val totalSeconds = numOfPackages * 1.3 // Total time in seconds as a Double
-        val minutes = totalSeconds.toInt() / 60 // Whole minutes
-        val seconds = totalSeconds % 60 // Remaining seconds
+        val minutes = totalSeconds.toInt() / FILE_CHUNK_SIZE // Whole minutes
+        val seconds = totalSeconds % FILE_CHUNK_SIZE // Remaining seconds
 
         return if (minutes > 0) {
             String.format(
