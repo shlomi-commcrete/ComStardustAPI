@@ -537,7 +537,7 @@ object SharedPreferencesUtil {
 
         val carriersJson = gson.toJson(carriers)
 
-        getPrefs(context).edit().putString(KEY_LAST_CARRIERS, carriersJson).apply()
+        getPrefs(context).edit().putString(key, carriersJson).apply()
     }
 
     fun getCarriers(context: Context, key: String = KEY_LAST_CARRIERS): List<Carrier>? {
