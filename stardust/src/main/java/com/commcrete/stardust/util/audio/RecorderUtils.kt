@@ -216,6 +216,6 @@ object RecorderUtils {
     }
 
     enum class CODE_TYPE (val id : Int, val codecName: String){
-        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Default")
+        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Classic Codec Encoder")
     }
 }
