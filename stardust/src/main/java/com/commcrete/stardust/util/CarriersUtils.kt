@@ -8,8 +8,7 @@ import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
-import com.commcrete.stardust.stardust.model.StardustControlByte
-import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS3
@@ -18,6 +17,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
 import com.google.gson.JsonSerializer
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.lang.reflect.Type
 import kotlin.collections.forEach
 
@@ -80,14 +80,6 @@ object CarriersUtils {
         return mutableList
     }
 
-    fun getCarrierByControl (deliveryType: StardustControlByte.StardustDeliveryType) : Carrier?{
-        when (deliveryType) {
-            StardustControlByte.StardustDeliveryType.RD1 -> return carrierList.value?.get(0)
-            StardustControlByte.StardustDeliveryType.RD2 -> return carrierList.value?.get(1)
-            StardustControlByte.StardustDeliveryType.RD3 -> return carrierList.value?.get(2)
-            StardustControlByte.StardustDeliveryType.RD4 -> return carrierList.value?.get(3)
-        }
-    }
     fun setLocalCarrierList () : List<Carrier>?{
         val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
         Scopes.getMainCoroutine().launch {
@@ -97,18 +89,18 @@ object CarriersUtils {
     }
 
     fun getRadioToSend (carrier: Carrier? = null, functionalityType: FunctionalityType) :
-            Pair<Carrier, StardustControlByte.StardustDeliveryType>? {
+            Pair<Carrier, StardustDeliveryType>? {
 
         val selectedCarrier = carrier?.takeIf { it.availableFunctionalities.contains(functionalityType) }
             ?: getDefaultCarrierForFunctionalityType(functionalityType)
             ?: return null
 
         val deliveryType = when (selectedCarrier.index) {
-            0 -> StardustControlByte.StardustDeliveryType.RD1
-            1 -> StardustControlByte.StardustDeliveryType.RD2
-            2 -> StardustControlByte.StardustDeliveryType.RD3
-            3 -> StardustControlByte.StardustDeliveryType.RD4
-            else -> StardustControlByte.StardustDeliveryType.RD1 // Default case
+            0 -> StardustDeliveryType.RD1
+            1 -> StardustDeliveryType.RD2
+            2 -> StardustDeliveryType.RD3
+            3 -> StardustDeliveryType.RD4
+            else -> StardustDeliveryType.RD1 // Default case
         }
 
 //        when (functionalityType) {
@@ -154,17 +146,17 @@ object CarriersUtils {
     }
 
     private fun getDefaultRadio ( functionalityType: FunctionalityType) :
-            Pair<Carrier, StardustControlByte.StardustDeliveryType>? {
+            Pair<Carrier, StardustDeliveryType>? {
 
         val selectedCarrier = getDefaultCarrierForFunctionalityType(functionalityType)
         if(selectedCarrier == null) return null
 
         val deliveryType = when (selectedCarrier.index) {
-            0 -> StardustControlByte.StardustDeliveryType.RD1
-            1 -> StardustControlByte.StardustDeliveryType.RD2
-            2 -> StardustControlByte.StardustDeliveryType.RD3
-            3 -> StardustControlByte.StardustDeliveryType.RD4
-            else -> StardustControlByte.StardustDeliveryType.RD1 // Default case
+            0 -> StardustDeliveryType.RD1
+            1 -> StardustDeliveryType.RD2
+            2 -> StardustDeliveryType.RD3
+            3 -> StardustDeliveryType.RD4
+            else -> StardustDeliveryType.RD1 // Default case
         }
         return Pair(selectedCarrier, deliveryType)
     }
@@ -193,22 +185,32 @@ object CarriersUtils {
 
 
 
-    fun getCarrierByStardustPackage (stardustPackage: StardustPackage) : Carrier? {
-        when (stardustPackage.stardustControlByte.stardustDeliveryType) {
-            StardustControlByte.StardustDeliveryType.RD1 -> {
-                return carrierList.value?.get(0)
-            }
-            StardustControlByte.StardustDeliveryType.RD2 -> {
-                return carrierList.value?.get(1)
-            }
-            StardustControlByte.StardustDeliveryType.RD3 -> {
-                return carrierList.value?.get(2)
-            }
-            StardustControlByte.StardustDeliveryType.RD4 -> {
-                return carrierList.value?.get(3)
-            }
+    fun getCarrierByControl(deliveryType: StardustDeliveryType): Carrier? {
+        val carriers = carrierList.value
+        if (carriers.isNullOrEmpty()) {
+            Timber.w("Carrier list is empty or null")
+            return null
         }
-        return null
+
+        val index = when (deliveryType) {
+            StardustDeliveryType.RD1 -> 0
+            StardustDeliveryType.RD2 -> 1
+            StardustDeliveryType.RD3 -> 2
+            StardustDeliveryType.RD4 -> 3
+        }
+
+        val carrier = carriers.getOrNull(index)
+
+        if (carrier == null) {
+            Timber.w(
+                "No carrier found for deliveryType=%s (index=%d, carriersSize=%d)",
+                deliveryType,
+                index,
+                carriers.size
+            )
+        }
+
+        return carrier
     }
 
     private fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {

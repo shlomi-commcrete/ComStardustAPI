@@ -3,25 +3,16 @@ package com.commcrete.stardust.location
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
-import android.location.LocationManager
-import android.os.Build
 import android.util.Log
-import android.widget.Toast
-import androidx.fragment.app.Fragment
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
-import com.commcrete.stardust.request_objects.LocationMessage
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustLocationPackage
 import com.commcrete.stardust.util.CoordinatesUtil
-import com.commcrete.stardust.util.LogUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
-import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -29,7 +20,6 @@ import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDao
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.logs.LOG_EVENT
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
@@ -37,17 +27,9 @@ import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
-import com.commcrete.stardust.util.PermissionTracking
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
-import com.google.android.gms.location.*
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import pub.devrel.easypermissions.EasyPermissions
 import java.util.Date
 import kotlin.random.Random
 
@@ -122,7 +104,7 @@ object LocationUtils  {
 
                     PlayerUtils.playNotificationSound (context)
                     DataManager.getCallbacks()?.receiveLocation(
-                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByStardustPackage(bittelPackage)),
+                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)
                 }
             } else if(isCreateNewUser) {
