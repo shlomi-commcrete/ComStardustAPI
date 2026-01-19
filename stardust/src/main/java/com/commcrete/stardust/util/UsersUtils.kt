@@ -41,10 +41,14 @@ object UsersUtils {
     val updatedUsersList = MutableLiveData<MutableList<User>>()
     val chatContactList : MutableList<ChatContact> = mutableListOf()
 
-
+    var onUserUpdatedListener: OnUserUpdated? = null
     var user : User? = null
 
-    internal var mRegisterUser : RegisterUser? = null
+    var mRegisterUser : RegisterUser? = null
+        internal set(value) {
+            field = value
+            onUserUpdatedListener?.onUpdated(value)
+        }
 
     suspend fun getBittelUserList() : List<BittelUser>{
         val bittelUserList = GlobalScope.async {
