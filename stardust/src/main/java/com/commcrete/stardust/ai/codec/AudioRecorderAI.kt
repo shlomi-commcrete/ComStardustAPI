@@ -13,6 +13,7 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat.getSystemService
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordManager
 import kotlinx.coroutines.*
 import java.io.File
@@ -96,6 +97,7 @@ class AudioRecorderAI(
     private suspend fun recordLoop() {
         Log.d("AudioRecorder", "recordLoop")
 
+        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
         enableBluetoothSco()
 
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -110,28 +112,28 @@ class AudioRecorderAI(
 
         val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
         val audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
+            SharedPreferencesUtil.getAIAudioSource(context),
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             recordBufferSize
         )
 
-        try {
-            val sessionId = audioRecord.audioSessionId
-
-            if (AutomaticGainControl.isAvailable()) {
-                AutomaticGainControl.create(sessionId)?.enabled = false
-            }
-            if (NoiseSuppressor.isAvailable()) {
-                NoiseSuppressor.create(sessionId)?.enabled = false
-            }
-            if (AcousticEchoCanceler.isAvailable()) {
-                AcousticEchoCanceler.create(sessionId)?.enabled = false
-            }
-        }catch ( e : Exception) {
-            e.printStackTrace()
-        }
+//        try {
+//            val sessionId = audioRecord.audioSessionId
+//
+//            if (AutomaticGainControl.isAvailable()) {
+//                AutomaticGainControl.create(sessionId)?.enabled = false
+//            }
+//            if (NoiseSuppressor.isAvailable()) {
+//                NoiseSuppressor.create(sessionId)?.enabled = false
+//            }
+//            if (AcousticEchoCanceler.isAvailable()) {
+//                AcousticEchoCanceler.create(sessionId)?.enabled = false
+//            }
+//        }catch ( e : Exception) {
+//            e.printStackTrace()
+//        }
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord.release()
             throw IllegalStateException("AudioRecord initialization failed")
@@ -146,6 +148,7 @@ class AudioRecorderAI(
         audioRecord.startRecording()
 
         try {
+
             while (coroutineContext.isActive && running.get()) {
 //                Log.d("AudioRecorder", "while recording")
                 val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
@@ -161,7 +164,9 @@ class AudioRecorderAI(
 
                     if (chunkSampleIndex == samplesPerChunk) {
                         Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
-                        onChunkReady?.invoke(chunkSamples, chunkIndex)
+
+                        val processedSamples: ShortArray = processSamples(chunkSamples, gain)
+                        onChunkReady?.invoke(processedSamples, chunkIndex)
                         chunkIndex++
                         chunkSampleIndex = 0
                     }
@@ -172,7 +177,8 @@ class AudioRecorderAI(
                 audioRecord.stop()
                 // Optionally flush partial chunk
                 if (chunkSampleIndex > 0) {
-                    val partial = chunkSamples.copyOf(chunkSampleIndex)
+                    val samples = chunkSamples.copyOf(chunkSampleIndex)
+                    val partial = processSamples(samples, gain)
                     onPartialFinalChunk?.invoke(partial, chunkIndex)
                 }
                 audioRecord.release()
@@ -180,6 +186,10 @@ class AudioRecorderAI(
             audioRecord.release()
         }
     }
+
+    private fun processSamples(samples: ShortArray, gain: Float) = samples.map { sample ->
+        (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+    }.toShortArray()
 
     // In your BleManager or recording activity
 //    @SuppressLint("ServiceCast")

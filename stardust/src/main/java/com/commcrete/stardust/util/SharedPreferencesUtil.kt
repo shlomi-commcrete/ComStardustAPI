@@ -17,7 +17,6 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import timber.log.Timber
 import kotlin.collections.get
 
 object SharedPreferencesUtil {
@@ -35,11 +34,13 @@ object SharedPreferencesUtil {
     private const val KEY_APP_USER = "app_user"
 
     //Preferences
-    private const val KEY_HANDLE_GAIN = "handle_gain"
+    private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
+    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
-    private const val KEY_RECORDING_TYPE = "recording_type"
+    private const val KEY_CODEC_RECORDING_TYPE = "recording_type"
+    private const val KEY_AI_RECORDING_TYPE = "ai_recording_type"
     private const val KEY_BITTEL_BIT_SERVER = "enable_bittel_server"
     private const val KEY_ENABLE_PTT_SOUND = "enable_ptt_sound"
     private const val KEY_SELECT_CONNECTIVITY_OPTIONS = "select_connectivity_options"
@@ -61,8 +62,6 @@ object SharedPreferencesUtil {
 
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
         .associate { (k, v) -> v to k }
-
-    private val KEY_AUDIO_GAIN = "key_audio_gain"
 
     //Location type Values
     private const val KEY_LOCATION_PRIORITY = "select_location_priority"
@@ -135,8 +134,6 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-
-    private const val KEY_AUDIO_SOURCE = "key_audio_source"
 
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -301,8 +298,20 @@ object SharedPreferencesUtil {
         return getPrefs(context).getString(key, default)
     }
 
-    fun getGain(context: Context) : Float{
-        return getPreferencesInt(context, KEY_HANDLE_GAIN, 100).toFloat()
+    fun getCodecGain(context: Context) : Float{
+        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 100.toFloat())
+    }
+
+    fun setCodecGain(context: Context, gain: Float) {
+        getPrefs(context).edit().putFloat(KEY_CODEC_HANDLE_GAIN, gain).apply()
+    }
+
+    fun getAIGain(context: Context) : Float{
+        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 100.toFloat())
+    }
+
+    fun setAIGain(context: Context, gain: Float) {
+        getPrefs(context).edit().putFloat(KEY_AI_HANDLE_GAIN, gain).apply()
     }
 
     fun getAutoGainControl(context: Context) : Boolean{
@@ -317,23 +326,26 @@ object SharedPreferencesUtil {
         return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
     }
 
-    fun getAudioSource(context: Context): Int {
-        val key = getPreferencesString(context, KEY_RECORDING_TYPE)
+    fun getCodecAudioSource(context: Context): Int {
+        val key = getPreferencesString(context, KEY_CODEC_RECORDING_TYPE)
         return KEY_TO_AUDIO_SOURCE[key] ?: MediaRecorder.AudioSource.MIC
     }
 
-    fun setAudioSource(context: Context, audioSource: Int) {
+    fun setCodecAudioSource(context: Context, audioSource: Int) {
         val key = AUDIO_SOURCE_TO_KEY[audioSource]
-        getPrefs(context).edit().putString(KEY_RECORDING_TYPE, key).apply()
+        getPrefs(context).edit().putString(KEY_CODEC_RECORDING_TYPE, key).apply()
     }
 
-    fun getAudioGain(context: Context): Float {
-        return getPrefs(context).getFloat( KEY_AUDIO_GAIN, 100.0F)
+    fun getAIAudioSource(context: Context): Int {
+        val key = getPreferencesString(context, KEY_AI_RECORDING_TYPE)
+        return KEY_TO_AUDIO_SOURCE[key] ?: MediaRecorder.AudioSource.MIC
     }
 
-    fun setAudioGain(context: Context, audioGain: Float) {
-        getPrefs(context).edit().putFloat(KEY_RECORDING_TYPE, audioGain).apply()
+    fun setAIAudioSource(context: Context, audioSource: Int) {
+        val key = AUDIO_SOURCE_TO_KEY[audioSource]
+        getPrefs(context).edit().putString(KEY_AI_RECORDING_TYPE, key).apply()
     }
+
 
     fun getEnablePttSound (context: Context) : Boolean {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)

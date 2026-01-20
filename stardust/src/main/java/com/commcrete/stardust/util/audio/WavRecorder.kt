@@ -12,7 +12,6 @@ import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.provider.ContactsContract
 import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
@@ -89,7 +88,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
-        val audioSource = SharedPreferencesUtil.getAudioSource(DataManager.context)
+        val audioSource = SharedPreferencesUtil.getCodecAudioSource(DataManager.context)
         recorder = AudioRecord(
             audioSource,
             RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
@@ -233,7 +232,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     }
 
     private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
-        val targetGain = (SharedPreferencesUtil.getGain(DataManager.context) / 100f)
+        val targetGain = (SharedPreferencesUtil.getCodecGain(DataManager.context) / 100f)
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
