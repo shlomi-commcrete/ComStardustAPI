@@ -17,6 +17,8 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
+import timber.log.Timber
+import kotlin.collections.get
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -47,11 +49,18 @@ object SharedPreferencesUtil {
     private const val KEY_EXPORT_SESSION_DATA_ON_LOGOUT = "export_session_data_on_logout"
 
     //Record type Values
-    private const val KEY_RECORDING_TYPE_DEFAULT = "Default"
-    private const val KEY_RECORDING_TYPE_MIC = "Mic"
-    private const val KEY_RECORDING_TYPE_VOICE_COMMUNICATION = "Voice Communication"
-    private const val KEY_RECORDING_TYPE_VOICE_CALL = "Voice Call"
-    private const val KEY_RECORDING_TYPE_VOICE_RECOGNITION = "Voice Recognition"
+
+    val AUDIO_SOURCE_TO_KEY = mapOf(
+        MediaRecorder.AudioSource.DEFAULT to "Default",
+        MediaRecorder.AudioSource.MIC to "Mic",
+        MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
+        MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
+        MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
+        MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
+    )
+
+    private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
+        .associate { (k, v) -> v to k }
 
     //Location type Values
     private const val KEY_LOCATION_PRIORITY = "select_location_priority"
@@ -124,6 +133,8 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
+
+    private const val KEY_AUDIO_SOURCE = "key_audio_source"
 
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -304,21 +315,14 @@ object SharedPreferencesUtil {
         return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
     }
 
-    fun getAudioSource(context: Context) : Int {
-        val audioSourceString = getPreferencesString(context, KEY_RECORDING_TYPE)
-        if(audioSourceString != null) {
-            audioSourceString.let {
-                when (it) {
-                    KEY_RECORDING_TYPE_MIC -> return MediaRecorder.AudioSource.MIC
-//                    KEY_RECORDING_TYPE_VOICE_CALL -> return MediaRecorder.AudioSource.VOICE_CALL
-                    KEY_RECORDING_TYPE_VOICE_COMMUNICATION -> return MediaRecorder.AudioSource.VOICE_COMMUNICATION
-                    KEY_RECORDING_TYPE_VOICE_RECOGNITION -> return MediaRecorder.AudioSource.VOICE_RECOGNITION
-                    else -> { return MediaRecorder.AudioSource.MIC }
-                }
-            }
-        }else {
-            return MediaRecorder.AudioSource.MIC
-        }
+    fun getAudioSource(context: Context): Int {
+        val key = getPreferencesString(context, KEY_RECORDING_TYPE)
+        return KEY_TO_AUDIO_SOURCE[key] ?: MediaRecorder.AudioSource.MIC
+    }
+
+    fun setAudioSource(context: Context, audioSource: Int) {
+        val key = AUDIO_SOURCE_TO_KEY[audioSource]
+        getPrefs(context).edit().putString(KEY_RECORDING_TYPE, key).apply()
     }
 
     fun getEnablePttSound (context: Context) : Boolean {
