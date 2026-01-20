@@ -442,8 +442,8 @@ object FileSendUtils {
 
     private fun calculateSendTime(numOfPackages: Int): String {
         val totalSeconds = numOfPackages * 1.3 // Total time in seconds as a Double
-        val minutes = totalSeconds.toInt() / FILE_CHUNK_SIZE // Whole minutes
-        val seconds = totalSeconds % FILE_CHUNK_SIZE // Remaining seconds
+        val minutes = totalSeconds.toInt() / 60 // Whole minutes
+        val seconds = totalSeconds % 60 // Remaining seconds
 
         return if (minutes > 0) {
             String.format(
