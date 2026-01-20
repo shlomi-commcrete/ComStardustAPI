@@ -62,6 +62,8 @@ object SharedPreferencesUtil {
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
         .associate { (k, v) -> v to k }
 
+    private val KEY_AUDIO_GAIN = "key_audio_gain"
+
     //Location type Values
     private const val KEY_LOCATION_PRIORITY = "select_location_priority"
     private const val KEY_LOCATION_ACCURACY = "location_accuracy"
@@ -323,6 +325,14 @@ object SharedPreferencesUtil {
     fun setAudioSource(context: Context, audioSource: Int) {
         val key = AUDIO_SOURCE_TO_KEY[audioSource]
         getPrefs(context).edit().putString(KEY_RECORDING_TYPE, key).apply()
+    }
+
+    fun getAudioGain(context: Context): Int {
+        return getPreferencesInt(context, KEY_AUDIO_GAIN, 100)
+    }
+
+    fun setAudioGain(context: Context, audioGain: Int) {
+        getPrefs(context).edit().putInt(KEY_RECORDING_TYPE, audioGain).apply()
     }
 
     fun getEnablePttSound (context: Context) : Boolean {
