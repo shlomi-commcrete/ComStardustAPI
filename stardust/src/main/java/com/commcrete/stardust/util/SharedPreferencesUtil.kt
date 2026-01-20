@@ -327,12 +327,12 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putString(KEY_RECORDING_TYPE, key).apply()
     }
 
-    fun getAudioGain(context: Context): Int {
-        return getPreferencesInt(context, KEY_AUDIO_GAIN, 100)
+    fun getAudioGain(context: Context): Float {
+        return getPrefs(context).getFloat( KEY_AUDIO_GAIN, 100.0F)
     }
 
-    fun setAudioGain(context: Context, audioGain: Int) {
-        getPrefs(context).edit().putInt(KEY_RECORDING_TYPE, audioGain).apply()
+    fun setAudioGain(context: Context, audioGain: Float) {
+        getPrefs(context).edit().putFloat(KEY_RECORDING_TYPE, audioGain).apply()
     }
 
     fun getEnablePttSound (context: Context) : Boolean {
