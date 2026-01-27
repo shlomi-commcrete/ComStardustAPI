@@ -116,16 +116,16 @@ object AudioReceiverManager {
             val context = DataManager.context
 
             val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
-            val realDest = if (sentAsUserInGroup) destination else source
-            PlayerUtils.updateAudioReceived(destination, true)
-            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
+            val realSource = if (sentAsUserInGroup) destination else source
+            PlayerUtils.updateAudioReceived(source, realSource,true)
+            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realSource, destination), file)
             Scopes.getDefaultCoroutine().launch {
                 val userName = UsersUtils.getUserName(destination)
                 messagesRepository.savePttMessage(
                     context = context,
                     MessageItem(senderID = destination,
                         epochTimeMs = PlayerUtils.ts.toLong(), senderName = userName ,
-                        chatId = realDest, text = "", fileLocation = file.absolutePath,
+                        chatId = realSource, text = "", fileLocation = file.absolutePath,
                         isAudio = true)
                 )
             }

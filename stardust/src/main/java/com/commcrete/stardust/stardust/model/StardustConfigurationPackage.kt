@@ -1,6 +1,13 @@
 package com.commcrete.stardust.stardust.model
 
+import android.content.Context
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.util.Carrier
+import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
+import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS3
 
 
 data class StardustConfigurationPackage(
@@ -33,7 +40,9 @@ data class StardustConfigurationPackage(
     var licenseType: LicenseType,
     val deviceModel: String,
     val deviceSerial: String
-){
+) {
+    private val TAG = "PresetValidation"
+
     fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios {
         val presetToCheck = preset?:currentPreset
         if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET1) {
@@ -69,6 +78,59 @@ data class StardustConfigurationPackage(
                 StardustConfigurationParser.StardustTypeFunctionality.ST,
             )
         }
+    }
+
+    fun presetsWithoutConfig(context: Context): List<StardustConfigurationParser.Preset> {
+        return presets.filter { preset ->
+
+            val (defaultFunctionalities, requiredFunctionalities) = preset.collectFunctionalities()
+            hasMissingRequiredFunctionalities(defaultFunctionalities, requiredFunctionalities)
+            // No missing required functionality → preset is valid
+//            if (!hasMissingRequiredFunctionalities(defaultFunctionalities, requiredFunctionalities)) {
+//                return@filter false
+//            }
+
+//            val currentPreset = preset.currentPreset ?: return@filter true
+//
+//            val localFunctionalities = getLocalFunctionalitiesByPreset(currentPreset, context) ?: return@filter true
+//
+//            hasMissingRequiredFunctionalities(localFunctionalities, requiredFunctionalities)
+        }
+    }
+
+
+    private fun StardustConfigurationParser.Preset.collectFunctionalities(): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
+        val presetFunctionalities = mutableSetOf<FunctionalityType>()
+        val requiredFunctionalities = mutableSetOf<FunctionalityType>()
+        for (xcvr in xcvrList) {
+            // Actual: only for non-default frequency XCVRs
+            if (!xcvr.hasDefaultFrequency()) {
+                presetFunctionalities.addAll(xcvr.getOptions())
+                // Required: all allowed options with valid bitwise
+                requiredFunctionalities.addAll(
+                    xcvr.functionality.getAllowedFunctionalityOptions().filter { it.bitwise != -1 }
+                )
+
+            }
+        }
+
+        return presetFunctionalities to requiredFunctionalities
+    }
+
+    private fun getLocalFunctionalitiesByPreset(preset : StardustConfigurationParser.CurrentPreset, context: Context) : Set<FunctionalityType>? {
+        val localKey = when (preset) {
+            StardustConfigurationParser.CurrentPreset.PRESET1 -> KEY_LAST_CARRIERS1
+            StardustConfigurationParser.CurrentPreset.PRESET2 -> KEY_LAST_CARRIERS2
+            StardustConfigurationParser.CurrentPreset.PRESET3 -> KEY_LAST_CARRIERS3
+        }
+        return SharedPreferencesUtil.getCarrier(context, localKey)?.activeFunctionalities
+    }
+
+    private fun hasMissingRequiredFunctionalities(
+        actual: Set<FunctionalityType>,
+        required: Set<FunctionalityType>
+    ): Boolean {
+        return required.any { it !in actual }
     }
 
     data class Radios (

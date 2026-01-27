@@ -42,11 +42,13 @@ object StardustInitConnectionHandler {
         ADDING_GROUPS,                 // 4) add groups
         READING_CONFIGURATION,         // 5) get configuration
         UPDATING_ADMIN_MODE,           // 6) update admin mode
-        SUCCESS, CANCELED,
+        SUCCESS,
+        CANCELED,
         RUNNING,
         SEARCHING,
         NO_LICENSE,
         ENCRYPTION_KEY_ERROR,
+        PRESET_ERROR,
         DISCONNECTED
     }
 
@@ -75,7 +77,7 @@ object StardustInitConnectionHandler {
 
     val isRunning: Boolean
         get() = state !in setOf(State.IDLE, State.SEARCHING, State.SUCCESS, State.CANCELED, State.DISCONNECTED,
-            State.NO_LICENSE, State.ENCRYPTION_KEY_ERROR)
+            State.NO_LICENSE, State.ENCRYPTION_KEY_ERROR, State.PRESET_ERROR)
 
     // ───────────────────────── Lifecycle ─────────────────────────
 
@@ -88,7 +90,7 @@ object StardustInitConnectionHandler {
 
     fun cancel() {
         state = when(state) {
-            State.ENCRYPTION_KEY_ERROR -> state
+            State.PRESET_ERROR, State.ENCRYPTION_KEY_ERROR -> state
             State.UPDATING_SMARTPHONE_ADDR -> State.ENCRYPTION_KEY_ERROR
             else -> State.CANCELED
         }
@@ -370,7 +372,6 @@ object StardustInitConnectionHandler {
         ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults(ctx)
-
         transitionTo(State.UPDATING_ADMIN_MODE) { sendUpdateAdminMode() }
     }
 
@@ -469,8 +470,15 @@ object StardustInitConnectionHandler {
     }
 
     private fun onInitDone() {
+        val config = ConfigurationUtils.bittelConfiguration.value
+        if(config == null) {
+            onInitFailed("No configuration found")
+            return
+        }
+        val presetsWithoutDefaults = config.presetsWithoutConfig(context = DataManager.context)
         val resultState = when {
-            ConfigurationUtils.bittelConfiguration.value?.licenseType?.equals(LicenseType.UNDEFINED) == true -> State.NO_LICENSE
+            config.licenseType == LicenseType.UNDEFINED -> State.NO_LICENSE
+            presetsWithoutDefaults.isNotEmpty() -> State.PRESET_ERROR
             else -> State.SUCCESS
         }
         state = resultState
@@ -491,11 +499,15 @@ object StardustInitConnectionHandler {
     }
 
     fun hasUnsyncableError(): Boolean {
-        return state in setOf(State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE)
+        return state in setOf(State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE, State.PRESET_ERROR)
     }
 
     fun isConnected(): Boolean {
-        return hasConnectionError() || state == State.SUCCESS
+        return hasConnectionError() || isConnectedSuccessfully()
+    }
+
+    fun isConnectedSuccessfully(): Boolean {
+        return state == State.SUCCESS
     }
 
     fun updateConnectionState(newState: State) {

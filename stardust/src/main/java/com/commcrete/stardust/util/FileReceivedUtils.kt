@@ -134,13 +134,15 @@ object FileReceivedUtils {
                 Scopes.getMainCoroutine().launch {
                     isReceivingInProgress = false
                     DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
+                    Log.d("DEBUGTEST", "FileReceivedData.runnable  -> if(checkIfHaveEnough()) 0% ")
                 }
-                handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                handler.postDelayed( { removeFromFileReceivedList() }, 300)
             } else {
 
             }
             Scopes.getMainCoroutine().launch {
                 DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
+                Log.d("DEBUGTEST", "FileReceivedData.runnable  -> after else 0% ")
             }
             removeFromFileReceivedList()
             dataStart = null
@@ -177,6 +179,7 @@ object FileReceivedUtils {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
                         DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                         Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
+                        Log.d("DEBUGTEST", "updateProgress  -> ${receivingPercentage}% ")
                     }
                 }
                 checkData(context)
@@ -185,7 +188,7 @@ object FileReceivedUtils {
 
         private fun checkData (context: Context) {
             dataStart?.let {
-                if(lostPackagesIndex.size > (it.total-it.spare) ) {
+                if(lostPackagesIndex.size > (it.total - it.spare) ) {
                     updateFailure(FileFailure.MISSING)
                 }
                 if(checkIfMissingMain()) {
@@ -193,15 +196,17 @@ object FileReceivedUtils {
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
                         DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
+                        Log.d("DEBUGTEST", "checkData -> checkIfMissingMain()  -> 0% ")
                     }
-                    handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                    handler.postDelayed( { removeFromFileReceivedList() }, 300)
                 } else if(it.total == dataList.last().current + 1) {
-                        bittelPackage?.let { bittelPackage ->saveFile(context, bittelPackage, dataStart?.type) }
+                        bittelPackage?.let { bittelPackage -> saveFile(context, bittelPackage, dataStart?.type) }
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
                             DataManager.getCallbacks()?.receiveFileStatus(index, 100, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
+                            Log.d("DEBUGTEST", "checkData -> it.total == dataList.last().current + 1  -> 100% ")
                         }
-                        handler.postDelayed( {removeFromFileReceivedList()}, 300)
+                        handler.postDelayed( { removeFromFileReceivedList() }, 300)
                     }
                 else {}
             }
@@ -249,15 +254,15 @@ object FileReceivedUtils {
                 if(fileType == 0) {
                     // Step 1: Create a temporary file for the concatenated data
                     val tempOutputFile = File.createTempFile("output_temp", null)
-// Write concatenated data to the temporary file
+                    // Write concatenated data to the temporary file
 
-//After i get all the packages.
+                    //After i get all the packages.
                     FileOutputStream(tempOutputFile).use { outputStream ->
                         writeDataToFile(outputStream)
                     }
-// Step 2: Decompress the temporary file into the target file
+                    // Step 2: Decompress the temporary file into the target file
                     FileSendUtils.decompressTextFile(tempOutputFile, targetFile)
-// Clean up: Delete the temporary file
+                    // Clean up: Delete the temporary file
                     tempOutputFile.delete()
                 } else {
                     FileOutputStream(targetFile).use { outputStream ->

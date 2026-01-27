@@ -281,10 +281,11 @@ object PcmStreamPlayer {
 
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
         this.destination = destinations
-        val realDest = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser?.appId)) destination else source
-        updateAudioReceived(source, realDest, true)
+        val realSource = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser?.appId)) destination else source
 
-        val dir = File(context.filesDir, destination)
+        updateAudioReceived(source, realSource, true)
+
+        val dir = File(context.filesDir, source)
 
         if (!dir.exists()) {
             if (!dir.mkdirs()) {
@@ -301,14 +302,14 @@ object PcmStreamPlayer {
             isFileInit = true
 
             Scopes.getDefaultCoroutine().launch {
-                val userName = UsersUtils.getUserName(destination)
+                val userName = UsersUtils.getUserName(realSource)
                 PlayerUtils.messagesRepository.savePttMessage(
                     context = context,
                     MessageItem(
-                        senderID = destination,
+                        senderID = realSource,
                         epochTimeMs = ts.toLong(),
                         senderName = userName,
-                        chatId = realDest,
+                        chatId = source,
                         text = "",
                         fileLocation = file.absolutePath,
                         isAudio = true,
@@ -317,7 +318,7 @@ object PcmStreamPlayer {
                 )
             }
 
-            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
+            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(source, destination), file)
         }
 
         return file

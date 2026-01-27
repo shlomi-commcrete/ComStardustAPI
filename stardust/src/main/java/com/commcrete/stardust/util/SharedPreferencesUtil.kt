@@ -577,6 +577,17 @@ object SharedPreferencesUtil {
         }
     }
 
+    fun getCarrier(context: Context, key: String): Carrier? {
+        val carriersJson = getPrefs(context).getString(key, null)
+
+        return if (!carriersJson.isNullOrEmpty()) {
+            val type = object : TypeToken<Carrier>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<Carrier>(carriersJson, type) // Convert JSON string back to List<Carrier>
+        } else {
+            null
+        }
+    }
+
     fun setLocationFormat (context: Context,locationFormat : String ) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefs(context).edit().putString(KEY_LOCATION_FORMAT, locationFormat).apply()

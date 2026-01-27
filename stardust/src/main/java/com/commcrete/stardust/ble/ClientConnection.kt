@@ -576,7 +576,7 @@ internal class ClientConnection(
     }
 
     @SuppressLint("MissingPermission")
-    fun getBleConnectedStardustDevice() : BluetoothDevice?{
+    fun getBleConnectedStardustDevice() : BluetoothDevice? {
         val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
         if(btManager == null || btManager.adapter == null) {
             return null

@@ -275,16 +275,6 @@ data class Carrier (
                 .keys
         }
 
-    fun getExistingFunctionalityOptions() : Set<FunctionalityType> {
-        val functionalityOptions = when (type) {
-            StardustTypeFunctionality.HR -> FunctionalityType.entries
-            StardustTypeFunctionality.LR -> FunctionalityType.entries.filterNot { listOf(FunctionalityType.IMAGE, FunctionalityType.FILE, FunctionalityType.PTT, FunctionalityType.BFT).contains(it) }
-            StardustTypeFunctionality.ST -> listOf(FunctionalityType.IMAGE, FunctionalityType.FILE)
-        }
-
-        return functionalityOptions.toSet()
-    }
-
     override fun equals(other: Any?): Boolean {
         if (this === other) return true // Reference equality
         if (other !is Carrier) return false // Type check
@@ -302,7 +292,7 @@ data class Carrier (
 
     private fun initFunctionalityStateMap(): Map<FunctionalityType, FunctionalityState> {
 
-        val result = getExistingFunctionalityOptions().associateWith { functionality ->
+        val result = type.getAllowedFunctionalityOptions().associateWith { functionality ->
             val limitation = ConfigurationUtils.licensedFunctionalities[functionality]
 
             FunctionalityState(limitation).apply {

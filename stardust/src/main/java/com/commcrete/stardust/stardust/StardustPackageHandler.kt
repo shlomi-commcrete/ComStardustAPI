@@ -28,6 +28,7 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -35,7 +36,6 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
-import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileSendUtils
@@ -375,7 +375,8 @@ internal class StardustPackageHandler(private val context: Context ,
         Scopes.getMainCoroutine().launch {
             val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
 
-            bittelConfigurationPackage?. let {
+            bittelConfigurationPackage?.let {
+                if(it.presetsWithoutConfig(context).isNotEmpty() && StardustInitConnectionHandler.isConnectedSuccessfully()) { listener?.onInitDone(StardustInitConnectionHandler.State.PRESET_ERROR) }
                 ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
                 ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
                 ConfigurationUtils.setConfigFile(it)

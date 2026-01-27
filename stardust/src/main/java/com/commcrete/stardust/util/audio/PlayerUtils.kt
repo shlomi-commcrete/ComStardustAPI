@@ -71,6 +71,8 @@ object PlayerUtils : BleMediaConnector() {
     const val bufferSizeMulti = 1.0
     val speedFactor = 1.0f // 0.9x speed
     var numOfPackagesRecieved = 0
+
+    private val pttScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val runnable : Runnable = Runnable {
         Scopes.getMainCoroutine().launch {
             Scopes.getDefaultCoroutine().launch {
@@ -89,7 +91,10 @@ object PlayerUtils : BleMediaConnector() {
                 byteArrayOutputStream.reset()
                 numOfPackagesRecieved = 0
             }
-            updateAudioReceived(destination, false)
+
+            val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
+            val realSource = if(sentAsUserInGroup) destination else source
+            updateAudioReceived(source, realSource, false)
             destination = ""
             Handler(Looper.getMainLooper()).postDelayed({
                 source = ""
@@ -133,44 +138,95 @@ object PlayerUtils : BleMediaConnector() {
     var enhancer: LoudnessEnhancer? = null
     var equalizer: Equalizer? = null
     val gainIncrease = 3000  // This value is in millibels (mB). 2000 mB equals a 200% gain increase.
-    val savedUser = SharedPreferencesUtil.getAppUser(DataManager.context)
 
-    private fun playAudio(context: Context, pttAudio: ByteArray, destinations: String, source: String
-                          , snifferContacts: List<ChatContact>?) {
+//    private fun playAudio(context: Context, pttAudio: ByteArray, receiverID: String, senderID: String, snifferContacts: List<ChatContact>?) {
+//
+//        if(snifferContacts != null) {
+//            if(!isMyId(mRegisterUser?.appId ?: "", snifferContacts[0].bittelId, snifferContacts[1].bittelId)
+//                && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
+//                playPTT(pttAudio, pttAudio.size, senderID, receiverID , false)
+//            }
+//        }else {
+//            playPTT(pttAudio, pttAudio.size , senderID, receiverID, isLocalGroup(senderID, receiverID))
+//        }
+//
+//        resetTimer()
+//        setTs()
+//        CoroutineScope(Dispatchers.Default).launch {
+//            if(!isFileInit){
+//                initPttInputFile(context, receiverID, senderID, snifferContacts)
+//            }
+//            try {
+//                if(snifferContacts != null) {
+//                    if(!isMyId(mRegisterUser?.appId ?: "", snifferContacts[0].bittelId, snifferContacts[1].bittelId)
+//                        && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
+//                        byteArrayOutputStream.write(pttAudio)
+//                    }
+//                }else {
+//                    byteArrayOutputStream.write(pttAudio)
+//                }
+//            } catch (e: IOException) {
+//                e.printStackTrace()
+//            }
+//        }
+//
+//    }
 
-        if(snifferContacts != null) {
-            savedUser?.appId?.let {
-                if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
-                    && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
-                    playPTT(pttAudio, pttAudio.size, source, destinations , false)
-                }
-            }
-        }else {
-            playPTT(pttAudio, pttAudio.size , source, destinations, isLocalGroup(source, destinations))
+    private fun playAudio(
+        context: Context,
+        pttAudio: ByteArray,
+        receiverID: String,
+        senderID: String,
+        snifferContacts: List<ChatContact>?
+    ) {
+        val myId = mRegisterUser?.appId.orEmpty()
+
+        val isLocalGroupCall = when {
+            snifferContacts != null ->
+                isLocalGroup(
+                    snifferContacts[0].bittelId,
+                    snifferContacts[1].bittelId
+                )
+            else ->
+                isLocalGroup(senderID, receiverID)
+        }
+
+        val shouldHandleAudio = when {
+            snifferContacts != null ->
+                !isMyId(
+                    myId,
+                    snifferContacts[0].bittelId,
+                    snifferContacts[1].bittelId
+                ) && !isLocalGroupCall
+            else -> true
+        }
+
+        if (shouldHandleAudio) {
+            playPTT(
+                pttAudio,
+                pttAudio.size,
+                senderID,
+                receiverID,
+                isLocalGroupCall
+            )
         }
 
         resetTimer()
         setTs()
-        CoroutineScope(Dispatchers.Default).launch {
-            if(!isFileInit){
-                initPttInputFile(context, destinations, source, snifferContacts)
+
+        pttScope.launch {
+            if (!isFileInit) {
+                initPttInputFile(context, receiverID, senderID, snifferContacts)
             }
-            try {
-                if(snifferContacts != null) {
-                    savedUser?.appId?.let {
-                        if(!isMyId(it, snifferContacts[0].bittelId, snifferContacts[1].bittelId)
-                            && !isLocalGroup(snifferContacts[0].bittelId, snifferContacts[1].bittelId)){
-                            byteArrayOutputStream.write(pttAudio)
-                        }
-                    }
-                }else {
+
+            runCatching {
+                if (shouldHandleAudio) {
                     byteArrayOutputStream.write(pttAudio)
                 }
-            } catch (e: IOException) {
-                e.printStackTrace()
+            }.onFailure {
+                it.printStackTrace()
             }
         }
-
     }
 
     fun handleSnifferMessage (
@@ -219,13 +275,11 @@ object PlayerUtils : BleMediaConnector() {
         return audioTrack
     }
 
-    private fun getPackageByFrames(bittelPackage: StardustPackage, chatUserId: String?, snifferContacts: List<ChatContact>? = null){
+    private fun getPackageByFrames(bittelPackage: StardustPackage, receiverID: String, snifferContacts: List<ChatContact>? = null){
         bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
-            chatUserId?.let {
-                val byteArray = intArrayToByteArray(dataArray.toMutableList())
-                source = bittelPackage.getSourceAsString()
-                testPlayPackage(byteArray,it, snifferContacts)
-            }
+            val byteArray = intArrayToByteArray(dataArray.toMutableList())
+            source = bittelPackage.getSourceAsString()
+            testPlayPackage(byteArray, receiverID, snifferContacts)
         }
     }
 
@@ -347,15 +401,14 @@ object PlayerUtils : BleMediaConnector() {
             return initPttSnifferFile(context ,destinations,  snifferContacts)
         }
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
-        //Todo here?
         this.destination = destinations
 
-        val sentAsUserInGroup = GroupsUtils.isGroup(this.source) && (destination != mRegisterUser?.appId)
-        val realDest = if(sentAsUserInGroup) destination else this.source
-        updateAudioReceived(destination, true)
-        val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination")
-        val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/$destination/$ts-$source.pcm")
-        if(directory!=null){
+        val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
+        val realSource = if(sentAsUserInGroup) destination else source
+        updateAudioReceived(destination, realSource, true)
+        val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/${source}")
+        val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/${source}/$ts-$source.pcm")
+        if(directory != null){
             if(!directory.exists()){
                 directory.mkdir()
             }
@@ -364,7 +417,7 @@ object PlayerUtils : BleMediaConnector() {
                     file.createNewFile()
                     fileToWrite = file
                     Scopes.getDefaultCoroutine().launch {
-                        val userName = UsersUtils.getUserName(destination)
+                        val userName = UsersUtils.getUserName(realSource)
                         try {
                             Timber.tag("savePTT").d("ts : ${ts.toLong()}")
                         }catch (e :Exception){
@@ -372,15 +425,16 @@ object PlayerUtils : BleMediaConnector() {
                         }
                         messagesRepository.savePttMessage(
                             context = context,
-                            MessageItem(senderID = destination,
+                            MessageItem(
+                                senderID = realSource,
                                 epochTimeMs = ts.toLong(),
                                 senderName = userName ,
-                                chatId = realDest,
+                                chatId = source,
                                 text = "",
                                 fileLocation = file.absolutePath,
                                 isAudio = true)
                         )
-                        DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realDest, destination), file)
+                        DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(source, destination), file)
                     }
                 }
                 isFileInit = true
@@ -533,13 +587,13 @@ object PlayerUtils : BleMediaConnector() {
 
             if(bittelPackage.getSourceAsString().isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-                var from = bittelPackage.getSourceAsString()
-                val sentAsUserInGroup = GroupsUtils.isGroup(from) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                var realSource = bittelPackage.getSourceAsString()
+                val sentAsUserInGroup = GroupsUtils.isGroup(realSource) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
                 if(sentAsUserInGroup) {
-                    from = bittelPackage.getDestAsString()
+                    realSource = bittelPackage.getDestAsString()
                 }
-                getPackageByFrames(bittelPackage, from)
-                val chatItem = chatsRepo.getChatByBittelID(from)
+                getPackageByFrames(bittelPackage, realSource)
+                val chatItem = chatsRepo.getChatByBittelID(realSource)
                 chatItem?.let { chat ->
                     val chatContact = chat.user
                     chatContact?.let { contact ->
@@ -554,15 +608,16 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    fun saveBittelPTTAiToDatabase(bittelPackage: StardustPackage){
+    fun saveBittelPTTAiToDatabase(bittelPackage: StardustPackage) {
         Scopes.getDefaultCoroutine().launch {
             val source = bittelPackage.getSourceAsString()
             if(source.isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-                var from = source
-                val sentAsUserInGroup = GroupsUtils.isGroup(from) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                var realSource = source
+                val destination = bittelPackage.getDestAsString()
+                val sentAsUserInGroup = GroupsUtils.isGroup(realSource) && (destination != mRegisterUser?.appId)
                 if(sentAsUserInGroup) {
-                    from = bittelPackage.getDestAsString()
+                    realSource = destination
                 }
                 bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
                     val byteArray = intArrayToByteArray(dataArray.toMutableList())
@@ -572,10 +627,10 @@ object PlayerUtils : BleMediaConnector() {
                         val selectedModule = getModel(model[0].toInt())
                         val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
                         Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
-                        PttReceiveManager.addNewData(byteArray, from, source, selectedModule)
+                        PttReceiveManager.addNewData(byteArray, realSource, source, selectedModule)
                     }
                 }
-                val chatItem = chatsRepo.getChatByBittelID(from)
+                val chatItem = chatsRepo.getChatByBittelID(realSource)
                 chatItem?.let { chat ->
                     val chatContact = chat.user
                     chatContact?.let { contact ->
@@ -767,7 +822,7 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    private fun testPlayPackage(byteArray: ByteArray, dest : String, snifferContacts: List<ChatContact>? = null){
+    private fun testPlayPackage(byteArray: ByteArray, receiverID : String, snifferContacts: List<ChatContact>? = null){
         initAudioTrack((14080 * bufferSizeMulti).toInt())
         var bytes = splitByteArray(byteArray, 7)
         var bytesListToPlay : MutableList<ByteArray> = mutableListOf()
@@ -779,12 +834,7 @@ object PlayerUtils : BleMediaConnector() {
 
             }
         }
-        val context = DataManager.context
-        SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-            playAudio(context, combine(bytesListToPlay),dest,it, snifferContacts)
-        }
-
-
+        mRegisterUser?.appId?.let { playAudio(context, combine(bytesListToPlay), receiverID, it, snifferContacts) }
     }
 
 
@@ -868,18 +918,15 @@ object PlayerUtils : BleMediaConnector() {
         return byteShift1.toByte() or byteShift2.toByte()
     }
 
-    fun updateAudioReceived(chatId: String, isAudioReceived : Boolean){
+    fun updateAudioReceived(chatId: String, realSourceId: String, isAudioReceived : Boolean){
         if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) {
             return
         }
         Scopes.getDefaultCoroutine().launch {
-            val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
-            val newChatID = if(sentAsUserInGroup) chatId else source
-            // TODO: here?
-            chatsRepository.updateAudioReceived(newChatID, isAudioReceived)
-            val chatItem = chatsRepository.getChatByBittelID(newChatID)
+            chatsRepository.updateAudioReceived(chatId, isAudioReceived)
+            val chatItem = chatsRepository.getChatByBittelID(chatId)
             chatItem?.let {
-                chatItem.message = Message(senderID = chatId, text = "Ptt Received", seen = true)
+                chatItem.message = Message(senderID = realSourceId, text = "Ptt Received", seen = true)
                 chatsRepository.addChat(it)
             }
         }

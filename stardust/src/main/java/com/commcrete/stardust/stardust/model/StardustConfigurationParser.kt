@@ -131,10 +131,49 @@ class StardustConfigurationParser : StardustParser() {
         ACTIVE(1),
     }
 
-    enum class StardustTypeFunctionality (val type : Int){
+    enum class StardustTypeFunctionality(val type: Int) {
         HR(0),
         LR(1),
-        ST(2)
+        ST(2);
+
+        fun getAllowedFunctionalityOptions(): Set<FunctionalityType> {
+            return when (this) {
+                HR -> HR_ALLOWED
+                LR -> LR_ALLOWED
+                ST -> ST_ALLOWED
+            }
+        }
+
+        companion object {
+
+            private val HR_ALLOWED = setOf(
+                FunctionalityType.TEXT,
+                FunctionalityType.LOCATION,
+                FunctionalityType.PTT,
+                FunctionalityType.BFT,
+                FunctionalityType.FILE,
+                FunctionalityType.IMAGE,
+                FunctionalityType.REPORTS,
+                FunctionalityType.ACK,
+                FunctionalityType.SOS,
+            )
+
+            private val LR_ALLOWED = setOf(
+                FunctionalityType.TEXT,
+                FunctionalityType.LOCATION,
+                FunctionalityType.REPORTS,
+                FunctionalityType.ACK,
+                FunctionalityType.SOS
+            )
+
+            private val ST_ALLOWED = setOf(
+                FunctionalityType.IMAGE,
+                FunctionalityType.FILE
+            )
+
+            fun fromType(type: Int): StardustTypeFunctionality =
+                entries.firstOrNull { it.type == type } ?: HR
+        }
     }
 
 
@@ -372,7 +411,7 @@ class StardustConfigurationParser : StardustParser() {
         var carrier : StardustCarrier = StardustCarrier.Carrier1,
         var carrierOn : Boolean = true
     ) {
-        fun getOptions () : Set<FunctionalityType>{
+        fun getOptions() : Set<FunctionalityType>{
             val functionalityOptions = mutableSetOf<FunctionalityType>()
             for (type in FunctionalityType.values()) {
                 if ((options and type.bitwise) == type.bitwise) {
@@ -381,6 +420,10 @@ class StardustConfigurationParser : StardustParser() {
             }
 
             return functionalityOptions
+        }
+
+        fun hasDefaultFrequency(): Boolean {
+            return txFrequency == 0.0 && rxFrequency == 0.0
         }
 
 //
