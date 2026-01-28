@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
-import com.commcrete.bittell.util.demo.DemoDataUtil
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import org.apache.poi.xssf.usermodel.XSSFCell
 import timber.log.Timber
@@ -174,7 +173,7 @@ object FolderReader {
                 if(userList.isEmpty()) {
                     onExcelFilesSelected.onError()
                 } else {
-                    onExcelFilesSelected.onGetUsers(userList)
+                    onExcelFilesSelected.onGetUsers(fileData, userList)
                 }
 
             } else {
@@ -271,7 +270,7 @@ object FolderReader {
     }
 
     interface OnExcelFilesSelected {
-        fun onGetUsers(userList: List<ExcelUser>)
+        fun onGetUsers(fileData: ByteArray, userList: List<ExcelUser>)
         fun onError ()
     }
 }
