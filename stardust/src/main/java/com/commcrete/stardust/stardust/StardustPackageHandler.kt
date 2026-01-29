@@ -33,6 +33,7 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustApp
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
+import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
@@ -260,8 +261,12 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handlePingResponse (context: Context, mPackage: StardustPackage) {
         DataManager.getPortUtils(context).onPingReceived()
         val bittelBatteryPackage = StardustBatteryParser().parseBattery(mPackage)
+        val missingGroups = StardustGroupStatusParser().parseGroupStatus(mPackage)
         bittelBatteryPackage.let {
             AppEvents.updateBattery(it)
+        }
+        if(missingGroups){
+            GroupsUtils.addAllGroups(context)
         }
     }
 
