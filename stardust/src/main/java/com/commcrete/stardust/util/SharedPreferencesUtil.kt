@@ -58,7 +58,7 @@ object SharedPreferencesUtil {
         MediaRecorder.AudioSource.MIC to "Mic",
         MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
         MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
-        MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
+        //MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
         MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
     )
 
