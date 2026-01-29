@@ -134,7 +134,6 @@ object FileReceivedUtils {
                 Scopes.getMainCoroutine().launch {
                     isReceivingInProgress = false
                     DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
-                    Log.d("DEBUGTEST", "FileReceivedData.runnable  -> if(checkIfHaveEnough()) 0% ")
                 }
                 handler.postDelayed( { removeFromFileReceivedList() }, 300)
             } else {
@@ -142,7 +141,6 @@ object FileReceivedUtils {
             }
             Scopes.getMainCoroutine().launch {
                 DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
-                Log.d("DEBUGTEST", "FileReceivedData.runnable  -> after else 0% ")
             }
             removeFromFileReceivedList()
             dataStart = null
@@ -179,7 +177,6 @@ object FileReceivedUtils {
                         receivingPercentage = ((dataList.size.toDouble() / it.total) * 100).toInt()
                         DataManager.getCallbacks()?.receiveFileStatus(index, receivingPercentage, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
                         Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
-                        Log.d("DEBUGTEST", "updateProgress  -> ${receivingPercentage}% ")
                     }
                 }
                 checkData(context)
@@ -196,7 +193,6 @@ object FileReceivedUtils {
                     Scopes.getMainCoroutine().launch {
                         isReceivingInProgress = false
                         DataManager.getCallbacks()?.receiveFileStatus(index, 0, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
-                        Log.d("DEBUGTEST", "checkData -> checkIfMissingMain()  -> 0% ")
                     }
                     handler.postDelayed( { removeFromFileReceivedList() }, 300)
                 } else if(it.total == dataList.last().current + 1) {
@@ -204,7 +200,6 @@ object FileReceivedUtils {
                         Scopes.getMainCoroutine().launch {
                             isReceivingInProgress = false
                             DataManager.getCallbacks()?.receiveFileStatus(index, 100, bittelPackage?.getSourceAsString() ?: "", bittelPackage?.getDestAsString() ?: "", dataStart?.fileName ?: "", dataStart?.fileEnding ?: "", dataStart?.fileType ?: FileUtils.FileType.UNKNOWN)
-                            Log.d("DEBUGTEST", "checkData -> it.total == dataList.last().current + 1  -> 100% ")
                         }
                         handler.postDelayed( { removeFromFileReceivedList() }, 300)
                     }
