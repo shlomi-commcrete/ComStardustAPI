@@ -265,7 +265,7 @@ internal class StardustPackageHandler(private val context: Context ,
         bittelBatteryPackage.let {
             AppEvents.updateBattery(it)
         }
-        if(missingGroups){
+        if(missingGroups && GroupsUtils.groupsIds.isNotEmpty()){
             GroupsUtils.addAllGroups(context)
         }
     }

@@ -11,7 +11,7 @@ import timber.log.Timber
 
 object GroupsUtils {
 
-    private val groupsIds: MutableList<String> = mutableListOf()
+    val groupsIds: MutableList<String> = mutableListOf()
 
 
     fun deleteAllGroups (context: Context) {
