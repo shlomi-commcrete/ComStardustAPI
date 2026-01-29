@@ -5,8 +5,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
+import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
-import org.apache.poi.xssf.usermodel.XSSFCell
 import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
@@ -14,9 +14,18 @@ import java.io.FileOutputStream
 import java.io.InputStream
 
 
+
 object FolderReader {
 
     private const val REQUEST_READ_EXTERNAL_STORAGE = 1020345
+
+    private fun buildHeaderIndexMap(headerRow: Row): Map<String, Int> {
+        return headerRow.associate { cell ->
+            cell.stringCellValue
+                .trim()
+                .lowercase() to cell.columnIndex
+        }
+    }
 
     private fun readExcelFile(filePath: String) : List<ExcelUser> {
         val demoList = mutableListOf<ExcelUser>()
@@ -26,33 +35,29 @@ object FolderReader {
             val workbook = WorkbookFactory.create(fis)
             val sheet = workbook.getSheetAt(0)
 
-            for (row in sheet) {
-                val rowData = mutableListOf<String>()
-                var loop = 0
-                val excelUser = ExcelUser()
-                for (cell in row) {
-                    Timber.tag("readExcelFile").d(cell.toString())
-                    if(cell.toString() == "ID"){
-                        break
-                    }
-                    if(loop == 0) {
-                        excelUser.id = (cell as XSSFCell).stringCellValue
-                    }
-                    if(loop == 1) {
-                        excelUser.deviceId = (cell as XSSFCell).stringCellValue
-                    }
-                    if(loop == 2) {
-                        excelUser.name = cell.toString()
-                    }
-                    if(loop == 3) {
-                        excelUser.type = cell.toString()
-                    }
-                    if(loop == 4) {
-                        excelUser.image = cell.toString()
-                    }
-                    rowData.add(cell.toString())
-                    loop++
-                }
+            val rowData = mutableListOf<String>()
+            val headerRow = sheet.getRow(0)
+                ?: error("Excel file has no header row")
+
+            val headerMap = buildHeaderIndexMap(headerRow)
+
+            fun Row.get(header: String): String {
+                val cellIndex = headerMap[header.lowercase()]
+                return cellIndex?.let { getCell(cellIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK)?.toString() } ?: ""
+            }
+
+            for (rowIndex in 1..sheet.lastRowNum) {
+                val row = sheet.getRow(rowIndex) ?: continue
+
+                val excelUser = ExcelUser(
+                    id       = row.get("id"),
+                    deviceId = row.get("device_id"),
+                    name     = row.get("name"),
+                    type     = row.get("type"),
+                    image    = row.get("image")
+                )
+
+
                 if(excelUser.id.isNotEmpty()){
                     demoList.add(excelUser)
                 } else if (excelUser.deviceId.isNotEmpty()) {
@@ -63,6 +68,7 @@ object FolderReader {
                 }
                 // Process rowData as needed
                 Timber.tag("readExcelFile").d(rowData.toString())
+
             }
 
             workbook.close()
@@ -253,6 +259,22 @@ object FolderReader {
         var type : String = "",
         var image : String = "",
     )
+
+    val HEADER_ALIASES = mapOf(
+        "id" to listOf("id"),
+        "device_id" to listOf("device_id", "device id", "deviceid"),
+        "name" to listOf("name"),
+        "type" to listOf("type"),
+        "image" to listOf("image", "img", "picture")
+    )
+
+    fun Row.getByAliases(headerMap: Map<String, Int>, key: String): String? {
+        val index = HEADER_ALIASES[key]
+            ?.firstNotNullOfOrNull { headerMap[it] }
+            ?: return null
+
+        return getCell(index).toString()
+    }
 
     fun getMimeType(context: Context, uri: Uri): String? {
         return context.contentResolver.getType(uri)
