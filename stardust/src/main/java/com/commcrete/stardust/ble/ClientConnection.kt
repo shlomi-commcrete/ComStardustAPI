@@ -475,8 +475,8 @@ internal class ClientConnection(
                             bondState.toBondStateDescription()
                     Log.w("Bond state change", "${device?.address} bond state changed | $bondTransition")
                     if(bondState == BluetoothDevice.BOND_BONDED && previousBondState == BluetoothDevice.BOND_BONDING) {
-                        device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
-                        device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
+                        //device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
+                        //device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
                         device?.let {
                             CoroutineScope(Dispatchers.IO).launch {
                                 Scopes.getMainCoroutine().launch {

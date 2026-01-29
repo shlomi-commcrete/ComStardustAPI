@@ -23,6 +23,8 @@ object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
     private const val KEY_USER_ID = "user_info"
     private const val KEY_USER_OBJ = "user_obj"
+    private const val KEY_INITIAL_DEVICE_ID = "initial_device_id"
+    private const val KEY_CONNECTED_TO_UNKNOWN_DEVICE = "connected_to_unknown_device"
     private const val KEY_BEETLE_DEVICE = "bittel_device"
     private const val KEY_BEETLE_DEVICE_NAME = "bittel_device_name"
     private const val KEY_PHONE_NUMBER = "phone_number"
@@ -186,8 +188,12 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putString(KEY_USER_ID, userId).apply()
     }
 
-    fun setBittelDevice(context: Context , bittelDevice : String){
-        getPrefs(context).edit().putString(KEY_BEETLE_DEVICE, bittelDevice).apply()
+    fun setBittelDevice(context: Context , bittelDevice : String) {
+        val isNewDeviceConnection = getBittelDevice(context) != bittelDevice
+        if(isNewDeviceConnection) {
+            getPrefs(context).edit().putString(KEY_BEETLE_DEVICE, bittelDevice).apply()
+        }
+        setConnectedToUnknownDevice(context, isNewDeviceConnection)
     }
 
     fun removeBittelDevice(context: Context) : Boolean {
@@ -199,8 +205,8 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putString(KEY_BEETLE_DEVICE_NAME, bittelDeviceName).apply()
     }
 
-    fun getBittelDeviceName(context: Context) : String?{
-        return getPrefs(context).getString(KEY_BEETLE_DEVICE_NAME, "")
+    fun getBittelDeviceName(context: Context) : String {
+        return getPrefs(context).getString(KEY_BEETLE_DEVICE_NAME, "") ?: ""
     }
 
     fun removeBittelDeviceName(context: Context) : Boolean {
@@ -215,6 +221,22 @@ object SharedPreferencesUtil {
     fun getLicenses(context: Context) : License?{
         val licensesString = getPrefs(context).getString(KEY_LICENSES, "")
         return Gson().fromJson(licensesString, License::class.java)
+    }
+
+    fun getConnectedToUnknownDevice(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_CONNECTED_TO_UNKNOWN_DEVICE, false)
+    }
+
+    fun setConnectedToUnknownDevice(context: Context, isNewConnection: Boolean) {
+        return getPrefs(context).edit().putBoolean(KEY_CONNECTED_TO_UNKNOWN_DEVICE, isNewConnection).apply()
+    }
+
+    fun getUserInitialDeviceID(context: Context) : String {
+        return getPrefs(context).getString(KEY_INITIAL_DEVICE_ID, "") ?: ""
+    }
+
+    fun setUserInitialDeviceID(context: Context, deviceId: String) {
+        return getPrefs(context).edit().putString(KEY_INITIAL_DEVICE_ID, deviceId).apply()
     }
 
     fun getBittelDevice(context: Context) : String?{
