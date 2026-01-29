@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust.model
 import android.content.Context
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
@@ -104,7 +105,7 @@ data class StardustConfigurationPackage(
         val requiredFunctionalities = mutableSetOf<FunctionalityType>()
         for (xcvr in xcvrList) {
             // Actual: only for non-default frequency XCVRs
-            if (!xcvr.hasDefaultFrequency()) {
+            if (!xcvr.hasDefaultFrequency() && xcvr.functionality != StardustTypeFunctionality.ST) {
                 presetFunctionalities.addAll(xcvr.getOptions())
                 // Required: all allowed options with valid bitwise
                 requiredFunctionalities.addAll(
