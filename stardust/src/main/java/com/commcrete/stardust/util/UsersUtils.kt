@@ -122,17 +122,17 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName = contact?.displayName
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
+                    val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                    if(sentAsUserInGroup){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                         receiver = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                         sender?.let {
                             displayName = it.name
                         }
-                    }else {
+                    } else {
                         whoSent = bittelPackage.getSourceAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
-
                     }
                     contact?.lastUpdateTS = Date().time
                     contact?.lat = bittelSOSPackage.latitude.toDouble()
@@ -159,38 +159,16 @@ object UsersUtils {
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
 
-                    val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
 
                     if(sentAsUserInGroup) {
                         receiver?.let {
-                            saveChatItemSOS(it, bittelSOSPackage, chatsRepo)
+                            saveChatItemSOS(it, whoSent, bittelSOSPackage, chatsRepo)
                         }
                     } else {
                         sender?.let {
-                            saveChatItemSOS(it, bittelSOSPackage, chatsRepo)
+                            saveChatItemSOS(it, whoSent, bittelSOSPackage, chatsRepo)
                         }
                     }
-                        sender?.let {
-                        val text = when (bittelSOSPackage.sosType) {
-                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
-                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} event" }
-                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
-                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} event"}
-                            com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
-                                "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} event"}
-                            else -> {
-                                "Reporting S.O.S"}
-                        }
-                        it.message = Message(
-                            senderID = bittelPackage.getSourceAsString(),
-                            text = "$text",
-                            seen = false
-                        )
-//                        it.let { chatsRepo.addChat(it) }
-//                        val numOfUnread = it.numOfUnseenMessages
-//                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
-                    }
-
                 }
             } else if(isCreateNewUser) {
                 LocationUtils.createNewContact(bittelPackage)
@@ -201,22 +179,23 @@ object UsersUtils {
 
     fun saveChatItemSOS (
         chatItem: ChatItem,
+        senderID: String,
         bittelSOSPackage: StardustSOSPackage,
         chatsRepo: ChatsRepository
     ) {
         Scopes.getDefaultCoroutine().launch {
             val text = when (bittelSOSPackage.sosType) {
-                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} Event" }
-                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} Event"}
-                com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
-                    "Reporting ${com.commcrete.stardust.util.SOSUtils.SOS_TYPES_ARMY.LOST.sosName} Event"}
+                SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> {
+                    "Reporting ${SOSUtils.SOS_TYPES_ARMY.HOSTILE.sosName} Event" }
+                SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> {
+                    "Reporting ${SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.sosName} Event"}
+                SOSUtils.SOS_TYPES_ARMY.LOST.type -> {
+                    "Reporting ${SOSUtils.SOS_TYPES_ARMY.LOST.sosName} Event"}
                 else -> {
                     "Reporting S.O.S"}
             }
             chatItem.message = Message(
-                senderID = chatItem.chat_id,
+                senderID = senderID,
                 text = "$text",
                 seen = false
             )
@@ -230,7 +209,7 @@ object UsersUtils {
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var sender : ChatItem? = null
+            var chatItem : ChatItem? = null
             if(chatContact != null) {
                 chatContact.let {
                     var contact : ChatContact? = it
@@ -238,23 +217,17 @@ object UsersUtils {
                     var displayName = contact?.displayName
                     if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                         whoSent = bittelPackage.getDestAsString()
-                        sender = chatsRepo.getChatByBittelID(whoSent)
-                        sender?.let {
-                            displayName = it.name
-                        }
+                        chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
+                        displayName = chatsRepo.getChatByBittelID(bittelPackage.getDestAsString())?.name
                     }else {
                         whoSent = bittelPackage.getSourceAsString()
-                        sender = chatsRepo.getChatByBittelID(whoSent)
-
+                        chatItem = chatsRepo.getChatByBittelID(whoSent)
                     }
                     contact?.lastUpdateTS = Date().time
                     contact?.lat = bittelSOSPackage.latitude.toDouble()
                     contact?.lon = bittelSOSPackage.longitude.toDouble()
                     contact?.isSOS = true
                     contact?.let { it1 -> contactsRepository.addContact(it1) }
-                    Scopes.getMainCoroutine().launch {
-//                        Toast.makeText(DataManager.context, "SOS Received From : ${contact?.displayName  }", Toast.LENGTH_LONG ).show()
-                    }
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
@@ -268,15 +241,15 @@ object UsersUtils {
                         carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)
 
-                    sender?.let {
-                        it.message = Message(
-                            senderID = bittelPackage.getSourceAsString(),
+                    chatItem?.let { chatItem ->
+                        chatItem.message = Message(
+                            senderID = whoSent,
                             text = "Reporting S.O.S",
                             seen = false
                         )
-                        it.let { chatsRepo.addChat(it) }
-                        val numOfUnread = it.numOfUnseenMessages
-                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
+                        chatsRepo.addChat(chatItem)
+                        val numOfUnread = chatItem.numOfUnseenMessages
+                        chatsRepo.updateNumOfUnseenMessages(chatItem.chat_id, numOfUnread+1)
                     }
 
                 }
