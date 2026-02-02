@@ -272,23 +272,15 @@ object FileUtils {
 
         val pid = android.os.Process.myPid()
 
-        // Clear buffer first (optional but recommended)
-        Runtime.getRuntime().exec("logcat -c")
-
         val command = arrayOf(
             "logcat",
             "--pid=$pid",
-            "-d",                 // dump and exit
-            "-v", "time"          // timestamped format
+            "-v", "time",
+            "-f", logFile.absolutePath,  // write directly to file
+            "-d"                         // dump and exit
         )
 
-        val process = Runtime.getRuntime().exec(command)
-
-        process.inputStream.use { input ->
-            FileOutputStream(logFile).use { output ->
-                input.copyTo(output)
-            }
-        }
+        Runtime.getRuntime().exec(command)?.waitFor()
 
         return logFile
     }
