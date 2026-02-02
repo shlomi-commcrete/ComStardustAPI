@@ -349,14 +349,34 @@ object PlayerUtils : BleMediaConnector() {
                     val value = 1*40
                     val size = 1/4*320 // Specify the desired size of your byte array
                     val byteArray = ByteArray(size) { 0.toByte() }
-                    Scopes.getDefaultCoroutine().launch{
-                        track?.let {
-                            if(DataManager.isPlayPttFromSdk) {
-                                synchronized(it) {
-                                    if (audioData.size >= value) {
-                                        it.write(audioData, 0, audioData.size)
+                    Scopes.getDefaultCoroutine().launch {
+                        track?.let { audioTrack ->
+                            // Only proceed if we want to play from SDK
+                            if (DataManager.isPlayPttFromSdk) {
+
+                                // Synchronize access to prevent race conditions
+                                synchronized(audioTrack) {
+                                    // Make sure track is initialized and in PLAYSTATE_PLAYING
+                                    if (audioTrack.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                                        try {
+                                            audioTrack.play()
+                                        } catch (e: IllegalStateException) {
+                                            Log.e("AudioTrack", "Failed to start playback: ${e.message}")
+                                            return@synchronized
+                                        }
                                     }
 
+                                    // Check audio data size
+                                    if (audioData.isNotEmpty() && audioData.size >= value) {
+                                        try {
+                                            val bytesWritten = audioTrack.write(audioData, 0, audioData.size)
+                                            if (bytesWritten < 0) {
+                                                Log.e("AudioTrack", "AudioTrack write failed with code $bytesWritten")
+                                            }
+                                        } catch (e: IllegalStateException) {
+                                            Log.e("AudioTrack", "AudioTrack write failed: ${e.message}")
+                                        }
+                                    }
                                 }
                             }
                         }

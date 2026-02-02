@@ -219,7 +219,7 @@ object UsersUtils {
                         whoSent = bittelPackage.getDestAsString()
                         chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                         displayName = chatsRepo.getChatByBittelID(bittelPackage.getDestAsString())?.name
-                    }else {
+                    } else {
                         whoSent = bittelPackage.getSourceAsString()
                         chatItem = chatsRepo.getChatByBittelID(whoSent)
                     }
