@@ -215,11 +215,11 @@ object PlayerUtils : BleMediaConnector() {
         setTs()
 
         pttScope.launch {
-            if (!isFileInit) {
-                initPttInputFile(context, receiverID, senderID, snifferContacts)
-            }
 
             runCatching {
+                if (!isFileInit) {
+                    initPttInputFile(context, receiverID, senderID, snifferContacts)
+                }
                 if (shouldHandleAudio) {
                     byteArrayOutputStream.write(pttAudio)
                 }

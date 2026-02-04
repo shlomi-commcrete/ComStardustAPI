@@ -16,6 +16,7 @@ import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
+import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -86,18 +87,14 @@ object ButtonListener {
 
     @SuppressLint("MissingPermission")
     fun dismissPttRecording (context: Context, chatID: String, file: File?) {
-        val registerUser = getAppUser(context)
-        registerUser?.appId?.let {
-            stopPTT(context, StardustAPIPackage(it, chatID, false, null), SharedPreferencesUtil.getCodecType(DataManager.context), file)
-        }
+        val pttPackage = StardustAPIPackage(UsersUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
+        stopPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context), file)
     }
 
     @SuppressLint("MissingPermission")
     fun startPttRecord(context: Context, chatID : String): File? {
-        val registerUser = getAppUser(context)
-        return registerUser?.appId?.let {
-            startPTT(context,StardustAPIPackage(it, chatID, false, null), SharedPreferencesUtil.getCodecType(DataManager.context))
-        }
+        val pttPackage = StardustAPIPackage(UsersUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
+        return startPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context))
     }
 
     fun setupMediaSession(context: Context) {

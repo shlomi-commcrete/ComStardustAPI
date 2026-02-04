@@ -56,45 +56,80 @@ class AudioRecorderAI(
     var onError: ((Throwable) -> Unit)? = null
 
     // Public state
-    val isRecording: Boolean get() = running.get()
+    val isRecording: Boolean
+        get() = job?.isActive == true
 
     // Internal
     private val running = AtomicBoolean(false)
+
+    @Volatile
     private var job: Job? = null
 
     private val bytesPerSample = bitsPerSample / 8
     private val samplesPerChunk = (sampleRate * chunkDurationMs / 1000.0).toInt() // 24,000
     private val bytesPerChunk = samplesPerChunk * bytesPerSample * channels
 
+
+
     fun start() {
         Log.d("AudioRecorder", "Starting audio recorder")
-        if (running.getAndSet(true)) return
-        job = scope.launch {
-            onStateChanged?.invoke(true)
-            try {
-                recordLoop()
-            } catch (t: Throwable) {
-                onError?.invoke(t)
-            } finally {
-                running.set(false)
-                onStateChanged?.invoke(false)
+        synchronized(this) {
+            // Already running or cancelling
+            if (job?.isActive == true) return
+
+            job = scope.launch {
+                onStateChanged?.invoke(true)
+                try {
+                    recordLoop()
+                } catch (t: CancellationException) {
+                    // normal cancellation — ignore
+                } catch (t: Throwable) {
+                    onError?.invoke(t)
+                } finally {
+                    onStateChanged?.invoke(false)
+                }
             }
         }
     }
 
+
     fun stop() {
-        running.set(false)
-        job?.cancel()
+        synchronized(this) {
+            job?.cancel()
+        }
 
         disableBluetoothSco()
     }
+
+//    fun start() {
+//        Log.d("AudioRecorder", "Starting audio recorder")
+//        if (running.getAndSet(true)) return
+//        job = scope.launch {
+//            onStateChanged?.invoke(true)
+//            try {
+//                recordLoop()
+//            } catch (t: Throwable) {
+//                onError?.invoke(t)
+//            } finally {
+//                running.set(false)
+//                onStateChanged?.invoke(false)
+//            }
+//        }
+//    }
+
+//    fun stop() {
+//        running.set(false)
+//        job?.cancel()
+//
+//        disableBluetoothSco()
+//    }
 
     fun release() {
         stop()
     }
 
     @SuppressLint("MissingPermission")
-    private suspend fun recordLoop() {
+    private suspend fun recordLoop() = withContext(Dispatchers.IO) {
         Log.d("AudioRecorder", "recordLoop")
 
         val gain = SharedPreferencesUtil.getAIGain(context) / 100f
@@ -106,11 +141,11 @@ class AudioRecorderAI(
             AudioFormat.ENCODING_PCM_16BIT
         )
 
-        if (minBuffer == AudioRecord.ERROR || minBuffer == AudioRecord.ERROR_BAD_VALUE) {
-            throw IllegalStateException("Unsupported sample rate or format")
-        }
+        require(minBuffer > 0) { "Unsupported sample rate or format" }
 
-        val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
+        val recordBufferSize =
+            (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
+
         val audioRecord = AudioRecord(
             SharedPreferencesUtil.getAIAudioSource(context),
             sampleRate,
@@ -119,73 +154,166 @@ class AudioRecorderAI(
             recordBufferSize
         )
 
-//        try {
-//            val sessionId = audioRecord.audioSessionId
-//
-//            if (AutomaticGainControl.isAvailable()) {
-//                AutomaticGainControl.create(sessionId)?.enabled = false
-//            }
-//            if (NoiseSuppressor.isAvailable()) {
-//                NoiseSuppressor.create(sessionId)?.enabled = false
-//            }
-//            if (AcousticEchoCanceler.isAvailable()) {
-//                AcousticEchoCanceler.create(sessionId)?.enabled = false
-//            }
-//        }catch ( e : Exception) {
-//            e.printStackTrace()
-//        }
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord.release()
             throw IllegalStateException("AudioRecord initialization failed")
+        }
+
+        // 🔑 Force AudioRecord to unblock when coroutine is cancelled
+        coroutineContext.job.invokeOnCompletion {
+            try {
+                audioRecord.stop()
+            } catch (_: Exception) {}
         }
 
         val shortBuffer = ShortArray(sampleRate / 100)
         val chunkSamples = ShortArray(samplesPerChunk)
         var chunkSampleIndex = 0
         var chunkIndex = 1
-        Log.d("AudioRecorder", "startRecording")
 
         audioRecord.startRecording()
 
         try {
-
-            while (coroutineContext.isActive && running.get()) {
-//                Log.d("AudioRecorder", "while recording")
+            while (isActive) {
                 val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
                 if (read <= 0) continue
 
                 var consumed = 0
-                while (consumed < read) {
-                    val remainingInChunk = samplesPerChunk - chunkSampleIndex
-                    val toCopy = minOf(remainingInChunk, read - consumed)
-                    System.arraycopy(shortBuffer, consumed, chunkSamples, chunkSampleIndex, toCopy)
+                while (consumed < read && isActive) {
+                    val remaining = samplesPerChunk - chunkSampleIndex
+                    val toCopy = minOf(remaining, read - consumed)
+
+                    System.arraycopy(
+                        shortBuffer,
+                        consumed,
+                        chunkSamples,
+                        chunkSampleIndex,
+                        toCopy
+                    )
+
                     chunkSampleIndex += toCopy
                     consumed += toCopy
 
                     if (chunkSampleIndex == samplesPerChunk) {
-                        Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
-
-                        val processedSamples: ShortArray = processSamples(chunkSamples, gain)
-                        onChunkReady?.invoke(processedSamples, chunkIndex)
-                        chunkIndex++
+                        val processed = processSamples(chunkSamples, gain)
+                        onChunkReady?.invoke(processed, chunkIndex++)
                         chunkSampleIndex = 0
                     }
                 }
             }
         } finally {
             try {
-                audioRecord.stop()
-                // Optionally flush partial chunk
                 if (chunkSampleIndex > 0) {
-                    val samples = chunkSamples.copyOf(chunkSampleIndex)
-                    val partial = processSamples(samples, gain)
+                    val partial = processSamples(
+                        chunkSamples.copyOf(chunkSampleIndex),
+                        gain
+                    )
                     onPartialFinalChunk?.invoke(partial, chunkIndex)
                 }
-                audioRecord.release()
             } catch (_: Exception) {}
+
+            try {
+                audioRecord.stop()
+            } catch (_: Exception) {}
+
             audioRecord.release()
+            disableBluetoothSco()
         }
     }
+
+//    @SuppressLint("MissingPermission")
+//    private suspend fun recordLoop() {
+//        Log.d("AudioRecorder", "recordLoop")
+//
+//        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
+//        enableBluetoothSco()
+//
+//        val minBuffer = AudioRecord.getMinBufferSize(
+//            sampleRate,
+//            AudioFormat.CHANNEL_IN_MONO,
+//            AudioFormat.ENCODING_PCM_16BIT
+//        )
+//
+//        if (minBuffer == AudioRecord.ERROR || minBuffer == AudioRecord.ERROR_BAD_VALUE) {
+//            throw IllegalStateException("Unsupported sample rate or format")
+//        }
+//
+//        val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
+//        val audioRecord = AudioRecord(
+//            SharedPreferencesUtil.getAIAudioSource(context),
+//            sampleRate,
+//            AudioFormat.CHANNEL_IN_MONO,
+//            AudioFormat.ENCODING_PCM_16BIT,
+//            recordBufferSize
+//        )
+//
+////        try {
+////            val sessionId = audioRecord.audioSessionId
+////
+////            if (AutomaticGainControl.isAvailable()) {
+////                AutomaticGainControl.create(sessionId)?.enabled = false
+////            }
+////            if (NoiseSuppressor.isAvailable()) {
+////                NoiseSuppressor.create(sessionId)?.enabled = false
+////            }
+////            if (AcousticEchoCanceler.isAvailable()) {
+////                AcousticEchoCanceler.create(sessionId)?.enabled = false
+////            }
+////        }catch ( e : Exception) {
+////            e.printStackTrace()
+////        }
+//        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+//            audioRecord.release()
+//            throw IllegalStateException("AudioRecord initialization failed")
+//        }
+//
+//        val shortBuffer = ShortArray(sampleRate / 100)
+//        val chunkSamples = ShortArray(samplesPerChunk)
+//        var chunkSampleIndex = 0
+//        var chunkIndex = 1
+//        Log.d("AudioRecorder", "startRecording")
+//
+//        audioRecord.startRecording()
+//
+//        try {
+//
+//            while (coroutineContext.isActive && running.get()) {
+////                Log.d("AudioRecorder", "while recording")
+//                val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
+//                if (read <= 0) continue
+//
+//                var consumed = 0
+//                while (consumed < read) {
+//                    val remainingInChunk = samplesPerChunk - chunkSampleIndex
+//                    val toCopy = minOf(remainingInChunk, read - consumed)
+//                    System.arraycopy(shortBuffer, consumed, chunkSamples, chunkSampleIndex, toCopy)
+//                    chunkSampleIndex += toCopy
+//                    consumed += toCopy
+//
+//                    if (chunkSampleIndex == samplesPerChunk) {
+//                        Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
+//
+//                        val processedSamples: ShortArray = processSamples(chunkSamples, gain)
+//                        onChunkReady?.invoke(processedSamples, chunkIndex)
+//                        chunkIndex++
+//                        chunkSampleIndex = 0
+//                    }
+//                }
+//            }
+//        } finally {
+//            try {
+//                audioRecord.stop()
+//                // Optionally flush partial chunk
+//                if (chunkSampleIndex > 0) {
+//                    val samples = chunkSamples.copyOf(chunkSampleIndex)
+//                    val partial = processSamples(samples, gain)
+//                    onPartialFinalChunk?.invoke(partial, chunkIndex)
+//                }
+//                audioRecord.release()
+//            } catch (_: Exception) {}
+//            audioRecord.release()
+//        }
+//    }
 
     private fun processSamples(samples: ShortArray, gain: Float) = samples.map { sample ->
         (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
