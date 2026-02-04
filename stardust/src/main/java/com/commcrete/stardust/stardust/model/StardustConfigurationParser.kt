@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust.model
 
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import kotlin.collections.reversedArray
 
 class StardustConfigurationParser : StardustParser() {
 
@@ -278,6 +279,7 @@ class StardustConfigurationParser : StardustParser() {
                     snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
                     stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
+                    sosDestinations = parseSosDestinations(SOSDataBytes),
                     deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
                     deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
                     antenna = AntennaType.entries[byteArrayToInt(antennaBytes)],
@@ -295,6 +297,25 @@ class StardustConfigurationParser : StardustParser() {
 
         }
         return null
+    }
+
+    private fun parseSosDestinations(bytes: ByteArray): List<String> {
+        val headerSize = 1
+        val idSize = 4
+        val expectedSize = headerSize + idSize * 2
+
+        if (bytes.size < expectedSize) return emptyList()
+
+        fun extractId(offset: Int): String =
+            bytes.copyOfRange(offset, offset + idSize)
+                .reversedArray()
+                .toHex()
+                .take(idSize * 2) // 8 hex chars, safe
+
+        return listOf(
+            extractId(headerSize),
+            extractId(headerSize + idSize)
+        )
     }
 
 

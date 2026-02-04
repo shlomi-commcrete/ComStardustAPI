@@ -4,7 +4,6 @@ import android.content.Context
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
-import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
@@ -40,7 +39,8 @@ data class StardustConfigurationPackage(
     var rdpLevel: StardustConfigurationParser.StardustRDPLevel,
     var licenseType: LicenseType,
     val deviceModel: String,
-    val deviceSerial: String
+    val deviceSerial: String,
+    val sosDestinations: List<String>
 ) {
     private val TAG = "PresetValidation"
 
