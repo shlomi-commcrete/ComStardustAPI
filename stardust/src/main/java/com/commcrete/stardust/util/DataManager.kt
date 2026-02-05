@@ -261,10 +261,10 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
 
-    override fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
+    override fun sendRealSOS(context: Context, location: Location) {
         requireContext(context)
         Scopes.getDefaultCoroutine().launch {
-            SOSUtils.sendSos(context = context, location = location, stardustAPIPackage = stardustAPIPackage)
+            SOSUtils.sendSos(context = context, location = location)
         }
     }
 

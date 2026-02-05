@@ -37,7 +37,7 @@ interface StardustAPI {
     fun logout(context: Context)
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (context: Context) : List<Carrier>?
-    fun sendRealSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun sendRealSOS(context: Context, location: Location)
     fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage)
     fun setSecurityKey(context: Context, key: String, name : String)
     fun setSecurityKeyDefault(context: Context)

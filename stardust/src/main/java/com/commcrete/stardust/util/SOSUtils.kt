@@ -60,21 +60,28 @@ object SOSUtils {
         }
     }
 
-    fun sendSos (context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
+    fun sendSos (context: Context, location: Location) {
         DataManager.getClientConnection(context).let {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                var data : Array<Int> = arrayOf()
-                data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-                val sosMessage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = appId,
-                    destenation = stardustAPIPackage.destination,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
-                    data = data)
-                it.addMessageToQueue(sosMessage)
-                saveSOSSent(context, 0 ,stardustAPIPackage, location)
+            var data : Array<Int> = arrayOf()
+            data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
+            val user = UsersUtils.mRegisterUser ?: return
+            val appId = user.appId ?: return
+            val deviceId = user.bittelId ?: return
+            val sosMessage = StardustPackageUtils.getStardustPackage(
+                context = context,
+                source = appId,
+                destenation = deviceId,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
+                data = data)
+            it.addMessageToQueue(sosMessage)
 
-            }
+            val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
+            val sosPackage = StardustAPIPackage(
+                source = appId,
+                destination = realSOSDest ?: deviceId,
+                requireAck = true
+            )
+            saveSOSSent(context, 0 , sosPackage, location)
         }
     }
 
