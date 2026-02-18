@@ -524,6 +524,9 @@ internal class ClientConnection(
             }
         }
         mDevice = null
+        Scopes.getMainCoroutine().launch {
+            com.commcrete.stardust.ble.BleManager.isPaired.value = false
+        }
     }
 
     @SuppressLint("MissingPermission")
