@@ -235,7 +235,7 @@ object SnifferManager {
 }
 
 fun isMyId(myId : String, sender : String?, receiver : String?) : Boolean {
-    return sender == myId || receiver == myId
+    return sender.equals(myId, ignoreCase = true) || receiver.equals(myId, ignoreCase = true)
 }
 
 fun isLocalGroup(sender : String?, receiver : String?) : Boolean {

@@ -24,13 +24,13 @@ interface MessagesDao {
     @Update
     suspend fun updateMessage(messageItem: MessageItem)
 
-    @Query("SELECT * FROM messages_table WHERE chatId COLLATE NOCASE = :chatId AND isArchived = 0 ORDER BY epochTimeMs ASC")
+    @Query("SELECT * FROM messages_table WHERE LOWER(chatId) = LOWER(:chatId) AND isArchived = 0 ORDER BY epochTimeMs ASC")
     fun getAllMessagesByChatId(chatId : String) : LiveData<MutableList<MessageItem>>
 
     @Query("""
         SELECT * 
         FROM messages_table 
-        WHERE chatId COLLATE NOCASE = :chatId 
+        WHERE LOWER(chatId) = LOWER(:chatId)
         AND isArchived = 0 
         AND epochTimeMs BETWEEN :startTimestamp AND :endTimestamp
         ORDER BY epochTimeMs ASC """)
@@ -43,7 +43,7 @@ interface MessagesDao {
     @Query("""
         SELECT * 
         FROM messages_table 
-        WHERE chatId COLLATE NOCASE = :chatId
+        WHERE LOWER(chatId) = LOWER(:chatId)
         AND isArchived = 0
         AND epochTimeMs BETWEEN :startTimestamp AND :endTimestamp
         ORDER BY epochTimeMs DESC
@@ -60,7 +60,7 @@ interface MessagesDao {
     @Query("""
         SELECT * 
         FROM messages_table 
-        WHERE chatId COLLATE NOCASE = :chatId  
+        WHERE LOWER(chatId) = LOWER(:chatId)
         AND isArchived = 0 
         AND is_audio = 1 
         ORDER BY epochTimeMs ASC""")
@@ -69,7 +69,7 @@ interface MessagesDao {
     @Query("""
         SELECT * 
         FROM messages_table 
-        WHERE chatId COLLATE NOCASE = :chatId  
+        WHERE LOWER(chatId) = LOWER(:chatId) 
         AND isArchived = 0 
         AND is_audio = 1 
         AND epochTimeMs BETWEEN :startTimestamp AND :endTimestamp
@@ -84,36 +84,36 @@ interface MessagesDao {
     @Query("""
         SELECT * 
         FROM messages_table 
-        WHERE chatId COLLATE NOCASE = :chatId 
+        WHERE LOWER(chatId) = LOWER(:chatId)
         AND isArchived = 0 
         AND is_audio = 1 
         ORDER BY epochTimeMs 
         ASC LIMIT 1""")
     fun getLastPttMessage(chatId : String) : MessageItem?
 
-    @Query("DELETE FROM messages_table WHERE chatId COLLATE NOCASE = :chatId")
+    @Query("DELETE FROM messages_table WHERE LOWER(chatId) = LOWER(:chatId)")
     fun clearChat(chatId : String)
 
-    @Query("DELETE FROM messages_table WHERE chatId COLLATE NOCASE = :chatId AND epochTimeMs >= :startTimestamp AND epochTimeMs < :endTimestamp")
+    @Query("DELETE FROM messages_table WHERE LOWER(chatId) = LOWER(:chatId) AND epochTimeMs >= :startTimestamp AND epochTimeMs < :endTimestamp")
     suspend fun clearChatInRange(chatId : String,
                          startTimestamp: Long,
                          endTimestamp: Long)
 
-    @Query("UPDATE messages_table SET seen=:isSeen WHERE chatId COLLATE NOCASE = :chatId ")
+    @Query("UPDATE messages_table SET seen=:isSeen WHERE LOWER(chatId) = LOWER(:chatId)")
     suspend fun updateSeenMessages(chatId: String, isSeen : Boolean = true)
 
     @Query("""
         UPDATE messages_table 
         SET isArchived=:isArchived 
-        WHERE (:chatId IS NULL OR chatId COLLATE NOCASE = :chatId)
+        WHERE LOWER(chatId) = LOWER(:chatId)
         AND epochTimeMs BETWEEN :startTimestamp AND :endTimestamp""")
     suspend fun updateMessagesArchivedState(chatId: String?,
                                        startTimestamp: Long,
                                        endTimestamp: Long,
                                        isArchived : Boolean = true)
 
-    @Query("UPDATE messages_table SET seen=2 WHERE  chatId=:chatid AND id_number=:messageNumber")
-    suspend fun updateAckReceived (chatid: String, messageNumber: Long)
+    @Query("UPDATE messages_table SET seen=2 WHERE LOWER(chatId) = LOWER(:chatId) AND id_number=:messageNumber")
+    suspend fun updateAckReceived (chatId: String, messageNumber: Long)
 
     @Query("DELETE FROM messages_table")
     fun clearData()

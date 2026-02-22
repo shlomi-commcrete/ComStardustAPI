@@ -28,24 +28,24 @@ interface ChatsDao {
     fun readChats() : List<ChatItem>
     @Query("""
       SELECT * 
-        FROM chats_table 
-       WHERE LOWER(chat_id) = LOWER(:chatId) 
-       LIMIT 1
+      FROM chats_table 
+      WHERE LOWER(chat_id) = LOWER(:chatId) 
+      LIMIT 1
     """)
     fun getChat(chatId: String): LiveData<ChatItem>
 
-    @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE  chat_id=:chatId")
+    @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun updateChatAudioReceived(chatId: String, isAudioReceived : Boolean)
 
-    @Query("UPDATE chats_table SET chat_name=:name WHERE  chat_id=:chatId")
+    @Query("UPDATE chats_table SET chat_name=:name WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun updateChatName(chatId: String, name : String)
 
-    @Query("UPDATE chats_table SET displayName=:name WHERE  chat_id=:chatId")
+    @Query("UPDATE chats_table SET displayName=:name WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun updateDisplayName(chatId: String, name : String)
 
-    @Query("UPDATE chats_table SET numOfUnseenMessages=:numOfUnsentMessages WHERE  chat_id=:chatId")
+    @Query("UPDATE chats_table SET numOfUnseenMessages=:numOfUnsentMessages WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun updateNumOfUnseenMessages(chatId: String, numOfUnsentMessages: Int)
-    @Query("UPDATE chats_table SET enable_background_ptt=:enableBackgroundPtt WHERE  chat_id=:chatId")
+    @Query("UPDATE chats_table SET enable_background_ptt=:enableBackgroundPtt WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun updateChatBackgroundPttEnable(chatId: String, enableBackgroundPtt : Boolean)
 
     @Query("""
@@ -61,11 +61,11 @@ interface ChatsDao {
     suspend fun resetChatsMessages()
 
 
-//    @Query("UPDATE chats_table SET online=:isOnline WHERE  chat_id=:chatId")
+//    @Query("UPDATE chats_table SET online=:isOnline WHERE  LOWER(chat_id) = LOWER(:chatId) ")
 //    suspend fun updateOnlineStatus(chatId: String, isOnline : Boolean)
 
 
-//    @Query("UPDATE chats_table SET pttEnabled=:isPTTEnable WHERE  chat_id=:chatId")
+//    @Query("UPDATE chats_table SET pttEnabled=:isPTTEnable WHERE LOWER(chat_id) = LOWER(:chatId) ")
 //    suspend fun updateEnablePtt(chatId: String, isPTTEnable : Boolean)
 
     @Query("SELECT chat_id FROM chats_table WHERE is_group = 1 ")
@@ -82,6 +82,6 @@ interface ChatsDao {
     @Query("DELETE FROM chats_table")
     suspend fun clearData()
 
-    @Query("DELETE FROM chats_table WHERE chat_id=:chatId")
+    @Query("DELETE FROM chats_table WHERE LOWER(chat_id) = LOWER(:chatId) ")
     suspend fun deleteUser(chatId: String)
 }

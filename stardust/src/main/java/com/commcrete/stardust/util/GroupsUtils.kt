@@ -108,29 +108,11 @@ object GroupsUtils {
         }
     }
 
-    fun isGroup (context: Context, id : String, onGroupCallback : (Boolean) -> Unit) {
-        return onGroupCallback(groupsIds.contains(id))
-//        Scopes.getDefaultCoroutine().launch {
-//            val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
-//            val isGroup = user?.isGroup ?: false
-//            onGroupCallback(isGroup)
-//        }
-    }
-
-    suspend fun isGroup (context: Context, id : String) : Boolean {
-//        val user = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getChatByBittelID(id)
-//        return user?.isGroup ?: false
-        return groupsIds.contains(id)
-    }
-
-
     fun isGroup (id : String?) : Boolean {
         if(id == null) {
             return false
         }
-//        val user = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).getChatByBittelID(id)
-//        return user?.isGroup ?: false
-        return groupsIds.contains(id)
+        return groupsIds.any { it.equals(id, ignoreCase = true) }
     }
 
     fun clearData() {

@@ -112,7 +112,7 @@ object DemoDataUtil {
         val iterator = demoUser.mutableUserList.iterator()
         while (iterator.hasNext()) {
             val user = iterator.next()
-            if(userId == user.chat_id){
+            if(userId.equals(user.chat_id, ignoreCase = true)){
                 setLocalUser(user)
                 iterator.remove()
                 isFoundUser = true

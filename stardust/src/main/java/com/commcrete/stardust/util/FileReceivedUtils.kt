@@ -41,11 +41,11 @@ object FileReceivedUtils {
     private fun getData (context: Context, bittelFilePackage: StardustFilePackage, bittelPackage: StardustPackage) {
 
         for (fileStart in fileReceivedDataList) {
-            if(fileStart.bittelPackage != null &&
-                fileStart.bittelPackage.getSourceAsString() == bittelPackage.getSourceAsString() &&
-                fileStart.bittelPackage.getDestAsString() == bittelPackage.getDestAsString() &&
-                fileStart.bittelPackage.stardustControlByte.stardustDeliveryType ==
-                bittelPackage.stardustControlByte.stardustDeliveryType) {
+            if(fileStart.bittelPackage != null
+                && fileStart.bittelPackage.getSourceAsString().equals(bittelPackage.getSourceAsString(), ignoreCase = true)
+                && fileStart.bittelPackage.getDestAsString().equals(bittelPackage.getDestAsString(), ignoreCase = true)
+                && fileStart.bittelPackage.stardustControlByte.stardustDeliveryType == bittelPackage.stardustControlByte.stardustDeliveryType)
+            {
                 fileStart.dataList.add(bittelFilePackage)
                 Log.d("FileReceivedUtils", "dataList.put : ${bittelFilePackage.current}")
                 fileStart.updateProgress (context)
@@ -81,7 +81,7 @@ object FileReceivedUtils {
 
                         val srcID = bittelPackage.getSourceAsString()
 
-                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)) {
+                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true))) {
                             whoSent = bittelPackage.getDestAsString()
                             chatsRepo.getChatByBittelID(whoSent)?.let {
                                 displayName = it.name

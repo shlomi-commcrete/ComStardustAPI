@@ -353,7 +353,7 @@ object DataManager : StardustAPI, PttInterface{
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
             getClientConnection(context).bondToBleDeviceStartup(bondedDevice)
         } else {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SUCCESS)
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         }
     }
 
