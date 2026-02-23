@@ -164,7 +164,7 @@ object AudioReceiverManager {
         val source = stardustPackage.getSourceAsString()
         if (source.isEmpty()) return
 
-        val sentAsUserInGroup = GroupsUtils.isGroup(source) && (stardustPackage.getDestAsString() != mRegisterUser?.appId)
+        val sentAsUserInGroup = GroupsUtils.isGroup(source) && !stardustPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)
         val from = if (sentAsUserInGroup) {
             stardustPackage.getDestAsString()
         } else {

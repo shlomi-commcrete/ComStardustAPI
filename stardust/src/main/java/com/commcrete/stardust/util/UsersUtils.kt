@@ -123,7 +123,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName: String? = null
-                    val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                    val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)
                     if(sentAsUserInGroup){
                         whoSent = bittelPackage.getDestAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
@@ -217,7 +217,7 @@ object UsersUtils {
                     var contact : ChatContact? = it
                     var whoSent = ""
                     var displayName: String? = null
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
+                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
                         whoSent = bittelPackage.getDestAsString()
                         chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                         displayName = chatsRepo.getChatByBittelID(bittelPackage.getDestAsString())?.name
@@ -276,7 +276,7 @@ object UsersUtils {
                         contact.appId?.let { appIdArray ->
                             var whoSent = ""
                             var displayName: String? = null
-                            if(chat.isGroup && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
+                            if(chat.isGroup && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
                                 whoSent = bittelPackage.getDestAsString()
                                 val sender = chatsRepo.getChatByBittelID(whoSent)
                                 sender?.let {

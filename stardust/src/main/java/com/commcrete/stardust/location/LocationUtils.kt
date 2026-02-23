@@ -67,7 +67,7 @@ object LocationUtils  {
                     var whoSent = ""
                     var displayName: String? = null
                     val srcID = bittelPackage.getSourceAsString()
-                    if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
+                    if(GroupsUtils.isGroup(srcID) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
                         whoSent = bittelPackage.getDestAsString()
                         chatsRepo.getChatByBittelID(whoSent)?.let {
                             displayName = it.name

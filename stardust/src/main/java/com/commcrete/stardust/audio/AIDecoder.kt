@@ -12,7 +12,7 @@ class AIDecoder {
 
     fun decode (stardustPackage: StardustPackage, onPcmReady: ((ShortArray) -> Unit)? = null) {
         var from = stardustPackage.getSourceAsString()
-        val sentAsUserInGroup = GroupsUtils.isGroup(from) && (stardustPackage.getDestAsString() != mRegisterUser?.appId)
+        val sentAsUserInGroup = GroupsUtils.isGroup(from) && !stardustPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)
         if(sentAsUserInGroup) {
             from = stardustPackage.getDestAsString()
         }

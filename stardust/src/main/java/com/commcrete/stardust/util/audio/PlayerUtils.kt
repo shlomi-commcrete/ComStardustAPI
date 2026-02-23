@@ -608,7 +608,7 @@ object PlayerUtils : BleMediaConnector() {
             if(bittelPackage.getSourceAsString().isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
                 var realSource = bittelPackage.getSourceAsString()
-                val sentAsUserInGroup = GroupsUtils.isGroup(realSource) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
+                val sentAsUserInGroup = GroupsUtils.isGroup(realSource) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)
                 if(sentAsUserInGroup) {
                     realSource = bittelPackage.getDestAsString()
                 }
