@@ -652,13 +652,11 @@ object SharedPreferencesUtil {
     }
 
     fun getIsManualLocation (context: Context) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        return getPrefsPlugin(context).getBoolean(KEY_LOCATION_MANUAL, false)
+        return getPrefs(context).getBoolean(KEY_LOCATION_MANUAL, false)
     }
 
     fun setIsManualLocation (context: Context, isErased : Boolean)  {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefsPlugin(context).edit().putBoolean(KEY_LOCATION_MANUAL, isErased).apply()
+        getPrefs(context).edit().putBoolean(KEY_LOCATION_MANUAL, isErased).apply()
     }
 
     fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
