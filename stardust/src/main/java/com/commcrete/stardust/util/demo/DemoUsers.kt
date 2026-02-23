@@ -23,9 +23,9 @@ class DemoUsers {
         for (chat in userList) {
             val chatObj = chat as JsonObject
             for ((key, value) in chatObj.entrySet()) {
-                val appId = key.getSrcDestMin4Bytes()
+                val appId = key.getSrcDestMin4Bytes().trim()
                 val data = value as JsonObject
-                val bittelId = data.get("bittelId").asString
+                val bittelId = data.get("bittelId").asString.trim()
                 val name = data.get("chat_name").asString
                 val isSniffer = data.get("sniffer").asBoolean
                 var isGroup = false
@@ -51,13 +51,14 @@ class DemoUsers {
     fun initUserList (demoList : List<FolderReader.ExcelUser>, userId: String) {
         var loop = 0
         for (chat in demoList) {
-            val appId = chat.id
-            val bittelId = chat.deviceId.getSrcDestMin4Bytes()
+            val appId = chat.id.trim()
+            val bittelId = chat.deviceId.getSrcDestMin4Bytes().trim()
             val name = chat.name
-            val isSniffer = chat.type == "sniffer"
-            var isGroup = chat.type == "group"
-            var isBittel = (chat.type.toLowerCase() == "bittel" || chat.type.toLowerCase() == "stardust" ||
-                    chat.type.toLowerCase() == "device")
+            val isSniffer = chat.type.equals("sniffer", ignoreCase = true)
+            var isGroup = chat.type.equals("group", ignoreCase = true)
+            var isBittel = (chat.type.equals("bittel", ignoreCase = true)
+                    || chat.type.equals("stardust", ignoreCase = true)
+                    || chat.type.equals("device", ignoreCase = true))
             var image = chat.image
             if(chat.deviceId.isNotEmpty()) {
                 createDeviceUser(chat, userId, loop)

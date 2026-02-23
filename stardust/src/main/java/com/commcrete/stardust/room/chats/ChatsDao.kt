@@ -29,23 +29,23 @@ interface ChatsDao {
     @Query("""
       SELECT * 
       FROM chats_table 
-      WHERE LOWER(chat_id) = LOWER(:chatId) 
+      WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))
       LIMIT 1
     """)
     fun getChat(chatId: String): LiveData<ChatItem>
 
-    @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatAudioReceived(chatId: String, isAudioReceived : Boolean)
 
-    @Query("UPDATE chats_table SET chat_name=:name WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("UPDATE chats_table SET chat_name=:name WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatName(chatId: String, name : String)
 
-    @Query("UPDATE chats_table SET displayName=:name WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("UPDATE chats_table SET displayName=:name WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateDisplayName(chatId: String, name : String)
 
-    @Query("UPDATE chats_table SET numOfUnseenMessages=:numOfUnsentMessages WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("UPDATE chats_table SET numOfUnseenMessages=:numOfUnsentMessages WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateNumOfUnseenMessages(chatId: String, numOfUnsentMessages: Int)
-    @Query("UPDATE chats_table SET enable_background_ptt=:enableBackgroundPtt WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("UPDATE chats_table SET enable_background_ptt=:enableBackgroundPtt WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatBackgroundPttEnable(chatId: String, enableBackgroundPtt : Boolean)
 
     @Query("""
@@ -74,7 +74,7 @@ interface ChatsDao {
     @Query("""
       SELECT * 
         FROM chats_table 
-       WHERE LOWER(appId) LIKE '%' || LOWER(:bittelID) || '%' 
+       WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:bittelID))
        LIMIT 1
     """)
     suspend fun getChatContactByBittelID(bittelID: String): ChatItem?
@@ -82,6 +82,6 @@ interface ChatsDao {
     @Query("DELETE FROM chats_table")
     suspend fun clearData()
 
-    @Query("DELETE FROM chats_table WHERE LOWER(chat_id) = LOWER(:chatId) ")
+    @Query("DELETE FROM chats_table WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId)) ")
     suspend fun deleteUser(chatId: String)
 }

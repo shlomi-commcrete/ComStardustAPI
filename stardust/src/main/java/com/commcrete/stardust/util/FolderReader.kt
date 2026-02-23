@@ -14,7 +14,6 @@ import java.io.FileOutputStream
 import java.io.InputStream
 
 
-
 object FolderReader {
 
     private const val REQUEST_READ_EXTERNAL_STORAGE = 1020345

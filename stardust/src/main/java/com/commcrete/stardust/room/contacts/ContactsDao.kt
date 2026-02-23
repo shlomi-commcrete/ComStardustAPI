@@ -22,7 +22,7 @@ interface ContactsDao {
     @Query("""
       SELECT display_name
       FROM contacts_table
-      WHERE LOWER(chat_user_id) = LOWER(:userId)
+      WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
     fun getUserName(userId: String): String
@@ -30,7 +30,7 @@ interface ContactsDao {
     @Query("""
       SELECT *
       FROM contacts_table
-      WHERE LOWER(chat_user_id) = LOWER(:userId)
+      WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
     fun getChatContactById(userId: String): ChatContact
@@ -47,7 +47,7 @@ interface ContactsDao {
     @Query("""
       SELECT *
       FROM contacts_table
-      WHERE LOWER(bittel_id) = LOWER(:bittelID)
+      WHERE TRIM(LOWER(bittel_id)) = TRIM(LOWER(:bittelID))
       LIMIT 1
     """)
     fun getChatContactByBittelID(bittelID: String): ChatContact?
@@ -55,7 +55,7 @@ interface ContactsDao {
     @Query("""
       SELECT *
       FROM contacts_table
-      WHERE LOWER(smartphone_bittel_id) = LOWER(:bittelID) COLLATE NOCASE
+      WHERE TRIM(LOWER(smartphone_bittel_id)) = TRIM(LOWER(:bittelID))
       LIMIT 1
     """)
     fun getChatContactByAppBittelID(bittelID: String): ChatContact?
@@ -63,17 +63,17 @@ interface ContactsDao {
     @Query("""
       SELECT *
       FROM contacts_table
-      WHERE bittel_id LIKE '%' || :userId || '%' COLLATE NOCASE
+      WHERE TRIM(LOWER(bittel_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
     fun getChatContactByBittelId(userId: String): ChatContact
 
-    @Query("UPDATE contacts_table SET display_name = :name WHERE LOWER(chat_user_id) = LOWER(:chatId)")
+    @Query("UPDATE contacts_table SET display_name = :name WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatName(chatId: String, name: String)
 
     @Query("DELETE FROM contacts_table")
     fun clearData()
 
-    @Query("DELETE FROM contacts_table WHERE LOWER(chat_user_id) = LOWER(:userId)")
+    @Query("DELETE FROM contacts_table WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))")
     fun deleteContact(userId: String)
 }

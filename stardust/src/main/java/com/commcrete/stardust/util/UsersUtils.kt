@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import android.location.Location
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
@@ -121,7 +122,7 @@ object UsersUtils {
                 chatContact.let {
                     var contact : ChatContact? = it
                     var whoSent = ""
-                    var displayName = contact?.displayName
+                    var displayName: String? = null
                     val sentAsUserInGroup = GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)
                     if(sentAsUserInGroup){
                         whoSent = bittelPackage.getDestAsString()
@@ -131,6 +132,7 @@ object UsersUtils {
                             displayName = it.name
                         }
                     } else {
+                        displayName = contact?.displayName
                         whoSent = bittelPackage.getSourceAsString()
                         sender = chatsRepo.getChatByBittelID(whoSent)
                     }
@@ -145,7 +147,7 @@ object UsersUtils {
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
-                        senderName = displayName, chatId = bittelPackage.getSourceAsString(),  isSOS = true,
+                        senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(),  isSOS = true,
                         sosType = bittelSOSPackage.sosType)
                     MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
 
@@ -214,12 +216,13 @@ object UsersUtils {
                 chatContact.let {
                     var contact : ChatContact? = it
                     var whoSent = ""
-                    var displayName = contact?.displayName
+                    var displayName: String? = null
                     if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                         whoSent = bittelPackage.getDestAsString()
                         chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                         displayName = chatsRepo.getChatByBittelID(bittelPackage.getDestAsString())?.name
                     } else {
+                        displayName = contact?.displayName
                         whoSent = bittelPackage.getSourceAsString()
                         chatItem = chatsRepo.getChatByBittelID(whoSent)
                     }
@@ -231,7 +234,7 @@ object UsersUtils {
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
-                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
+                        senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
                     var location = Location(whoSent)
                     location.latitude = bittelSOSPackage.latitude.toDouble()
@@ -260,7 +263,7 @@ object UsersUtils {
         }
     }
     fun saveBittelMessageToDatabase(context: Context, bittelPackage: StardustPackage, isSOS : Boolean = false){
-        Scopes.getDefaultCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
             if(bittelPackage.getSourceAsString().isNotEmpty()){
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
                 var chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
@@ -271,16 +274,16 @@ object UsersUtils {
                     val chatContact = chat.user
                     chatContact?.let { contact ->
                         contact.appId?.let { appIdArray ->
-
                             var whoSent = ""
-                            var displayName = contact.displayName
+                            var displayName: String? = null
                             if(chat.isGroup && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                                 whoSent = bittelPackage.getDestAsString()
                                 val sender = chatsRepo.getChatByBittelID(whoSent)
                                 sender?.let {
                                     displayName = it.name
                                 }
-                            }else {
+                            } else {
+                                displayName = contact.displayName
                                 whoSent = appIdArray[0]
                             }
                             if(appIdArray.isNotEmpty()){
@@ -290,7 +293,7 @@ object UsersUtils {
                                 chatsRepo.addChat(chat)
                                 val messageItem =
                                     MessageItem(senderID = whoSent, text = text, epochTimeMs = Date().time,
-                                        chatId = appIdArray[0], seen = SeenStatus.SEEN, senderName = displayName, isSOS = isSOS)
+                                        chatId = appIdArray[0], seen = SeenStatus.SEEN, senderName = displayName ?: whoSent, isSOS = isSOS)
                                 saveMessageToDatabase(context, appIdArray[0], messageItem)
                                 val numOfUnread = chat.numOfUnseenMessages
                                 chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)

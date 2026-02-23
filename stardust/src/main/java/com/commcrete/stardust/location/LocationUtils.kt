@@ -65,7 +65,7 @@ object LocationUtils  {
                 chatContact.let { it ->
                     val contact = it
                     var whoSent = ""
-                    var displayName = contact.displayName
+                    var displayName: String? = null
                     val srcID = bittelPackage.getSourceAsString()
                     if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString() != mRegisterUser?.appId)){
                         whoSent = bittelPackage.getDestAsString()
@@ -73,6 +73,7 @@ object LocationUtils  {
                             displayName = it.name
                         }
                     } else {
+                        displayName = contact.displayName
                         whoSent = bittelPackage.getSourceAsString()
                     }
                     contact.lastUpdateTS = Date().time
@@ -84,7 +85,7 @@ object LocationUtils  {
                     val text = "latitude : ${bittelLocationPackage.latitude}\n" +
                             "longitude : ${bittelLocationPackage.longitude}\naltitude : ${bittelLocationPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
-                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
+                        senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
                     chatsRepo.getChatByBittelID(srcID)?.let { sender ->
                         sender.message = Message(senderID = whoSent, text = "Location Received", seen = false)

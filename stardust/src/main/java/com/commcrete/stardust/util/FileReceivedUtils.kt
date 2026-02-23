@@ -77,16 +77,15 @@ object FileReceivedUtils {
                 chatContact?.let { contact ->
                     contact.appId?.let { appIdArray ->
                         var whoSent = ""
-                        var displayName = contact.displayName
+                        var displayName: String? = null
 
                         val srcID = bittelPackage.getSourceAsString()
 
-                        if(GroupsUtils.isGroup(srcID) && (bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true))) {
+                        if(GroupsUtils.isGroup(srcID) && !(bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true))) {
                             whoSent = bittelPackage.getDestAsString()
-                            chatsRepo.getChatByBittelID(whoSent)?.let {
-                                displayName = it.name
-                            }
+                            chatsRepo.getChatByBittelID(whoSent)?.let { displayName = it.name }
                         } else {
+                            displayName = contact.displayName
                             whoSent = bittelPackage.getSourceAsString()
                         }
 
@@ -95,7 +94,7 @@ object FileReceivedUtils {
                                 seen = true)
                             chatsRepo.addChat(chat)
                             val messageItem = MessageItem(senderID = whoSent,
-                                epochTimeMs = System.currentTimeMillis(), senderName = displayName ,
+                                epochTimeMs = System.currentTimeMillis(), senderName = displayName ?: whoSent ,
                                 chatId = bittelPackage.getSourceAsString(), text = type, fileLocation = file.absolutePath,
                                 isFile = isFile, isImage = isImage)
                             messagesRepository.saveFileMessage( messageItem )
