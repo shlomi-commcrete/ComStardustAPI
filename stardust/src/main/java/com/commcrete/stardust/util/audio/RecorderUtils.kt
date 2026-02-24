@@ -141,14 +141,14 @@ object RecorderUtils {
     // Stop Recording
     // ----------------------------------------
     fun stopRecording(
-        destination: String,
+        chatID: String,
         carrier: Carrier?,
         codeType: CODE_TYPE?,
         file: File?
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
-        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(destination, carrier, file)
+        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(chatID, carrier, file)
         else stopAIRecording()
 
         Scopes.getMainCoroutine().launch {
@@ -157,9 +157,9 @@ object RecorderUtils {
         }
     }
 
-    private fun stopCodec2Recording(destination: String, carrier: Carrier?, file: File?) {
+    private fun stopCodec2Recording(chatID: String, carrier: Carrier?, file: File?) {
         wavRecorder?.run {
-            file?.let { stopRecording(retry = 0, destination, it.absolutePath, DataManager.context, carrier) }
+            file?.let { stopRecording(retry = 0, chatID, it.absolutePath, DataManager.context, carrier) }
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
                 wavRecorder = null

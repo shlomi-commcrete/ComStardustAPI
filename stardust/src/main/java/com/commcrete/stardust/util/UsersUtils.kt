@@ -2,7 +2,6 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import android.location.Location
-import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.StardustAPIPackage
@@ -212,19 +211,18 @@ object UsersUtils {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem : ChatItem? = null
+
+            val packageToPass = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),
+                carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType))
             if(chatContact != null) {
                 chatContact.let {
                     var contact : ChatContact? = it
-                    var whoSent = ""
-                    var displayName: String? = null
-                    if(GroupsUtils.isGroup(bittelPackage.getSourceAsString()) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
-                        whoSent = bittelPackage.getDestAsString()
-                        chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
-                        displayName = chatsRepo.getChatByBittelID(bittelPackage.getDestAsString())?.name
+                    val realSource = packageToPass.getRealSourceId()
+                    val displayName: String = chatsRepo.getChatByBittelID(realSource)?.name ?: realSource
+                    chatItem = if(packageToPass.isGroup){
+                        chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                     } else {
-                        displayName = contact?.displayName
-                        whoSent = bittelPackage.getSourceAsString()
-                        chatItem = chatsRepo.getChatByBittelID(whoSent)
+                        chatsRepo.getChatByBittelID(realSource)
                     }
                     contact?.lastUpdateTS = Date().time
                     contact?.lat = bittelSOSPackage.latitude.toDouble()
@@ -233,20 +231,18 @@ object UsersUtils {
                     contact?.let { it1 -> contactsRepository.addContact(it1) }
                     val text = "latitude : ${bittelSOSPackage.latitude}\n" +
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
-                    val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
-                        senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
+                    val message = MessageItem(senderID = realSource, text = text, epochTimeMs =  Date().time ,
+                        senderName = displayName, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
-                    var location = Location(whoSent)
+                    val location = Location(realSource)
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
                     location.altitude = bittelSOSPackage.height.toDouble()
-                    DataManager.getCallbacks()?.receiveRealSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),
-                        carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
-                        location)
+                    DataManager.getCallbacks()?.receiveRealSOS(packageToPass, location)
 
                     chatItem?.let { chatItem ->
                         chatItem.message = Message(
-                            senderID = whoSent,
+                            senderID = realSource,
                             text = "Reporting S.O.S",
                             seen = false
                         )
@@ -334,7 +330,7 @@ object UsersUtils {
 
 
     fun saveMessageToDatabase(context: Context, chatID : String, message: MessageItem){
-        Scopes.getDefaultCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
 //            message.senderName = getSenderName(chatID, message.senderID)
             MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
         }

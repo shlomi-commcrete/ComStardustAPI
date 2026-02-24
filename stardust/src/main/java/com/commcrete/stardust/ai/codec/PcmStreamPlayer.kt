@@ -264,7 +264,7 @@ object PcmStreamPlayer {
             chatItem?.let {
                 chatItem.message = Message(senderID = senderId, text = "Ptt Received", seen = true)
                 PlayerUtils.chatsRepository.addChat(it)
-                ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages+1)
+                ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
             }
         }
     }
@@ -280,9 +280,9 @@ object PcmStreamPlayer {
         }
 
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
+        val packageToPass = StardustAPIPackage(source, destination)
         this.destination = destinations
-        val realSource = if (GroupsUtils.isGroup(source) && (destination != UsersUtils.mRegisterUser?.appId)) destination else source
-
+        val realSource = packageToPass.getRealSourceId()
         updateAudioReceived(source, realSource, true)
 
         val dir = File(context.filesDir, source)
@@ -301,7 +301,7 @@ object PcmStreamPlayer {
             fileToWrite = file
             isFileInit = true
 
-            Scopes.getDefaultCoroutine().launch {
+            CoroutineScope(Dispatchers.IO).launch {
                 val userName = UsersUtils.getUserName(realSource)
                 PlayerUtils.messagesRepository.savePttMessage(
                     context = context,
@@ -318,7 +318,7 @@ object PcmStreamPlayer {
                 )
             }
 
-            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(source, destination), file)
+            DataManager.getCallbacks()?.startedReceivingPTT(packageToPass, file)
         }
 
         return file

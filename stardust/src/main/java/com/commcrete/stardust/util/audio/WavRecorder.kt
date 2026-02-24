@@ -31,6 +31,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.UsersUtils
 import com.ustadmobile.codec2.Codec2Decoder
 import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.delay
@@ -430,7 +431,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 File(path).takeIf { it.exists() }?.delete()
                 return@launch
             } else {
-                SharedPreferencesUtil.getAppUser(context)?.appId?.let {
+                UsersUtils.mRegisterUser?.appId?.let {
                     val chatsRepo = DataManager.getChatsRepo(context)
                     val chatItem = chatsRepo.getChatByBittelID(chatID)
                     chatItem?.message = Message(
@@ -442,9 +443,14 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
                         context = context,
                         MessageItem(senderID = it,
-                            epochTimeMs = RecorderUtils.ts, senderName = "" ,
-                            chatId = chatID, text = "", fileLocation = path,
-                            isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
+                            epochTimeMs = RecorderUtils.ts,
+                            senderName = "" ,
+                            chatId = chatID,
+                            text = "",
+                            fileLocation = path,
+                            isAudio = true,
+                            seen = SeenStatus.SENT,
+                            audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
                     )
                 }
                 RecorderUtils.ts = 0

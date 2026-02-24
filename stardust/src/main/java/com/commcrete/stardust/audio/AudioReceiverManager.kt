@@ -17,6 +17,8 @@ import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.io.File
@@ -114,18 +116,21 @@ object AudioReceiverManager {
 
         private fun saveChatAndMessage (file: File, source: String, destination : String) {
             val context = DataManager.context
-
-            val sentAsUserInGroup = GroupsUtils.isGroup(source) && (destination != mRegisterUser?.appId)
-            val realSource = if (sentAsUserInGroup) destination else source
+            val packageToPass = StardustAPIPackage(source, destination)
+            val realSource = packageToPass.getRealSourceId()
             PlayerUtils.updateAudioReceived(source, realSource,true)
-            DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(realSource, destination), file)
-            Scopes.getDefaultCoroutine().launch {
-                val userName = UsersUtils.getUserName(destination)
+            DataManager.getCallbacks()?.startedReceivingPTT(packageToPass, file)
+            CoroutineScope(Dispatchers.IO).launch {
+                val userName = UsersUtils.getUserName(realSource)
                 messagesRepository.savePttMessage(
                     context = context,
-                    MessageItem(senderID = destination,
-                        epochTimeMs = PlayerUtils.ts.toLong(), senderName = userName ,
-                        chatId = realSource, text = "", fileLocation = file.absolutePath,
+                    MessageItem(
+                        senderID = realSource,
+                        epochTimeMs = PlayerUtils.ts.toLong(),
+                        senderName = userName ,
+                        chatId = source,
+                        text = "",
+                        fileLocation = file.absolutePath,
                         isAudio = true)
                 )
             }
