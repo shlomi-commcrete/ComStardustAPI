@@ -179,7 +179,7 @@ object DataManager : StardustAPI, PttInterface{
             val messagesRepository = getMessagesRepo(context)
             val chatItem = chatsRepo.getChatByBittelID(userId)
             chatItem?.message = Message(
-                senderID = userId,
+                senderID = sender,
                 text = text,
                 seen = false
             )
