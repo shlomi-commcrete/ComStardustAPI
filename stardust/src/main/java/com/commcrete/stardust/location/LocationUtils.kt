@@ -86,7 +86,7 @@ object LocationUtils  {
                             "longitude : ${bittelLocationPackage.longitude}\naltitude : ${bittelLocationPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
-                    MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+                    DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
                     chatsRepo.getChatByBittelID(srcID)?.let { sender ->
                         sender.message = Message(senderID = whoSent, text = "Location Received", seen = false)
                         chatsRepo.addChat(sender)
@@ -210,13 +210,13 @@ object LocationUtils  {
         message.isAck = isDemandAck
         message.idNumber = idNumber
 //        message.senderName = getSenderName(message.senderID)
-//        MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+//        MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).saveMessage(context = context, messageItem = message)
         val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
         var senderObj : ChatItem? = null
         senderObj = chatsRepo.getChatByBittelID(chatId)
         senderObj?.let {
             message.senderName = it.name
-            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+            DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
             val numOfUnread = it.numOfUnseenMessages

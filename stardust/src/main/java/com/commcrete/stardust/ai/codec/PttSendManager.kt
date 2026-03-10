@@ -153,9 +153,10 @@ object PttSendManager {
                     seen = true
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
-                MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
+                DataManager.getMessagesRepo(DataManager.context).saveMessage(
                     context = context,
-                    MessageItem(senderID = it,
+                    isPTT = true,
+                    messageItem = MessageItem(senderID = it,
                         epochTimeMs = RecorderUtils.ts, senderName = "" ,
                         chatId = chatID, text = "", fileLocation = path,
                         isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)

@@ -148,7 +148,8 @@ object UsersUtils {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(),  isSOS = true,
                         sosType = bittelSOSPackage.sosType)
-                    MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(message)
+                    DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
+
 
                     val location = Location(whoSent).apply {
                         latitude = bittelSOSPackage.latitude.toDouble()
@@ -233,7 +234,7 @@ object UsersUtils {
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = realSource, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
-                    MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
+                    DataManager.getMessagesRepo(context).saveMessage(context = context, messageItem = message)
                     val location = Location(realSource)
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
@@ -330,10 +331,7 @@ object UsersUtils {
 
 
     fun saveMessageToDatabase(context: Context, chatID : String, message: MessageItem){
-        CoroutineScope(Dispatchers.IO).launch {
-//            message.senderName = getSenderName(chatID, message.senderID)
-            MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).addContact(message)
-        }
+        DataManager.getMessagesRepo(context).saveMessage(context = context, messageItem = message)
     }
 
     private fun getSenderName(chatID : String, senderID: String): String{
@@ -356,7 +354,7 @@ object UsersUtils {
             ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChat(
                 getChatItem(appId, name, appId)
             )
-            MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addContact(
+            DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem =
                 getMessageItem(appId, name, 0)
             )
             ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addContact(

@@ -20,7 +20,6 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -165,7 +164,7 @@ object FileSendUtils {
                 val newFileLocation = destFile.absolutePath
 
                 val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-                val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
+                val messagesRepository = DataManager.getMessagesRepo(DataManager.context)
                 val messageItem = MessageItem(
                     senderID = userId,
                     text = text,
@@ -183,7 +182,7 @@ object FileSendUtils {
                     seen = false
                 )
 
-                messagesRepository.saveFileMessage(messageItem)
+                messagesRepository.saveMessage(DataManager.context, messageItem)
                 chatItem?.let { chatsRepo.addChat(it) }
 
             } catch (e: Exception) {

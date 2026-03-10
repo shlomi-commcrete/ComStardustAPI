@@ -3,9 +3,25 @@ package com.commcrete.stardust.room.messages
 import android.content.Context
 import androidx.lifecycle.LiveData
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.SharedPreferencesUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.launch
 
-class MessagesRepository (private val messagesDao: MessagesDao) {
+class MessagesRepository (
+    private val messagesDao: MessagesDao,
+    private val scope: CoroutineScope
+) {
+
+    private val messageChannel = Channel<MessageItem>(Channel.BUFFERED)
+
+    init {
+        scope.launch(Dispatchers.IO) {
+            for (msg in messageChannel) {
+                messagesDao.addMessage(msg)
+            }
+        }
+    }
 
     suspend fun archiveMessages(chatId: String? = null,
                                 startTimestamp: Long,
@@ -68,20 +84,13 @@ class MessagesRepository (private val messagesDao: MessagesDao) {
         )
     }
 
-    suspend fun addContact(messageItem: MessageItem) {
-        messagesDao.addMessage(messageItem)
-    }
-
     suspend fun addMessages(messageItems: List<MessageItem>) {
         messagesDao.addMessages(messageItems)
     }
 
-    suspend fun savePttMessage(context: Context, messageItem: MessageItem) {
-        if(DataManager.getSavePTTFilesRequired(context)) messagesDao.addMessage(messageItem)
-    }
-
-    suspend fun saveFileMessage(messageItem: MessageItem) {
-        messagesDao.addMessage(messageItem)
+    fun saveMessage(context: Context, messageItem: MessageItem, isPTT: Boolean = false) {
+        if(isPTT && !DataManager.getSavePTTFilesRequired(context)) return
+        messageChannel.trySend(messageItem)
     }
 
 

@@ -440,9 +440,10 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                         seen = true
                     )
                     chatItem?.let { item -> chatsRepo.addChat(item) }
-                    MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).savePttMessage(
+                    DataManager.getMessagesRepo(context).saveMessage(
                         context = context,
-                        MessageItem(senderID = it,
+                        isPTT = true,
+                        messageItem = MessageItem(senderID = it,
                             epochTimeMs = RecorderUtils.ts,
                             senderName = "" ,
                             chatId = chatID,

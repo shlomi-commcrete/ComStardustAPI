@@ -25,9 +25,6 @@ class SnifferRepository (private val messagesDao: SnifferDao) {
         messagesDao.addMessages(messageItems)
     }
 
-    suspend fun savePttMessage(context: Context, messageItem: SnifferItem) {
-        if(DataManager.getSavePTTFilesRequired(context)) messagesDao.addMessage(messageItem)
-    }
 
     suspend fun updatePttMessage(chatID : String, messageItem: SnifferItem) {
         val lastPttMessage = messagesDao.getLastPttMessage(chatID)

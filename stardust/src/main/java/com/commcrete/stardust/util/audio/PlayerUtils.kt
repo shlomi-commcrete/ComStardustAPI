@@ -60,7 +60,7 @@ object PlayerUtils : BleMediaConnector() {
     private var track: AudioTrack? = null
     const val sampleRate = 8000
     private var spareBytes : ByteArray? = null
-    val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
+    val messagesRepository = DataManager.getMessagesRepo(context)
     val chatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
     private val handler : Handler = Handler(Looper.getMainLooper())
     val isPttReceived : MutableLiveData<String> = MutableLiveData("empty")
@@ -439,9 +439,10 @@ object PlayerUtils : BleMediaConnector() {
                         }catch (e :Exception){
                             e.printStackTrace()
                         }
-                        messagesRepository.savePttMessage(
+                        messagesRepository.saveMessage(
                             context = context,
-                            MessageItem(
+                            isPTT = true,
+                            messageItem = MessageItem(
                                 senderID = realSource,
                                 epochTimeMs = ts.toLong(),
                                 senderName = userName ,

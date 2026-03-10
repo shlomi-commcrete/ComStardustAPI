@@ -26,7 +26,7 @@ import kotlin.coroutines.resume
 
 object AudioReceiverManager {
 
-    val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
+    val messagesRepository = DataManager.getMessagesRepo(DataManager.context)
 
     data class PlayerInfo(
         val audioTrack: AudioTrack?,
@@ -122,9 +122,10 @@ object AudioReceiverManager {
             DataManager.getCallbacks()?.startedReceivingPTT(packageToPass, file)
             CoroutineScope(Dispatchers.IO).launch {
                 val userName = UsersUtils.getUserName(realSource)
-                messagesRepository.savePttMessage(
+                messagesRepository.saveMessage(
                     context = context,
-                    MessageItem(
+                    isPTT = true,
+                    messageItem = MessageItem(
                         senderID = realSource,
                         epochTimeMs = PlayerUtils.ts.toLong(),
                         senderName = userName ,

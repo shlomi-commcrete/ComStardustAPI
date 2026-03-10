@@ -27,6 +27,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
 import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatItem
@@ -49,6 +50,7 @@ import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -184,7 +186,7 @@ object DataManager : StardustAPI, PttInterface{
                 seen = false
             )
             chatItem?.let { chatsRepo.addChat(it) }
-            messagesRepository.addContact(messageItem)
+            messagesRepository.saveMessage(context = context, messageItem = messageItem)
         }
     }
 
@@ -462,9 +464,11 @@ object DataManager : StardustAPI, PttInterface{
         return ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
     }
 
-    fun getMessagesRepo (context: Context) : MessagesRepository {
+
+
+    fun getMessagesRepo(context: Context): MessagesRepository {
         requireContext(context)
-        return MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao())
+        return RepositoryProvider.messagesRepository(context)
     }
 
     fun getCallbacks() : StardustAPICallbacks? {
@@ -517,9 +521,7 @@ object DataManager : StardustAPI, PttInterface{
                 }
 
                 val messages = async {
-                    MessagesRepository(
-                        MessagesDatabase.getDatabase(context).messagesDao()
-                    ).clearData()
+                    getMessagesRepo(context).clearData()
                 }
 
                 user.await() && chats.await() && contacts.await() && friends.await() && messages.await()

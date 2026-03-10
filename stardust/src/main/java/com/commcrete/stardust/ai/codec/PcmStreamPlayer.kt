@@ -303,9 +303,10 @@ object PcmStreamPlayer {
 
             CoroutineScope(Dispatchers.IO).launch {
                 val userName = UsersUtils.getUserName(realSource)
-                PlayerUtils.messagesRepository.savePttMessage(
+                PlayerUtils.messagesRepository.saveMessage(
                     context = context,
-                    MessageItem(
+                    isPTT = true,
+                    messageItem = MessageItem(
                         senderID = realSource,
                         epochTimeMs = ts.toLong(),
                         senderName = userName,

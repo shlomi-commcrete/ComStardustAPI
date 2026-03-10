@@ -93,7 +93,7 @@ object DemoDataUtil {
     private fun setupDatabases (demoUsers: DemoUsers) {
         Scopes.getDefaultCoroutine().launch {
             ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChats(demoUsers.mutableUserList)
-            MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao()).addMessages(demoUsers.mutableMessagesList)
+            DataManager.getMessagesRepo(DataManager.context).addMessages(demoUsers.mutableMessagesList)
             ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addAllContacts(demoUsers.mutableContactsList)
             onFinishLoadData()
         }

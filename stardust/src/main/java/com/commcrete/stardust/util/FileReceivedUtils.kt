@@ -23,7 +23,7 @@ import java.io.FileOutputStream
 object FileReceivedUtils {
 
     private val fileReceivedDataList : MutableList<FileReceivedData> = mutableListOf()
-    private val messagesRepository = MessagesRepository(MessagesDatabase.getDatabase(DataManager.context).messagesDao())
+    private val messagesRepository = DataManager.getMessagesRepo(DataManager.context)
     private val textLogger = TextLogger(DataManager.context)
     private fun getInit (bittelFileStartPackage: StardustFileStartPackage, bittelPackage: StardustPackage) {
         var haveFileStart = false
@@ -97,7 +97,7 @@ object FileReceivedUtils {
                                 epochTimeMs = System.currentTimeMillis(), senderName = displayName ?: whoSent ,
                                 chatId = bittelPackage.getSourceAsString(), text = type, fileLocation = file.absolutePath,
                                 isFile = isFile, isImage = isImage)
-                            messagesRepository.saveFileMessage( messageItem )
+                            messagesRepository.saveMessage( context = context, messageItem )
                             UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
                             val numOfUnread = chat.numOfUnseenMessages
                             chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
