@@ -124,9 +124,9 @@ object FileReceivedUtils {
         private val sendInterval : Long = 1800
         private val handler : Handler = Handler(Looper.getMainLooper())
         private val runnable : Runnable = Runnable {
-            val totalPackages = dataStart?.total
-            val missing = lostPackagesIndex.count()
-            val text = "t:$totalPackages, m:$missing"
+//            val totalPackages = dataStart?.total
+//            val missing = lostPackagesIndex.count()
+            //val text = "t:$totalPackages, m:$missing"
             //textLogger.logText(text)
             if(checkIfHaveEnough()) {
                 bittelPackage?.let { saveFile(DataManager.context, it, dataStart?.type) }
@@ -220,16 +220,16 @@ object FileReceivedUtils {
         private fun updateFailure (failure: FileFailure) {
             val totalPackages = dataStart?.total
             val missing = lostPackagesIndex.count()
-            val text = "t:$totalPackages, m:$missing"
-            textLogger.logText(text)
+//            val text = "t:$totalPackages, m:$missing"
+//            textLogger.logText(text)
             DataManager.getCallbacks()?.receiveFailure(failure, dataStart)
         }
 
         private fun saveFile (context: Context, bittelPackage: StardustPackage, fileType: Int?) {
             val totalPackages = dataStart?.total
             val missing = lostPackagesIndex.count()
-            val text = "t:$totalPackages, m:$missing"
-            textLogger.logText(text)
+//            val text = "t:$totalPackages, m:$missing"
+//            textLogger.logText(text)
 // Get the destination directory
             val destDir = File("${context.filesDir}/${bittelPackage.getSourceAsString()}/files")
 // Ensure the directory exists
