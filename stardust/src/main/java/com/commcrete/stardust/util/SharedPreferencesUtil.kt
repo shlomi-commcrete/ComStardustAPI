@@ -453,7 +453,7 @@ object SharedPreferencesUtil {
     }
 
     fun getExportDataOnLogout(context: Context) : Boolean {
-        return getPrefs(context).getBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, true)
+        return getPrefs(context).getBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, false)
     }
 
     /**
