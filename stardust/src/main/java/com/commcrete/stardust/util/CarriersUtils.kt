@@ -56,8 +56,12 @@ object CarriersUtils {
         }
     }
 
-    fun updateCurrentPresetList (preset: StardustConfigurationParser.CurrentPreset) {
+    fun updateCurrentPresetList (preset: StardustConfigurationParser.CurrentPreset?) {
         Scopes.getMainCoroutine().launch {
+            if(preset == null) {
+                carrierList.value = listOf()
+                return@launch
+            }
             when (preset) {
                 StardustConfigurationParser.CurrentPreset.PRESET1 -> carrierList.value = carrierList1
                 StardustConfigurationParser.CurrentPreset.PRESET2 -> carrierList.value = carrierList2
@@ -68,20 +72,23 @@ object CarriersUtils {
 
     fun getCarrierLisByPreset(bittelConfigurationPackage: StardustConfigurationPackage, preset: StardustConfigurationParser.Preset?) : List<Carrier> {
         val mutableList : MutableList<Carrier> = arrayListOf()
-        val radios = bittelConfigurationPackage.getCurrentRadios(preset?.currentPreset)
-        val defaults1 = preset?.xcvrList?.get(0)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
-        val defaults2 = preset?.xcvrList?.get(1)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
-        val defaults3 = preset?.xcvrList?.get(2)?.getOptions ()?.toMutableSet() ?: mutableSetOf()
+        preset?.let {
+            val radios = bittelConfigurationPackage.getCurrentRadios(preset.currentPreset) ?: return@let
+            val defaults1 = preset.xcvrList[0].getOptions().toMutableSet()
+            val defaults2 = preset.xcvrList[1].getOptions().toMutableSet()
+            val defaults3 = preset.xcvrList[2].getOptions().toMutableSet()
 
-        mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset?.xcvrList?.get(0)?.carrier, presetActiveFunctionality = defaults1))
-        mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset?.xcvrList?.get(1)?.carrier, presetActiveFunctionality = defaults2))
-        mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset?.xcvrList?.get(2)?.carrier, presetActiveFunctionality = defaults3))
-        mutableList.add(Carrier(3, StardustConfigurationParser.StardustTypeFunctionality.ST,  "RD4"))
+            mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset.xcvrList[0].carrier, presetActiveFunctionality = defaults1))
+            mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset.xcvrList[1].carrier, presetActiveFunctionality = defaults2))
+            mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset.xcvrList[2].carrier, presetActiveFunctionality = defaults3))
+            mutableList.add(Carrier(3, StardustTypeFunctionality.ST,  "RD4"))
+        }
+
         return mutableList
     }
 
     fun setLocalCarrierList () : List<Carrier>?{
-        val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), DataManager.context)
+        val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), DataManager.context)
         Scopes.getMainCoroutine().launch {
             mutableList?.let { carrierList.value = it }
         }
@@ -179,7 +186,7 @@ object CarriersUtils {
     }
 
     private fun updateCarrierList (mutableList : List<Carrier>) {
-        setLocalCarriersByPreset((ConfigurationUtils.currentPreset?.value ?: 0), mutableList, DataManager.context)
+        setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList, DataManager.context)
         carrierList.value = mutableList
     }
 

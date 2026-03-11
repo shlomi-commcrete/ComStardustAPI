@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust.model
 import android.content.Context
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustCarrier
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
@@ -44,40 +45,30 @@ data class StardustConfigurationPackage(
 ) {
     private val TAG = "PresetValidation"
 
-    fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios {
-        val presetToCheck = preset?:currentPreset
-        if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET1) {
-            val preset = presets.get(0)
-            return Radios(
-                preset.xcvrList.get(0).functionality,
-                preset.xcvrList.get(1).functionality,
-                preset.xcvrList.get(2).functionality,
-                StardustConfigurationParser.StardustTypeFunctionality.ST,
+    fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios? {
+        return getPresetData(preset ?: currentPreset)?.let {
+            Radios(
+                it.xcvrList[0].functionality,
+                it.xcvrList[1].functionality,
+                it.xcvrList[2].functionality,
+                StardustTypeFunctionality.ST,
             )
-        } else if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET2) {
-            val preset = presets.get(1)
-            return Radios(
-                preset.xcvrList.get(0).functionality,
-                preset.xcvrList.get(1).functionality,
-                preset.xcvrList.get(2).functionality,
-                StardustConfigurationParser.StardustTypeFunctionality.ST,
-            )
-        } else if (presetToCheck == StardustConfigurationParser.CurrentPreset.PRESET3) {
-            val preset = presets.get(2)
-            return Radios(
-                preset.xcvrList.get(0).functionality,
-                preset.xcvrList.get(1).functionality,
-                preset.xcvrList.get(2).functionality,
-                StardustConfigurationParser.StardustTypeFunctionality.ST,
-            )
-        } else {
-            val preset = presets.get(0)
-            return Radios(
-                preset.xcvrList.get(0).functionality,
-                preset.xcvrList.get(1).functionality,
-                preset.xcvrList.get(2).functionality,
-                StardustConfigurationParser.StardustTypeFunctionality.ST,
-            )
+        }
+    }
+
+    private fun getPresetData(preset : StardustConfigurationParser.CurrentPreset): StardustConfigurationParser.Preset? {
+        return presets[preset.value]
+    }
+
+    fun getCenterFrequency(preset : StardustConfigurationParser.CurrentPreset = currentPreset): Frequency? {
+        return getPresetData(preset)?.xcvrList?.firstOrNull()?.let {
+            val delta: Double = 25.0 / 3.0 / 1000.0
+            val (rx, tx) = when(it.carrier) {
+                StardustCarrier.Carrier1 -> (it.rxFrequency + delta) to (it.txFrequency + delta)
+                StardustCarrier.Carrier2 -> it.rxFrequency to it.txFrequency
+                StardustCarrier.Carrier3 -> (it.rxFrequency - delta) to (it.txFrequency - delta)
+            }
+            Frequency(rx = rx + frequencyLORX, tx = tx + frequencyLOTX)
         }
     }
 
@@ -98,7 +89,6 @@ data class StardustConfigurationPackage(
 //            hasMissingRequiredFunctionalities(localFunctionalities, requiredFunctionalities)
         }
     }
-
 
     private fun StardustConfigurationParser.Preset.collectFunctionalities(): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
         val presetFunctionalities = mutableSetOf<FunctionalityType>()
@@ -140,5 +130,7 @@ data class StardustConfigurationPackage(
         val xcvr3 : StardustConfigurationParser.StardustTypeFunctionality,
         val xcvr4 : StardustConfigurationParser.StardustTypeFunctionality,
     )
+
+    data class Frequency(val rx: Double, val tx: Double)
 }
 

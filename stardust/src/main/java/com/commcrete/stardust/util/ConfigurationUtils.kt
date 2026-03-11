@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
+import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
@@ -17,7 +18,8 @@ object ConfigurationUtils {
     val bittelConfiguration = MutableLiveData<StardustConfigurationPackage?>()
 
     var currentConfig : StardustConfigurationPackage? = null
-    var currentPreset : StardustConfigurationParser.CurrentPreset? = null
+    private var _currentPreset = MutableLiveData<StardustConfigurationParser.CurrentPreset?> (null)
+    var currentPreset: LiveData<StardustConfigurationParser.CurrentPreset?> = _currentPreset
     var selectedPreset : StardustConfigurationParser.Preset? = null
     var presetsList : List<StardustConfigurationParser.Preset> = listOf()
 
@@ -31,14 +33,9 @@ object ConfigurationUtils {
         }
     }
 
-    fun setCurrentPresetLocal (preset : StardustConfigurationParser.CurrentPreset) {
-        currentPreset = preset
-        setCurrentPreset()
-    }
-
-    private fun setCurrentPreset() {
+    fun setCurrentPresetLocal(preset : StardustConfigurationParser.CurrentPreset) {
+        _currentPreset.postValue(preset)
         val config = currentConfig ?: return
-        val preset = currentPreset ?: return
 
         if (presetsList.isEmpty()) return
 
@@ -53,9 +50,9 @@ object ConfigurationUtils {
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
         selectedPreset?.xcvrList?.let { xcvrs ->
             when (stardustAppEventPackage.xcvr) {
-                0 -> {stardustAppEventPackage.carrier = xcvrs.get(0).carrier}
-                1 -> {stardustAppEventPackage.carrier = xcvrs.get(1).carrier}
-                2 -> {stardustAppEventPackage.carrier = xcvrs.get(2).carrier}
+                0 -> {stardustAppEventPackage.carrier = xcvrs[0].carrier}
+                1 -> {stardustAppEventPackage.carrier = xcvrs[1].carrier}
+                2 -> {stardustAppEventPackage.carrier = xcvrs[2].carrier}
             }
         }
     }
@@ -80,7 +77,7 @@ object ConfigurationUtils {
             } else {
                 CarriersUtils.setPresetsWithoutChange()
             }
-            currentPreset?.let {
+            _currentPreset.value.let {
                 CarriersUtils.updateCurrentPresetList(it)
             }
         }
@@ -94,7 +91,7 @@ object ConfigurationUtils {
 
     fun reset() {
         currentConfig = null
-        currentPreset = null
+        _currentPreset.value = null
         presetsList = listOf()
         licensedFunctionalities = mapOf()
         selectedPreset = null
