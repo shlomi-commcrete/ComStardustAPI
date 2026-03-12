@@ -38,7 +38,6 @@ import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.friends.FriendsDatabase
 import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -46,11 +45,11 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.FileSender.OnFileStatusChange
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -65,7 +64,6 @@ import kotlin.random.Random
 
 @SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface{
-
 
     private var clientConnection : ClientConnection?  = null
     private var bittelusbManager : BittelUsbManager2?  = null
@@ -84,6 +82,8 @@ object DataManager : StardustAPI, PttInterface{
 
     private var hasTimber = false
     var isPlayPttFromSdk = true
+
+    private val fileSenders = mutableMapOf<String, FileSender>() // <uuid, FileSender>
 
     fun requireContext (context: Context) {
         this.context = context
@@ -167,7 +167,7 @@ object DataManager : StardustAPI, PttInterface{
                 mPackage.idNumber = id
                 mPackage.stardustControlByte.stardustDeliveryType = radio.second
                 sendDataToBle(mPackage)
-                delay(if(radio.first == null || radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.HR)800 else 4000)
+                delay(if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.HR)800 else 4000)
             }
         }
         saveSentMessage(context, text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
@@ -225,21 +225,58 @@ object DataManager : StardustAPI, PttInterface{
         LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
 
-    override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
-                           , fileName : String, fileExt : String) {
-        requireContext(context)
-        FileSendUtils.sendFile(context, stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.JPG,onFileStatusChange, fileName, fileExt)
+    override fun sendImage(
+        context: Context,
+        data: FileUtils.FileTransferData.Send,
+        onFileStatusChange: OnFileStatusChange
+    ) {
+        onSendFile(context, data, onFileStatusChange)
     }
 
-    override fun sendFile(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
-                          , fileName : String, fileExt : String) {
-        requireContext(context)
-        FileSendUtils.sendFile(context, stardustAPIPackage, file, StardustFileStartParser.FileTypeEnum.TXT, onFileStatusChange, fileName, fileExt)
+    override fun sendFile(
+        context: Context,
+        data: FileUtils.FileTransferData.Send,
+        onFileStatusChange: OnFileStatusChange
+    ) {
+        onSendFile(context, data, onFileStatusChange)
     }
 
-    override fun stopSendFile(context: Context) {
+    private fun onSendFile(
+        context: Context,
+        data: FileUtils.FileTransferData.Send,
+        onFileStatusChange: OnFileStatusChange
+    ) {
         requireContext(context)
-        FileSendUtils.stopSendingPackages()
+        val sender = FileSender(context, data)
+        fileSenders.put(data.id, sender)
+        sender.sendFile(object : OnFileStatusChange {
+            override fun finishSending(data: FileUtils.FileTransferData.Send) {
+                super.finishSending(data)
+                onFileStatusChange.finishSending(data)
+                fileSenders.remove(data.id)
+            }
+
+            override fun startSending(data: FileUtils.FileTransferData.Send) {
+                super.startSending(data)
+                onFileStatusChange.startSending(data)
+            }
+
+            override fun stopSending(data: FileUtils.FileTransferData.Send) {
+                super.stopSending(data)
+                onFileStatusChange.stopSending(data)
+                fileSenders.remove(data.id)
+            }
+
+            override fun updateStep(data: FileUtils.FileTransferData.Send, percentage: Int) {
+                super.updateStep(data, percentage)
+                onFileStatusChange.updateStep(data, percentage)
+            }
+        })
+    }
+
+    override fun stopSendFile(context: Context, data: FileUtils.FileTransferData.Send) {
+        requireContext(context)
+        fileSenders[data.id]?.stopSendingPackages()
     }
 
     override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {

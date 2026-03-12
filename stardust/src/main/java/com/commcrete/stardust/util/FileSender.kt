@@ -7,100 +7,96 @@ import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
-import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
-import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.FileUtils.FileType
+import com.commcrete.stardust.util.FileUtils.decompressTextFile
+import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.Date
-import java.util.zip.GZIPInputStream
 
-object FileSendUtils {
+class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send) {
 
-    val isSendingInProgress : MutableLiveData<Boolean> = MutableLiveData(false)
-    val sendingPercentage : MutableLiveData<Int> = MutableLiveData(0)
+    private val isSendingInProgress : MutableLiveData<Boolean> = MutableLiveData(false)
+    private val sendingPercentage : MutableLiveData<Int> = MutableLiveData(0)
     private var isComplete : MutableLiveData<Boolean> = MutableLiveData(false)
-    private val mutablePackagesMap : MutableMap<Float,StardustFilePackage > = mutableMapOf()
+    private val mutablePackagesMap : MutableMap<Float, StardustFilePackage > = mutableMapOf()
     private var current : MutableLiveData<Float> = MutableLiveData(0f)
     private var sendInterval : Long = 900
-
     private var packagesSent = 0
-    private var dest : String? = null
     private var onFileStatusChange : OnFileStatusChange? = null
-    private var sendType : StardustFileStartParser.FileTypeEnum? = null
-    private var stardustAPIPackage : StardustAPIPackage? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
-
-    private const val FILE_CHUNK_SIZE = 60
+    private val FILE_CHUNK_SIZE = 60
     var randomMisses : MutableSet<Int> = mutableSetOf()
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
         if(mPackage != null) {
 //            if(!randomMisses.contains(current.value?.toInt())) {
-                sendPackage(DataManager.context, mPackage, dest)
+            sendPackage(stardustFilePackage = mPackage)
 //            }
         }
         current.value = current.value?.plus(1)
         resetSendTimer()
-        updateStep(mutablePackagesMap.size, )
+        updateStep(mutablePackagesMap.size)
     }
 
-    fun sendFile (context: Context, stardustAPIPackage: StardustAPIPackage, file: File, fileStartParser: StardustFileStartParser.FileTypeEnum, onFileStatusChange: OnFileStatusChange
-                  , fileName : String = "", fileExt : String = "") {
+    fun sendFile(onFileStatusChange: OnFileStatusChange) {
 
         this.onFileStatusChange = onFileStatusChange
-        this.stardustAPIPackage = stardustAPIPackage
         isSendingInProgress.value = true
-        val fileList = listOf(file)
-        val numOfPackages = calculateNumOfPackages(fileList, stardustAPIPackage.spare)
-        this.onFileStatusChange?.startSending()
-        dest = stardustAPIPackage.destination
+        val fileList = listOf(data.file)
+        val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
+        this.onFileStatusChange?.startSending(data)
         Scopes.getDefaultCoroutine().launch {
             var packages =  createPackages(fileList)
 
-            if(stardustAPIPackage.spare > 0) {
-                val dataWithSpare = createSparePackages(packages, stardustAPIPackage.spare)
-//            Log.d("dataWithSpare", "dataWithSpare : ${stardustAPIPackage.spare}")
-//            saveTempFile(dataWithSpare)
+            if(data.stardustAPIPackage.spare > 0) {
+                val dataWithSpare = createSparePackages(packages, data.stardustAPIPackage.spare)
                 packages = dataWithSpare.first
-                createStartPackage(context, fileStartParser,
-                    numOfPackages, dest, stardustAPIPackage, dataWithSpare.second, file, first50BytesUtf8(fileName), fileExt)
+                createStartPackage(
+                    totalPackages = numOfPackages,
+                    spareData = dataWithSpare.second)
             } else {
                 createStartPackage(
-                    context,
-                    fileStartParser,
-                    numOfPackages, dest, stardustAPIPackage, 0, file, first50BytesUtf8(fileName), fileExt
+                    totalPackages = numOfPackages,
+                    spareData =  0
                 )
             }
-            getRandomMisses(stardustAPIPackage.spare, numOfPackages)
+            getRandomMisses(data.stardustAPIPackage.spare, numOfPackages)
             mutablePackagesMap.clear()
             mutablePackagesMap.putAll(packages)
 //        testDecode(packages, stardustAPIPackage.spare)
             resetSendTimer()
         }
 
-        saveLocalMessages(
-            stardustAPIPackage.destination,stardustAPIPackage.source, fileStartParser,
-            fileLocation = fileList[0].absolutePath, file, fileName, fileExt)
+        saveLocalMessages()
+    }
+
+    fun stopSendingPackages() {
+        removeSendTimer()
+        isSendingInProgress.value = false
+        sendingPercentage.value = 0
+        current.value = 0f
+        packagesSent = 0
+        isComplete.value = false
+        this.onFileStatusChange?.stopSending(data)
+        sendInterval = 900
     }
 
     private fun updateStep (numOfPackages: Int) {
         sendingPercentage.value = ((current.value?.toDouble()?.div(numOfPackages))?.times(100))?.toInt()
 //        Log.d("updateStep", "${sendingPercentage.value}")
-        sendingPercentage.value?.let { this.onFileStatusChange?.updateStep(it) }
+        sendingPercentage.value?.let { this.onFileStatusChange?.updateStep(data, it) }
         if(sendingPercentage.value == 100) {
             finishSending()
         }
@@ -120,17 +116,13 @@ object FileSendUtils {
         return randomMisses.toList()
     }
 
-    private fun saveLocalMessages (
-        chatID: String, userId: String, fileTypeEnum: StardustFileStartParser.FileTypeEnum,
-        fileLocation: String,
-        file: File
-        , fileName : String = "", fileExt : String = ""
-    ) {
-        val context = DataManager.context
+    private fun saveLocalMessages () {
+        val chatID = data.stardustAPIPackage.destination
+        val userId = data.stardustAPIPackage.source
+        val fileLocation = data.file.absolutePath
+
         Scopes.getDefaultCoroutine().launch {
-            val text = (if (fileTypeEnum == StardustFileStartParser.FileTypeEnum.TXT) "File Sent" else "Image Sent") +  ": $fileName" + ".${fileExt}"
-            val isImage = (fileTypeEnum == StardustFileStartParser.FileTypeEnum.JPG)
-            val isFile = (fileTypeEnum == StardustFileStartParser.FileTypeEnum.TXT)
+            val text = (if (data.fileType == FileUtils.FileType.FILE) "File Sent" else "Image Sent") +  ": ${data.file.name}"
 
             // Create the destination directory
             val destDir = File("${context.filesDir}/$chatID/files")
@@ -141,7 +133,7 @@ object FileSendUtils {
             // Create the destination file
             val originalFile = File(fileLocation)
             // Determine the file extension
-            val fileExtension = if (isImage) ".jpg" else if (isFile) ".${fileExt}" else ""
+            val fileExtension = data.file.extension
 
             // Create the destination file with the appropriate extension
             val destFile = File(destDir, "${File(fileLocation).nameWithoutExtension}$fileExtension")
@@ -149,29 +141,31 @@ object FileSendUtils {
 
             try {
                 // Copy the file to the destination
-                if(isFile){
-                    decompressTextFile(originalFile, destFile)
-                }else {
-                    // Copy the file directly from the originalFile to the destFile
-                    originalFile.inputStream().use { input ->
-                        destFile.outputStream().use { output ->
-                            input.copyTo(output)
+                when(data.fileType) {
+                    FileType.IMAGE -> {
+                        originalFile.inputStream().use { input ->
+                            destFile.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
                         }
+                    }
+                    FileType.FILE -> {
+                        decompressTextFile(originalFile, destFile)
                     }
                 }
 
                 // Use the new location for `fileLocation`
                 val newFileLocation = destFile.absolutePath
 
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-                val messagesRepository = DataManager.getMessagesRepo(DataManager.context)
+                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+                val messagesRepository = DataManager.getMessagesRepo(context)
                 val messageItem = MessageItem(
                     senderID = userId,
                     text = text,
                     epochTimeMs = Date().time,
                     chatId = chatID,
-                    isImage = isImage,
-                    isFile = isFile,
+                    isImage = data.fileType == FileUtils.FileType.IMAGE,
+                    isFile = data.fileType == FileUtils.FileType.FILE,
                     fileLocation = newFileLocation // Updated location
                 )
 
@@ -182,7 +176,7 @@ object FileSendUtils {
                     seen = false
                 )
 
-                messagesRepository.saveMessage(DataManager.context, messageItem)
+                messagesRepository.saveMessage(context, messageItem)
                 chatItem?.let { chatsRepo.addChat(it) }
 
             } catch (e: Exception) {
@@ -192,7 +186,7 @@ object FileSendUtils {
         }
     }
 
-    fun first50BytesUtf8(input: String): String {
+    private fun first50BytesUtf8(input: String): String {
         val utf8 = input.toByteArray(Charsets.UTF_8)
         if (utf8.size <= 50) return input
 
@@ -217,7 +211,7 @@ object FileSendUtils {
         return "" // fallback, should never happen
     }
 
-    fun getFileNameAndType(file: File): Pair<String, String> {
+    private fun getFileNameAndType(file: File): Pair<String, String> {
         val name = trimUntilUnderscore(file.nameWithoutExtension)
         val ext = file.extension.ifBlank { "unknown" }
 
@@ -226,45 +220,39 @@ object FileSendUtils {
 
         return safeName to ext
     }
+
     private fun createStartPackage (
-        context: Context,
-        type: StardustFileStartParser.FileTypeEnum,
         totalPackages: Int,
-        dest: String?,
-        stardustAPIPackage: StardustAPIPackage,
-        spareData: Int,
-        file: File
-        , fileName : String, fileExt : String
+        spareData: Int
     ){
-        if(dest == null) {
-            return
-        }
-//        val (fileName, fileType) = getFileNameAndType(file)
-        // TODO: Add encode and spare
-        val fileStart =  StardustFileStartPackage(type = type.type, total = totalPackages, stardustAPIPackage.spare, spareData, fileExt, fileName)
-        sendType = type
-        val radio = CarriersUtils.getRadioToSend(functionalityType =  if(type == StardustFileStartParser.FileTypeEnum.TXT)
-            FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage.carrier
-        )  ?: return
+        val fileName = first50BytesUtf8(data.file.nameWithoutExtension)
+        val fileEnding = data.file.extension
+        val functionalityType = if(data.fileType == FileType.FILE) FunctionalityType.FILE else FunctionalityType.IMAGE
+
+        val fileStart = StardustFileStartPackage(type = data.fileType.bitCode, total = totalPackages, data.stardustAPIPackage.spare, spareData, fileEnding, fileName)
+
+        val radio = CarriersUtils.getRadioToSend(functionalityType =  functionalityType, carrier = data.stardustAPIPackage.carrier)  ?: return
+
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
                 val sosString = "STR"
                 val sosBytes = sosString.toByteArray()
-                var data : Array<Int> = arrayOf()
-                data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes).size + fileStart.toArrayInt().size)
-                data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
-                data = data.plus(fileStart.toArrayInt())
+                var dataToSend : Array<Int> = arrayOf()
+                dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes).size + fileStart.toArrayInt().size)
+                dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
+                dataToSend = dataToSend.plus(fileStart.toArrayInt())
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     context,
                     source = appId,
-                    destenation = dest,
+                    destenation = data.stardustAPIPackage.destination,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
-                    data = data)
+                    data = dataToSend)
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
                 it.addMessageToQueue(fileStartMessage)
             }
         }
     }
+
     private fun createSparePackages(
         packages: Map<Float, StardustFilePackage>,
         spare: Int
@@ -314,6 +302,7 @@ object FileSendUtils {
             }
         }
     }
+
     private fun testDecode(packages: Map<Float, StardustFilePackage>, spare: Int) {
         val data = packages.values.map { it.data }
         val ldpc = LDPCCode(maxPackets = packages.size, parityPackets = spare)
@@ -357,58 +346,29 @@ object FileSendUtils {
         return bittelFileList
     }
 
-
-    fun decompressTextFile(inputFile: File, outputFile: File) {
-        FileInputStream(inputFile).use { fis ->
-            GZIPInputStream(fis).use { gzis ->
-                FileOutputStream(outputFile).use { fos ->
-                    gzis.copyTo(fos)
-                }
-            }
-        }
-    }
-
-    fun handleFileStartReceive (
-        bittelFileStartPackage: StardustFileStartPackage,
-        mPackage: StardustPackage
-    ) {
-        Log.d("handleBittelFileRespons", "bittelFileStartPackage.fileName : ${bittelFileStartPackage.fileName}\nbittelFileStartPackage.fileEnding : ${bittelFileStartPackage.fileEnding}")
-        FileReceivedUtils.getInitFile(bittelFileStartPackage, mPackage)
-    }
-
-    fun handleFileReceive (context: Context, bittelFilePackage : StardustFilePackage,
-                           mPackage: StardustPackage) {
-        FileReceivedUtils.getFile(context, bittelFilePackage, mPackage)
-    }
-
-    private fun sendPackage (context: Context, stardustFilePackage: StardustFilePackage, dest : String?) {
-        if(dest == null) {
-            return
-        }
+    private fun sendPackage (stardustFilePackage: StardustFilePackage) {
         DataManager.getClientConnection(context).let {
-            val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
-                FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage?.carrier
+            val radio = CarriersUtils.getRadioToSend(functionalityType =  if(data.fileType == FileType.FILE)
+                FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = data.stardustAPIPackage.carrier
             )  ?: return
             this.sendInterval = if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
                 300
             } else {
                 900
             }
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val fileStartMessage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = appId,
-                    destenation = dest,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
-                    data = stardustFilePackage.toArrayInt())
-                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
-                if(stardustFilePackage.isLast) {
-                    fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
-                }
-                packagesSent ++
-                Timber.tag("FileUpload").d("send : $packagesSent")
-                it.addMessageToQueue(fileStartMessage)
+            val fileStartMessage = StardustPackageUtils.getStardustPackage(
+                context = context,
+                source = data.stardustAPIPackage.source,
+                destenation = data.stardustAPIPackage.destination,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+                data = stardustFilePackage.toArrayInt())
+            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+            if(stardustFilePackage.isLast) {
+                fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
             }
+            packagesSent ++
+            Timber.tag("FileUpload").d("send : $packagesSent")
+            it.addMessageToQueue(fileStartMessage)
         }
     }
 
@@ -457,61 +417,48 @@ object FileSendUtils {
         }
     }
 
-    fun stopSendingPackages() {
-        removeSendTimer()
-        isSendingInProgress.value = false
-        sendingPercentage.value = 0
-        current.value = 0f
-        packagesSent = 0
-        isComplete.value = false
-        this.onFileStatusChange?.stopSending()
-        sendType = null
-        sendInterval = 900
-    }
-
     private fun finishSending() {
         isSendingInProgress.value = false
         sendingPercentage.value = 0
         removeSendTimer()
         current.value = 0f
         packagesSent = 0
-        Handler(Looper.getMainLooper()).postDelayed({isComplete.value = false}, 3000)
+        Handler(Looper.getMainLooper()).postDelayed({ isComplete.value = false }, 3000)
         isComplete.value = true
-        this.onFileStatusChange?.finishSending()
-        sendType = null
+        onFileStatusChange?.finishSending(data)
         sendInterval = 900
     }
 
-    interface OnFileStatusChange {
-        fun startSending () {}
-        fun finishSending () {}
-        fun stopSending () {}
-        fun updateStep (percentage : Int) {}
-    }
-
-    fun calculateAddedPackages (numOfPackages: Int) : Int{
+    private fun calculateAddedPackages (numOfPackages: Int) : Int{
         val factor = SharedPreferencesUtil.getResilience(DataManager.context)
         return packageNumToAdd(numOfPackages, factor.value)
     }
-}
 
-fun packageNumToAdd(packageNum: Int, factor: Int): Int {
-    require(factor in listOf(20, 60, 120)) { "Factor must be one of: 20, 60, or 120" }
-    require(packageNum > 0) { "packageNum must be > 0" }
+    private fun packageNumToAdd(packageNum: Int, factor: Int): Int {
+        require(factor in listOf(20, 60, 120)) { "Factor must be one of: 20, 60, or 120" }
+        require(packageNum > 0) { "packageNum must be > 0" }
 
-    // Step 1: raw percentage
-    var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
+        // Step 1: raw percentage
+        var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
 
-    // Step 2: clamp between 5% and 100%
-    percent = percent.coerceIn(5.0, 100.0)
+        // Step 2: clamp between 5% and 100%
+        percent = percent.coerceIn(5.0, 100.0)
 
-    // Step 3: calculate packages to add
-    var toAdd = kotlin.math.ceil(packageNum * (percent / 100)).toInt()
+        // Step 3: calculate packages to add
+        var toAdd = kotlin.math.ceil(packageNum * (percent / 100)).toInt()
 
-    // Step 4: enforce minimum 2 packages
-    toAdd = maxOf(2, toAdd)
+        // Step 4: enforce minimum 2 packages
+        toAdd = maxOf(2, toAdd)
 
-    return toAdd
+        return toAdd
+    }
+
+    interface OnFileStatusChange {
+        fun startSending(data: FileUtils.FileTransferData.Send) {}
+        fun finishSending(data: FileUtils.FileTransferData.Send) {}
+        fun stopSending(data: FileUtils.FileTransferData.Send) {}
+        fun updateStep (data: FileUtils.FileTransferData.Send, percentage : Int) {}
+    }
 }
 
 enum class Resilience (val value : Int) {

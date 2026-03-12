@@ -33,13 +33,14 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustApp
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
+import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.FileSendUtils
+import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.UsersUtils
@@ -50,6 +51,7 @@ import timber.log.Timber
 internal class StardustPackageHandler(private val context: Context ,
                              private var clientConnection: ClientConnection? = null) {
 
+    private val fileReceivers = mutableMapOf<String, FileReceiver>() // <uuid, FileReceiver>
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
         savedPackage =null
     }
@@ -321,23 +323,28 @@ internal class StardustPackageHandler(private val context: Context ,
         val data = mPackage.data ?: return
         val sig = listOf(83, 84, 82) // "STR"
 
-        val matchAt0 = data.matchesSignatureAt(0, sig)
-        val matchAt1 = data.matchesSignatureAt(1, sig)
+        val parser = StardustFileStartParser()
+        val onReceiverDone: (String) -> Unit = { key -> fileReceivers.remove(key) }
 
-        if (matchAt1) {
-            StardustFileStartParser().parseFileStart(mPackage)
-                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
-            return
-        }
-        if (matchAt0) {
-            StardustFileStartParser().parseFileStar2(mPackage)
-                ?.let { FileSendUtils.handleFileStartReceive(it, mPackage) }
-            return
+        fun registerReceiver(startData: StardustFileStartPackage) {
+            val receiver = FileReceiver(context, startData, mPackage, onReceiverDone)
+            fileReceivers[receiver.data.id] = receiver
         }
 
-
-        StardustFileParser().parseFile(bittelPackage = mPackage)
-            ?.let { FileSendUtils.handleFileReceive(context, it, mPackage) }
+        when {
+            data.matchesSignatureAt(1, sig) -> {
+                parser.parseFileStart(mPackage)?.let { registerReceiver(it) }
+            }
+            data.matchesSignatureAt(0, sig) -> {
+                parser.parseFileStart2(mPackage)?.let { registerReceiver(it) }
+            }
+            else -> {
+                StardustFileParser().parseFile(bittelPackage = mPackage)?.let { fileData ->
+                    val uniqueId = FileReceiver.getUniqueKey(mPackage)
+                    fileReceivers[uniqueId]?.addDataPackage(fileData)
+                }
+            }
+        }
     }
 
     private fun handleUpdatePolygonFreqResponse(mPackage: StardustPackage) {
@@ -351,30 +358,8 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
 
-
-    private fun setOldLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
-//        if(CarriersUtils.isCarriersChanged(stardustConfigurationPackage) == true) {
-//            CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
-//            CarriersUtils.getDefaults()
-//
-//        } else {
-//            CarriersUtils.setLocalCarrierList ()
-//        }
-    }
-
-    private fun setNewLocals(stardustConfigurationPackage: StardustConfigurationPackage) {
+    private fun setNewLocals() {
         ConfigurationUtils.setDefaults(DataManager.context)
-//        CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
-
-//
-//        //todo change
-//        if(CarriersUtils.isCarriersChanged(stardustConfigurationPackage) == true) {
-//            CarriersUtils.getCarrierListAndUpdate(stardustConfigurationPackage)
-//            CarriersUtils.getDefaults()
-//
-//        } else {
-//            CarriersUtils.setLocalCarrierList ()
-//        }
     }
 
     private fun handleConfiguration(context: Context, mPackage: StardustPackage) {
@@ -386,7 +371,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
                 ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
                 ConfigurationUtils.setConfigFile(it)
-                setNewLocals(it)
+                setNewLocals()
                 AdminUtils.updateBittelAdminMode(context)
             }
     }

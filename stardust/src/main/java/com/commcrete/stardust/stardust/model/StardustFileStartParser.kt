@@ -1,6 +1,5 @@
 package com.commcrete.bittell.util.bittel_package.model
 
-import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getCharValue
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -55,7 +54,7 @@ class StardustFileStartParser : StardustParser() {
         return input.filter { it != 0.toByte() }.toByteArray()
     }
 
-    fun parseFileStar2 (bittelPackage: StardustPackage) : StardustFileStartPackage? {
+    fun parseFileStart2 (bittelPackage: StardustPackage) : StardustFileStartPackage? {
         bittelPackage.data?.let { intArray ->
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             var offset = 0
@@ -87,8 +86,4 @@ class StardustFileStartParser : StardustParser() {
         return null
     }
 
-    enum class FileTypeEnum (val type : Int){
-        TXT (0),
-        JPG(1),
-    }
 }

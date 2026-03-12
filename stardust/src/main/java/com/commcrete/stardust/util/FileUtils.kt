@@ -1,15 +1,9 @@
 package com.commcrete.stardust.util
 
-import android.content.ContentValues
 import android.content.Context
 import androidx.core.content.FileProvider
-import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.webkit.MimeTypeMap
-import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -21,12 +15,16 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStreamReader
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.stardust.model.StardustControlByte
 import java.io.BufferedOutputStream
 import java.io.FileWriter
 import java.io.OutputStream
+import java.util.UUID
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -450,12 +448,47 @@ object FileUtils {
         writer.close()
     }
 
-
-    enum class FileType {
-        UNKNOWN,
-        FILE,
-        IMAGE
+    fun decompressTextFile(inputFile: File, outputFile: File) {
+        FileInputStream(inputFile).use { fis ->
+            GZIPInputStream(fis).use { gzis ->
+                FileOutputStream(outputFile).use { fos ->
+                    gzis.copyTo(fos)
+                }
+            }
+        }
     }
+
+    fun trimUntilUnderscore(input: String): String {
+        return input.substringAfter("_")
+    }
+
+
+    enum class FileType(val bitCode : Int) {
+        FILE(0),
+        IMAGE(1)
+    }
+
+    sealed class FileTransferData(open val id: String = UUID.randomUUID().toString(), open val timestamp: Long = System.currentTimeMillis()) {
+        data class Send(
+            override val id: String = UUID.randomUUID().toString(),
+            val stardustAPIPackage: StardustAPIPackage,
+            val file: File,
+            val fileType: FileType,
+            override val timestamp: Long = System.currentTimeMillis()
+        ) : FileTransferData(id, timestamp)
+
+        data class Receive(
+            override val id: String = UUID.randomUUID().toString(),
+            val chatID: String,
+            val senderID: String,
+            val fileName: String,
+            val fileEnding: String,
+            val fileType: FileType,
+            val deliveryChannel: StardustControlByte.StardustDeliveryType,
+            override val timestamp: Long = System.currentTimeMillis(),
+        ) : FileTransferData(id, timestamp)
+    }
+
 
     data class ZipItem(
         val files: List<File>,         // files or directories to include
@@ -464,4 +497,5 @@ object FileUtils {
     )
 
     class MediaStoreFile(val uri: Uri, val outputStream: OutputStream)
+
 }

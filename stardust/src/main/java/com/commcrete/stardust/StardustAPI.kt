@@ -9,11 +9,10 @@ import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
-import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.util.Carrier
-import com.commcrete.stardust.util.FileReceivedUtils
-import com.commcrete.stardust.util.FileSendUtils
-import com.commcrete.stardust.util.FileUtils
+import com.commcrete.stardust.util.FileReceiver
+import com.commcrete.stardust.util.FileSender
+import com.commcrete.stardust.util.FileUtils.FileTransferData
 import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
 
@@ -24,9 +23,9 @@ interface StardustAPI {
     fun startPTT (context: Context,stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File?
     fun stopPTT (context: Context,stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?)
     fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun sendImage (context: Context,stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange, fileName : String, fileExt : String)
-    fun sendFile (context: Context,stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange, fileName : String, fileExt : String)
-    fun stopSendFile (context: Context,)
+    fun sendImage (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange)
+    fun sendFile (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange)
+    fun stopSendFile (context: Context, data: FileTransferData.Send)
     fun requestLocation (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type : Int)
     fun init(context: Context, fileLocation : String)
@@ -57,25 +56,21 @@ interface StardustAPICallbacks {
     fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun startedReceivingPTT (stardustAPIPackage: StardustAPIPackage, file: File)
     fun stopReceivingPTT (stardustAPIPackage: StardustAPIPackage)
-    fun receiveImage (stardustAPIPackage: StardustAPIPackage, file: File)
-    fun receiveFile (stardustAPIPackage: StardustAPIPackage, file: File)
-    fun receiveFileStatus (
-        index: Int,
+    fun receiveImage (data: FileTransferData.Receive, file: File)
+    fun receiveFile(data: FileTransferData.Receive, file: File)
+    fun receiveFileStatus(
+        data: FileTransferData.Receive,
         percentage: Int,
-        source: String,
-        destination: String,
-        fileName: String,
-        fileEnding: String,
-        fileType: FileUtils.FileType
+    )
+    fun receiveFailure (
+        data: FileTransferData.Receive,
+        failure: FileReceiver.FileFailure
     )
     fun connectionStatusChanged (connectionType: ConnectionType?)
     fun onRSSIChanged (rssi : Int)
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)
-    fun receiveFailure (
-        failure: FileReceivedUtils.FileReceivedData.FileFailure,
-        dataStart: StardustFileStartPackage?
-    )
+
     fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
 }
