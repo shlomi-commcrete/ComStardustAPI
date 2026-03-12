@@ -16,6 +16,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
@@ -36,7 +37,6 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
     private var packagesSent = 0
     private var onFileStatusChange : OnFileStatusChange? = null
     private val handler : Handler = Handler(Looper.getMainLooper())
-    private val FILE_CHUNK_SIZE = 60
     var randomMisses : MutableSet<Int> = mutableSetOf()
     private val runnable : Runnable = Runnable {
         val mPackage = mutablePackagesMap[current.value]
@@ -387,35 +387,6 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         }
     }
 
-    private fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
-        var length = 0
-        val chunkSize = FILE_CHUNK_SIZE
-        for (file in files) {
-            length = length + (file.length().div(chunkSize)).toInt()
-            if(file.length().mod(chunkSize) != 0) {
-                length ++
-            }
-        }
-        return length + spare
-    }
-
-    private fun calculateSendTime(numOfPackages: Int): String {
-        val totalSeconds = numOfPackages * 1.3 // Total time in seconds as a Double
-        val minutes = totalSeconds.toInt() / 60 // Whole minutes
-        val seconds = totalSeconds % 60 // Remaining seconds
-
-        return if (minutes > 0) {
-            String.format(
-                "%d minute%s and %.1f second%s",
-                minutes,
-                if (minutes > 1) "s" else "",
-                seconds,
-                if (seconds > 1.0) "s" else ""
-            )
-        } else {
-            String.format("%.1f second%s", totalSeconds, if (totalSeconds > 1.0) "s" else "")
-        }
-    }
 
     private fun finishSending() {
         isSendingInProgress.value = false
@@ -429,35 +400,77 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         sendInterval = 900
     }
 
-    private fun calculateAddedPackages (numOfPackages: Int) : Int{
-        val factor = SharedPreferencesUtil.getResilience(DataManager.context)
-        return packageNumToAdd(numOfPackages, factor.value)
-    }
-
-    private fun packageNumToAdd(packageNum: Int, factor: Int): Int {
-        require(factor in listOf(20, 60, 120)) { "Factor must be one of: 20, 60, or 120" }
-        require(packageNum > 0) { "packageNum must be > 0" }
-
-        // Step 1: raw percentage
-        var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
-
-        // Step 2: clamp between 5% and 100%
-        percent = percent.coerceIn(5.0, 100.0)
-
-        // Step 3: calculate packages to add
-        var toAdd = kotlin.math.ceil(packageNum * (percent / 100)).toInt()
-
-        // Step 4: enforce minimum 2 packages
-        toAdd = maxOf(2, toAdd)
-
-        return toAdd
-    }
-
     interface OnFileStatusChange {
         fun startSending(data: FileUtils.FileTransferData.Send) {}
         fun finishSending(data: FileUtils.FileTransferData.Send) {}
         fun stopSending(data: FileUtils.FileTransferData.Send) {}
         fun updateStep (data: FileUtils.FileTransferData.Send, percentage : Int) {}
+    }
+
+    companion object {
+
+        private const val FILE_CHUNK_SIZE = 60
+        fun calculateNumOfPackages(files: List<File>, spare: Int) : Int {
+            var length = 0
+            val chunkSize = FILE_CHUNK_SIZE
+            for (file in files) {
+                length = length + (file.length().div(chunkSize)).toInt()
+                if(file.length().mod(chunkSize) != 0) {
+                    length ++
+                }
+            }
+            return length + spare
+        }
+
+        fun calculateSendTime(numOfPackages: Int, functionalityType: FunctionalityType): String {
+            val radio: Pair<Carrier?, StardustControlByte.StardustDeliveryType?>? =
+                getRadioToSend(null, functionalityType)
+
+            val totalTime =
+                if (radio?.first != null &&
+                    radio.first?.component2() == StardustConfigurationParser.StardustTypeFunctionality.ST
+                ) 0.3 else 1.3
+
+            val totalSeconds = numOfPackages * totalTime // Total time in seconds as a Double
+            val minutes = totalSeconds.toInt() / 60 // Whole minutes
+            val seconds = totalSeconds % 60 // Remaining seconds
+
+            return if (minutes > 0) {
+                String.format(
+                    "%d minute%s and %.1f second%s",
+                    minutes,
+                    if (minutes > 1) "s" else "",
+                    seconds,
+                    if (seconds > 1.0) "s" else ""
+                )
+            } else {
+                String.format("%.1f second%s", totalSeconds, if (totalSeconds > 1.0) "s" else "")
+            }
+        }
+
+        fun calculateAddedPackages (numOfPackages: Int) : Int{
+            val factor = SharedPreferencesUtil.getResilience(DataManager.context)
+            return packageNumToAdd(numOfPackages, factor.value)
+        }
+
+        private fun packageNumToAdd(packageNum: Int, factor: Int): Int {
+            require(factor in listOf(20, 60, 120)) { "Factor must be one of: 20, 60, or 120" }
+            require(packageNum > 0) { "packageNum must be > 0" }
+
+            // Step 1: raw percentage
+            var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
+
+            // Step 2: clamp between 5% and 100%
+            percent = percent.coerceIn(5.0, 100.0)
+
+            // Step 3: calculate packages to add
+            var toAdd = kotlin.math.ceil(packageNum * (percent / 100)).toInt()
+
+            // Step 4: enforce minimum 2 packages
+            toAdd = maxOf(2, toAdd)
+
+            return toAdd
+        }
     }
 }
 
