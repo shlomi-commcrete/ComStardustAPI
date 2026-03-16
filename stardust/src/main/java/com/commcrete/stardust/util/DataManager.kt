@@ -284,8 +284,8 @@ object DataManager : StardustAPI, PttInterface{
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
         val stardustPackage = StardustPackageUtils.getStardustPackage(
             context = context,
-            source = stardustAPIPackage.destination,
-            destenation = stardustAPIPackage.source,
+            source = stardustAPIPackage.source,
+            destenation = stardustAPIPackage.destination,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
         Scopes.getDefaultCoroutine().launch {
