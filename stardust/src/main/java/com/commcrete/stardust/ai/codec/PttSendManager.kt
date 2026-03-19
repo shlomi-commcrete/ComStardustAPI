@@ -10,8 +10,6 @@ import com.commcrete.aiaudio.media.WavHelper
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -22,8 +20,6 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.util.audio.WavRecorder
-import com.commcrete.stardust.util.audio.endsWith
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

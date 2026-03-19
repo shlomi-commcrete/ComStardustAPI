@@ -10,7 +10,6 @@ import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
@@ -32,15 +31,40 @@ class FileReceiver(
     var receivingPercentage: Int = 0
     val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
-    val data = FileUtils.FileTransferData.Receive(
+    var data = FileUtils.FileTransferData.Receive(
         id = getUniqueKey(stardustPackage),
         senderID = getRealSenderID(sourceID = stardustPackage.getSourceAsString(), destinationID = stardustPackage.getDestAsString()),
         chatID = stardustPackage.getSourceAsString(),
         fileName = firstPackage.fileName,
         fileEnding = firstPackage.fileEnding,
         fileType = firstPackage.fileType,
-        deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType
+        deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
+        numOfPackages = firstPackage.total,
     )
+    
+    init {
+        // Load chat names asynchronously in the background (non-blocking)
+        Scopes.getDefaultCoroutine().launch {
+            try {
+                val chatsRepo = DataManager.getChatsRepo(context)
+                val loadedChatName = chatsRepo.getChatName(data.chatID) ?: data.chatID
+                val loadedSenderName = if(data.chatID != data.realSenderName) {
+                    chatsRepo.getChatName(data.senderID) ?: data.senderID
+                } else loadedChatName
+                
+                // Switch to main thread only for quick data update
+                Scopes.getMainCoroutine().launch {
+                    data = data.copy(
+                        chatName = loadedChatName,
+                        realSenderName = loadedSenderName
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("FileReceiver", "Error loading chat names", e)
+                // Names remain as IDs if loading fails
+            }
+        }
+    }
 
     private val sendInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
@@ -153,14 +177,14 @@ class FileReceiver(
         }
         val name = data.fileName
         val ending = data.fileEnding
-        val type = if(data.fileType == FileUtils.FileType.FILE) ".$ending" else ".jpg"
+        val type = if(data.fileType == FileUtils.FileType.File) ".$ending" else ".jpg"
 // Create the target file with a timestamp
         val ts = System.currentTimeMillis()
         val completeFileName = "$ts"+ "_"+"$name$type"
         val targetFile = File(destDir, "$completeFileName")
         try {
 
-            if(data.fileType == FileUtils.FileType.FILE) {
+            if(data.fileType == FileUtils.FileType.File) {
                 // Step 1: Create a temporary file for the concatenated data
                 val tempOutputFile = File.createTempFile("output_temp", null)
                 // Write concatenated data to the temporary file
@@ -180,7 +204,7 @@ class FileReceiver(
             }
             println("File saved successfully at: ${targetFile.absolutePath}")
             saveToMessages(targetFile)
-            if(data.fileType == FileUtils.FileType.FILE) {
+            if(data.fileType == FileUtils.FileType.File) {
                 DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
             } else {
                 DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
@@ -273,7 +297,7 @@ class FileReceiver(
     private fun saveToMessages (file: File) {
         Scopes.getDefaultCoroutine().launch {
             val mFileName = trimUntilUnderscore(file.name)
-            val type = (if(data.fileType == FileUtils.FileType.FILE) "File Received" else "Image Received") + ": $mFileName"
+            val type = (if(data.fileType == FileUtils.FileType.File) "File Received" else "Image Received") + ": $mFileName"
             val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
             var chatItem = chatsRepo.getChatByBittelID(data.chatID)
             if(chatItem == null) {
@@ -295,7 +319,7 @@ class FileReceiver(
                                 chatId = data.chatID,
                                 text = type,
                                 fileLocation = file.absolutePath,
-                                isFile = data.fileType == FileUtils.FileType.FILE, isImage = data.fileType == FileUtils.FileType.IMAGE)
+                                isFile = data.fileType == FileUtils.FileType.File, isImage = data.fileType == FileUtils.FileType.Image)
                             DataManager.getMessagesRepo(context).saveMessage( context = context, messageItem )
                             UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
                             val numOfUnread = chat.numOfUnseenMessages

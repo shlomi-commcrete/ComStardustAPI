@@ -10,12 +10,10 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.startPTT
 import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
 import com.commcrete.stardust.util.UsersUtils
 import kotlinx.coroutines.launch
 import timber.log.Timber

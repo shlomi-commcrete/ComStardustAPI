@@ -15,7 +15,6 @@ import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
-import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
@@ -122,7 +121,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         val fileLocation = data.file.absolutePath
 
         Scopes.getDefaultCoroutine().launch {
-            val text = (if (data.fileType == FileUtils.FileType.FILE) "File Sent" else "Image Sent") +  ": ${data.file.name}"
+            val text = (if (data.fileType == FileType.File) "File Sent" else "Image Sent") +  ": ${data.file.name}"
 
             // Create the destination directory
             val destDir = File("${context.filesDir}/$chatID/files")
@@ -142,14 +141,14 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             try {
                 // Copy the file to the destination
                 when(data.fileType) {
-                    FileType.IMAGE -> {
+                    FileType.Image -> {
                         originalFile.inputStream().use { input ->
                             destFile.outputStream().use { output ->
                                 input.copyTo(output)
                             }
                         }
                     }
-                    FileType.FILE -> {
+                    FileType.File -> {
                         decompressTextFile(originalFile, destFile)
                     }
                 }
@@ -164,8 +163,8 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                     text = text,
                     epochTimeMs = Date().time,
                     chatId = chatID,
-                    isImage = data.fileType == FileUtils.FileType.IMAGE,
-                    isFile = data.fileType == FileUtils.FileType.FILE,
+                    isImage = data.fileType == FileUtils.FileType.Image,
+                    isFile = data.fileType == FileUtils.FileType.File,
                     fileLocation = newFileLocation // Updated location
                 )
 
@@ -227,11 +226,10 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
     ){
         val fileName = first50BytesUtf8(data.file.nameWithoutExtension)
         val fileEnding = data.file.extension
-        val functionalityType = if(data.fileType == FileType.FILE) FunctionalityType.FILE else FunctionalityType.IMAGE
 
         val fileStart = StardustFileStartPackage(type = data.fileType.bitCode, total = totalPackages, data.stardustAPIPackage.spare, spareData, fileEnding, fileName)
 
-        val radio = CarriersUtils.getRadioToSend(functionalityType =  functionalityType, carrier = data.stardustAPIPackage.carrier)  ?: return
+        val radio = getRadioToSend(functionalityType = data.fileType.relatedFunctionalityType(), carrier = data.stardustAPIPackage.carrier)  ?: return
 
         DataManager.getClientConnection(context).let {
             SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
@@ -348,7 +346,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
 
     private fun sendPackage (stardustFilePackage: StardustFilePackage) {
         DataManager.getClientConnection(context).let {
-            val radio = CarriersUtils.getRadioToSend(functionalityType =  if(data.fileType == FileType.FILE)
+            val radio = CarriersUtils.getRadioToSend(functionalityType =  if(data.fileType == FileType.File)
                 FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = data.stardustAPIPackage.carrier
             )  ?: return
             this.sendInterval = if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {

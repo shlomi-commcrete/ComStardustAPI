@@ -16,7 +16,6 @@ import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
-import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.PlayerUtils

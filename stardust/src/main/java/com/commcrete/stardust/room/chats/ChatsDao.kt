@@ -37,6 +37,8 @@ interface ChatsDao {
     @Query("UPDATE chats_table SET audio_received=:isAudioReceived WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatAudioReceived(chatId: String, isAudioReceived : Boolean)
 
+    @Query("SELECT chat_name FROM chats_table WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
+    suspend fun getChatName(chatId: String) : String?
     @Query("UPDATE chats_table SET chat_name=:name WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatName(chatId: String, name : String)
 

@@ -16,10 +16,12 @@ import java.io.IOException
 import java.io.InputStreamReader
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.util.FileSender.Companion.calculateSendTime
 import java.io.BufferedOutputStream
 import java.io.FileWriter
 import java.io.OutputStream
@@ -464,29 +466,59 @@ object FileUtils {
 
 
     enum class FileType(val bitCode : Int) {
-        FILE(0),
-        IMAGE(1)
+        File(0),
+        Image(1);
+
+        fun relatedFunctionalityType() : FunctionalityType = when(this) {
+            File -> FunctionalityType.FILE
+            Image -> FunctionalityType.IMAGE
+        }
     }
 
-    sealed class FileTransferData(open val id: String = UUID.randomUUID().toString(), open val timestamp: Long = System.currentTimeMillis()) {
+    sealed class FileTransferData(
+        open val id: String = UUID.randomUUID().toString(),
+        open val fileType: FileType,
+        open val numOfPackages: Int,
+        open val timestamp: Long = System.currentTimeMillis()) {
+
+        fun remainingTransferTimeAsString(progress: Int): String {
+            // Calculate remaining packages: progress is percentage (0-100)
+            val completedPackages = (numOfPackages * progress) / 100.0
+            val remainingPackages = (numOfPackages - completedPackages).toInt()
+            return calculateSendTime(remainingPackages, fileType.relatedFunctionalityType())
+        }
+
         data class Send(
             override val id: String = UUID.randomUUID().toString(),
             val stardustAPIPackage: StardustAPIPackage,
             val file: File,
-            val fileType: FileType,
+            override val fileType: FileType,
+            val destinationName: String,
+            override val numOfPackages: Int,
             override val timestamp: Long = System.currentTimeMillis()
-        ) : FileTransferData(id, timestamp)
+        ) : FileTransferData(
+            id = id,
+            fileType = fileType,
+            numOfPackages = numOfPackages,
+            timestamp = timestamp)
 
         data class Receive(
             override val id: String = UUID.randomUUID().toString(),
             val chatID: String,
             val senderID: String,
+            val chatName: String = chatID,
+            val realSenderName: String = senderID,
             val fileName: String,
             val fileEnding: String,
-            val fileType: FileType,
+            override val fileType: FileType,
+            override val numOfPackages: Int,
             val deliveryChannel: StardustControlByte.StardustDeliveryType,
             override val timestamp: Long = System.currentTimeMillis(),
-        ) : FileTransferData(id, timestamp)
+        ) : FileTransferData(
+            id = id,
+            fileType = fileType,
+            numOfPackages = numOfPackages,
+            timestamp = timestamp)
     }
 
 

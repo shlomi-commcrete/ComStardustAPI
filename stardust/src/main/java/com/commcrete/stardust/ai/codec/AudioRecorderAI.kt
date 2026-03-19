@@ -6,19 +6,11 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
-import android.os.Build
 import android.util.Log
-import androidx.core.content.ContextCompat.getSystemService
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.audio.AudioRecordManager
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.coroutineContext
 
 
 /**

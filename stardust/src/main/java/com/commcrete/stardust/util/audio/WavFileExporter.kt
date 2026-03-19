@@ -2,14 +2,10 @@ package com.commcrete.stardust.util.audio
 
 import android.content.ContentValues
 import android.content.Context
-import android.media.AudioFormat
-import android.net.Uri
-import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 

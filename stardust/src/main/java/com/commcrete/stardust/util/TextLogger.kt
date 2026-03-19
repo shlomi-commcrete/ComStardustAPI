@@ -2,7 +2,6 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import android.widget.Toast
-import com.commcrete.stardust.BuildConfig
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileWriter
