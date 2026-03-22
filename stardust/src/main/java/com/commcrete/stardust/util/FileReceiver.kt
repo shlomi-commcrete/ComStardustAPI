@@ -25,10 +25,8 @@ class FileReceiver(
     val stardustPackage: StardustPackage,
     val onLastPackageReceived: (key: String) -> Unit) {
 
-    private val textLogger = TextLogger(context)
     val dataList: MutableList<StardustFilePackage> = mutableListOf()
-    var isReceivingInProgress: Boolean = false
-    var receivingPercentage: Int = 0
+    var lastReportedProgress: Int = 0
     val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
     var data = FileUtils.FileTransferData.Receive(
@@ -69,21 +67,7 @@ class FileReceiver(
     private val sendInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
-//            val totalPackages = dataStart?.total
-//            val missing = lostPackagesIndex.count()
-        //val text = "t:$totalPackages, m:$missing"
-        //textLogger.logText(text)
-        if(checkIfHaveEnough()) {
-            saveFile()
-            Scopes.getMainCoroutine().launch {
-                isReceivingInProgress = false
-                DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
-            }
-        }
-        Scopes.getMainCoroutine().launch {
-            DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 0)
-        }
-        dataList.clear()
+        checkData()
     }
 
     fun addDataPackage(filePackage: StardustFilePackage) {
@@ -107,78 +91,96 @@ class FileReceiver(
     fun removeReceiveTimer() {
         try {
             onLastPackageReceived.invoke(data.id)
+        } catch (e: Exception) {
+            Log.e("FileReceiver", "Error invoking callback", e)
+        } finally {
+            // Always clean up handler callbacks, even if callback fails
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
-        } catch (e : Exception) {
-            e.printStackTrace()
         }
     }
 
-    fun updateProgress () {
+    fun updateProgress() {
         checkMissingPackages()
         Scopes.getMainCoroutine().launch {
-            receivingPercentage = ((dataList.size.toDouble() / firstPackage.total) * 100).toInt()
-            DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = receivingPercentage)
-            Log.d("FileReceivedUtils","timesDelay : $receivingPercentage" )
+            val newProgress = ((dataList.size.toDouble() / firstPackage.total) * 100).toInt()
+
+            // Only update if progress has actually changed
+            if (newProgress != lastReportedProgress) {
+                lastReportedProgress = newProgress
+                // Handle completion
+                if (newProgress >= 100) {
+                    removeReceiveTimer()
+                    checkData()
+                } else {
+                    Log.d("FileReceivedUtils", "Progress updated: $newProgress%")
+                    DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = newProgress)
+
+                }
+            }
         }
-        checkData()
     }
 
     private fun checkData() {
-        if(lostPackagesIndex.size > (firstPackage.total - firstPackage.spare) ) {
+        // Check if too many packages are missing
+        if (lostPackagesIndex.size > (firstPackage.total - firstPackage.spare)) {
             updateFailure(FileFailure.MISSING)
+            return
         }
-        if(checkIfMissingMain()) {
+        // Check if we have all main packages or reached the last package
+        val isComplete = hasMainPackages() || 
+                         (dataList.isNotEmpty() && firstPackage.total == dataList.last().current + 1)
+
+        if (isComplete) {
             saveFile()
-            Scopes.getMainCoroutine().launch {
-                isReceivingInProgress = false
-                DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 0)
-            }
-        } else if(firstPackage.total == dataList.last().current + 1) {
-            saveFile()
-            Scopes.getMainCoroutine().launch {
-                isReceivingInProgress = false
+            notifyTransferComplete()
+        }
+    }
+
+    private fun notifyTransferComplete() {
+        Scopes.getMainCoroutine().launch {
+            try {
+                Log.d("FileReceiver", "Transfer complete: ${data.fileName}")
                 DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
+            } catch (e: Exception) {
+                Log.e("FileReceiver", "Error notifying completion", e)
+            } finally {
+                removeReceiveTimer()
+                dataList.clear()
             }
         }
     }
 
     private fun calculateDelay(): Int {
-        val spareDelay = firstPackage?.spare?.let {
-            it - lostPackagesIndex.size
-        }
+        val spareDelay = firstPackage.spare - lostPackagesIndex.size
 
-        val totalDelay = firstPackage?.total?.let {
-            it - dataList.last().current + 1
-        }
+        val totalDelay = firstPackage.total - dataList.last().current + 1
 
         return maxOf(1, listOfNotNull(spareDelay, totalDelay).minOrNull() ?: 0)
     }
 
-    private fun updateFailure (failure: FileFailure) {
-        val totalPackages = firstPackage?.total
-        val missing = lostPackagesIndex.count()
-//            val text = "t:$totalPackages, m:$missing"
-//            textLogger.logText(text)
-        DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
+    private fun updateFailure(failure: FileFailure) {
+        Log.w("FileReceiver", "Transfer failed: $failure (missing: ${lostPackagesIndex.count()} packages)")
+        Scopes.getMainCoroutine().launch {
+            try {
+                DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
+            } catch (e: Exception) {
+                Log.e("FileReceiver", "Error notifying failure", e)
+            } finally {
+                removeReceiveTimer()
+            }
+        }
     }
 
     private fun saveFile () {
         removeReceiveTimer()
-//        val totalPackages = firstPackage?.total
-//        val missing = lostPackagesIndex.count()
-//            val text = "t:$totalPackages, m:$missing"
-//            textLogger.logText(text)
-// Get the destination directory
         val destDir = File("${context.filesDir}/${data.chatID}/files")
-// Ensure the directory exists
         if (!destDir.exists()) {
             destDir.mkdirs()
         }
         val name = data.fileName
         val ending = data.fileEnding
         val type = if(data.fileType == FileUtils.FileType.File) ".$ending" else ".jpg"
-// Create the target file with a timestamp
         val ts = System.currentTimeMillis()
         val completeFileName = "$ts"+ "_"+"$name$type"
         val targetFile = File(destDir, "$completeFileName")
@@ -202,29 +204,28 @@ class FileReceiver(
                     writeDataToFile(outputStream)
                 }
             }
-            println("File saved successfully at: ${targetFile.absolutePath}")
+            Log.d("FileReceiver", "File saved successfully: ${targetFile.absolutePath}")
             saveToMessages(targetFile)
-            if(data.fileType == FileUtils.FileType.File) {
-                DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
-            } else {
-                DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
+            when (data.fileType) {
+                FileUtils.FileType.File -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
+                FileUtils.FileType.Image -> DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
+                else -> Log.w("FileReceiver", "Unknown file type: ${data.fileType}")
             }
-
         } catch (e: Exception) {
-            e.printStackTrace()
-            println("Error saving file: ${e.message}")
+            Log.e("FileReceiver", "Error saving file: ${data.fileName}", e)
+            updateFailure(FileFailure.ERROR)
         }
     }
 
     private fun writeDataToFile(outputStream: FileOutputStream) {
         val sortedList = dataList.sortedBy { it.current }
-        if(firstPackage?.spare == 0 || lostPackagesIndex.isEmpty()) {
+        if(firstPackage.spare == 0 || lostPackagesIndex.isEmpty()) {
             for (packageData in sortedList) {
                 outputStream.write(packageData.data)
             }
         } else {
-            val total = firstPackage?.total ?: 0
-            val parityPackets = firstPackage?.spare ?: 0
+            val total = firstPackage.total
+            val parityPackets = firstPackage.spare
             val receivedWithNulls: List<Packet?> = (0 until total).map { index ->
                 if (lostPackagesIndex.contains(index)) {
                     null
@@ -237,16 +238,7 @@ class FileReceiver(
             val decodedReed = reedSolomonAuto.decode(receivedPackets = receivedWithNulls,
                 missingIndices = lostPackagesIndex.toIntArray() ).toMutableList()
 
-//                val ldpc = LDPCCode(maxPackets = total - parityPackets,parityPackets = parityPackets)
-//                val decoded = ldpc.decode(
-//                    received = receivedWithNulls,
-//                    lostIndices = lostPackagesIndex.toList()
-//                ).toMutableList()
-
-//                for (packageData in decoded) {
-//                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
-//                }
-            firstPackage?.let {
+            firstPackage.let {
                 val spare = it.spareData
                 val lastIndex = decodedReed.lastIndex
                 decodedReed[lastIndex] = decodedReed[lastIndex].copyOfRange(0, decodedReed[lastIndex].size - spare)
@@ -262,36 +254,25 @@ class FileReceiver(
     private fun checkMissingPackages() {
         if (dataList.isEmpty()) return
 
-        // Step 1: Get all present indices
         val presentIndices = dataList.map { it.current }.toSet()
-
-        // Step 2: Determine the max current index (assuming linear and sequential from 0)
         val maxIndex = dataList.maxOf { it.current }
 
-        // Step 3: Compare expected vs present
         for (i in 0..maxIndex) {
             if (i !in presentIndices) {
                 lostPackagesIndex.add(i)
             }
         }
 
-        // Optional: Print or log the result
-        println("Missing packages: $lostPackagesIndex")
-        Log.d("checkData","Missing packages: $lostPackagesIndex" )
+        if (lostPackagesIndex.isNotEmpty()) {
+            Log.d("FileReceiver", "Missing packages: $lostPackagesIndex")
+        }
     }
 
-    private fun checkIfMissingMain(): Boolean {
-        val mainCount = firstPackage?.total ?: return false
-        val spare = firstPackage?.spare ?: 0
-
+    private fun hasMainPackages(): Boolean {
+        val mainCount = firstPackage.total
+        val spare = firstPackage.spare
         // Check if any missing package index is in the main range
-        return ((mainCount - spare) == dataList.size ) && lostPackagesIndex.isEmpty()
-    }
-
-    private fun checkIfHaveEnough(): Boolean {
-        val mainCount = firstPackage?.total ?: return false
-        val spare = firstPackage?.spare ?: 0
-        return (dataList.size  >= (mainCount - spare))
+        return ((mainCount - spare) == dataList.size) && lostPackagesIndex.isEmpty()
     }
 
     private fun saveToMessages (file: File) {
