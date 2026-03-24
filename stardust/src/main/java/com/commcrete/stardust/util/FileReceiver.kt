@@ -64,7 +64,7 @@ class FileReceiver(
         }
     }
 
-    private val sendInterval : Long = 1800
+    private val receivingInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
         checkData()
@@ -72,7 +72,6 @@ class FileReceiver(
 
     fun addDataPackage(filePackage: StardustFilePackage) {
         dataList.add(filePackage)
-        Log.d("FileReceivedUtils", "dataList.put : ${filePackage.current}")
         updateProgress()
         resetReceiveTimer()
     }
@@ -81,10 +80,9 @@ class FileReceiver(
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         val timesDelay = calculateDelay()
-        Log.d("FileReceivedUtils","timesDelay : $timesDelay" )
         handler.postDelayed(
             runnable,
-            sendInterval * timesDelay
+            receivingInterval * timesDelay
         )
     }
 
@@ -113,20 +111,13 @@ class FileReceiver(
                     removeReceiveTimer()
                     checkData()
                 } else {
-                    Log.d("FileReceivedUtils", "Progress updated: $newProgress%")
                     DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = newProgress)
-
                 }
             }
         }
     }
 
     private fun checkData() {
-        // Check if too many packages are missing
-        if (lostPackagesIndex.size > (firstPackage.total - firstPackage.spare)) {
-            updateFailure(FileFailure.MISSING)
-            return
-        }
         // Check if we have all main packages or reached the last package
         val isComplete = hasMainPackages() || 
                          (dataList.isNotEmpty() && firstPackage.total == dataList.last().current + 1)
@@ -134,6 +125,9 @@ class FileReceiver(
         if (isComplete) {
             saveFile()
             notifyTransferComplete()
+        }
+        else {
+            updateFailure(FileFailure.MISSING)
         }
     }
 
