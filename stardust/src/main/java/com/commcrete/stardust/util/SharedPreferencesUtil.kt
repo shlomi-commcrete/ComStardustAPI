@@ -321,7 +321,7 @@ object SharedPreferencesUtil {
     }
 
     fun getCodecGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 100.toFloat())
+        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 50.toFloat())
     }
 
     fun setCodecGain(context: Context, gain: Float) {
@@ -329,7 +329,7 @@ object SharedPreferencesUtil {
     }
 
     fun getAIGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 100.toFloat())
+        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 50.toFloat())
     }
 
     fun setAIGain(context: Context, gain: Float) {
