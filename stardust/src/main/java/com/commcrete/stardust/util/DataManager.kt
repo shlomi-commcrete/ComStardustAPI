@@ -374,12 +374,12 @@ object DataManager : StardustAPI, PttInterface{
         return getClientConnection(context).getBleConnectedStardustDevice()
     }
 
-    fun getConnectedDevices (context: Context) : BluetoothDevice?{
+    fun getConnectedDevices (context: Context) : BluetoothDevice? {
         requireContext(context)
-        if(getClientConnection(context).mDevice != null) {
-            return getClientConnection(context).mDevice
+        return if(getClientConnection(context).mDevice != null) {
+            getClientConnection(context).mDevice
         } else {
-            return getClientConnection(context).getBlePairedStardustDevice()
+            getClientConnection(context).getBlePairedStardustDevice()
         }
     }
 

@@ -134,7 +134,6 @@ class FileReceiver(
     private fun notifyTransferComplete() {
         Scopes.getMainCoroutine().launch {
             try {
-                Log.d("FileReceiver", "Transfer complete: ${data.fileName}")
                 DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
             } catch (e: Exception) {
                 Log.e("FileReceiver", "Error notifying completion", e)
@@ -154,7 +153,6 @@ class FileReceiver(
     }
 
     private fun updateFailure(failure: FileFailure) {
-        Log.w("FileReceiver", "Transfer failed: $failure (missing: ${lostPackagesIndex.count()} packages)")
         Scopes.getMainCoroutine().launch {
             try {
                 DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)

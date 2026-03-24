@@ -232,21 +232,18 @@ internal class ClientConnection(
 
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
-                            val src = it.appId
-                            if(src != null && !StardustInitConnectionHandler.hasUnsyncableError()) {
+                            if(it.appId != null
+                                && StardustInitConnectionHandler.isDisconnected()
+                                && getBlePairedStardustDevice() != null) {
+
+                                StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
                                 StardustInitConnectionHandler.start()
-                                StardustInitConnectionHandler.listener = object :
-                                    StardustInitConnectionHandler.InitConnectionListener {}
-//                                val mPackage = StardustPackageUtils.getStardustPackage(
-//                                    source = src , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
-//                                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
-//                                addMessageToQueue(mPackage)
 
                                 resetConnectionTimer()
                                 resetPingTimer()
                             }
                         }
-                    }, 1000)
+                    }, 1500)
                 }
 
                 override fun onCharacteristicWrite(
@@ -510,19 +507,35 @@ internal class ClientConnection(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun requestUnbond(device: BluetoothDevice): Boolean {
+        // Hidden Android API; may fail on some devices/OS versions.
+        return runCatching {
+            val method = device.javaClass.getMethod("removeBond")
+            (method.invoke(device) as? Boolean) == true
+        }.onFailure {
+            Timber.tag(LOG_TAG).e(it, "Failed to request unbond for ${device.address}")
+        }.getOrDefault(false)
+    }
+
     fun removeBittelBond () {
-        mDevice?.let {
-            try {
-                disconnectFromBLEDevice(true)
-                Scopes.getDefaultCoroutine().launch {
-                    SharedPreferencesUtil.removeBittelDevice(DataManager.context)
-                    SharedPreferencesUtil.removeBittelDeviceName(DataManager.context)
-                }
-                it::class.java.getMethod("removeBond").invoke(it)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        val deviceToUnbond = mDevice
+            ?: SharedPreferencesUtil.getBittelDevice(context)
+                ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
+                ?.let { getBleConnectedStardustDeviceBySavedAddress(it) }
+
+        disconnectFromBLEDevice(true)
+
+        deviceToUnbond?.let {
+            val started = requestUnbond(it)
+            Timber.tag(LOG_TAG).d("Unbond requested for ${it.address}: started=$started")
         }
+
+        Scopes.getDefaultCoroutine().launch {
+            SharedPreferencesUtil.removeBittelDevice(DataManager.context)
+            SharedPreferencesUtil.removeBittelDeviceName(DataManager.context)
+        }
+
         mDevice = null
         Scopes.getMainCoroutine().launch {
             com.commcrete.stardust.ble.BleManager.isPaired.value = false
@@ -616,15 +629,18 @@ internal class ClientConnection(
     }
 
     @SuppressLint("MissingPermission")
-    fun getBlePairedStardustDevice() : BluetoothDevice?{
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
+    fun getBlePairedStardustDevice() : BluetoothDevice? {
+        val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
+
+        if(savedAddress.isNullOrBlank()) { return null }
+
+        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
         if(btManager == null || btManager.adapter == null) {
             return null
         }
         val pairedDevices = btManager.adapter.bondedDevices
 
         if (pairedDevices.size > 0) {
-            val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
 
             for (device in pairedDevices) {
                 val macAddress = device.address

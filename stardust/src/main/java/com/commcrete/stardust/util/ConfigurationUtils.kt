@@ -91,11 +91,11 @@ object ConfigurationUtils {
 
     fun reset() {
         currentConfig = null
-        _currentPreset.value = null
         presetsList = listOf()
         licensedFunctionalities = mapOf()
         selectedPreset = null
         Scopes.getMainCoroutine().launch {
+            _currentPreset.value = null
             bittelVersion.value = ""
             bittelConfiguration.value = null
         }
