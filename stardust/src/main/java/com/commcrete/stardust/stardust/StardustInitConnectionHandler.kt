@@ -502,6 +502,10 @@ object StardustInitConnectionHandler {
         return state in setOf(State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE, State.PRESET_ERROR)
     }
 
+    fun isSearchingToConnect(): Boolean {
+        return state == State.SEARCHING
+    }
+
     fun isConnected(): Boolean {
         return hasConnectionError() || isConnectedSuccessfully()
     }

@@ -233,17 +233,18 @@ internal class ClientConnection(
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             if(it.appId != null
-                                && StardustInitConnectionHandler.isDisconnected()
-                                && getBlePairedStardustDevice() != null) {
+                                && getBlePairedStardustDevice() != null
+                                && StardustInitConnectionHandler.isSearchingToConnect()) {
 
                                 StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
+
                                 StardustInitConnectionHandler.start()
 
                                 resetConnectionTimer()
                                 resetPingTimer()
                             }
                         }
-                    }, 1500)
+                    }, 500)
                 }
 
                 override fun onCharacteristicWrite(
