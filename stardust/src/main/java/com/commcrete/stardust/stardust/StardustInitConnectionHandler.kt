@@ -506,6 +506,10 @@ object StardustInitConnectionHandler {
         return hasConnectionError() || isConnectedSuccessfully()
     }
 
+    fun isDisconnected(): Boolean {
+        return state == State.DISCONNECTED || state == State.IDLE
+    }
+
     fun isConnectedSuccessfully(): Boolean {
         return state == State.SUCCESS
     }
