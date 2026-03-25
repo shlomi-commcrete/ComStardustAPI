@@ -91,6 +91,7 @@ object BleManager {
                 null
             }
         }
+        if(connectionStatus == newStatus) return
         connectionStatus = newStatus
         DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
     }

@@ -76,13 +76,12 @@ object StardustInitConnectionHandler {
         }
 
     val isRunning: Boolean
-        get() = state !in setOf(State.IDLE, State.SEARCHING, State.SUCCESS, State.CANCELED, State.DISCONNECTED,
+        get() = state !in setOf(State.SUCCESS, State.CANCELED, State.DISCONNECTED,
             State.NO_LICENSE, State.ENCRYPTION_KEY_ERROR, State.PRESET_ERROR)
 
     // ───────────────────────── Lifecycle ─────────────────────────
 
     fun start() {
-        if (isRunning) return
         onInitRunning()
         attempts.clear()
         transitionTo(State.REQUESTING_ADDRESSES) { sendGetAddresses() }

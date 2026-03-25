@@ -166,14 +166,14 @@ internal class ClientConnection(
                     val mtu = gatt?.requestMtu(200)
                     Timber.tag("SetMtu").d("$mtu")
                     if(status == 0 && newState == 2){
-                        Handler(Looper.getMainLooper()).postDelayed({gatt?.discoverServices()} , 2000)
-                    }else {
+                        Handler(Looper.getMainLooper()).postDelayed({ gatt?.discoverServices() } , 2000)
+                    } else {
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
                             com.commcrete.stardust.ble.BleManager.isBleConnected = false
                             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
-                            com.commcrete.stardust.ble.BleManager.updateStatus ()
+                            com.commcrete.stardust.ble.BleManager.updateStatus()
                         }
                     }
                 }
@@ -212,7 +212,7 @@ internal class ClientConnection(
                             gattConnection = gatt
                             com.commcrete.stardust.ble.BleManager.isBleConnected = true
                             com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
-                            com.commcrete.stardust.ble.BleManager.updateStatus ()
+                            com.commcrete.stardust.ble.BleManager.updateStatus()
                             resetRSSITimer()
                         }
                     }
@@ -222,14 +222,14 @@ internal class ClientConnection(
                     val writeUUID = Characteristics.getWriteChar(id)
                     val readChar = gatt?.getService(Characteristics.getConnectChar(id))
                         ?.getCharacteristic(readUUID)
-                    if(readChar!=null){
+                    if(readChar != null){
                         Timber.tag(LOG_TAG).d("has Char")
                         gatt.setCharacteristicNotification(readChar, true)
                         val desc = readChar.descriptors?.get(0)
                         desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
                         gatt.writeDescriptor(desc)
                     }
-
+                    StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
                     Handler(Looper.getMainLooper()).postDelayed({
                         SharedPreferencesUtil.getAppUser(context)?.let {
                             if(it.appId != null
