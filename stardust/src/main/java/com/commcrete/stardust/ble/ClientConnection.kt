@@ -334,7 +334,9 @@ internal class ClientConnection(
             override fun onChanged(isConnected: Boolean) {
                 if(!isConnected) {
                     disconnectFromBLEDevice(true)
-                } else if(!com.commcrete.stardust.ble.BleManager.isBleConnected && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
+                } else if(
+                    !com.commcrete.stardust.ble.BleManager.isBleConnected
+                    && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
                 }
             }
@@ -399,8 +401,8 @@ internal class ClientConnection(
         Scopes.getMainCoroutine().launch {
             Timber.tag("Bittel Disconnected").d("Called Function")
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
-            com.commcrete.stardust.ble.BleManager.isBleConnected = false
-            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
+//            com.commcrete.stardust.ble.BleManager.isBleConnected = false
+//            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             com.commcrete.stardust.ble.BleManager.updateStatus()
             removeRSSITimer()
             removePingTimer()
@@ -479,9 +481,9 @@ internal class ClientConnection(
                             CoroutineScope(Dispatchers.IO).launch {
                                 Scopes.getMainCoroutine().launch {
                                     com.commcrete.stardust.ble.BleManager.isPaired.value = true
-                                    connectDevice(device)
-                                    removeBondTimer()
                                 }
+                                connectDevice(device)
+                                removeBondTimer()
                             }
                         }
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
@@ -610,19 +612,19 @@ internal class ClientConnection(
                     return device
                 }
                 val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    device.alias
+                    device.alias?.lowercase(Locale.getDefault())
                 } else {
-                    "Empty"
+                    null
                 }
 
                 Log.i(
                     " pairedDevices ",
                     "paired device: $deviceName at $macAddress + $aliasing "
                 )
-                if(aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("stardust") == true){
-                    return device
+                aliasing?.let {
+                     if(listOf("bittle", "bittel", "stardust").find { aliasing.contains(it) } != null) {
+                         return device
+                     }
                 }
             }
         }
