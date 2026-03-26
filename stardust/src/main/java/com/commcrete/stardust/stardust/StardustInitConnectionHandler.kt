@@ -11,14 +11,12 @@ import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
-import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.Dispatchers
@@ -157,9 +155,11 @@ object StardustInitConnectionHandler {
 
             // 5) Get configuration → expect READ_CONFIGURATION_RESPONSE (or READ_STATUS echo)
             StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE,
+
             StardustPackageUtils.StardustOpCode.READ_STATUS -> if (state == State.READING_CONFIGURATION) {
                 timeoutJob?.cancel()
-                handleConfiguration(p); return true
+                handleConfiguration(p);
+                return true
             }
 
             // 6) Update admin mode → expect SET_ADMIN_MODE_RESPONSE (ACK)
@@ -363,14 +363,8 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleConfiguration(p: StardustPackage) {
-        val cfg = StardustConfigurationParser().parseConfiguration(p)
-            ?: return retryOrFail { requestConfiguration() } // parse failure → retry step 5
-        Scopes.getMainCoroutine().launch {
-            ConfigurationUtils.bittelConfiguration.value = cfg
-        }
-        ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
-        ConfigurationUtils.setConfigFile(cfg)
-        ConfigurationUtils.setDefaults(ctx)
+        val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration(ctx, p)
+        if (!result.applied) return retryOrFail { requestConfiguration() }
         transitionTo(State.UPDATING_ADMIN_MODE) { sendUpdateAdminMode() }
     }
 
