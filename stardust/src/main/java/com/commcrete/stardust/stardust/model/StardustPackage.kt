@@ -1,10 +1,12 @@
 package com.commcrete.stardust.stardust.model
 
 import android.content.Context
+import androidx.compose.ui.text.toLowerCase
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
 import com.commcrete.stardust.stardust.StardustPackageUtils.byteArrayToIntArray
+import java.util.Locale
 
 data class StardustPackage(
     val context: Context,
@@ -190,12 +192,12 @@ data class StardustPackage(
     }
 
     fun getSourceAsString () : String {
-        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes()
+        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().lowercase()
     }
 
     fun getDestAsString () : String {
         return try {
-            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes()
+            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().lowercase()
         }catch (e : Exception) {
             "null"
         }

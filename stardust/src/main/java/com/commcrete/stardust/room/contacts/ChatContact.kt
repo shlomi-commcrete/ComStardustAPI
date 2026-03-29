@@ -7,6 +7,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.android.parcel.Parcelize
+import java.util.Locale
 
 @Entity(tableName = "contacts_table", indices = [androidx.room.Index(
     value = ["number"],
@@ -23,9 +24,9 @@ data class ChatContact (
     @ColumnInfo(name = "photo_uri")
     var photoURI : String? = null,
     @ColumnInfo(name = "bittel_id")
-    val bittelId : String? = null,
+    var bittelId : String? = null,
     @ColumnInfo(name = "smartphone_bittel_id")
-    val smartphoneBittelId : String? = null,
+    var smartphoneBittelId : String? = null,
     @ColumnInfo(name = "chat_user_id")
     var chatUserId : String? = null,
     @ColumnInfo(name = "lat")
@@ -46,4 +47,9 @@ data class ChatContact (
     var isBittel : Boolean = false,
     @ColumnInfo(name = "is_group")
     var isGroup : Boolean = false,
-) : Parcelable
+) : Parcelable {
+    init {
+        bittelId = bittelId?.lowercase(Locale.ROOT)
+        smartphoneBittelId = smartphoneBittelId?.lowercase(Locale.ROOT)
+    }
+}

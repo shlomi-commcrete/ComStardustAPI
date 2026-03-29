@@ -7,6 +7,7 @@ import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.model.user_list.User
 import kotlinx.android.parcel.Parcelize
 import org.json.JSONObject
+import java.util.Locale
 
 @Entity(tableName = "chats_table",  indices = [Index(
     value = ["chat_id"],
@@ -17,7 +18,7 @@ data class ChatItem (
     @PrimaryKey (autoGenerate = true)
     val id : Int = 0,
     @ColumnInfo(name = "chat_id")
-    val chat_id : String,
+    var chat_id : String,
     @ColumnInfo(name = "last_message_id")
     val lastMessageId : String = "",
     @ColumnInfo(name = "chat_name")
@@ -29,7 +30,7 @@ data class ChatItem (
     @ColumnInfo(name = "isSniffer")
     var isSniffer : Boolean = false,
     val chatContacts : String = "",
-    val bittelIDS : String = "",
+    var bittelIDS : String = "",
     val smartphoneBittelIDS : String = "",
     val numOfUnseenMessages : Int = 0,
     @ColumnInfo(name = "is_group")
@@ -41,7 +42,15 @@ data class ChatItem (
     @Embedded var message: Message? = null,
     @Embedded var user: User? = null,
 
-    ) : Parcelable
+    ) : Parcelable {
+
+    init {
+        chat_id = chat_id.lowercase(Locale.ROOT)
+        bittelIDS = bittelIDS.lowercase(Locale.ROOT)
+    }
+
+}
+
 
 fun ChatItem.getChatContacts() : List<String>  {
     return if(this.isChatContactsEmptyOrNull()){
@@ -99,7 +108,11 @@ fun ChatItem.getSmartphoneBittelIDS() : Map<String, String>  {
 
 
 fun ChatItem.getDeviceID(): String? {
-    return if (isBittel) chat_id else bittelIDS
+    return if (isBittel) {
+        chat_id
+    } else {
+        bittelIDS
+    }
 }
 
 

@@ -6,6 +6,7 @@ import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.parcelize.Parcelize
+import java.util.Locale
 
 @Entity(tableName = "messages_table", indices = [Index(value = ["epochTimeMs"], unique = true),
     Index(value = ["time"], unique = true), Index("isArchived")])
@@ -14,7 +15,7 @@ data class MessageItem (
     @PrimaryKey(autoGenerate = true)
     val id : Int = 0,
     @ColumnInfo(name = "senderID")
-    val senderID : String,
+    var senderID : String,
     @ColumnInfo(name = "text")
     val text : String,
     @ColumnInfo(name = "epochTimeMs")
@@ -54,6 +55,13 @@ data class MessageItem (
     @ColumnInfo(name = "isArchived")
     val isArchived: Boolean = false
 ) : Parcelable {
+
+        init {
+            senderID = senderID.lowercase(Locale.ROOT)
+            chatId = chatId?.lowercase(Locale.ROOT)
+        }
+
+
     fun getTextToShow () : String {
         return if (isLocation == true) "Location Sent" else text
 //        return text
