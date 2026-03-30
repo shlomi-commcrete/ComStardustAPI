@@ -1,9 +1,15 @@
 package com.commcrete.aiaudio.media
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.media.MediaRouter
+import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +24,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.audio.BleMediaConnector
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.*
@@ -30,7 +37,7 @@ import java.io.File
  * Feed it ShortArray frames (any size). It buffers and writes them to an AudioTrack.
  * If sample rate changes, the track is recreated automatically.
  */
-object PcmStreamPlayer {
+object PcmStreamPlayer : BleMediaConnector() {
     private var audioTrack: AudioTrack? = null
     private var currentSampleRate: Int = -1
 
@@ -49,6 +56,13 @@ object PcmStreamPlayer {
     private var measureMaxTime = 0L
 
     private val frameBuffer = mutableListOf<ShortArray>()
+
+    private var legacyTrack: AudioTrack? = null
+    private var legacyEnhancer: LoudnessEnhancer? = null
+    private var legacyEqualizer: Equalizer? = null
+    private const val LEGACY_SAMPLE_RATE = 8000
+    private const val LEGACY_MIN_WRITE_SIZE = 40
+    private const val PLAYBACK_TRACE_TAG = "PTTPlaybackTrace"
 
     private var isFileInit = false
     private var destination : String = ""
@@ -140,6 +154,180 @@ object PcmStreamPlayer {
                 delay(1)
             }
         }
+    }
+
+    @SuppressLint("NewApi")
+    fun ensureLegacyTrack(bufferSizeInBytes: Int, speedFactor: Float) {
+        try {
+            if (legacyTrack == null) {
+                legacyTrack = AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate((LEGACY_SAMPLE_RATE * speedFactor).toInt())
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .build()
+                    )
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .setBufferSizeInBytes(bufferSizeInBytes)
+                    .build()
+                syncBleDevice(DataManager.context)
+                Log.d(PLAYBACK_TRACE_TAG, "ensureLegacyTrack created track=${legacyTrack?.hashCode()} buffer=$bufferSizeInBytes")
+            }
+
+            legacyTrack?.audioSessionId?.let {
+                legacyEnhancer?.release()
+                legacyEnhancer = LoudnessEnhancer(it)
+                val audioPct = 5.4
+                val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt()
+                legacyEnhancer?.setTargetGain(gainmB)
+                legacyEnhancer?.setEnabled(true)
+            }
+            Handler(Looper.getMainLooper()).postDelayed({
+                legacyTrack?.play()
+            }, 150)
+        } catch (e: Exception) {
+            Log.e(PLAYBACK_TRACE_TAG, "ensureLegacyTrack failed", e)
+        }
+    }
+
+    fun playLegacyStream(audioData: ByteArray, bufferSizeInBytes: Int, receivedPkgs: Int, playFromSdk: Boolean) {
+        val track = legacyTrack
+        Log.d(
+            PLAYBACK_TRACE_TAG,
+            "playLegacyStream track=${track?.hashCode()} dataSize=${audioData.size} buffer=$bufferSizeInBytes receivedPkgs=$receivedPkgs flag=$playFromSdk"
+        )
+        if (track == null) {
+            Log.d(PLAYBACK_TRACE_TAG, "playLegacyStream skipped because legacy track is null")
+            return
+        }
+
+        try {
+            track.notificationMarkerPosition = bufferSizeInBytes / 2
+            scope.launch {
+                if (playFromSdk) {
+                    synchronized(track) {
+                        if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
+                            try {
+                                track.play()
+                            } catch (e: IllegalStateException) {
+                                Log.e("AudioTrack", "Failed to start playback: ${e.message}")
+                                return@synchronized
+                            }
+                        }
+
+                        if (audioData.isNotEmpty() && audioData.size >= LEGACY_MIN_WRITE_SIZE) {
+                            try {
+                                val bytesWritten = track.write(audioData, 0, audioData.size)
+                                Log.d(
+                                    PLAYBACK_TRACE_TAG,
+                                    "playLegacyStream write track=${track.hashCode()} bytesWritten=$bytesWritten playState=${track.playState}"
+                                )
+                                if (bytesWritten < 0) {
+                                    Log.e("AudioTrack", "AudioTrack write failed with code $bytesWritten")
+                                }
+                            } catch (e: IllegalStateException) {
+                                Log.e("AudioTrack", "AudioTrack write failed: ${e.message}")
+                            }
+                        }
+                    }
+                } else {
+                    Log.d(PLAYBACK_TRACE_TAG, "playLegacyStream skipped write because isPlayPttFromSdk=false track=${track.hashCode()}")
+                }
+            }
+        } catch (e: IllegalStateException) {
+            ensureLegacyTrack(bufferSizeInBytes, 1.0f)
+            track.flush()
+        }
+    }
+
+    fun releaseLegacyTrack() {
+        try {
+            legacyTrack?.flush()
+            legacyTrack?.release()
+            legacyEnhancer?.release()
+            legacyEqualizer?.release()
+        } catch (e: Exception) {
+            Log.e(PLAYBACK_TRACE_TAG, "releaseLegacyTrack failed", e)
+        } finally {
+            legacyTrack = null
+            legacyEnhancer = null
+            legacyEqualizer = null
+        }
+    }
+
+    fun writeMinimumSilenceAndPlay(byteArray: ByteArray, onPlaybackComplete: () -> Unit) {
+        val tempTrack = getTempTrack()
+        Log.d(
+            PLAYBACK_TRACE_TAG,
+            "writeMinimumSilenceAndPlay size=${byteArray.size} tempTrack=${tempTrack.hashCode()}"
+        )
+        tempTrack.play()
+        tempTrack.write(byteArray, 0, byteArray.size)
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            tempTrack.flush()
+            tempTrack.release()
+            onPlaybackComplete()
+        }, 880)
+    }
+
+    @SuppressLint("NewApi")
+    private fun getTempTrack(): AudioTrack {
+        val audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setSampleRate(LEGACY_SAMPLE_RATE)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .build()
+            )
+            .setBufferSizeInBytes(642)
+            .build()
+        audioTrack.audioSessionId.let {
+            legacyEnhancer?.release()
+            legacyEnhancer = LoudnessEnhancer(it)
+            val audioPct = 5.4
+            val gainmB = Math.round(Math.log10(audioPct) * 2000).toInt()
+            legacyEnhancer?.setTargetGain(gainmB)
+            legacyEnhancer?.setEnabled(true)
+        }
+        return audioTrack
+    }
+
+    @SuppressLint("NewApi")
+    private fun syncBleDevice(context: Context) {
+        val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
+        val bleDevice = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS, context)
+        bleDevice?.let {
+            legacyTrack?.setPreferredDevice(it)
+            audioManager.startBluetoothSco()
+            audioManager.setBluetoothScoOn(true)
+            if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
+                try {
+                    routeAudioToMediaRouter(context)
+                } catch (e: Exception) {
+                    Log.e(PLAYBACK_TRACE_TAG, "syncBleDevice routeAudioToMediaRouter failed", e)
+                }
+            }
+        }
+    }
+
+    private fun routeAudioToMediaRouter(context: Context) {
+        val mediaRouter = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as MediaRouter
+        mediaRouter.getSelectedRoute(MediaRouter.ROUTE_TYPE_LIVE_AUDIO)
     }
 
     private fun measureTime() {
@@ -268,7 +456,7 @@ object PcmStreamPlayer {
         }
     }
 
-    private suspend fun initPttInputFile(
+    private fun initPttInputFile(
         context: Context,
         destinations: String,
         source: String,

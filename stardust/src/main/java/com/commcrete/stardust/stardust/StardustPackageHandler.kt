@@ -28,11 +28,9 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
-import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
-import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
@@ -98,6 +96,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     return
                 }
                 Timber.tag("InitHandler").d("not handled by init handler")
+
                 when(mPackageOpCode){
                     StardustPackageUtils.StardustOpCode.SEND_MESSAGE -> {
                         if(mPackageControl.stardustPackageType == StardustControlByte.StardustPackageType.DATA) {

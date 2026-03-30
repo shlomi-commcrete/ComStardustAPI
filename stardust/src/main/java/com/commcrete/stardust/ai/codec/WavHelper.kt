@@ -1,11 +1,5 @@
 package com.commcrete.aiaudio.media
 
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
-import android.os.Build
-import android.os.Build.VERSION_CODES.M
 import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
@@ -48,52 +42,6 @@ object WavHelper {
         }
     }
 
-    fun playPcmData(pcmData: ShortArray, sampleRate: Int) {
-        try {
-            val audioTrack = if (Build.VERSION.SDK_INT >= M) {
-                AudioTrack.Builder()
-                    .setAudioAttributes(
-                        AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
-                            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                            .build()
-                    )
-                    .setAudioFormat(
-                        AudioFormat.Builder()
-                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                            .setSampleRate(sampleRate)
-                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                            .build()
-                    )
-                    .setBufferSizeInBytes(pcmData.size * 2)
-                    .build()
-            } else {
-                @Suppress("DEPRECATION")
-                AudioTrack(
-                    AudioManager.STREAM_MUSIC,
-                    sampleRate,
-                    AudioFormat.CHANNEL_OUT_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT,
-                    pcmData.size * 2,
-                    AudioTrack.MODE_STATIC
-                )
-            }
-
-            audioTrack.write(pcmData, 0, pcmData.size)
-            audioTrack.play()
-
-            // Wait for playback to finish
-            while (audioTrack.playState == AudioTrack.PLAYSTATE_PLAYING) {
-                Thread.sleep(100)
-            }
-
-            audioTrack.release()
-
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error playing PCM data", e)
-            throw e
-        }
-    }
 
     /**
      * Resample PCM data from 24kHz to 8kHz using simple decimation
