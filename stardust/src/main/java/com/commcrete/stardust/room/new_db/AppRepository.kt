@@ -3,14 +3,17 @@ package com.commcrete.stardust.room.new_db
 import android.content.Context
 import androidx.lifecycle.LiveData
 import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDao
-import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.contacts.ContactsDao
-import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDao
-import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.old_db.ChatsDatabase
+import com.commcrete.stardust.room.old_db.ContactsDatabase
+import com.commcrete.stardust.room.old_db.MessagesDatabase
+import com.commcrete.stardust.room.new_db.chat.AppChatsDao
+import com.commcrete.stardust.room.new_db.chat.toAppChatEntity
+import com.commcrete.stardust.room.new_db.contact.AppContactsDao
+import com.commcrete.stardust.room.new_db.contact.toAppContactEntity
+import com.commcrete.stardust.room.new_db.message.AppMessagesDao
+import com.commcrete.stardust.room.new_db.message.toAppMessageEntity
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import kotlinx.coroutines.CoroutineScope
@@ -26,9 +29,9 @@ import timber.log.Timber
  * backed by the single [AppDatabase].
  */
 class AppRepository(
-    private val chatsDao: ChatsDao,
-    private val contactsDao: ContactsDao,
-    private val messagesDao: MessagesDao,
+    private val chatsDao: AppChatsDao,
+    private val contactsDao: AppContactsDao,
+    private val messagesDao: AppMessagesDao,
     private val scope: CoroutineScope,
 ) {
 
@@ -36,7 +39,7 @@ class AppRepository(
     // Message queue (fire-and-forget writes via channel)
     // ─────────────────────────────────────────────────────────────────────
 
-    private val messageChannel = Channel<MessageItem>(Channel.BUFFERED)
+    private val messageChannel = Channel<com.commcrete.stardust.room.new_db.message.AppMessageEntity>(Channel.BUFFERED)
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -66,12 +69,12 @@ class AppRepository(
         chatsDao.getChatContactByBittelID(bittelId)
 
     suspend fun addChat(chatItem: ChatItem) {
-        chatsDao.addChat(chatItem)
+        chatsDao.addChat(chatItem.toAppChatEntity())
         if (chatItem.isGroup) GroupsUtils.addGroupIds(listOf(chatItem.chat_id))
     }
 
     suspend fun addChats(chatItems: List<ChatItem>) {
-        chatsDao.addChats(chatItems)
+        chatsDao.addChats(chatItems.map { it.toAppChatEntity() })
         chatItems
             .mapNotNull { if (it.isGroup) it.chat_id else null }
             .also { GroupsUtils.addGroupIds(it) }
@@ -128,10 +131,10 @@ class AppRepository(
     fun getChatContactByAppBittelId(bittelId: String): ChatContact? =
         contactsDao.getChatContactByAppBittelID(bittelId)
 
-    suspend fun addContact(chatContact: ChatContact) = contactsDao.addContact(chatContact)
+    suspend fun addContact(chatContact: ChatContact) = contactsDao.addContact(chatContact.toAppContactEntity())
 
     suspend fun addAllContacts(contacts: List<ChatContact>) =
-        contactsDao.addAllContacts(contacts)
+        contactsDao.addAllContacts(contacts.map { it.toAppContactEntity() })
 
     suspend fun updateContactName(chatId: String, name: String) =
         contactsDao.updateChatName(chatId, name)
@@ -176,7 +179,7 @@ class AppRepository(
         messagesDao.getPTTMessagesForChatInRange(chatId, startTimestamp, endTimestamp, limit)
 
     suspend fun addMessages(messageItems: List<MessageItem>) =
-        messagesDao.addMessages(messageItems)
+        messagesDao.addMessages(messageItems.map { it.toAppMessageEntity() })
 
     /**
      * Non-blocking message save – goes through the internal buffered channel.
@@ -184,7 +187,7 @@ class AppRepository(
      */
     fun saveMessage(context: Context, messageItem: MessageItem, isPTT: Boolean = false) {
         if (isPTT && !DataManager.getSavePTTFilesRequired(context)) return
-        messageChannel.trySend(messageItem)
+        messageChannel.trySend(messageItem.toAppMessageEntity())
     }
 
     suspend fun updatePttMessage(chatId: String, messageItem: MessageItem) {
@@ -193,7 +196,7 @@ class AppRepository(
             last.isAudioComplete = true
             messagesDao.updateMessage(last)
         } else {
-            messagesDao.addMessage(messageItem)
+            messagesDao.addMessage(messageItem.toAppMessageEntity())
         }
     }
 
@@ -257,7 +260,7 @@ class AppRepository(
             val oldChatsDb = ChatsDatabase.getDatabase(context)
             val chats: List<ChatItem> = oldChatsDb.chatsDao().readChats()
             if (chats.isNotEmpty()) {
-                chatsDao.addChats(chats)
+                chatsDao.addChats(chats.map { it.toAppChatEntity() })
                 Timber.d("Migration: copied ${chats.size} chat(s)")
             }
             oldChatsDb.close()
@@ -266,7 +269,7 @@ class AppRepository(
             val oldContactsDb = ContactsDatabase.getDatabase(context)
             val contacts: List<ChatContact> = oldContactsDb.contactsDao().readAllContacts()
             if (contacts.isNotEmpty()) {
-                contactsDao.addAllContacts(contacts)
+                contactsDao.addAllContacts(contacts.map { it.toAppContactEntity() })
                 Timber.d("Migration: copied ${contacts.size} contact(s)")
             }
             oldContactsDb.close()
@@ -275,7 +278,7 @@ class AppRepository(
             val oldMessagesDb = MessagesDatabase.getDatabase(context)
             val messages: List<MessageItem> = oldMessagesDb.messagesDao().getAllMessages()
             if (messages.isNotEmpty()) {
-                messagesDao.addMessages(messages)
+                messagesDao.addMessages(messages.map { it.toAppMessageEntity() })
                 Timber.d("Migration: copied ${messages.size} message(s)")
             }
             oldMessagesDb.close()

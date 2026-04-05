@@ -1,7 +1,6 @@
 package com.commcrete.stardust.room
 
 import android.content.Context
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.room.new_db.AppRepository
 import kotlinx.coroutines.CoroutineScope
@@ -32,9 +31,9 @@ object RepositoryProvider {
             appRepository ?: run {
                 val db = AppDatabase.getDatabase(context)
                 AppRepository(
-                    chatsDao = db.chatsDao(),
-                    contactsDao = db.contactsDao(),
-                    messagesDao = db.messagesDao(),
+                    chatsDao = db.appChatsDao(),
+                    contactsDao = db.appContactsDao(),
+                    messagesDao = db.appMessagesDao(),
                     scope = AppScopes.applicationScope,
                 ).also { repo ->
                     appRepository = repo

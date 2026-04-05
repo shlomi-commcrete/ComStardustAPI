@@ -1,4 +1,4 @@
-package com.commcrete.stardust.room.contacts
+package com.commcrete.stardust.room.old_db
 
 import android.content.Context
 import androidx.room.Database
@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.room.contacts.ContactsDao
 
 @Database(entities = [ChatContact::class], version = 21, exportSchema = false)
 abstract class ContactsDatabase : RoomDatabase() {

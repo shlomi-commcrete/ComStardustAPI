@@ -4,11 +4,11 @@ import androidx.navigation.NavController
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.old_db.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.contacts.ContactsDatabase
+import com.commcrete.stardust.room.old_db.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.messages.MessagesDatabase
+import com.commcrete.stardust.room.old_db.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils

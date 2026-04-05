@@ -15,7 +15,7 @@ import com.commcrete.aiaudio.media.PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.old_db.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
