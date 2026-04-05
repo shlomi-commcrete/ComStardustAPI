@@ -12,11 +12,6 @@ import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.util.UnstableApi
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.media.PcmStreamPlayer
-import com.commcrete.bittell.room.sniffer.SnifferDatabase
-import com.commcrete.bittell.room.sniffer.SnifferItem
-import com.commcrete.bittell.room.sniffer.SnifferRepository
-import com.commcrete.bittell.util.sniffer.isLocalGroup
-import com.commcrete.bittell.util.sniffer.isMyId
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.request_objects.Message
@@ -29,6 +24,7 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
@@ -304,7 +300,6 @@ object PlayerUtils : BleMediaConnector() {
                             e.printStackTrace()
                         }
 
-                        val repo = SnifferRepository(SnifferDatabase.getDatabase(context).snifferDao())
                         sniffed = mutableListOf()
                         snifferContacts?.get(0)?.let {
                             sniffed.add(it)
@@ -323,18 +318,6 @@ object PlayerUtils : BleMediaConnector() {
                         val senderID = sniffed[0].chatUserId ?: ""
                         val receiverID = sniffed[1].chatUserId ?: ""
 
-                        repo.addContact(
-                            SnifferItem(
-                            senderID = senderID,
-                            receiverID = receiverID,
-                            senderName = sniffed[0].displayName,
-                            receiverName = sniffed[1].displayName,
-                            epochTimeMs = ts.toLong(),
-                            chatId = destinations,
-                            text = "",
-                            fileLocation = file.absolutePath,
-                            isAudio = true)
-                        )
                         DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(senderID, receiverID), file)
                     }
                 }
@@ -568,5 +551,15 @@ object PlayerUtils : BleMediaConnector() {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+
+
+    fun isMyId(myId : String, sender : String?, receiver : String?) : Boolean {
+        return sender.equals(myId, ignoreCase = true) || receiver.equals(myId, ignoreCase = true)
+    }
+
+    fun isLocalGroup(sender : String?, receiver : String?) : Boolean {
+        return GroupsUtils.isGroup(sender) || GroupsUtils.isGroup(receiver)
     }
 }

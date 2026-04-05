@@ -15,10 +15,6 @@ import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.stardust.model.StardustLogPackage
 import com.commcrete.stardust.stardust.model.StardustLogParser
-import com.commcrete.stardust.room.logs.LOG_LEVEL
-import com.commcrete.stardust.room.logs.LogObject
-import com.commcrete.stardust.room.logs.LogsDatabase
-import com.commcrete.stardust.room.logs.LogsRepository
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
@@ -32,65 +28,9 @@ object LogUtils {
     )
     var index = 0
 
-    fun exportLogs(context: Context) {
-        Scopes.getDefaultCoroutine().launch {
-            getLogsFromDB(context)
-        }
-    }
-
-    private fun getLogFile (context: Context) {
-        val logList = getLogsFromDB(context)
-
-    }
-
-    private fun getLogsFromDB (context: Context) : List<LogObject> {
-        return LogsRepository(LogsDatabase.getDatabase(context).logsDao()).getAllLogs()
-    }
 
     private fun shareLogsFile () {
 
-    }
-
-//    private fun saveLogToFile () : File {
-//
-//    }
-
-    private fun getLogsStringFromList (logList : List<LogObject>) :String {
-        val gson = Gson()
-        // Use TypeToken to get the correct Type for List<LogObject>
-        val type = object : TypeToken<List<LogObject>>() {}.type
-        return gson.toJson(logList, type)
-    }
-
-    fun saveLog (logObject: LogObject, context: Context) {
-        Scopes.getDefaultCoroutine().launch {
-            LogsRepository(LogsDatabase.getDatabase(context).logsDao()).addLog(logObject)
-        }
-    }
-
-    fun getLogObject (src : String, dst : String, event : String, location : Location) : LogObject {
-        val userObj = JsonObject()
-        userObj.addProperty("appId", src)
-        userObj.addProperty("bittelId", "")
-
-        val detailsObj = JsonObject()
-        val dataObj = JsonObject()
-        val locationObj = JsonObject()
-        dataObj.addProperty("src", src)
-        dataObj.addProperty("dst", dst)
-
-        detailsObj.add("data", dataObj)
-        locationObj.addProperty("latitude", location.latitude)
-        locationObj.addProperty("longitude", location.longitude)
-        locationObj.addProperty("altitude", location.altitude)
-
-        detailsObj.add("location", locationObj)
-
-        val ts = Date().time
-        val logObject = LogObject (user = userObj.toString(), logLevel = LOG_LEVEL.INFO.type,
-            event = event, details = detailsObj.toString(), createdAt = ts, updatedAt = ts)
-
-        return logObject
     }
 
     fun pullBittelLogs (numOfLogs : Int = 4096, context: Context) {

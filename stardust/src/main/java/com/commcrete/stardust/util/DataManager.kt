@@ -27,15 +27,11 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.RepositoryProvider
-import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
-import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.friends.FriendsDatabase
-import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -530,11 +526,6 @@ object DataManager : StardustAPI, PttInterface{
     suspend fun cleanAllDatabases(context: Context): Boolean =
         withContext(Dispatchers.IO) {
             coroutineScope {
-                val user = async {
-                    BittelUserRepository(
-                        BittelUserDatabase.getDatabase(context).bittelUserDao()
-                    ).clearData()
-                }
 
                 val chats = async {
                     val repo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
@@ -549,17 +540,11 @@ object DataManager : StardustAPI, PttInterface{
                     ).clearData()
                 }
 
-                val friends = async {
-                    FriendsRepository(
-                        FriendsDatabase.getDatabase(context).friendsDao()
-                    ).clearData()
-                }
-
                 val messages = async {
                     getMessagesRepo(context).clearData()
                 }
 
-                user.await() && chats.await() && contacts.await() && friends.await() && messages.await()
+                chats.await() && contacts.await() && messages.await()
             }
         }
 

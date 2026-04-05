@@ -9,9 +9,6 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
-import com.commcrete.stardust.room.beetle_users.BittelUser
-import com.commcrete.stardust.room.beetle_users.BittelUserDatabase
-import com.commcrete.stardust.room.beetle_users.BittelUserRepository
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
@@ -32,14 +29,9 @@ import java.util.Date
 
 object UsersUtils {
 
-    private val bittelUserDoa = BittelUserDatabase.getDatabase(DataManager.context).bittelUserDao()
-    private val bittelUserRepository = BittelUserRepository(bittelUserDoa)
-
     val contactsDao = ContactsDatabase.getDatabase(DataManager.context).contactsDao()
     private val contactsRepository = ContactsRepository(contactsDao)
 
-    val updatedUsersList = MutableLiveData<MutableList<User>>()
-    val chatContactList : MutableList<ChatContact> = mutableListOf()
 
     var onUserUpdatedListener: OnUserUpdated? = null
     var user : User? = null
@@ -50,18 +42,7 @@ object UsersUtils {
             onUserUpdatedListener?.onUpdated(value)
         }
 
-    suspend fun getBittelUserList() : List<BittelUser>{
-        val bittelUserList = GlobalScope.async {
-            return@async bittelUserRepository.readBittelUsers()
-        }
-        return bittelUserList.await()
-    }
-
     val messageReceived : MutableLiveData<MessageItem> = MutableLiveData()
-
-    suspend fun addAllBittelUsers(userList: MutableList<BittelUser>) {
-        bittelUserRepository.addAllBittelUsers(userList)
-    }
 
 
     suspend fun getUserName(senderId: String) : String{
