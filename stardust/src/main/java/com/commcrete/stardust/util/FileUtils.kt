@@ -17,9 +17,6 @@ import java.io.InputStreamReader
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.enums.FunctionalityType
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.contacts.ContactsDatabase
-import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.FileSender.Companion.calculateSendTime
 import java.io.BufferedOutputStream
@@ -303,15 +300,12 @@ object FileUtils {
         context: Context,
         exportFolderName: String = "databases_export"
     ): File {
-        val data = listOf(
-            ContactsDatabase.getDatabase(context),
-            ChatsDatabase.getDatabase(context),
-            MessagesDatabase.getDatabase(context),
-        ).associate {
-            "${it.openHelper.databaseName}" to it.openHelper.readableDatabase
-        }
+        val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(context)
+        val data = mapOf(
+            appDb.openHelper.databaseName to appDb.openHelper.readableDatabase
+        ) as Map<String, android.database.sqlite.SQLiteDatabase>
 
-        return  exportMultipleDatabasesToCsv(
+        return exportMultipleDatabasesToCsv(
             context = context,
             databases = data,
             exportFolderName = exportFolderName

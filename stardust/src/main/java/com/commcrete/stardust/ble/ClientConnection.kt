@@ -870,7 +870,7 @@ internal class ClientConnection(
     fun syncMessageReceivedStatus(message: AckSystem) {
         Scopes.getDefaultCoroutine().launch {
             val bittelPackage = message.stardustPackage
-            DataManager.getMessagesRepo(context).updateAckReceived(chatid = bittelPackage.getDestAsString(),
+            DataManager.getAppRepo(context).updateAckReceived(chatid = bittelPackage.getDestAsString(),
                 messageNumber = bittelPackage.idNumber)
 
         }

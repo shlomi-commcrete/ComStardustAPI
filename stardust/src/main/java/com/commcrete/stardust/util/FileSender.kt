@@ -122,7 +122,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                 )
                 val chatItem = chatsRepo.getChatByBittelID(chatID)
                 chatItem?.message = Message(senderID = userId, text = text, seen = false)
-                DataManager.getMessagesRepo(context).saveMessage(context, messageItem)
+                DataManager.getAppRepo(context).saveMessage(context, messageItem)
                 chatItem?.let { chatsRepo.addChat(it) }
 
             } catch (e: Exception) {

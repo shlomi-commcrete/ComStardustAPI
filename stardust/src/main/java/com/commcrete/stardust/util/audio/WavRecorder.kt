@@ -16,7 +16,7 @@ import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.SeenStatus
@@ -438,7 +438,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                         seen = true
                     )
                     chatItem?.let { item -> chatsRepo.addChat(item) }
-                    DataManager.getMessagesRepo(context).saveMessage(
+                    DataManager.getAppRepo(context).saveMessage(
                         context = context,
                         isPTT = true,
                         messageItem = MessageItem(senderID = it,
@@ -459,12 +459,10 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
     fun updateAudioReceived(chatId: String, context: Context){
         Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            val chatItem = chatsRepo.getChatByBittelID(chatId)
-            chatItem?.let {
-                chatItem.message = Message(senderID = chatId, text = "Ptt Sent",
-                    seen = true)
-                chatsRepo.addChat(it)
+            val repo = DataManager.getAppRepo(context)
+            repo.getChatByDeviceId(chatId)?.let {
+                it.message = Message(senderID = chatId, text = "Ptt Sent", seen = true)
+                repo.addChat(it)
             }
         }
     }

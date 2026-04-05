@@ -2,8 +2,6 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import com.commcrete.stardust.ble.ClientConnection
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
 import kotlinx.coroutines.launch
@@ -102,9 +100,9 @@ object GroupsUtils {
 
     fun addAllGroups (context: Context) {
         Scopes.getDefaultCoroutine().launch {
-            val groupsList = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getAllGroupIds()
-            addGroups(context, groupsList)
-            resetGroupIds(groupsList)
+            val groups = DataManager.getAppRepo(context).getAllGroupIds()
+            addGroups(context, groups)
+            resetGroupIds(groups)
         }
     }
 
@@ -130,7 +128,7 @@ object GroupsUtils {
 
     fun resetGroupIds(context: Context) {
         Scopes.getDefaultCoroutine().launch {
-            val groups = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).getAllGroupIds()
+            val groups = DataManager.getAppRepo(context).getAllGroupIds()
             resetGroupIds(groups)
         }
     }

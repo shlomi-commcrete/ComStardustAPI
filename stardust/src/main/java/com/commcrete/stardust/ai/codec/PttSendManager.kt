@@ -149,7 +149,7 @@ object PttSendManager {
                     seen = true
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
-                DataManager.getMessagesRepo(DataManager.context).saveMessage(
+                DataManager.getAppRepo(DataManager.context).saveMessage(
                     context = context,
                     isPTT = true,
                     messageItem = MessageItem(senderID = it,

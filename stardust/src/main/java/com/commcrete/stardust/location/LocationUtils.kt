@@ -14,16 +14,12 @@ import com.commcrete.stardust.util.CoordinatesUtil
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDao
-import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
@@ -47,12 +43,12 @@ object LocationUtils  {
 
     fun init(context: Context){
         this.context = context
-        contactsDao = ContactsDatabase.getDatabase(this.context).contactsDao()
+        contactsDao = AppDatabase.getDatabase(this.context).contactsDao()
         contactsDao?.let { contactsRepository = ContactsRepository(it) }
 
     }
     private fun getSenderName(senderID: String): String{
-        val contactsRepository = ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao())
+        val contactsRepository = ContactsRepository(AppDatabase.getDatabase(context).contactsDao())
         return contactsRepository.getUserNameByUserId(senderID)
     }
 
@@ -60,7 +56,7 @@ object LocationUtils  {
                                isSOS : Boolean = false){
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            val chatsRepo = DataManager.getAppRepo(context)
             if(chatContact != null) {
                 chatContact.let { it ->
                     val contact = it
@@ -69,7 +65,7 @@ object LocationUtils  {
                     val srcID = bittelPackage.getSourceAsString()
                     if(GroupsUtils.isGroup(srcID) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
                         whoSent = bittelPackage.getDestAsString()
-                        chatsRepo.getChatByBittelID(whoSent)?.let {
+                        chatsRepo.getChatByDeviceId(whoSent)?.let {
                             displayName = it.name
                         }
                     } else {
@@ -86,8 +82,8 @@ object LocationUtils  {
                             "longitude : ${bittelLocationPackage.longitude}\naltitude : ${bittelLocationPackage.height}"
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
                         senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
-                    DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
-                    chatsRepo.getChatByBittelID(srcID)?.let { sender ->
+                    DataManager.getAppRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
+                    chatsRepo.getChatByDeviceId(srcID)?.let { sender ->
                         sender.message = Message(senderID = whoSent, text = "Location Received", seen = false)
                         chatsRepo.addChat(sender)
                         val numOfUnread = sender.numOfUnseenMessages
@@ -116,7 +112,7 @@ object LocationUtils  {
     }
     suspend fun createNewContact(bittelPackage: StardustPackage){
         val contact = ChatContact(displayName = bittelPackage.getSourceAsString(), number = bittelPackage.getSourceAsString(), bittelId = bittelPackage.getSourceAsString())
-        ContactsRepository(ContactsDatabase.getDatabase(context).contactsDao()).addContact(contact)
+        ContactsRepository(AppDatabase.getDatabase(context).contactsDao()).addContact(contact)
     }
     internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
                        isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null,
@@ -209,14 +205,12 @@ object LocationUtils  {
             senderName = senderName, chatId = chatId, isLocation = true, seen = if(chatId != "00000002") SeenStatus.SENT else SeenStatus.SEEN)
         message.isAck = isDemandAck
         message.idNumber = idNumber
-//        message.senderName = getSenderName(message.senderID)
-//        MessagesRepository(MessagesDatabase.getDatabase(context).messagesDao()).saveMessage(context = context, messageItem = message)
-        val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+        val chatsRepo = DataManager.getAppRepo(context)
         var senderObj : ChatItem? = null
-        senderObj = chatsRepo.getChatByBittelID(chatId)
+        senderObj = chatsRepo.getChatByDeviceId(chatId)
         senderObj?.let {
             message.senderName = it.name
-            DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
+            DataManager.getAppRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
             it.message = Message(senderID = sender, text = "Location Sent", seen = true)
             chatsRepo.addChat(it)
             val numOfUnread = it.numOfUnseenMessages

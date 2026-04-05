@@ -92,9 +92,10 @@ object DemoDataUtil {
 
     private fun setupDatabases (demoUsers: DemoUsers) {
         Scopes.getDefaultCoroutine().launch {
-            ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChats(demoUsers.mutableUserList)
-            DataManager.getMessagesRepo(DataManager.context).addMessages(demoUsers.mutableMessagesList)
-            ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addAllContacts(demoUsers.mutableContactsList)
+            val appRepo = com.commcrete.stardust.room.RepositoryProvider.appRepository(DataManager.context)
+            appRepo.addChats(demoUsers.mutableUserList)
+            appRepo.addMessages(demoUsers.mutableMessagesList)
+            appRepo.addAllContacts(demoUsers.mutableContactsList)
             onFinishLoadData()
         }
     }

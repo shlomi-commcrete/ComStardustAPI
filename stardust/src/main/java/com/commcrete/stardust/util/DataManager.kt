@@ -28,12 +28,12 @@ import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.room.new_db.AppDatabase
+import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -492,15 +492,23 @@ object DataManager : StardustAPI, PttInterface{
 
     fun getChatsRepo (context: Context) : ChatsRepository {
         requireContext(context)
-        return ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+        return ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
     }
 
-
-
-    fun getMessagesRepo(context: Context): MessagesRepository {
+    /**
+     * Returns the unified [AppRepository] that combines chats, contacts and
+     * messages tables.  On first call it automatically migrates all existing
+     * data from the legacy databases and removes those files.
+     *
+     * Use this instead of [getChatsRepo] / ContactsDatabase / MessagesDatabase
+     * for all new code.
+     */
+    fun getAppRepo(context: Context): AppRepository {
         requireContext(context)
-        return RepositoryProvider.messagesRepository(context)
+        return RepositoryProvider.appRepository(context)
     }
+
+
 
     fun getCallbacks() : StardustAPICallbacks? {
         return stardustAPICallbacks
@@ -528,7 +536,7 @@ object DataManager : StardustAPI, PttInterface{
             coroutineScope {
 
                 val chats = async {
-                    val repo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+                    val repo = ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
                     val chatIds = repo.getAllChatsIds()
                     deleteChatFiles(DataManager.context, chatIds)
                     repo.clearData()
@@ -536,12 +544,12 @@ object DataManager : StardustAPI, PttInterface{
 
                 val contacts = async {
                     ContactsRepository(
-                        ContactsDatabase.getDatabase(context).contactsDao()
+                        AppDatabase.getDatabase(context).contactsDao()
                     ).clearData()
                 }
 
                 val messages = async {
-                    getMessagesRepo(context).clearData()
+                    getAppRepo(context).clearData()
                 }
 
                 chats.await() && contacts.await() && messages.await()

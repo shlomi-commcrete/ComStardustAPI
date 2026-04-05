@@ -43,8 +43,7 @@ object PlayerUtils : BleMediaConnector() {
 
     const val sampleRate = 8000
     private var spareBytes : ByteArray? = null
-    val messagesRepository = DataManager.getMessagesRepo(context)
-    val chatsRepository = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+
     private val handler : Handler = Handler(Looper.getMainLooper())
     val isPttReceived : MutableLiveData<String> = MutableLiveData("empty")
     var ts = ""
@@ -254,7 +253,7 @@ object PlayerUtils : BleMediaConnector() {
                         }catch (e :Exception){
                             e.printStackTrace()
                         }
-                        messagesRepository.saveMessage(
+                        DataManager.getAppRepo(context).saveMessage(
                             context = context,
                             isPTT = true,
                             messageItem = MessageItem(
@@ -342,7 +341,7 @@ object PlayerUtils : BleMediaConnector() {
         Scopes.getDefaultCoroutine().launch {
 
             if(bittelPackage.getSourceAsString().isNotEmpty()){
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+                val chatsRepo = ChatsRepository(com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(context).chatsDao())
                 val packageToPass = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString())
                 val realSource = packageToPass.getRealSourceId()
                 getPackageByFrames(bittelPackage, bittelPackage.getDestAsString())
@@ -365,7 +364,7 @@ object PlayerUtils : BleMediaConnector() {
         Scopes.getDefaultCoroutine().launch {
             val source = bittelPackage.getSourceAsString()
             if(source.isNotEmpty()){
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+                val chatsRepo = ChatsRepository(com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(DataManager.context).chatsDao())
                 val destination = bittelPackage.getDestAsString()
                 val packageToPass = StardustAPIPackage(source, destination)
                 val realSource = packageToPass.getRealSourceId()
@@ -532,12 +531,13 @@ object PlayerUtils : BleMediaConnector() {
             return
         }
         CoroutineScope(Dispatchers.IO).launch {
-            chatsRepository.updateAudioReceived(chatId, isAudioReceived)
-            val chatItem = chatsRepository.getChatByBittelID(chatId)
+            val repo = DataManager.getAppRepo(context)
+            repo.updateAudioReceived(chatId, isAudioReceived)
+            val chatItem = repo.getChatByDeviceId(chatId)
             chatItem?.let {
                 chatItem.message = Message(senderID = senderID, text = "Ptt Received", seen = true)
-                chatsRepository.addChat(it)
-                chatsRepository.updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
+                repo.addChat(it)
+                repo.updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
             }
         }
     }

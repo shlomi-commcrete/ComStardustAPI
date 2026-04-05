@@ -24,7 +24,6 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.update.StardustUpdateProcess
 import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
@@ -447,8 +446,8 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handlePTTAI(context: Context, mPackage: StardustPackage) {
         PlayerUtils.saveBittelPTTAiToDatabase(bittelPackage = mPackage)
         Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
+            val chatsRepo = DataManager.getAppRepo(context)
+            var chatItem = chatsRepo.getChatByDeviceId(mPackage.getSourceAsString())
             if(chatItem == null) {
                 UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
             }
@@ -458,8 +457,8 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun handlePTT(context: Context, mPackage: StardustPackage) {
         PlayerUtils.saveBittelMessageToDatabase(context, bittelPackage = mPackage)
         Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
+            val chatsRepo = DataManager.getAppRepo(context)
+            var chatItem = chatsRepo.getChatByDeviceId(mPackage.getSourceAsString())
             if(chatItem == null) {
                 UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
             }

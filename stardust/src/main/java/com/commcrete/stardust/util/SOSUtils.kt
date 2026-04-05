@@ -124,7 +124,7 @@ object SOSUtils {
             isSOS = true, sosType = type)
         Scopes.getDefaultCoroutine().launch {
             val chatsRepo = DataManager.getChatsRepo(context)
-            val messagesRepository = DataManager.getMessagesRepo(context)
+            val messagesRepository = DataManager.getAppRepo(context)
             Scopes.getDefaultCoroutine().launch{
                 val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
                 var textChat = "Reporting $textName"

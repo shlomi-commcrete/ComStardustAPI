@@ -7,7 +7,6 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -271,8 +270,8 @@ class FileReceiver(
         Scopes.getDefaultCoroutine().launch {
             val mFileName = trimUntilUnderscore(file.name)
             val type = (if(data.fileType == FileUtils.FileType.File) "File Received" else "Image Received") + ": $mFileName"
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var chatItem = chatsRepo.getChatByBittelID(data.chatID)
+            val chatsRepo = DataManager.getAppRepo(context)
+            var chatItem = chatsRepo.getChatByDeviceId(data.chatID)
             if(chatItem == null) {
                 chatItem = UsersUtils.createNewBittelUserSender(chatsRepo, stardustPackage)
             }
@@ -280,7 +279,7 @@ class FileReceiver(
                 val chatContact = chat.user
                 chatContact?.let { contact ->
                     contact.appId?.let { appIdArray ->
-                        val displayName = chatsRepo.getChatByBittelID(data.senderID)?.name ?: data.senderID
+                        val displayName = chatsRepo.getChatByDeviceId(data.senderID)?.name ?: data.senderID
 
                         if(appIdArray.isNotEmpty()) {
                             chat.message = Message(senderID = data.senderID, text = type, seen = true)
@@ -293,7 +292,7 @@ class FileReceiver(
                                 text = type,
                                 fileLocation = file.absolutePath,
                                 isFile = data.fileType == FileUtils.FileType.File, isImage = data.fileType == FileUtils.FileType.Image)
-                            DataManager.getMessagesRepo(context).saveMessage( context = context, messageItem )
+                            DataManager.getAppRepo(context).saveMessage( context = context, messageItem )
                             UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
                             val numOfUnread = chat.numOfUnseenMessages
                             chatsRepo.updateNumOfUnseenMessages(data.chatID, numOfUnread + 1)

@@ -6,8 +6,6 @@ import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
@@ -334,9 +332,9 @@ object StardustInitConnectionHandler {
     }
 
     // 4) Add groups
-    private fun sendAddGroups() {
+    private fun sendAddGroups(appContext: Context) {
         Scopes.getDefaultCoroutine().launch {
-            val payload = buildAddGroupsPayload()
+            val payload = buildAddGroupsPayload(appContext)
             val (src, dst) = requireSrcDst() ?: return@launch
             val pkg = StardustPackageUtils.getStardustPackage(
                 context = ctx,
@@ -439,11 +437,9 @@ object StardustInitConnectionHandler {
         intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         return intData.toIntArray().toTypedArray()
     }
-    private suspend fun buildAddGroupsPayload(): Array<Int> {
+    private suspend fun buildAddGroupsPayload(appContext: Context): Array<Int> {
         return withContext(Dispatchers.IO) {
-            val groupsList = ChatsRepository(
-                ChatsDatabase.getDatabase(DataManager.context).chatsDao()
-            ).getAllGroupIds()
+            val groupsList = DataManager.getAppRepo(appContext).getAllGroupIds()
 
             val intData = arrayListOf<Int>()
             if(groupsList.isNotEmpty()) {

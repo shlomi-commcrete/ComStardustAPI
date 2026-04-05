@@ -4,7 +4,6 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
-import com.commcrete.stardust.room.contacts.ChatContact
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -18,6 +17,9 @@ interface ContactsDao {
 
     @Query("SELECT * FROM contacts_table ORDER BY contactId ASC")
     fun getAllContact(): Flow<List<ChatContact>>
+
+    @Query("SELECT * FROM contacts_table ORDER BY contactId ASC")
+    suspend fun readAllContacts(): List<ChatContact>
 
     @Query("""
       SELECT display_name

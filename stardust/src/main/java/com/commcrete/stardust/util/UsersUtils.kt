@@ -10,15 +10,10 @@ import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.contacts.ContactsDatabase
-import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
 import com.commcrete.stardust.util.DataManager.cleanAllDatabases
@@ -28,10 +23,6 @@ import kotlinx.coroutines.*
 import java.util.Date
 
 object UsersUtils {
-
-    val contactsDao = ContactsDatabase.getDatabase(DataManager.context).contactsDao()
-    private val contactsRepository = ContactsRepository(contactsDao)
-
 
     var onUserUpdatedListener: OnUserUpdated? = null
     var user : User? = null
@@ -45,11 +36,10 @@ object UsersUtils {
     val messageReceived : MutableLiveData<MessageItem> = MutableLiveData()
 
 
-    suspend fun getUserName(senderId: String) : String{
+    suspend fun getUserName(context: Context, senderId: String) : String{
         var senderIdToReturn = senderId
         val getSenderName = CoroutineScope(Dispatchers.IO).async {
-            val chat = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
-                .getChatByBittelID(senderId)
+            val chat = DataManager.getAppRepo(context).getChatByDeviceId(senderId)
             chat?.user?.displayName?.let {
                 senderIdToReturn = it
                 return@async it
@@ -60,7 +50,7 @@ object UsersUtils {
         return senderIdToReturn
     }
 
-    fun createNewBittelUserSender(chatsRepo: ChatsRepository, bittelPackage: StardustPackage): ChatItem {
+    fun createNewBittelUserSender(appContext: Context, bittelPackage: StardustPackage): ChatItem {
         val chatId = bittelPackage.getSourceAsString()
         val message = Message(senderID = chatId, text = bittelPackage.getDataAsString()?:"",
             seen = true)
@@ -71,12 +61,12 @@ object UsersUtils {
             user = user
         )
         Scopes.getDefaultCoroutine().launch {
-            chatsRepo.addChat(chatItem)
+            DataManager.getAppRepo(appContext).addChat(chatItem)
         }
         return chatItem
     }
 
-    fun createNewBittelUserPTTSender(chatsRepo: ChatsRepository, bittelPackage: StardustPackage): ChatItem {
+    fun createNewBittelUserPTTSender(appContext: Context, bittelPackage: StardustPackage): ChatItem {
         val chatId = bittelPackage.getSourceAsString()
         val message = Message(senderID = chatId, text = "Ptt message",
             seen = true)
@@ -87,7 +77,7 @@ object UsersUtils {
             user = user
         )
         Scopes.getDefaultCoroutine().launch {
-            chatsRepo.addChat(chatItem)
+            DataManager.getAppRepo(appContext).addChat(chatItem)
         }
         return chatItem
     }
@@ -95,7 +85,7 @@ object UsersUtils {
     fun saveBittelUserSOS(bittelPackage: StardustPackage, bittelSOSPackage: StardustSOSPackage, isCreateNewUser : Boolean = true){
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao())
+            val chatsRepo = ChatsRepository(AppDatabase.getDatabase(DataManager.context).chatsDao())
             var sender : ChatItem? = null
             var receiver : ChatItem? = null
             if(chatContact != null) {
@@ -129,7 +119,7 @@ object UsersUtils {
                     val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(),  isSOS = true,
                         sosType = bittelSOSPackage.sosType)
-                    DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
+                    DataManager.getAppRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
 
 
                     val location = Location(whoSent).apply {
@@ -191,7 +181,7 @@ object UsersUtils {
     fun saveBittelUserSOSReal(context: Context, bittelPackage: StardustPackage, bittelSOSPackage: StardustSOSPackage, isCreateNewUser : Boolean = true){
         Scopes.getDefaultCoroutine().launch {
             val chatContact = contactsRepository.getChatContactByBittelID(bittelPackage.getSourceAsString())
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            val chatsRepo = ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
             var chatItem : ChatItem? = null
 
             val packageToPass = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),
@@ -215,7 +205,7 @@ object UsersUtils {
                             "longitude : ${bittelSOSPackage.longitude}\naltitude : ${bittelSOSPackage.height}"
                     val message = MessageItem(senderID = realSource, text = text, epochTimeMs =  Date().time ,
                         senderName = displayName, chatId = bittelPackage.getSourceAsString(), isSOS = true, sosType = 0)
-                    DataManager.getMessagesRepo(context).saveMessage(context = context, messageItem = message)
+                    DataManager.getAppRepo(context).saveMessage(context = context, messageItem = message)
                     val location = Location(realSource)
                     location.latitude = bittelSOSPackage.latitude.toDouble()
                     location.longitude = bittelSOSPackage.longitude.toDouble()
@@ -243,7 +233,7 @@ object UsersUtils {
     fun saveBittelMessageToDatabase(context: Context, bittelPackage: StardustPackage, isSOS : Boolean = false){
         CoroutineScope(Dispatchers.IO).launch {
             if(bittelPackage.getSourceAsString().isNotEmpty()){
-                val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+                val chatsRepo = ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
                 var chatItem = chatsRepo.getChatByBittelID(bittelPackage.getSourceAsString())
                 if(chatItem == null) {
                     chatItem = createNewBittelUserSender(chatsRepo, bittelPackage)
@@ -312,13 +302,13 @@ object UsersUtils {
 
 
     fun saveMessageToDatabase(context: Context, chatID : String, message: MessageItem){
-        DataManager.getMessagesRepo(context).saveMessage(context = context, messageItem = message)
+        DataManager.getAppRepo(context).saveMessage(context = context, messageItem = message)
     }
 
     private fun getSenderName(chatID : String, senderID: String): String{
         val mUserId = SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
             if(!chatID.contains(it) && senderID != it ){
-                val contactsRepository = ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao())
+                val contactsRepository = ContactsRepository(AppDatabase.getDatabase(DataManager.context).contactsDao())
                 return contactsRepository.getUserNameByUserId(senderID)
             }
         }
@@ -330,28 +320,6 @@ object UsersUtils {
     fun onUserAcquired() {
     }
 
-    fun addNewUser (appId: String, name: String) {
-        Scopes.getDefaultCoroutine().launch {
-            ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChat(
-                getChatItem(appId, name, appId)
-            )
-            DataManager.getMessagesRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem =
-                getMessageItem(appId, name, 0)
-            )
-            ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addContact(
-                getContact(appId, name, 0)
-            )
-        }
-    }
-
-    fun removeUser(selectedUser: ChatItem?, deleteMessages: Boolean) {
-        selectedUser?.let {
-            Scopes.getDefaultCoroutine().launch {
-                ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).deleteUser(it.chat_id)
-                ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).deleteContact(it.chat_id)
-            }
-        }
-    }
 
     private fun getContact (appId: String, name: String, loop: Int) : ChatContact {
         return ChatContact(displayName = name, number = "$loop" , bittelId = appId, smartphoneBittelId = appId)

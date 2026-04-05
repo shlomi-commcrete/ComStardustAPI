@@ -446,12 +446,13 @@ object PcmStreamPlayer : BleMediaConnector() {
         if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) { return }
 
         Scopes.getDefaultCoroutine().launch {
-            PlayerUtils.chatsRepository.updateAudioReceived(chatId, isAudioReceived)
-            val chatItem = PlayerUtils.chatsRepository.getChatByBittelID(chatId)
+            val repo = DataManager.getAppRepo(context)
+            repo.updateAudioReceived(chatId, isAudioReceived)
+            val chatItem = repo.getChatByDeviceId(chatId)
             chatItem?.let {
                 chatItem.message = Message(senderID = senderId, text = "Ptt Received", seen = true)
-                PlayerUtils.chatsRepository.addChat(it)
-                ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao()).updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
+                repo.addChat(it)
+                repo.updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
             }
         }
     }
@@ -490,7 +491,7 @@ object PcmStreamPlayer : BleMediaConnector() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 val userName = UsersUtils.getUserName(realSource)
-                PlayerUtils.messagesRepository.saveMessage(
+                DataManager.getAppRepo(DataManager.context).saveMessage(
                     context = context,
                     isPTT = true,
                     messageItem = MessageItem(
