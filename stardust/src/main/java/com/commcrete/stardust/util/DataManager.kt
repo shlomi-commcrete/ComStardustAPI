@@ -45,7 +45,6 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.FileSender.OnFileStatusChange
-import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
@@ -489,10 +488,6 @@ object DataManager : StardustAPI, PttInterface{
         return DemoDataUtil
     }
 
-    fun getPlayerUtils (context: Context): PlayerUtils {
-        requireContext(context)
-        return PlayerUtils
-    }
 
     fun getChatsRepo (context: Context) : ChatsRepository {
         requireContext(context)

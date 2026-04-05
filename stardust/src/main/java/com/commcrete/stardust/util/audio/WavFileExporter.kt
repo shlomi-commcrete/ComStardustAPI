@@ -23,7 +23,7 @@ object WavFileExporter {
         val pcmDataSize = file.length().toInt()
         try {
             val wavFileOutputStream = FileOutputStream(wavTempFile)
-            val wavHeader = createWavHeader(pcmDataSize, PlayerUtils.sampleRate, 1, 16)
+            val wavHeader = createWavHeader(pcmDataSize, PTTCodecDecoderSession.sampleRate, 1, 16)
 
             // Write the header first
             wavFileOutputStream.write(wavHeader)

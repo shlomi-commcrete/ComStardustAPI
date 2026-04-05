@@ -19,14 +19,12 @@ import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
 import com.commcrete.stardust.util.DataManager.cleanAllDatabases
 import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
-import com.commcrete.stardust.util.audio.PlayerUtils
+import com.commcrete.stardust.util.audio.SoundsUtils
 import kotlinx.coroutines.*
 import java.util.Date
 
@@ -95,8 +93,7 @@ object UsersUtils {
         return chatItem
     }
 
-    fun createNewBittelUserPTTSender(chatsRepo: ChatsRepository, bittelPackage: StardustPackage): ChatItem {
-        val chatId = bittelPackage.getSourceAsString()
+    fun createNewBittelUserPTTSender(chatsRepo: ChatsRepository, chatId: String): ChatItem {
         val message = Message(senderID = chatId, text = "Ptt message",
             seen = true)
         val user = com.commcrete.stardust.request_objects.model.user_list.User(
@@ -156,7 +153,7 @@ object UsersUtils {
                         longitude = bittelSOSPackage.longitude.toDouble()
                         altitude = bittelSOSPackage.height.toDouble()
                     }
-                    PlayerUtils.playNotificationSound (DataManager.context)
+                    SoundsUtils.playNotificationSound(DataManager.context)
 
                     DataManager.getCallbacks()?.receiveSOS(StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(),),
                         location, bittelSOSPackage.sosType)
@@ -294,7 +291,7 @@ object UsersUtils {
                                 saveMessageToDatabase(context, appIdArray[0], messageItem)
                                 val numOfUnread = chat.numOfUnseenMessages
                                 chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
-                                PlayerUtils.playNotificationSound (context)
+                                SoundsUtils.playNotificationSound(context)
                                 Scopes.getMainCoroutine().launch {
                                     messageReceived.value = messageItem
                                 }

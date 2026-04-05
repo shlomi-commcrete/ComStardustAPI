@@ -1,42 +1,98 @@
 package com.commcrete.stardust.ai.codec
 
+import android.content.Context
 import android.media.MediaCodec
-import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.media.PcmStreamPlayer
+import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.AiPlayerUtils
+import com.commcrete.stardust.util.audio.PTTCodecDecoderSession
+import com.commcrete.stardust.util.audio.RecorderUtils
+import com.commcrete.stardust.util.audio.WavRecorder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 object PttReceiveManager {
     private const val TAG = "PttManager"
     private const val BUFFERING_TIME_MS = 500L
-    private var coroutineScope = CoroutineScope(Dispatchers.Default) // Scope for decoding and frame dropping
+
+    private var coroutineScope = CoroutineScope(Dispatchers.Default)
     private var decodingJob: Job? = null
-    private var toDecodeQueue = Channel<ByteArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
+    private var toDecodeQueue = Channel<AIDecodeData>(Channel.UNLIMITED)
 
     private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
+
+    // ── AI inactivity timer ───────────────────────────────────────────────────────────────────────
+    private val aiHandler = Handler(Looper.getMainLooper())
+    private val aiTimeoutRunnable = Runnable {
+        onAiReceiveTimeout()
+        clearDecodeContext()
+        PcmStreamPlayer.stop()
+        AiPlayerUtils.onAiStreamReleased()
+    }
+
+    // ── Legacy Codec2 inactivity timer ────────────────────────────────────────────────────────────
+    private val handler = Handler(Looper.getMainLooper())
+    private val pttScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val runnable: Runnable = Runnable {
+        Scopes.getMainCoroutine().launch {
+            CoroutineScope(Dispatchers.IO).launch {
+                val file = PTTCodecDecoderSession.fileToWrite
+                file?.let {
+                    val byteArray = PTTCodecDecoderSession.byteArrayOutputStream.toByteArray().copyOf()
+                    PTTCodecDecoderSession.writePTTReceivedData(byteArray, it)
+                }
+                PTTCodecDecoderSession.fileToWrite = null
+                PTTCodecDecoderSession.byteArrayOutputStream.reset()
+                PTTCodecDecoderSession.numOfPackagesRecieved = 0
+            }
+            Handler(Looper.getMainLooper()).postDelayed({ PTTCodecDecoderSession.ts = "" }, 500)
+            PTTCodecDecoderSession.ts = ""
+            PTTCodecDecoderSession.isFileInit = false
+            PcmStreamPlayer.releaseLegacyTrack()
+            if (PTTCodecDecoderSession.numOfPackagesRecieved == 1) {
+                PcmStreamPlayer.writeMinimumSilenceAndPlay(
+                    PTTCodecDecoderSession.byteArrayOutputStream.toByteArray().copyOf()
+                ) {
+                    Timber.tag("WavRecorder.TAG_PTT_DEBUG").d("bufferSizeInFrames")
+                }
+                PTTCodecDecoderSession.byteArrayOutputStream.reset()
+            }
+            StardustPackageUtils.packageLiveData.value = null
+            PTTCodecDecoderSession.mCodec2Decoder.rawAudioOutBytesBuffer.clear()
+            Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
+        }
+    }
 
     // Variables to track last unpack and timestamp
     private var lastUnpack: List<Long>? = null
     private var lastDecodedSamples: ShortArray? = null
     private var lastUnpackTime: Long = 0L
-    private var from = ""
-    private var source : String? = ""
-    private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
-    private var aiDecodeData: AIDecodeData? = null
+
+    // ── Init ──────────────────────────────────────────────────────────────────────────────────────
     fun init() {
         startDecodingJob()
     }
 
-    data class AIDecodeData (
+    // ── Data classes ──────────────────────────────────────────────────────────────────────────────
+    data class AIDecodeData(
         val data: ByteArray,
         val from: String = "",
         val source: String = "",
@@ -44,113 +100,208 @@ object PttReceiveManager {
         val onPcmReady: ((ShortArray) -> Unit)? = null
     )
 
-    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null,
-                   onPcmReady: ((ShortArray) -> Unit)? = null) {
-        selectedModel = modelType ?: WavTokenizerDecoder.ModelType.General
-        this.from = from
-        this.source = source
-        toDecodeQueue.trySend(data)
-
+    // ── Public API ────────────────────────────────────────────────────────────────────────────────
+    fun addNewData(
+        data: ByteArray,
+        from: String,
+        source: String? = null,
+        modelType: WavTokenizerDecoder.ModelType? = null,
+        onPcmReady: ((ShortArray) -> Unit)? = null
+    ) {
+        addNewData(
+            AIDecodeData(
+                data = data,
+                from = from,
+                source = source.orEmpty(),
+                modelType = modelType ?: WavTokenizerDecoder.ModelType.General,
+                onPcmReady = onPcmReady
+            )
+        )
     }
 
     fun addNewData(aiDecodeData: AIDecodeData) {
-        this.aiDecodeData = aiDecodeData
-        toDecodeQueue.trySend(aiDecodeData.data)
-
+        toDecodeQueue.trySend(aiDecodeData)
     }
 
-    private fun startDecodingJob() {
-        decodingJob = coroutineScope.launch {
-            while (isActive) { // Keep the decoding loop active
-                try {
-                    // Offer the packet to the channel without suspending if the channel is not full
-                    // If the channel was limited, offer might return false or suspend
-                    val data = toDecodeQueue.tryReceive().getOrNull() // Attempt to receive without suspending
+    /** Entry point for legacy Codec2 PTT packets. */
+    fun handlePTTPackage(bittelPackage: StardustPackage) {
+        getPackageByFrames(bittelPackage, bittelPackage.getDestAsString())
+    }
 
-                    if (data != null) {
-                        Log.d(TAG, "Data received of size: ${data.size}")
-                        val decodedData = data.sliceArray(1 until data.size)
-                        Log.d(TAG, "Received data: ${decodedData.toHexString()}")
+    /** Entry point for AI PTT packets. */
+    fun handleIncomingAIPttPackage(bittelPackage: StardustPackage) {
+        coroutineScope.launch {
+            val source = bittelPackage.getSourceAsString()
+            if (source.isEmpty()) return@launch
 
-                        handleTokenizerChunk(decodedData)
-                    }
+            val destination = bittelPackage.getDestAsString()
 
-                } catch (e: MediaCodec.CodecException) {
-                    Log.e(TAG, "Codec exception during decoding: ${e.diagnosticInfo}", e)
-                    break // Exit the decoding loop on error
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in decoding loop: ${e.message}", e)
-                    break // Exit the decoding loop on other errors
-                }
+            val packageToPass = StardustAPIPackage(source, destination)
+            val realSource = packageToPass.getRealSourceId()
+            val data = bittelPackage.data ?: return@launch
+            val byteArray = AiPlayerUtils.intArrayToByteArray(data.toMutableList())
 
-                // Small delay to prevent a tight loop from consuming too much CPU if no buffers are available
-                delay(1) // Adjust delay as needed
-            }
-            Log.d(TAG, "Decoding job finished.")
+            Timber.tag(TAG).d("Received PTT AI data size: ${byteArray.size}")
+            if (byteArray.size <= 1) return@launch
+
+            val selectedModel = AiPlayerUtils.getModelFromValue(byteArray[0].toInt())
+                ?: WavTokenizerDecoder.ModelType.General
+
+            addNewData(
+                AIDecodeData(
+                    data = byteArray,
+                    from = realSource,
+                    source = source,
+                    modelType = selectedModel
+                )
+            )
+            DataManager.getCallbacks()?.receivePTT(packageToPass, byteArray)
         }
     }
 
-    private suspend fun handleTokenizerChunk(decodedData: ByteArray) {
+    // ── Legacy Codec2 playback pipeline ───────────────────────────────────────────────────────────
+    private fun getPackageByFrames(bittelPackage: StardustPackage, receiverID: String) {
+        bittelPackage.data?.let { dataArray ->
+            val byteArray = PTTCodecDecoderSession.intArrayToByteArray(dataArray.toMutableList())
+            testPlayPackage(byteArray, bittelPackage.getSourceAsString(), receiverID)
+        }
+    }
+
+    private fun testPlayPackage(byteArray: ByteArray, source: String, receiverID: String) {
+        PcmStreamPlayer.ensureLegacyTrack(
+            (14080 * PTTCodecDecoderSession.bufferSizeMulti).toInt(),
+            PTTCodecDecoderSession.speedFactor
+        )
+        val bytes = PTTCodecDecoderSession.splitByteArray(byteArray, 7)
+        val bytesListToPlay = mutableListOf<ByteArray>()
+        for (mByte in bytes) {
+            val decodedBytes = PTTCodecDecoderSession.handleBittelAudioMessage(mByte)
+            if (!mByte.contentEquals(PTTCodecDecoderSession.embpyByte)) {
+                bytesListToPlay.add(decodedBytes)
+            }
+        }
+        val combined = PTTCodecDecoderSession.combine(bytesListToPlay)
+        playAudio(context, combined, receiverID, source)
+    }
+
+    private fun playAudio(
+        context: Context,
+        pttAudio: ByteArray,
+        receiverID: String,
+        senderID: String,
+        decoderType: RecorderUtils.CODE_TYPE
+    ) {
+        playPTT(pttAudio, pttAudio.size, senderID, receiverID)
+        resetTimer()
+
+        // TODO: Refactor CodecPlayerUtils to not rely on static state for ts and file initialization, as this can lead to issues if multiple PTT messages are received in quick succession. Consider using a more robust session management approach.
+        PTTCodecDecoderSession.setTs()
+
+        pttScope.launch {
+            runCatching {
+                if (!PTTCodecDecoderSession.isFileInit) {
+                    val parsedDestination = receiverID.trim()
+                        .replace("[\"", "").replace("\"]", "")
+                    val packageToPass = StardustAPIPackage(senderID, parsedDestination)
+                    PTTCodecDecoderSession.initPttInputFile(context, packageToPass, RecorderUtils.CODE_TYPE.CODEC2)
+                }
+                PTTCodecDecoderSession.byteArrayOutputStream.write(pttAudio)
+            }.onFailure { it.printStackTrace() }
+        }
+    }
+
+    private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String) {
+        PcmStreamPlayer.playLegacyStream(
+            audioData = audioStream,
+            bufferSizeInBytes = size,
+            receivedPkgs = PTTCodecDecoderSession.numOfPackagesRecieved,
+            playFromSdk = true
+        )
+        DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination), audioStream)
+    }
+
+    private fun resetTimer() {
+        handler.removeCallbacks(runnable)
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed(runnable, 2000)
+    }
+
+    // ── AI decode loop ────────────────────────────────────────────────────────────────────────────
+    private fun startDecodingJob() {
+        if (decodingJob?.isActive == true) return
+        decodingJob = coroutineScope.launch {
+            while (isActive) {
+                try {
+                    val aiDecodeData = toDecodeQueue.receiveCatching().getOrNull() ?: continue
+                    Timber.tag(TAG).d("Data received of size: ${aiDecodeData.data.size}")
+                    handleTokenizerChunk(aiDecodeData)
+                } catch (e: MediaCodec.CodecException) {
+                    Timber.tag(TAG).e(e, "Codec exception during decoding: ${e.diagnosticInfo}")
+                    break
+                } catch (e: Exception) {
+                    Timber.tag(TAG).e(e, "Error in decoding loop: ${e.message}")
+                    break
+                }
+            }
+            Timber.tag(TAG).d("Decoding job finished.")
+        }
+    }
+
+    private suspend fun handleTokenizerChunk(aiDecodeData: AIDecodeData) {
+        val decodedData = aiDecodeData.data.sliceArray(1 until aiDecodeData.data.size)
         val unpack = BitPacking12.unpack12(decodedData)
 
-        // Check if last unpack was received within 800ms
         val currentTime = System.currentTimeMillis()
-        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
-            lastUnpack
-        } else {
-            null
-        }
-        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
-            lastDecodedSamples
-        } else {
-            null
-        }
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
-//        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData?.modelType ?: WavTokenizerDecoder.ModelType.General)
-        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
+        val previousUnpack = lastUnpack?.takeIf { currentTime - lastUnpackTime < 2000 }
+        val previousSample = lastDecodedSamples?.takeIf { currentTime - lastUnpackTime < 2000 }
 
-        // Save current unpack and timestamp for next iteration
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData.modelType)
+        Timber.tag(TAG).d("Decoded tokenizer unpack size ${unpack.size}, PCM data: ${finalPcmData.size} samples")
+
         lastUnpack = unpack
         lastDecodedSamples = finalPcmData
         lastUnpackTime = currentTime
 
-        // Add buffering delay only if there was no previous unpack (first packet)
-        if (previousUnpack == null)
-            delay(BUFFERING_TIME_MS)
+        if (previousUnpack == null) delay(BUFFERING_TIME_MS)
 
-//        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, this.from, this.source)
+        resetAiTimer()
+        AiPlayerUtils.onAiFrameEnqueued(aiDecodeData.from, aiDecodeData.source)
+        AiPlayerUtils.onAiFrameDecoded(finalPcmData, AI_SAMPLE_RATE)
+        aiDecodeData.onPcmReady?.invoke(finalPcmData)
+        AiPlayerUtils.enqueue(finalPcmData, AI_SAMPLE_RATE)
     }
 
     suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {
-
-        // Check if last unpack was received within 800ms
         val currentTime = System.currentTimeMillis()
-        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
-            lastUnpack
-        } else {
-            null
-        }
-        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
-            lastDecodedSamples
-        } else {
-            null
-        }
+        val previousUnpack = lastUnpack?.takeIf { currentTime - lastUnpackTime < 2000 }
+        val previousSample = lastDecodedSamples?.takeIf { currentTime - lastUnpackTime < 2000 }
         val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
 
         val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, modelTypeSelected)
-        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
-        // Save current unpack and timestamp for next iteration
         lastUnpack = unpack
         lastDecodedSamples = finalPcmData
         lastUnpackTime = currentTime
 
-        // Add buffering delay only if there was no previous unpack (first packet)
-        if (previousUnpack == null)
-            delay(BUFFERING_TIME_MS)
+        if (previousUnpack == null) delay(BUFFERING_TIME_MS)
 
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, "from", "source")
+        AiPlayerUtils.enqueue(finalPcmData, AI_SAMPLE_RATE)
+    }
+
+    private fun onAiReceiveTimeout() {
+        AiPlayerUtils.finalizeAiReceiveSessionOnTimeout()
+    }
+
+    private fun resetAiTimer() {
+        aiHandler.removeCallbacks(aiTimeoutRunnable)
+        aiHandler.removeCallbacksAndMessages(null)
+        aiHandler.postDelayed(aiTimeoutRunnable, AI_INACTIVITY_TIMEOUT_MS)
+    }
+
+    private fun clearDecodeContext() {
+        lastUnpack = null
+        lastDecodedSamples = null
+        lastUnpackTime = 0L
     }
 
     private fun ByteArray.toHexString(): String =

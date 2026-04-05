@@ -21,14 +21,12 @@ import com.commcrete.stardust.room.contacts.ContactsDao
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
-import com.commcrete.stardust.util.audio.PlayerUtils
+import com.commcrete.stardust.util.audio.SoundsUtils
 import kotlinx.coroutines.launch
 import java.util.Date
 import kotlin.random.Random
@@ -103,7 +101,7 @@ object LocationUtils  {
                         altitude = bittelLocationPackage.height.toDouble()
                     }
 
-                    PlayerUtils.playNotificationSound (context)
+                    SoundsUtils.playNotificationSound(context)
                     DataManager.getCallbacks()?.receiveLocation(
                         StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)

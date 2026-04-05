@@ -14,7 +14,7 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
-import com.commcrete.stardust.util.audio.PlayerUtils
+import com.commcrete.stardust.util.audio.SoundsUtils
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -299,7 +299,7 @@ class FileReceiver(
                             chatsRepo.updateNumOfUnseenMessages(data.chatID, numOfUnread + 1)
                             Scopes.getMainCoroutine().launch {
                                 UsersUtils.messageReceived.value = messageItem
-                                PlayerUtils.playNotificationSound (context)
+                                SoundsUtils.playNotificationSound(context)
                             }
                         }
                     }

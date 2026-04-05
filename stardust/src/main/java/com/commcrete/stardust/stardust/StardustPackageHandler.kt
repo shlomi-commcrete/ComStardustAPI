@@ -14,6 +14,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
+import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -24,8 +25,6 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.update.StardustUpdateProcess
 import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
@@ -41,7 +40,6 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.UsersUtils
-import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -102,14 +100,14 @@ internal class StardustPackageHandler(private val context: Context ,
                         if(mPackageControl.stardustPackageType == StardustControlByte.StardustPackageType.DATA) {
                             handleText(context, mPackage)
                         }else {
-                            handlePTT(context, mPackage)
+                            handlePTT(mPackage)
                         }
                     }
                     StardustPackageUtils.StardustOpCode.SEND_PTT -> {
-                        handlePTT(context, mPackage)
+                        handlePTT(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.SEND_PTT_AI -> {
-                        handlePTTAI(context, mPackage)
+                        handlePTTAI(mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.REQUEST_LOCATION -> {
                         handleLocationRequested(context, mPackage, randomID)
@@ -441,26 +439,12 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handlePTTAI(context: Context, mPackage: StardustPackage) {
-        PlayerUtils.saveBittelPTTAiToDatabase(bittelPackage = mPackage)
-        Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
-            if(chatItem == null) {
-                UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
-            }
-        }
+    private fun handlePTTAI(mPackage: StardustPackage) {
+        PttReceiveManager.handleIncomingAIPttPackage(mPackage)
     }
 
-    private fun handlePTT(context: Context, mPackage: StardustPackage) {
-        PlayerUtils.saveBittelMessageToDatabase(context, bittelPackage = mPackage)
-        Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            var chatItem = chatsRepo.getChatByBittelID(mPackage.getSourceAsString())
-            if(chatItem == null) {
-                UsersUtils.createNewBittelUserPTTSender(chatsRepo, mPackage)
-            }
-        }
+    private fun handlePTT(mPackage: StardustPackage) {
+        PttReceiveManager.handlePTTPackage(mPackage)
     }
 
     private fun handleText(context: Context, mPackage: StardustPackage) {
