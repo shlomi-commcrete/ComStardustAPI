@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust.model
 
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType
 import kotlin.collections.reversedArray
 
 class StardustConfigurationParser : StardustParser() {
@@ -90,7 +91,14 @@ class StardustConfigurationParser : StardustParser() {
     enum class CurrentPreset (val value : Int){
         PRESET1(0),
         PRESET2(1),
-        PRESET3(2),
+        PRESET3(2);
+
+        companion object {
+
+            fun fromValue(value: Int): CurrentPreset? {
+                return CurrentPreset.entries.find { it.value == value }
+            }
+        }
     }
 
     enum class StardustType (val type : Int){

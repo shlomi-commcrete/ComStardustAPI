@@ -39,22 +39,11 @@ object ConfigurationUtils {
 
         if (presetsList.isEmpty()) return
 
-        val index = when (preset) {
-            StardustConfigurationParser.CurrentPreset.PRESET1 -> 0
-            StardustConfigurationParser.CurrentPreset.PRESET2 -> 1
-            StardustConfigurationParser.CurrentPreset.PRESET3 -> 2
-        }
-        selectedPreset = config.presets.getOrNull(index)
+        selectedPreset = config.presets.getOrNull(preset.value)
     }
 
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
-        selectedPreset?.xcvrList?.let { xcvrs ->
-            when (stardustAppEventPackage.xcvr) {
-                0 -> {stardustAppEventPackage.carrier = xcvrs[0].carrier}
-                1 -> {stardustAppEventPackage.carrier = xcvrs[1].carrier}
-                2 -> {stardustAppEventPackage.carrier = xcvrs[2].carrier}
-            }
-        }
+        stardustAppEventPackage.carrier = selectedPreset?.xcvrList?.getOrNull(stardustAppEventPackage.xcvr)?.carrier
     }
 
     private fun getLastPresets (context: Context) : List<StardustConfigurationParser.Preset>?{

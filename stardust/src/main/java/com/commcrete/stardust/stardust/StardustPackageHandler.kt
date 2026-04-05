@@ -28,6 +28,7 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -197,17 +198,18 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleAppEvent(context: Context, mPackage: StardustPackage) {
         val bittelAppEventPackage = StardustAppEventParser().parseAppEvent(mPackage)
+
         bittelAppEventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
-                RXSuccess -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                RXFail -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXStart -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXFinish -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXBufferFull -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                PresetChange -> {sdPackage.getCurrentPreset()?.let {
-                    ConfigurationUtils.setCurrentPresetLocal(it)
-                    ConfigurationUtils.setDefaults(context)
-                }}
+                RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, RxFinish -> {
+                    ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)
+                }
+                PresetChange -> {
+                    sdPackage.getCurrentPreset()?.let {
+                        ConfigurationUtils.setCurrentPresetLocal(it)
+                        ConfigurationUtils.setDefaults(context)
+                    }
+                }
                 ArmDelete -> {
                     if(sdPackage.armDelete == ArmDelete.type) {
                         EraseUtils.handleArm()
@@ -218,8 +220,9 @@ internal class StardustPackageHandler(private val context: Context ,
                         EraseUtils.handleDelete()
                     }
                 }
-                null -> {}
+                PartialEraseFinished -> {}
 
+                null -> {}
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
