@@ -9,7 +9,7 @@ import androidx.room.PrimaryKey
 import kotlinx.android.parcel.Parcelize
 import java.util.Locale
 
-@Entity(tableName = "contacts_table", indices = [androidx.room.Index(
+@Entity(tableName = "contacts", indices = [androidx.room.Index(
     value = ["number"],
     unique = true
 )])

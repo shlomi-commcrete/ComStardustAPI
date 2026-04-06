@@ -2,6 +2,8 @@ package com.commcrete.stardust.room
 
 import androidx.room.TypeConverter
 import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.new_db.contact.ContactType
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
@@ -18,7 +20,6 @@ class Converters {
         fun toString(value: Array<String?>?): String? {
             return Gson().toJson(value)
         }
-
     }
 
     class DoubleArrayConverter{
@@ -34,16 +35,30 @@ class Converters {
         }
     }
 
-
     class EnumConverter {
         @TypeConverter
-        fun fromSeenStatus(status: SeenStatus): Int {
-            return status.id
-        }
+        fun fromSeenStatus(status: SeenStatus): Int = status.id
 
         @TypeConverter
-        fun toSeenStatus(statusId: Int): SeenStatus {
-            return SeenStatus.values().first { it.id == statusId }
-        }
+        fun toSeenStatus(statusId: Int): SeenStatus =
+            SeenStatus.values().first { it.id == statusId }
+
+        @TypeConverter
+        fun fromChatType(type: ChatType): String = type.name
+
+        @TypeConverter
+        fun toChatType(value: String): ChatType = ChatType.valueOf(value)
+
+        @TypeConverter
+        fun fromMessageType(type: MessageType): String = type.name
+
+        @TypeConverter
+        fun toMessageType(value: String): MessageType = MessageType.valueOf(value)
+
+        @TypeConverter
+        fun fromContactType(type: ContactType): String = type.name
+
+        @TypeConverter
+        fun toContactType(value: String): ContactType = ContactType.valueOf(value)
     }
 }

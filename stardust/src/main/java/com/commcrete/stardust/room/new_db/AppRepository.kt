@@ -5,13 +5,15 @@ import androidx.lifecycle.LiveData
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.room.old_db.ChatsDatabase
 import com.commcrete.stardust.room.old_db.ContactsDatabase
 import com.commcrete.stardust.room.old_db.MessagesDatabase
-import com.commcrete.stardust.room.new_db.chat.AppChatsDao
+import com.commcrete.stardust.room.new_db.chat.ChatSummaryDao
+import com.commcrete.stardust.room.new_db.chat.ChatSummary
+import com.commcrete.stardust.room.new_db.chat.ContactLastKnownLocation
 import com.commcrete.stardust.room.new_db.chat.toAppChatEntity
 import com.commcrete.stardust.room.new_db.contact.AppContactsDao
-import com.commcrete.stardust.room.new_db.contact.toAppContactEntity
 import com.commcrete.stardust.room.new_db.message.AppMessagesDao
 import com.commcrete.stardust.room.new_db.message.toAppMessageEntity
 import com.commcrete.stardust.util.DataManager
@@ -32,6 +34,7 @@ class AppRepository(
     private val chatsDao: AppChatsDao,
     private val contactsDao: AppContactsDao,
     private val messagesDao: AppMessagesDao,
+    private val chatSummaryDao: ChatSummaryDao,
     private val scope: CoroutineScope,
 ) {
 
@@ -48,6 +51,25 @@ class AppRepository(
             }
         }
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Chat list — computed view (no stored message data on AppChatEntity)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Reactive chat list for the UI. Each [ChatSummary] contains the
+     * last message text/sender and the current unseen count, computed live
+     * from the messages table. The Flow re-emits on every insert/update/delete
+     * in either `new_chats_table` or `new_messages_table`.
+     */
+    fun chatSummaries(): Flow<List<ChatSummary>> = chatSummaryDao.getAllChats()
+
+    /**
+     * Call this when the user opens a chat. Marks all RECEIVED / RECEIVING
+     * messages as SEEN, which immediately drops [ChatSummary.unseenCount]
+     * to 0 for that chat in every active [chatSummaries] observer.
+     */
+    suspend fun markAllAsSeen(chatId: String) = messagesDao.markAllAsSeen(chatId)
 
     // ─────────────────────────────────────────────────────────────────────
     // Chats
@@ -86,11 +108,6 @@ class AppRepository(
     suspend fun updateDisplayName(chatId: String, name: String) =
         chatsDao.updateDisplayName(chatId, name)
 
-    suspend fun updateAudioReceived(chatId: String, isAudioReceived: Boolean) =
-        chatsDao.updateChatAudioReceived(chatId, isAudioReceived)
-
-    suspend fun updateEnableBackgroundPtt(chatId: String, enable: Boolean) =
-        chatsDao.updateChatBackgroundPttEnable(chatId, enable)
 
     suspend fun updateNumOfUnseenMessages(chatId: String, count: Int) =
         chatsDao.updateNumOfUnseenMessages(chatId, count)
@@ -131,10 +148,13 @@ class AppRepository(
     fun getChatContactByAppBittelId(bittelId: String): ChatContact? =
         contactsDao.getChatContactByAppBittelID(bittelId)
 
-    suspend fun addContact(chatContact: ChatContact) = contactsDao.addContact(chatContact.toAppContactEntity())
+    suspend fun getContactLastKnownLocation(userId: String): ContactLastKnownLocation? =
+        contactsDao.getContactLastKnownLocation(userId)
+
+    suspend fun addContact(chatContact: ChatContact) = contactsDao.addContact(chatContact)
 
     suspend fun addAllContacts(contacts: List<ChatContact>) =
-        contactsDao.addAllContacts(contacts.map { it.toAppContactEntity() })
+        contactsDao.addAllContacts(contacts)
 
     suspend fun updateContactName(chatId: String, name: String) =
         contactsDao.updateChatName(chatId, name)
@@ -193,7 +213,7 @@ class AppRepository(
     suspend fun updatePttMessage(chatId: String, messageItem: MessageItem) {
         val last = messagesDao.getLastPttMessage(chatId)
         if (last != null) {
-            last.isAudioComplete = true
+            last.state = SeenStatus.RECEIVED
             messagesDao.updateMessage(last)
         } else {
             messagesDao.addMessage(messageItem.toAppMessageEntity())
@@ -213,7 +233,11 @@ class AppRepository(
         startTimestamp: Long,
         endTimestamp: Long,
         isArchived: Boolean = true,
-    ) = messagesDao.updateMessagesArchivedState(chatId, startTimestamp, endTimestamp, isArchived)
+    ) {
+        if (isArchived) {
+            messagesDao.archiveMessages(chatId, startTimestamp, endTimestamp)
+        }
+    }
 
     suspend fun clearChatMessagesInRange(
         chatId: String,
@@ -269,7 +293,7 @@ class AppRepository(
             val oldContactsDb = ContactsDatabase.getDatabase(context)
             val contacts: List<ChatContact> = oldContactsDb.contactsDao().readAllContacts()
             if (contacts.isNotEmpty()) {
-                contactsDao.addAllContacts(contacts.map { it.toAppContactEntity() })
+                contactsDao.addAllContacts(contacts)
                 Timber.d("Migration: copied ${contacts.size} contact(s)")
             }
             oldContactsDb.close()

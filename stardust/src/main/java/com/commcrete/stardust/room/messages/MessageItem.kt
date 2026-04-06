@@ -72,5 +72,7 @@ enum class SeenStatus(val id: Int){
     SENT(0),
     SEEN(1),
     RECEIVED(2),
-    FAILED(3)
+    FAILED(3),
+    RECEIVING(4),
+    ARCHIVED(5)
 }

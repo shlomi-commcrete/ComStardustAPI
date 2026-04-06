@@ -34,6 +34,7 @@ object RepositoryProvider {
                     chatsDao = db.appChatsDao(),
                     contactsDao = db.appContactsDao(),
                     messagesDao = db.appMessagesDao(),
+                    chatSummaryDao = db.chatSummaryDao(),
                     scope = AppScopes.applicationScope,
                 ).also { repo ->
                     appRepository = repo

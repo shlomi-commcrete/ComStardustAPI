@@ -13,8 +13,12 @@ import com.commcrete.stardust.room.contacts.ContactsDao
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDao
 import com.commcrete.stardust.room.new_db.chat.AppChatEntity
-import com.commcrete.stardust.room.new_db.chat.AppChatsDao
-import com.commcrete.stardust.room.new_db.contact.AppContactEntity
+import com.commcrete.stardust.room.new_db.chat.ChatSummaryDao
+import com.commcrete.stardust.room.new_db.chat.ChatSummary
+import com.commcrete.stardust.room.new_db.contact.ContactDeviceEntity
+import com.commcrete.stardust.room.new_db.chat.ContactEntity
+import com.commcrete.stardust.room.new_db.contact.ContactAppIdEntity
+import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.AppContactsDao
 import com.commcrete.stardust.room.new_db.message.AppMessageEntity
 import com.commcrete.stardust.room.new_db.message.AppMessagesDao
@@ -31,8 +35,12 @@ import com.commcrete.stardust.room.new_db.message.AppMessagesDao
  *
  * New tables:
  *  - new_chats_table
- *  - new_contacts_table
+ *  - app_contacts, app_contact_user_ids, app_devices, app_contact_devices
  *  - new_messages_table
+ *
+ * New views:
+ *  - new_contacts_table (transitional compatibility projection)
+ *  - chat_summary
  */
 @Database(
     entities = [
@@ -42,10 +50,14 @@ import com.commcrete.stardust.room.new_db.message.AppMessagesDao
         MessageItem::class,
         // New entities used by AppRepository going forward.
         AppChatEntity::class,
-        AppContactEntity::class,
+        ContactEntity::class,
+        ContactAppIdEntity::class,
+        DeviceEntity::class,
+        ContactDeviceEntity::class,
         AppMessageEntity::class,
     ],
-    version = 2,
+    views = [ChatSummary::class],
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(
@@ -64,6 +76,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appChatsDao(): AppChatsDao
     abstract fun appContactsDao(): AppContactsDao
     abstract fun appMessagesDao(): AppMessagesDao
+    abstract fun chatSummaryDao(): ChatSummaryDao
 
     companion object {
         private const val DATABASE_NAME = "app_database"
