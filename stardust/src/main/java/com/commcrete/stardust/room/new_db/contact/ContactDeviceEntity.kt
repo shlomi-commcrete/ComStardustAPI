@@ -5,7 +5,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.commcrete.stardust.room.new_db.chat.ContactEntity
 
 @Entity(
     tableName = "app_contact_devices",

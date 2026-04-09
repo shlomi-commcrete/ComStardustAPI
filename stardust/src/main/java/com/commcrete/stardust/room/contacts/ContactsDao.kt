@@ -15,15 +15,15 @@ interface ContactsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addAllContacts(chatContact: List<ChatContact>)
 
-    @Query("SELECT * FROM contacts_table ORDER BY contactId ASC")
+    @Query("SELECT * FROM chats ORDER BY contactId ASC")
     fun getAllContact(): Flow<List<ChatContact>>
 
-    @Query("SELECT * FROM contacts_table ORDER BY contactId ASC")
+    @Query("SELECT * FROM chats ORDER BY contactId ASC")
     suspend fun readAllContacts(): List<ChatContact>
 
     @Query("""
       SELECT display_name
-      FROM contacts_table
+      FROM chats
       WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
@@ -31,7 +31,7 @@ interface ContactsDao {
 
     @Query("""
       SELECT *
-      FROM contacts_table
+      FROM chats
       WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
@@ -40,7 +40,7 @@ interface ContactsDao {
     // if you ever need phone matching to ignore letter‐case (e.g. country code “+” vs “＋”)
     @Query("""
       SELECT *
-      FROM contacts_table
+      FROM chats
       WHERE number = :phone COLLATE NOCASE
       LIMIT 1
     """)
@@ -48,7 +48,7 @@ interface ContactsDao {
 
     @Query("""
       SELECT *
-      FROM contacts_table
+      FROM chats
       WHERE TRIM(LOWER(bittel_id)) = TRIM(LOWER(:bittelID))
       LIMIT 1
     """)
@@ -56,7 +56,7 @@ interface ContactsDao {
 
     @Query("""
       SELECT *
-      FROM contacts_table
+      FROM chats
       WHERE TRIM(LOWER(smartphone_bittel_id)) = TRIM(LOWER(:bittelID))
       LIMIT 1
     """)
@@ -64,18 +64,18 @@ interface ContactsDao {
 
     @Query("""
       SELECT *
-      FROM contacts_table
+      FROM chats
       WHERE TRIM(LOWER(bittel_id)) = TRIM(LOWER(:userId))
       LIMIT 1
     """)
     fun getChatContactByBittelId(userId: String): ChatContact
 
-    @Query("UPDATE contacts_table SET display_name = :name WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:chatId))")
+    @Query("UPDATE chats SET display_name = :name WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:chatId))")
     suspend fun updateChatName(chatId: String, name: String)
 
-    @Query("DELETE FROM contacts_table")
+    @Query("DELETE FROM chats")
     fun clearData()
 
-    @Query("DELETE FROM contacts_table WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))")
+    @Query("DELETE FROM chats WHERE TRIM(LOWER(chat_user_id)) = TRIM(LOWER(:userId))")
     fun deleteContact(userId: String)
 }

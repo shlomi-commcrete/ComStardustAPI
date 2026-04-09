@@ -1,7 +1,5 @@
 package com.commcrete.stardust.room.contacts
 
-import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Parcelable
 import androidx.room.ColumnInfo
 import androidx.room.Entity
@@ -38,7 +36,7 @@ data class ChatContact (
     @ColumnInfo(name = "pttEnabled")
     var pttEnabled : Boolean = true,
     @ColumnInfo(name = "updateTS")
-    var lastUpdateTS : Long? = 0,
+    var lastUpdateAt : Long? = 0,
     @ColumnInfo(name = "isSOS")
     var isSOS : Boolean = false,
     @ColumnInfo(name = "isSniffer")

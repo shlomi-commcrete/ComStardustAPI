@@ -1,15 +1,14 @@
-package com.commcrete.stardust.room.new_db.chat
+package com.commcrete.stardust.room.new_db.contact
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.new_db.contact.ContactType
 import java.util.Locale
 
 @Entity(
-    tableName = "chats",
+    tableName = "contacts_table",
     indices = [Index(value = ["id"], unique = true)]
 )
 data class ContactEntity(
@@ -22,8 +21,10 @@ data class ContactEntity(
     val image: String? = null,
     @ColumnInfo(name = "type")
     val type: ContactType = ContactType.USER,
+    @ColumnInfo(name = "created_at_ms")
+    val createdAt: Long? = 0,
     @ColumnInfo(name = "last_updated_ms")
-    val lastUpdatedMS: Long? = 0,
+    val lastUpdatedAt: Long? = 0,
 )
 
 fun ChatContact.toProfileEntity(resolvedContactId: Int = contactId): ContactEntity =
@@ -31,7 +32,7 @@ fun ChatContact.toProfileEntity(resolvedContactId: Int = contactId): ContactEnti
         id = resolvedContactId,
         name = displayName,
         image = photoURI,
-        lastUpdatedMS = lastUpdateTS,
+        lastUpdatedAt = lastUpdateAt,
         type = when {
             isGroup -> ContactType.GROUP
             isBittel || (smartphoneBittelId.isNullOrBlank() && hasDevice()) -> ContactType.DEVICE

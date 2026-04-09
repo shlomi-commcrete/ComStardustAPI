@@ -21,7 +21,7 @@ data class MessageItem (
     @ColumnInfo(name = "epochTimeMs")
     val epochTimeMs : Long,
     @ColumnInfo(name = "seen")
-    var seen : SeenStatus? = SeenStatus.SENT,
+    var seen : MessageState? = MessageState.SENT,
     @ColumnInfo(name = "senderName")
     var senderName : String? = null,
     @ColumnInfo(name = "chatId")
@@ -68,7 +68,7 @@ data class MessageItem (
     }
 }
 
-enum class SeenStatus(val id: Int){
+enum class MessageState(val id: Int){
     SENT(0),
     SEEN(1),
     RECEIVED(2),

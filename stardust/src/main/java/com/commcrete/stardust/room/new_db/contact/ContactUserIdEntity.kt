@@ -5,7 +5,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.commcrete.stardust.room.new_db.chat.ContactEntity
 
 @Entity(
     tableName = "app_contact_user_ids",
@@ -22,7 +21,7 @@ import com.commcrete.stardust.room.new_db.chat.ContactEntity
         Index(value = ["contact_id"], unique = true),
     ]
 )
-data class ContactAppIdEntity(
+data class ContactUserIdEntity(
     @PrimaryKey
     @ColumnInfo(name = "user_id")
     val userId: String,

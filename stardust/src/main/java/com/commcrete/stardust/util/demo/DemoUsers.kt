@@ -5,7 +5,7 @@ import com.commcrete.stardust.request_objects.model.user_list.User
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.stardust.model.getSrcDestMin4Bytes
 import com.commcrete.stardust.util.FolderReader
 import com.google.gson.JsonObject
@@ -119,7 +119,7 @@ class DemoUsers {
     private fun getMessageItem(appId: String, name: String, loop: Int, userId: String): MessageItem {
         val messageItem =
             MessageItem(senderID = appId, text = "Hi", epochTimeMs = Date().time+loop,
-                chatId = appId, seen = SeenStatus.SEEN, senderName = getName(userId, appId, name))
+                chatId = appId, seen = MessageState.SEEN, senderName = getName(userId, appId, name))
         return messageItem
     }
 

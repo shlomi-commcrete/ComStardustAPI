@@ -16,6 +16,9 @@ enum class MessageType {
     IMAGE,
     AUDIO,
     LOCATION,
-    SOS
+    SOS,
+    SOS_MAN_DOWN,
+    SOS_MIA,
+    SOS_HOSTILE,
 }
 

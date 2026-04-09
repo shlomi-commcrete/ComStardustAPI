@@ -2,7 +2,7 @@ package com.commcrete.stardust.request_objects
 
 import android.os.Parcelable
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.messages.MessageState
 import kotlinx.android.parcel.Parcelize
 import java.util.*
 
@@ -16,5 +16,5 @@ data class Message(
 ) : Parcelable
 
 fun Message.getMessageItem () : MessageItem {
-    return MessageItem(senderID = this.senderID, text = this.text, epochTimeMs = this.epochTimeMs, seen = SeenStatus.SEEN, senderName = "")
+    return MessageItem(senderID = this.senderID, text = this.text, epochTimeMs = this.epochTimeMs, seen = MessageState.SEEN, senderName = "")
 }
