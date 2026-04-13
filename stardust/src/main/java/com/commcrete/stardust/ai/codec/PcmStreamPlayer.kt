@@ -15,8 +15,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.ai.codec.WavHelper
+import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageType
@@ -24,7 +24,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.audio.BleMediaConnector
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.*
@@ -447,7 +447,7 @@ object PcmStreamPlayer : BleMediaConnector() {
         source: String,
         snifferContacts: List<ChatContact>?
     ): File? {
-        val appId = UsersUtils.mRegisterUser?.appId ?: return null
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return null
         if (snifferContacts != null) {
             return PlayerUtils.initPttSnifferFile(context, destinations, snifferContacts)
         }

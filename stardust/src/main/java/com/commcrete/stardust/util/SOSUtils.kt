@@ -9,81 +9,107 @@ import com.commcrete.stardust.R
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
-import kotlinx.coroutines.launch
-import java.util.Date
 
 object SOSUtils {
 
-    //added location from user
-    fun sendAlert (type : Int, text : String ? = null, context: Context, location: Location, stardustAPIPackage: StardustAPIPackage) {
-        DataManager.getClientConnection(context).let {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val sosString = "SOS"
-                val sosBytes = sosString.toByteArray()
-                var data : Array<Int> = arrayOf()
-                data = data.plus(if(text.isNullOrEmpty()) 12 else (12+text.length))
-                data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
-                data = data.plus(type)
-                data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-                text?.let {
-                    data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
-                }
-                val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.REPORTS) ?: return
-                val sosMessage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = appId,
-                    destination = stardustAPIPackage.destination,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
-                    data = data)
-                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
-                sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-                it.addMessageToQueue(sosMessage)
-                saveSOSSent(context, type,stardustAPIPackage, location)
-            }
+    suspend fun sendAlert(
+        context: Context,
+        type: Int,
+        text: String ? = null,
+        location: Location,
+        stardustAPIPackage: StardustAPIPackage) {
+
+        val sosString = "SOS"
+        val sosBytes = sosString.toByteArray()
+        var data : Array<Int> = arrayOf()
+        data = data.plus(if(text.isNullOrEmpty()) 12 else (12 + text.length))
+        data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
+        data = data.plus(type)
+        data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
+        text?.let {
+            data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
         }
+        val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.REPORTS) ?: return
+
+        val sosMessage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = stardustAPIPackage.senderId,
+            destination = stardustAPIPackage.receiverId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+            data = data)
+
+        sosMessage.stardustControlByte.stardustDeliveryType = radio.second
+        sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+        saveSOSSent(context, type,stardustAPIPackage, location)
     }
 
     fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
-        DataManager.getClientConnection(context).let {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val sosMessage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = appId,
-                    destination = stardustAPIPackage.destination,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
-                it.addMessageToQueue(sosMessage)
-            }
-        }
+        val sosMessage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = stardustAPIPackage.receiverId,
+            destination = stardustAPIPackage.receiverId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
+        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
     }
 
-    fun sendSos (context: Context, location: Location) {
-        DataManager.getClientConnection(context).let {
-            var data : Array<Int> = arrayOf()
-            data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-            val user = UsersUtils.mRegisterUser ?: return
-            val appId = user.appId ?: return
-            val deviceId = user.bittelId ?: return
-            val sosMessage = StardustPackageUtils.getStardustPackage(
-                context = context,
-                source = appId,
-                destination = deviceId,
-                stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
-                data = data)
-            it.addMessageToQueue(sosMessage)
+    suspend fun sendSos (context: Context, location: Location) {
+        var data : Array<Int> = arrayOf()
 
-            val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
-            val sosPackage = StardustAPIPackage(
-                source = appId,
-                destination = realSOSDest ?: deviceId,
-                requireAck = true
+        data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
+
+        val user = RegisteredUserUtils.mRegisterUser ?: return
+        val appId = user.appId ?: return
+        val deviceId = user.bittelId ?: return
+
+        val sosMessage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = appId,
+            destination = deviceId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
+            data = data)
+
+        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+
+        val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
+        val sosPackage = StardustAPIPackage(
+            senderId = appId,
+            receiverId = realSOSDest ?: deviceId,
+            requireAck = true
+        )
+
+        saveSOSSent(context, 0 , sosPackage, location)
+    }
+
+    suspend fun saveSOSSent (
+        context: Context,
+        type: Int,
+        stardustAPIPackage: StardustAPIPackage,
+        location: Location
+    ) {
+        val type = when (type) {
+            SOS_REPORT_TYPES.HOSTILE.type -> MessageType.SOS_HOSTILE
+            SOS_REPORT_TYPES.MAN_DOWN.type -> MessageType.SOS_MAN_DOWN
+            SOS_REPORT_TYPES.LOST.type -> MessageType.SOS_MIA
+            else -> MessageType.SOS
+        }
+
+        DataManager.getAppRepo(context).saveMessage(
+            MessageEntity(
+                senderID = stardustAPIPackage.senderId,
+                receiverID = stardustAPIPackage.receiverId,
+                text = location.toString(),
+                state = MessageState.SENT,
+                type = type
             )
-            saveSOSSent(context, 0 , sosPackage, location)
-        }
+        )
     }
+
 
     enum class SOS_TYPES (val type : Int, val sosName : String,val image : Int, val imageVector: ImageVector) {
         VEHICLE (0, "Vehicle Issues", R.drawable.sos_vehicle_truck, Icons.Filled.LocalFireDepartment),
@@ -94,70 +120,12 @@ object SOSUtils {
         CUSTOM (5, "Custom", R.drawable.sos_crime, Icons.Filled.LocalFireDepartment)
     }
 
-    enum class SOS_TYPES_ARMY (val type : Int, val sosName : String,val image : Int, val imageVector: ImageVector) {
+    enum class SOS_REPORT_TYPES(val type : Int, val sosName : String, val image : Int, val imageVector: ImageVector) {
         HOSTILE (10, "Hostile", R.drawable.hostile, Icons.Filled.LocalFireDepartment), //SKULL? 147/148 Arma
         MAN_DOWN (11, "Man Down", R.drawable.medical, Icons.Filled.LocalFireDepartment ), //MEDIC 175 Arma
         LOST (12, "M.I.A", R.drawable.mia, Icons.Filled.LocalFireDepartment), // Question mark 145/146 Arma
-        REINFORCEMENT (13, "Need Reinforcement", R.drawable.sos_lost, Icons.Filled.LocalFireDepartment) // Hand 207
+        REINFORCEMENT (13, "Need Reinforcement", R.drawable.sos_lost, Icons.Filled.LocalFireDepartment); // Hand 207
+
     }
 
-    fun saveSOSSent (
-        context: Context,
-        type: Int,
-        stardustAPIPackage: StardustAPIPackage,
-        location: Location
-    ) {
-        val textName = when (type) {
-            SOS_TYPES_ARMY.HOSTILE.type -> {
-                SOS_TYPES_ARMY.HOSTILE.sosName }
-            SOS_TYPES_ARMY.MAN_DOWN.type -> {
-                SOS_TYPES_ARMY.MAN_DOWN.sosName}
-            SOS_TYPES_ARMY.LOST.type -> {
-                SOS_TYPES_ARMY.LOST.sosName}
-            else -> {
-                "S.O.S"}
-        }
-//        val text = "$textName Sent"
-        val text = "latitude : ${location.latitude}\n" +
-                "longitude : ${location.longitude}\naltitude : ${location.altitude}"
-        val messageItem = MessageItem(chatId = stardustAPIPackage.destination, text = text, epochTimeMs = Date().time, senderID = stardustAPIPackage.source,
-            isSOS = true, sosType = type)
-        Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = DataManager.getChatsRepo(context)
-            val messagesRepository = DataManager.getAppRepo(context)
-            Scopes.getDefaultCoroutine().launch{
-                val chatItem = chatsRepo.getChatByBittelID(stardustAPIPackage.destination)
-                var textChat = "Reporting $textName"
-                if(type != 0) {
-                    textChat = "$textChat Event"
-                }
-                chatItem?.message = Message(
-                    senderID = stardustAPIPackage.source,
-                    text = textChat,
-                    seen = false
-                )
-                chatItem?.let { chatsRepo.addChat(it) }
-                messagesRepository.saveMessage(context = context, messageItem = messageItem)
-                val numOfUnread = chatItem?.numOfUnseenMessages ?: 0
-                chatsRepo.updateNumOfUnseenMessages(stardustAPIPackage.source, numOfUnread+1)
-
-            }
-        }
-    }
-
-    private fun getSOSDest (context: Context) : List<String> {
-        val destList = mutableListOf<String>()
-        val selectedUserMain = SharedPreferencesUtil.getSelectedSOSMain(context)
-        val selectedUserSub = SharedPreferencesUtil.getSelectedSOSSub(context)
-        if(selectedUserMain.isNotEmpty()) {
-            destList.add(selectedUserMain)
-        }
-        if(selectedUserSub.isNotEmpty()) {
-            destList.add(selectedUserSub)
-        }
-        if(destList.isEmpty()){
-            destList.add("00000002")
-        }
-        return destList
-    }
 }

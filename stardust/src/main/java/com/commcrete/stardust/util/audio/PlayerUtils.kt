@@ -5,13 +5,11 @@ import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.lifecycle.MutableLiveData
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.media.PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
-import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageType
@@ -22,8 +20,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.UsersUtils
-import com.commcrete.stardust.util.UsersUtils.mRegisterUser
+import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
 import timber.log.Timber
@@ -40,7 +37,6 @@ object PlayerUtils : BleMediaConnector() {
     private var spareBytes : ByteArray? = null
 
     private val handler : Handler = Handler(Looper.getMainLooper())
-    val isPttReceived : MutableLiveData<String> = MutableLiveData("empty")
     var ts = ""
     var byteArrayOutputStream = ByteArrayOutputStream()
     var isPlaying = false
@@ -55,12 +51,11 @@ object PlayerUtils : BleMediaConnector() {
             CoroutineScope(Dispatchers.IO).launch {
                 val file = fileToWrite
                 val fileSniffer = fileToWriteSniffer
+                val byteArray = byteArrayOutputStream.toByteArray().copyOf()
                 file?.let {
-                    val byteArray = byteArrayOutputStream.toByteArray().copyOf()
                     writePTTReceivedData(byteArray, it)
                 }
                 fileSniffer?.let {
-                    val byteArray = byteArrayOutputStream.toByteArray().copyOf()
                     writePTTReceivedData(byteArray, it)
                 }
                 fileToWrite = null
@@ -68,9 +63,6 @@ object PlayerUtils : BleMediaConnector() {
                 byteArrayOutputStream.reset()
                 numOfPackagesRecieved = 0
             }
-            val packageToPass = StardustAPIPackage(source, destination)
-            val realSource = packageToPass.getRealSourceId()
-            updateAudioReceived(source, realSource, false)
             destination = ""
             Handler(Looper.getMainLooper()).postDelayed({
                 source = ""
@@ -89,8 +81,6 @@ object PlayerUtils : BleMediaConnector() {
             StardustPackageUtils.packageLiveData.value = null
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
             Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
-//            removeSyncBleDevices ()
-            isPttReceived.value = "empty"
         }
     }
 
@@ -102,53 +92,14 @@ object PlayerUtils : BleMediaConnector() {
     var fileToWriteSniffer : File? = null
 
 
-    private fun playAudio(
+    private fun playCodecAudio(
         context: Context,
         pttAudio: ByteArray,
-        receiverID: String,
-        senderID: String,
-        snifferContacts: List<ChatContact>?
+        dataPackage: StardustPackage,
+        destinationId: String
     ) {
-        Log.d(
-            PLAYBACK_TRACE_TAG,
-            "playAudio receiver=$receiverID sender=$senderID size=${pttAudio.size} sniffer=${snifferContacts != null} flag=${DataManager.isPlayPttFromSdk}"
-        )
 
-        val isLocalGroupCall = when {
-            snifferContacts != null ->
-                isLocalGroup(
-                    snifferContacts[0].bittelId,
-                    snifferContacts[1].bittelId
-                )
-            else ->
-                isLocalGroup(senderID, receiverID)
-        }
-
-        val shouldHandleAudio = when {
-            snifferContacts != null ->
-                !isMyId(
-                    snifferContacts[0].bittelId,
-                    snifferContacts[1].bittelId
-                ) && !isLocalGroupCall
-            else -> true
-        }
-
-        if (shouldHandleAudio) {
-            Log.d(
-                PLAYBACK_TRACE_TAG,
-                "playAudio -> playPTT shouldHandleAudio=true isLocalGroup=$isLocalGroupCall"
-            )
-            playPTT(
-                pttAudio,
-                pttAudio.size,
-                senderID,
-                receiverID,
-                isLocalGroupCall
-            )
-        }
-        if (!shouldHandleAudio) {
-            Log.d(PLAYBACK_TRACE_TAG, "playAudio skipped playPTT because shouldHandleAudio=false")
-        }
+        playPTT(pttAudio)
 
         resetTimer()
         setTs()
@@ -156,60 +107,42 @@ object PlayerUtils : BleMediaConnector() {
         pttScope.launch {
 
             runCatching {
+                val pkg = StardustAPIPackage(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId)
+
                 if (!isFileInit) {
-                    initPttInputFile(context, receiverID, senderID, snifferContacts)
+                    val file = initPttInputFile(context = context, senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = MessageType.PTT_CODEC) ?: return@runCatching
+                    DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
                 }
-                if (shouldHandleAudio) {
-                    byteArrayOutputStream.write(pttAudio)
+                else {
+                    DataManager.getCallbacks()?.receivePTT(pkg, pttAudio)
                 }
+                byteArrayOutputStream.write(pttAudio)
             }.onFailure {
                 it.printStackTrace()
             }
         }
     }
 
-    fun handleSnifferMessage (
-        dataPackage: StardustPackage,
-        id: String,
-        snifferContacts: List<ChatContact>?
-    ) {
-        Log.d(
-            PLAYBACK_TRACE_TAG,
-            "handleSnifferMessage source=${dataPackage.getSourceAsString()} destination=${dataPackage.getDestAsString()} id=$id"
-        )
-        getPackageByFrames(dataPackage, id, snifferContacts)
-    }
 
-    private fun getPackageByFrames(dataPackage: StardustPackage, receiverID: String, snifferContacts: List<ChatContact>? = null){
+    private fun getCodecPackageByFrames(dataPackage: StardustPackage, destinationId: String) {
         dataPackage.data?.let { dataArray -> //dataArray = Array<Int>
             val byteArray = intArrayToByteArray(dataArray.toMutableList())
             source = dataPackage.getSourceAsString()
-            Log.d(
-                PLAYBACK_TRACE_TAG,
-                "getPackageByFrames source=$source receiver=$receiverID rawSize=${byteArray.size} sniffer=${snifferContacts != null}"
-            )
-            testPlayPackage(byteArray, source, receiverID, snifferContacts)
+            playCodecPttFromPackage(byteArray, dataPackage, destinationId)
         }
     }
 
 
-    private fun playPTT(audioStream: ByteArray, size: Int, source: String, destination: String, isGroup: Boolean) {
-            Log.d(
-                PLAYBACK_TRACE_TAG,
-                "playPTT source=$source destination=$destination size=$size isGroup=$isGroup flag=${DataManager.isPlayPttFromSdk}"
-            )
+    private fun playPTT(audioStream: ByteArray) {
         PcmStreamPlayer.playLegacyStream(
             audioData = audioStream,
-            bufferSizeInBytes = size,
+            bufferSizeInBytes = audioStream.size,
             receivedPkgs = numOfPackagesRecieved,
             playFromSdk = true
         )
-        //here
-        DataManager.getCallbacks()?.receivePTT(StardustAPIPackage(source, destination), audioStream)
-
     }
 
-    private fun writePTTReceivedData(pttAudio: ByteArray, file: File ){
+    private fun writePTTReceivedData(pttAudio: ByteArray, file: File) {
         val outputStream: OutputStream = FileOutputStream(file, true)
         val bufferedOutputStream = BufferedOutputStream(outputStream)
         val dataOutputStream = DataOutputStream(bufferedOutputStream)
@@ -217,49 +150,37 @@ object PlayerUtils : BleMediaConnector() {
         dataOutputStream.close()
     }
 
-    private fun initPttInputFile(context: Context, destinations: String, source: String
-                                         , snifferContacts: List<ChatContact>?) : File? {
+    private suspend fun initPttInputFile(
+        context: Context,
+        senderId: String,
+        groupId: String? = null,
+        receiverId: String,
+        type: MessageType) : File? {
 
-        if(snifferContacts != null) {
-            return initPttSnifferFile(context ,destinations,  snifferContacts)
-        }
-        val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
-        this.destination = destinations
+        val appId = mRegisterUser?.appId ?: return null
 
-        val packageToPass = StardustAPIPackage(source, destination)
-        val realSource = packageToPass.getRealSourceId()
-        updateAudioReceived(source, realSource, true)
-        val directory = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/${source}")
-        val file = if(fileToWrite !=null) fileToWrite else File("${context.filesDir}/${source}/$ts-$source.pcm")
+        this.destination = receiverId
+
+        val directory = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}")
+        val file = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}/$ts-$source.pcm")
+
         if(directory != null){
-            if(!directory.exists()){
-                directory.mkdir()
-            }
+            if(!directory.exists()) { directory.mkdir() }
             if (file != null) {
                 if(!file.exists()){
                     file.createNewFile()
                     fileToWrite = file
-                    Scopes.getDefaultCoroutine().launch {
-                        val userName = UsersUtils.getUserName(realSource)
-                        try {
-                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
-                        }catch (e :Exception){
-                            e.printStackTrace()
-                        }
-                        DataManager.getAppRepo(context).saveMessage(
-                            context = context,
-                            isPTT = true,
-                            messageItem = MessageItem(
-                                senderID = realSource,
-                                epochTimeMs = ts.toLong(),
-                                senderName = userName ,
-                                chatId = source,
-                                text = "",
-                                fileLocation = file.absolutePath,
-                                isAudio = true)
-                        )
-                        DataManager.getCallbacks()?.startedReceivingPTT(packageToPass, file)
-                    }
+                    DataManager.getAppRepo(context).saveMessage(
+                        MessageEntity(
+                            senderID = senderId,
+                            receiverID = appId,
+                            attachmentPath = file.absolutePath,
+                            state = MessageState.RECEIVING,
+                            type = type,
+                            epochTimeMs = ts.toLong()
+                        ), groupId
+                    )
+
                 }
                 isFileInit = true
             }
@@ -272,6 +193,7 @@ object PlayerUtils : BleMediaConnector() {
         destinations: String,
         snifferContacts: List<ChatContact>?
     ) : File? {
+        val appId = mRegisterUser?.appId ?: return null
         var sniffed : MutableList<ChatContact> = mutableListOf()
         val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations")
         val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations/$ts.pcm")
@@ -284,7 +206,7 @@ object PlayerUtils : BleMediaConnector() {
                 if(!file.exists()){
                     file.createNewFile()
                     fileToWriteSniffer = file
-                    Scopes.getDefaultCoroutine().launch {
+                    CoroutineScope(Dispatchers.IO).launch {
                         // TODO: Change to sniffer message
                         try {
                             Timber.tag("savePTT").d("ts : ${ts.toLong()}")
@@ -307,10 +229,14 @@ object PlayerUtils : BleMediaConnector() {
                             sniffed.add(tempSender)
                         }
 
-                        val senderID = sniffed[0].chatUserId ?: ""
-                        val receiverID = sniffed[1].chatUserId ?: ""
+                        val ids = GroupsUtils.resolveGroupAndContact(sniffed[0].chatUserId ?: "", sniffed[1].chatUserId ?: "")
 
-                        DataManager.getCallbacks()?.startedReceivingPTT(StardustAPIPackage(senderID, receiverID), file)
+                        DataManager.getCallbacks()?.startedReceivingPTT(
+                            StardustAPIPackage(
+                                senderId = ids.senderId,
+                                groupId = ids.groupId,
+                                receiverId = appId),
+                            file)
                     }
                 }
             }
@@ -342,25 +268,19 @@ object PlayerUtils : BleMediaConnector() {
         appId: String,
         messageType: MessageType
     ): SavedPttContext {
-        val senderId = dataPackage.getSenderAsString()
-        val groupId = dataPackage.getGroupAsString()
+        val senderId = dataPackage.senderId
+        val groupId = dataPackage.groupId
         val repo = DataManager.getAppRepo(appContext)
 
         repo.saveMessage(
             MessageEntity(
                 senderID = senderId,
-                epochTimeMs = System.currentTimeMillis(),
                 type = messageType,
                 receiverID = appId,
                 state = MessageState.RECEIVED
             ),
             groupId
         )
-
-        val senderName = repo.getContactNameById(senderId) ?: senderId
-        val groupName = groupId?.let { repo.getGroupNameById(it) }
-        val chatName = if(groupId != null) "$senderName to $groupName" else senderName
-        Scopes.getMainCoroutine().launch { isPttReceived.value = "PTT From : $chatName" }
 
         return SavedPttContext(
             appId = appId,
@@ -369,7 +289,7 @@ object PlayerUtils : BleMediaConnector() {
         )
     }
 
-    fun onPTTCodecReceived(appContext: Context, dataPackage: StardustPackage){
+    fun onPTTCodecReceived(appContext: Context, dataPackage: StardustPackage) {
         val appId = mRegisterUser?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             savePttMessageAndNotify(
@@ -378,7 +298,7 @@ object PlayerUtils : BleMediaConnector() {
                 appId = appId,
                 messageType = MessageType.PTT_CODEC
             )
-            getPackageByFrames(dataPackage, dataPackage.getDestAsString())
+            getCodecPackageByFrames(dataPackage, appId)
         }
     }
 
@@ -504,24 +424,20 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    private fun testPlayPackage(byteArray: ByteArray, source: String, receiverID : String, snifferContacts: List<ChatContact>? = null){
+    private fun playCodecPttFromPackage(byteArray: ByteArray, dataPackage: StardustPackage, destinationId: String) {
         PcmStreamPlayer.ensureLegacyTrack((14080 * bufferSizeMulti).toInt(), speedFactor)
-        var bytes = splitByteArray(byteArray, 7)
-        var bytesListToPlay : MutableList<ByteArray> = mutableListOf()
+        val bytes = splitByteArray(byteArray, 7)
+        val bytesListToPlay : MutableList<ByteArray> = mutableListOf()
         for(mByte in bytes) {
             Timber.tag("decodedBytes").d("decodedBytes : ${byteArray.size}")
-            var decodedBytes = handleBittelAudioMessage(mByte)
-            if(!mByte.contentEquals(embpyByte)){
+            val decodedBytes = handleBittelAudioMessage(mByte)
+            if(!mByte.contentEquals(embpyByte)) {
                 bytesListToPlay.add(decodedBytes)
-
             }
         }
         val combined = combine(bytesListToPlay)
-        Log.d(
-            PLAYBACK_TRACE_TAG,
-            "testPlayPackage(sniffer) source=$source receiver=$receiverID frames=${bytes.size} decodedChunks=${bytesListToPlay.size} combinedSize=${combined.size}"
-        )
-        playAudio(context, combined, receiverID, source, snifferContacts)
+
+        playCodecAudio(context, combined, dataPackage, destinationId)
     }
 
     fun combine(byteArrayList: List<ByteArray>): ByteArray {
@@ -540,14 +456,8 @@ object PlayerUtils : BleMediaConnector() {
         return result
     }
 
-    fun updateAudioReceived(chatId: String, senderID: String, isAudioReceived : Boolean){
-        if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) {
-            return
-        }
-        CoroutineScope(Dispatchers.IO).launch {
-            val repo = DataManager.getAppRepo(context)
-            repo.updateMessageReceived(chatId, isAudioReceived)
-        }
+    suspend fun updateAudioReceived(messageId: String) {
+        DataManager.getAppRepo(context).updateMessageReceived(messageId)
     }
 
 
@@ -563,11 +473,4 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    private fun isMyId(sender : String, receiver : String) : Boolean {
-        return UsersUtils.isRegisteredUser(sender) || UsersUtils.isRegisteredUser(receiver)
-    }
-
-    private fun isLocalGroup(sender : String, receiver : String) : Boolean {
-        return GroupsUtils.isLocalGroup(sender) || GroupsUtils.isLocalGroup(receiver)
-    }
 }

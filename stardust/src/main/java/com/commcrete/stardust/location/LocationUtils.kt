@@ -17,8 +17,8 @@ import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.asString
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.UsersUtils
-import com.commcrete.stardust.util.UsersUtils.mRegisterUser
+import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -172,7 +172,7 @@ object LocationUtils  {
                 epochTimeMs = Date().time,
                 type = MessageType.LOCATION,
                 receiverID = mPackage.getSourceAsString(),
-                state = if(UsersUtils.isRegisteredUser(senderId)) MessageState.SENT else MessageState.RECEIVED,
+                state = if(RegisteredUserUtils.isRegisteredUser(senderId)) MessageState.SENT else MessageState.RECEIVED,
                 isAckResponse = isDemandAck
             )
             try {

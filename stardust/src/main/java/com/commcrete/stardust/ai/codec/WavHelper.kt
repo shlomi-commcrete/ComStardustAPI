@@ -1,4 +1,4 @@
-package com.commcrete.aiaudio.media
+package com.commcrete.stardust.ai.codec
 
 import android.util.Log
 import java.io.File

@@ -7,13 +7,12 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
 import com.commcrete.stardust.room.new_db.contact.ContactDeviceEntity
 import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
 import com.commcrete.stardust.util.SOSUtils
-import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import java.util.Locale
 
 @Entity(
@@ -130,9 +129,9 @@ fun MessageItem.toAppMessageEntity(): MessageEntity {
     val type = when {
         isSOS == true -> {
             when(sosType) {
-                SOSUtils.SOS_TYPES_ARMY.HOSTILE.type -> MessageType.SOS_HOSTILE
-                SOSUtils.SOS_TYPES_ARMY.LOST.type -> MessageType.SOS_MIA
-                SOSUtils.SOS_TYPES_ARMY.MAN_DOWN.type -> MessageType.SOS_MAN_DOWN
+                SOSUtils.SOS_REPORT_TYPES.HOSTILE.type -> MessageType.SOS_HOSTILE
+                SOSUtils.SOS_REPORT_TYPES.LOST.type -> MessageType.SOS_MIA
+                SOSUtils.SOS_REPORT_TYPES.MAN_DOWN.type -> MessageType.SOS_MAN_DOWN
                 else -> MessageType.SOS
             }
         }
@@ -152,6 +151,6 @@ fun MessageItem.toAppMessageEntity(): MessageEntity {
         chatId = chatId,
         type = type,
         attachmentPath = fileLocation,
-        receiverID = UsersUtils.mRegisterUser?.appId ?: "unknown_receiver"
+        receiverID = RegisteredUserUtils.mRegisterUser?.appId ?: "unknown_receiver"
     )
 }

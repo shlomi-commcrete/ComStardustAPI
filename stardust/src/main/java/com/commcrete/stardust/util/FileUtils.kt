@@ -301,13 +301,12 @@ object FileUtils {
         exportFolderName: String = "databases_export"
     ): File {
         val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(context)
-        val data = mapOf(
-            appDb.openHelper.databaseName to appDb.openHelper.readableDatabase
-        ) as Map<String, android.database.sqlite.SQLiteDatabase>
+        val appDbName = appDb.openHelper.databaseName ?: "app_database"
+        val appSupportDb = appDb.openHelper.writableDatabase
 
         return exportMultipleDatabasesToCsv(
             context = context,
-            databases = data,
+            databases = mapOf(appDbName to appSupportDb),
             exportFolderName = exportFolderName
         )
     }
@@ -471,6 +470,7 @@ object FileUtils {
 
     sealed class FileTransferData(
         open val id: String = UUID.randomUUID().toString(),
+        open val chatId: String,
         open val fileType: FileType,
         open val numOfPackages: Int,
         open val timestamp: Long = System.currentTimeMillis()) {
@@ -484,6 +484,7 @@ object FileUtils {
 
         data class Send(
             override val id: String = UUID.randomUUID().toString(),
+            override val chatId: String,
             val stardustAPIPackage: StardustAPIPackage,
             val file: File,
             override val fileType: FileType,
@@ -492,15 +493,16 @@ object FileUtils {
             override val timestamp: Long = System.currentTimeMillis()
         ) : FileTransferData(
             id = id,
+            chatId = chatId,
             fileType = fileType,
             numOfPackages = numOfPackages,
             timestamp = timestamp)
 
         data class Receive(
             override val id: String = UUID.randomUUID().toString(),
-            val chatID: String,
+            override val chatId: String,
             val senderID: String,
-            val chatName: String = chatID,
+            val chatName: String,
             val realSenderName: String = senderID,
             val fileName: String,
             val fileEnding: String,
@@ -510,6 +512,7 @@ object FileUtils {
             override val timestamp: Long = System.currentTimeMillis(),
         ) : FileTransferData(
             id = id,
+            chatId = chatId,
             fileType = fileType,
             numOfPackages = numOfPackages,
             timestamp = timestamp)

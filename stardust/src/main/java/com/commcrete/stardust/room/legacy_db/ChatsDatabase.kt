@@ -1,4 +1,4 @@
-package com.commcrete.stardust.room.old_db
+package com.commcrete.stardust.room.legacy_db
 
 import android.content.Context
 import androidx.room.Database
@@ -8,8 +8,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDao
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
+import com.commcrete.stardust.room.legacy_db.chats.ChatsDao
 
 @Database(entities = [ChatItem::class], version = 32, exportSchema = false)
 @TypeConverters(Converters.StringArrayConverter::class, Converters.DoubleArrayConverter::class)

@@ -4,7 +4,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
-import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 
 @Entity(

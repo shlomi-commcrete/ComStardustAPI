@@ -6,7 +6,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessageState
 import kotlinx.coroutines.flow.Flow
 
 // SeenStatus int values: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5
@@ -79,8 +78,8 @@ interface MessageDao {
     """)
     suspend fun clearChatInRange(chatId: String, startTimestamp: Long, endTimestamp: Long)
 
-    @Query("UPDATE messages SET state = :state WHERE chat_id = :chatId")
-    suspend fun updateMessageState(chatId: String, state: MessageState)
+    @Query("UPDATE messages SET state = :state WHERE id = :messageId")
+    suspend fun updateMessageState(messageId: String, state: MessageState)
 
     /**
      * Marks every RECEIVED (2) and RECEIVING (4) message in [chatId] as SEEN (1).
@@ -115,7 +114,6 @@ interface MessageDao {
         UPDATE messages
         SET state = :ackState
         WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))
-          AND id_number = :messageNumber
     """)
     suspend fun updateAckReceived(
         chatId: String,

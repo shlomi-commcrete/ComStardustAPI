@@ -6,15 +6,13 @@ import android.os.Looper
 import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
-import com.commcrete.stardust.util.UsersUtils.mRegisterUser
+import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -308,7 +306,7 @@ class FileReceiver(
 
     fun getRealSenderID(sourceID: String, destinationID: String): String {
         val userAppId = mRegisterUser?.appId
-        return if(GroupsUtils.isLocalGroup(sourceID) && userAppId != null && (!destinationID.equals( userAppId, ignoreCase = true))) destinationID else sourceID
+        return if(GroupsUtils.isLocalGroupId(sourceID) && userAppId != null && (!destinationID.equals( userAppId, ignoreCase = true))) destinationID else sourceID
     }
 
     enum class FileFailure {

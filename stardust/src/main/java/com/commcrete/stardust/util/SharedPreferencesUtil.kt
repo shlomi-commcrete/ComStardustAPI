@@ -249,11 +249,11 @@ object SharedPreferencesUtil {
 
     fun setAppUser (context: Context , appUser : RegisterUser) {
         getPrefs(context).edit().putString(KEY_APP_USER, appUser.toJson()).apply()
-        UsersUtils.mRegisterUser = appUser
+        RegisteredUserUtils.mRegisterUser = appUser
     }
 
     fun removeAppUser (context: Context) : Boolean{
-        UsersUtils.mRegisterUser = null
+        RegisteredUserUtils.mRegisterUser = null
         getPrefs(context).edit().remove(KEY_APP_USER).apply()
         return true
     }

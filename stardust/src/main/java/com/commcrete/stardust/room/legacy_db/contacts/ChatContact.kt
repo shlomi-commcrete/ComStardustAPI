@@ -1,13 +1,14 @@
-package com.commcrete.stardust.room.contacts
+package com.commcrete.stardust.room.legacy_db.contacts
 
 import android.os.Parcelable
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.android.parcel.Parcelize
 import java.util.Locale
 
-@Entity(tableName = "contacts", indices = [androidx.room.Index(
+@Entity(tableName = "contacts", indices = [Index(
     value = ["number"],
     unique = true
 )])

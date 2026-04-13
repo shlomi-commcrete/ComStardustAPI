@@ -4,7 +4,7 @@ import android.content.Context
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
-import com.commcrete.stardust.util.UsersUtils.mRegisterUser
+import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -115,12 +115,13 @@ object GroupsUtils {
      * Rule: when source is a local group and destination is the current app user,
      * the real sender is the group itself.
      */
-    fun resolveGroupAndContact(sourceId: String, destinationId: String): GroupContactResolution {
-        val groupCheckResults = isLocalGroup(listOf(sourceId, destinationId))
+    suspend fun resolveGroupAndContact(sourceId: String, destinationId: String): GroupContactResolution {
+        val sourceIsGroup = DataManager.getAppRepo(DataManager.context).isGroupId(sourceId)
+        val destinationIsGroup = DataManager.getAppRepo(DataManager.context).isGroupId(destinationId)
 
         return when {
-            groupCheckResults[sourceId] == true -> resolveWhenSourceIsGroup(sourceId, destinationId)
-            groupCheckResults[destinationId] == true -> GroupContactResolution(groupId = destinationId, senderId = sourceId)
+            sourceIsGroup -> resolveWhenSourceIsGroup(sourceId, destinationId)
+            destinationIsGroup -> GroupContactResolution(groupId = destinationId, senderId = sourceId)
             else -> GroupContactResolution(groupId = null, senderId = sourceId)
         }
     }
@@ -140,29 +141,12 @@ object GroupsUtils {
     }
 
 
-    fun isLocalGroup(id: String?): Boolean {
-        val normalizedId = id?.trim()?.lowercase() ?: return false
-        return runBlocking(Dispatchers.IO) {
-            DataManager.getAppRepo(DataManager.context)
-                .getAllGroupIds()
-                .any { it.equals(normalizedId, ignoreCase = true) }
-        }
+    suspend fun isLocalGroupId(id: String): Boolean {
+        return DataManager.getAppRepo(DataManager.context).isGroupId(id)
     }
 
-    /**
-     * Checks multiple IDs in a single DB call.
-     * @return map of each id to whether it is a local group.
-     */
-    private fun isLocalGroup(ids: Collection<String?>): Map<String?, Boolean> {
-        if (ids.isEmpty()) return emptyMap()
-        val localGroups = runBlocking(Dispatchers.IO) {
-            DataManager.getAppRepo(DataManager.context)
-                .getAllGroupIds()
-                .mapTo(HashSet()) { it.trim().lowercase() }
-        }
-        return ids.associateWith { id ->
-            id?.trim()?.lowercase()?.let { it in localGroups } ?: false
-        }
+    suspend fun isLocalGroupId(ids: Collection<String?>): Boolean {
+        return DataManager.getAppRepo(DataManager.context).hasAnyGroupId(ids)
     }
 
     fun hasLocalGroups(context: Context): Boolean = runBlocking(Dispatchers.IO) {

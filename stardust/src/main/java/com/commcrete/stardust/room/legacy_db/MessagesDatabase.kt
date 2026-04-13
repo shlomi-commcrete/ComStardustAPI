@@ -1,4 +1,4 @@
-package com.commcrete.stardust.room.old_db
+package com.commcrete.stardust.room.legacy_db
 
 import android.content.Context
 import androidx.room.Database

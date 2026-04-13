@@ -5,9 +5,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
-import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.liveData
 import com.commcrete.bittell.util.demo.DemoDataUtil
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
@@ -26,13 +24,9 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.room.RepositoryProvider
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.messages.MessageState
-import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -46,8 +40,6 @@ import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -111,21 +103,15 @@ object DataManager : StardustAPI, PttInterface{
         return bittelusbManager!!
     }
 
-    fun getLocationUtils (context: Context) : LocationUtils {
-        requireContext(context)
-        LocationUtils.init(context)
-        return LocationUtils
-    }
-
     internal fun getStardustPackageHandler(context: Context): StardustPackageHandler {
         requireContext(context)
-        if(bittelPackageHandler == null){
+        if(bittelPackageHandler == null) {
             bittelPackageHandler = StardustPackageHandler(context, clientConnection)
         }
         return bittelPackageHandler!!
     }
 
-    internal fun getPollingUtils (context: Context) : PollingUtils{
+    internal fun getPollingUtils(context: Context) : PollingUtils{
         requireContext(context)
         if(pollingUtils == null){
             pollingUtils = PollingUtils(context)
@@ -281,14 +267,14 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
         requireContext(context)
-        Scopes.getDefaultCoroutine().launch {
-            SOSUtils.sendAlert(type, context = context, location = location, stardustAPIPackage = stardustAPIPackage)
+        CoroutineScope(Dispatchers.IO).launch {
+            SOSUtils.sendAlert(context = context, location = location, type = type, stardustAPIPackage = stardustAPIPackage)
         }
     }
 
     override fun sendRealSOS(context: Context, location: Location) {
         requireContext(context)
-        Scopes.getDefaultCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
             SOSUtils.sendSos(context = context, location = location)
         }
     }
@@ -328,7 +314,7 @@ object DataManager : StardustAPI, PttInterface{
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
         requireFileLocation(fileLocation)
-        UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
+        RegisteredUserUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
         GroupsUtils.resetLocalGroupIds(context)
     }
 
@@ -393,15 +379,10 @@ object DataManager : StardustAPI, PttInterface{
         getClientConnection(context).disconnectFromBLEDevice()
     }
 
-    override fun readChats(context: Context): LiveData<List<ChatItem>> = liveData(Dispatchers.IO) {
-        val chats = getChatsRepo(context).getAllChats ()
-        emit(chats)
-    }
-
     override fun logout(context: Context) {
         requireContext(context)
         Scopes.getDefaultCoroutine().launch {
-            UsersUtils.logout()
+            RegisteredUserUtils.logout()
         }
     }
 
@@ -418,17 +399,17 @@ object DataManager : StardustAPI, PttInterface{
         return this.source ?: ""
     }
 
-    override fun getDestenation(): String? {
+    override fun getDestination(): String {
         return this.destination ?: ""
     }
 
-    fun getUserUtils (context: Context) : UsersUtils {
+    fun getUserUtils (context: Context) : RegisteredUserUtils {
         requireContext(context)
-        return UsersUtils
+        return RegisteredUserUtils
     }
 
-    override fun sendDataToBle(bittelPackage: StardustPackage) {
-        getClientConnection(context).addMessageToQueue(bittelPackage)
+    override fun sendDataToBle(pkg: StardustPackage) {
+        getClientConnection(context).addMessageToQueue(pkg)
     }
 
     fun requireFileLocation (location : String) {
@@ -484,24 +465,10 @@ object DataManager : StardustAPI, PttInterface{
         return PlayerUtils
     }
 
-    fun getChatsRepo (context: Context) : ChatsRepository {
-        requireContext(context)
-        return ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
-    }
-
-    /**
-     * Returns the unified [AppRepository] that combines chats, contacts and
-     * messages tables.  On first call it automatically migrates all existing
-     * data from the legacy databases and removes those files.
-     *
-     * Use this instead of [getChatsRepo] / ContactsDatabase / MessagesDatabase
-     * for all new code.
-     */
     fun getAppRepo(context: Context): AppRepository {
         requireContext(context)
         return RepositoryProvider.appRepository(context)
     }
-
 
 
     fun getCallbacks() : StardustAPICallbacks? {
@@ -525,30 +492,7 @@ object DataManager : StardustAPI, PttInterface{
         RemoteConfigUtils.initLocalDefaults(context)
     }
 
-    suspend fun cleanAllDatabases(context: Context): Boolean =
-        withContext(Dispatchers.IO) {
-            coroutineScope {
-
-                val chats = async {
-                    val repo = ChatsRepository(AppDatabase.getDatabase(context).chatsDao())
-                    val chatIds = repo.getAllChatsIds()
-                    deleteChatFiles(DataManager.context, chatIds)
-                    repo.clearData()
-                }
-
-                val contacts = async {
-                    ContactsRepository(
-                        AppDatabase.getDatabase(context).contactsDao()
-                    ).clearData()
-                }
-
-                val messages = async {
-                    getAppRepo(context).clearData()
-                }
-
-                chats.await() && contacts.await() && messages.await()
-            }
-        }
+    suspend fun cleanAllDatabases(context: Context): Boolean = getAppRepo(context).clearData()
 
     suspend fun deleteChatFiles(
         context: Context,

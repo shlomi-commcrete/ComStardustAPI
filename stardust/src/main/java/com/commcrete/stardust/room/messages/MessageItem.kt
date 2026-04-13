@@ -5,6 +5,7 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.commcrete.stardust.room.new_db.message.MessageState
 import kotlinx.parcelize.Parcelize
 import java.util.Locale
 
@@ -61,18 +62,4 @@ data class MessageItem (
             chatId = chatId?.lowercase(Locale.ROOT)
         }
 
-
-    fun getTextToShow () : String {
-        return if (isLocation == true) "Location Sent" else text
-//        return text
-    }
-}
-
-enum class MessageState(val id: Int){
-    SENT(0),
-    SEEN(1),
-    RECEIVED(2),
-    FAILED(3),
-    RECEIVING(4),
-    ARCHIVED(5)
 }

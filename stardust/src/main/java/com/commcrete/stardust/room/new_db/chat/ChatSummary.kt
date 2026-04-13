@@ -2,7 +2,7 @@ package com.commcrete.stardust.room.new_db.chat
 
 import androidx.room.ColumnInfo
 import androidx.room.DatabaseView
-import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 
 /**

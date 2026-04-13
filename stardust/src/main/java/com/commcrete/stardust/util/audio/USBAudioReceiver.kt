@@ -14,7 +14,7 @@ import com.commcrete.stardust.util.DataManager.startPTT
 import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -85,13 +85,13 @@ object ButtonListener {
 
     @SuppressLint("MissingPermission")
     fun dismissPttRecording (context: Context, chatID: String, file: File?) {
-        val pttPackage = StardustAPIPackage(UsersUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
+        val pttPackage = StardustAPIPackage(RegisteredUserUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
         stopPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context), file)
     }
 
     @SuppressLint("MissingPermission")
     fun startPttRecord(context: Context, chatID : String): File? {
-        val pttPackage = StardustAPIPackage(UsersUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
+        val pttPackage = StardustAPIPackage(RegisteredUserUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
         return startPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context))
     }
 

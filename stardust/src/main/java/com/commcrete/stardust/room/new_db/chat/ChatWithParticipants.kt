@@ -3,7 +3,7 @@ package com.commcrete.stardust.room.new_db.chat
 import androidx.room.Embedded
 import androidx.room.Junction
 import androidx.room.Relation
-import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 
 data class ChatWithParticipants(

@@ -1,23 +1,15 @@
 package com.commcrete.bittell.util.demo
 
-import androidx.navigation.NavController
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.old_db.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.old_db.ContactsDatabase
-import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.old_db.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
-import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.FolderReader
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.demo.DemoUsers
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.launch

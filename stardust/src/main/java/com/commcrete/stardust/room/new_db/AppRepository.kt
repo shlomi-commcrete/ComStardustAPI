@@ -1,5 +1,7 @@
 package com.commcrete.stardust.room.new_db
 
+import android.content.Context
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
@@ -14,6 +16,9 @@ import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.legacy_db.ChatsDatabase
+import com.commcrete.stardust.room.legacy_db.ContactsDatabase
+import com.commcrete.stardust.room.legacy_db.MessagesDatabase
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import kotlinx.coroutines.Dispatchers
@@ -22,6 +27,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import androidx.core.content.edit
 
 /**
  * Unified repository that combines chats, contacts and messages operations
@@ -141,6 +147,19 @@ class AppRepository(
         ids
     }
 
+    /** True when [id] belongs to a known GROUP contact. */
+    suspend fun isGroupId(id: String?): Boolean = hasAnyGroupId(listOf(id))
+
+    /** True when any value in [ids] belongs to a known GROUP contact. */
+    suspend fun hasAnyGroupId(ids: Collection<String?>): Boolean = withContext(Dispatchers.IO) {
+        if (ids.isEmpty()) return@withContext false
+        val normalizedIds = ids.mapNotNull { normalizeIdOrNull(it) }
+        if (normalizedIds.isEmpty()) return@withContext false
+        val cache = getCachedGroupIds()
+        normalizedIds.any { it in cache }
+    }
+
+    
     /**
      * Returns the display name of the contact that owns [id], searching across
      * user IDs, group IDs, and device IDs. Returns null if no contact owns [id].
@@ -155,6 +174,15 @@ class AppRepository(
      */
     suspend fun getGroupNameById(groupId: String): String? = withContext(Dispatchers.IO) {
         contactsDao.findGroupNameById(normalizeId(groupId))
+    }
+
+    /**
+     * Returns the GROUP contact that owns [groupId], or null when not found.
+     */
+    suspend fun getGroupContactById(groupId: String): ContactEntity? = withContext(Dispatchers.IO) {
+        val contactId = contactsDao.findContactIdByGroupId(normalizeId(groupId)) ?: return@withContext null
+        val contact = contactsDao.getContactById(contactId) ?: return@withContext null
+        if (contact.type == ContactType.GROUP) contact else null
     }
 
     // ── Private helpers ──────────────────────────────────────────────────
@@ -346,6 +374,9 @@ class AppRepository(
 
     private fun normalizeId(value: String): String = value.trim().lowercase()
 
+    private fun normalizeIdOrNull(value: String?): String? =
+        value?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
     private suspend fun isGroupIdCached(groupId: String): Boolean {
         val cache = getCachedGroupIds()
         return cache.contains(groupId)
@@ -407,9 +438,86 @@ class AppRepository(
 
     private fun buildCachedContacts(): Map<String, Int> {
         val result = mutableMapOf<String, Int>()
-        // Note: This assumes DAO methods exist to fetch all contact mappings.
+        // TODO: Note: This assumes DAO methods exist to fetch all contact mappings.
         // For now, this lazy-initializes empty and builds up as contacts are added.
         return result
+    }
+
+    suspend fun updateMessageReceived(messageId: String) {
+        messagesDao.updateMessageState(messageId, MessageState.RECEIVED)
+    }
+
+    suspend fun clearData(): Boolean = saveMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val appContext = context
+
+            val newDbCleared = runCatching {
+                AppDatabase.getDatabase(appContext).clearAllTables()
+                true
+            }.getOrDefault(false)
+
+            resetCaches()
+
+            val legacyCleared = clearLegacyDatabases(appContext)
+
+            val migrationFlagUpdated = runCatching {
+                appContext
+                    .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit {
+                        putBoolean(KEY_MIGRATION_DONE, true)
+                    }
+                true
+            }.getOrDefault(false)
+
+            newDbCleared && legacyCleared && migrationFlagUpdated
+        }
+    }
+
+    private suspend fun clearLegacyDatabases(appContext: Context): Boolean {
+        var success = true
+
+        runCatching {
+            ChatsDatabase.getDatabase(appContext).also { db ->
+                db.chatsDao().clearData()
+                db.close()
+            }
+        }.onFailure { success = false }
+
+        runCatching {
+            ContactsDatabase.getDatabase(appContext).also { db ->
+                db.contactsDao().clearData()
+                db.close()
+            }
+        }.onFailure { success = false }
+
+        runCatching {
+            MessagesDatabase.getDatabase(appContext).also { db ->
+                db.messagesDao().clearData()
+                db.close()
+            }
+        }.onFailure { success = false }
+
+        LEGACY_DATABASE_NAMES.forEach { dbName ->
+            val deletedOrMissing = runCatching {
+                val path = appContext.getDatabasePath(dbName)
+                if (!path.exists()) true else appContext.deleteDatabase(dbName)
+            }.getOrDefault(false)
+
+            if (!deletedOrMissing) success = false
+        }
+
+        return success
+    }
+
+    private suspend fun resetCaches() {
+        groupIdsCacheMutex.withLock {
+            groupIdsCache = emptySet()
+            isGroupIdsCacheInitialized = false
+        }
+        contactsCacheMutex.withLock {
+            contactsCache = emptyMap()
+            isContactsCacheInitialized = false
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -480,5 +588,10 @@ class AppRepository(
         const val PAGE_SIZE = 30
         private const val PREFS_NAME = "app_db_prefs"
         private const val KEY_MIGRATION_DONE = "migration_done"
+        private val LEGACY_DATABASE_NAMES = listOf(
+            "chats_database",
+            "contacts_database",
+            "messages_database",
+        )
     }
 }

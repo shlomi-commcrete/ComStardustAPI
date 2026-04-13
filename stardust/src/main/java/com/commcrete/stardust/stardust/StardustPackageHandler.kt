@@ -42,7 +42,7 @@ import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
-import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -62,11 +62,7 @@ internal class StardustPackageHandler(private val context: Context ,
     private val fileTransferCounter = AtomicLong(0)
     private val packageProcessingLock = Any()
     private val handlerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val runnable : Runnable = Runnable {
-        synchronized(packageProcessingLock) {
-            savedPackage = null
-        }
-    }
+    private val runnable : Runnable = Runnable { synchronized(packageProcessingLock) { savedPackage = null } }
     private val handler : Handler = Handler(Looper.getMainLooper())
     private var savedPackage : StardustPackage? = null
 
@@ -101,21 +97,24 @@ internal class StardustPackageHandler(private val context: Context ,
 
             cachePackageIfNeeded(mPackage)
             logIncomingPackage(mPackage, randomID)
+        }
+
+        handlerScope.launch {
             swapAddressesIfSendInGroup(mPackage)
 
             if (mPackage.stardustControlByte.stardustMessageType == StardustControlByte.StardustMessageType.SNIFFED) {
                 // TODO: Handle Sniffed message
-                return
+                return@launch
             }
 
             if (StardustInitConnectionHandler.onIncoming(mPackage)) {
-                resetTimer()
-                return
+                synchronized(packageProcessingLock) { resetTimer() }
+                return@launch
             }
             Timber.tag("InitHandler").d("not handled by init handler")
 
             dispatchPackage(context, mPackage, randomID)
-            resetTimer()
+            synchronized(packageProcessingLock) { resetTimer() }
         }
     }
 
@@ -137,8 +136,8 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     /** Swaps source/destination bytes when the destination belongs to a local group. */
-    private fun swapAddressesIfSendInGroup(mPackage: StardustPackage) {
-        if (GroupsUtils.isLocalGroup(mPackage.getDestAsString())) {
+    private suspend fun swapAddressesIfSendInGroup(mPackage: StardustPackage) {
+        if (GroupsUtils.isLocalGroupId(mPackage.getDestAsString())) {
             val srcBytes = mPackage.sourceBytes
             mPackage.sourceBytes = mPackage.destinationBytes
             mPackage.destinationBytes = srcBytes
@@ -224,7 +223,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleSOSAck(mPackage: StardustPackage) {
-        val appId = UsersUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
         DataManager.getCallbacks()?.handleSOSAck(
             StardustAPIPackage(
                 senderId = mPackage.senderId,
@@ -391,7 +390,7 @@ internal class StardustPackageHandler(private val context: Context ,
         mPackage: StardustPackage,
         sosPackage: SOSPackage
     ) {
-        val appId = UsersUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
         handlerScope.launch {
             try {
                 DataManager.getAppRepo(context).saveMessage(
@@ -431,7 +430,7 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun updateDeviceSmartphoneAddress(context: Context, addressesPackage: StardustAddressesPackage) {
         // Added fix , push the id i have in my app
-        val appId = UsersUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
         val data = arrayListOf<Int>()
         data.addAll(StardustPackageUtils.hexStringToByteArray(appId))
         data.add(0)
@@ -506,7 +505,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleText(context: Context, mPackage: StardustPackage) {
-        val appId = UsersUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {

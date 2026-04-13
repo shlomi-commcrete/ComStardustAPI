@@ -6,18 +6,21 @@ import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.enums.FunctionalityType
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
 import kotlin.math.ceil
+import kotlin.math.sqrt
 
 class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send) {
 
@@ -46,7 +49,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         val fileList = listOf(data.file)
         val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending(data)
-        Scopes.getDefaultCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
             var packages = createPackages(fileList)
 
             if (data.stardustAPIPackage.spare > 0) {
@@ -60,8 +63,8 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             mutablePackagesMap.clear()
             mutablePackagesMap.putAll(packages)
             resetSendTimer()
+            saveLocalMessages()
         }
-        saveLocalMessages()
     }
 
     fun stopSendingPackages() {
@@ -78,9 +81,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
     private fun updateStep(numOfPackages: Int) {
         sendingPercentage = ((current.toDouble() / numOfPackages) * 100).toInt()
         onFileStatusChange?.updateStep(data, sendingPercentage)
-        if (sendingPercentage >= 100) {
-            finishSending()
-        }
+        if (sendingPercentage >= 100) { finishSending() }
     }
 
     private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
@@ -89,45 +90,34 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         return randomMisses.toList()
     }
 
-    private fun saveLocalMessages() {
-        val chatID = data.stardustAPIPackage.destination
-        val userId = data.stardustAPIPackage.source
+    private suspend fun saveLocalMessages() {
+        val destDir = File("${context.filesDir}/${data.chatId}/files").also { it.mkdirs() }
+        val destFile = File(destDir, "${data.file.nameWithoutExtension}.${data.file.extension}")
 
-        Scopes.getDefaultCoroutine().launch {
-            val text = when (data.fileType) {
-                FileType.File -> "File Sent"
-                FileType.Image -> "Image Sent"
-            } + ": ${data.file.name}"
-
-            val destDir = File("${context.filesDir}/$chatID/files").also { it.mkdirs() }
-            val destFile = File(destDir, "${data.file.nameWithoutExtension}.${data.file.extension}")
-
-            try {
-                when (data.fileType) {
-                    FileType.Image -> data.file.inputStream().use { input ->
-                        destFile.outputStream().use { input.copyTo(it) }
-                    }
-                    FileType.File -> decompressTextFile(data.file, destFile)
+        try {
+            when (data.fileType) {
+                FileType.Image -> data.file.inputStream().use { input ->
+                    destFile.outputStream().use { input.copyTo(it) }
                 }
-
-                val chatsRepo = DataManager.getChatsRepo(context)
-                val messageItem = MessageItem(
-                    senderID = userId,
-                    text = text,
-                    epochTimeMs = System.currentTimeMillis(),
-                    chatId = chatID,
-                    isImage = data.fileType == FileType.Image,
-                    isFile = data.fileType == FileType.File,
-                    fileLocation = destFile.absolutePath
-                )
-                val chatItem = chatsRepo.getChatByBittelID(chatID)
-                chatItem?.message = Message(senderID = userId, text = text, seen = false)
-                DataManager.getAppRepo(context).saveMessage(context, messageItem)
-                chatItem?.let { chatsRepo.addChat(it) }
-
-            } catch (e: Exception) {
-                Timber.e(e, "Error saving file locally: ${data.file.name}")
+                FileType.File -> decompressTextFile(data.file, destFile)
             }
+
+            DataManager.getAppRepo(context).saveMessage(
+                MessageEntity(
+                    chatId = data.chatId,
+                    senderID = data.stardustAPIPackage.senderId,
+                    receiverID = data.stardustAPIPackage.receiverId,
+                    text = data.file.name,
+                    attachmentPath = destFile.absolutePath,
+                    state = MessageState.SENT,
+                    type = when(data.fileType) {
+                        FileType.Image -> MessageType.IMAGE
+                        FileType.File -> MessageType.FILE
+                    }
+                ))
+
+        } catch (e: Exception) {
+            Timber.e(e, "Error saving file locally: ${data.file.name}")
         }
     }
 
@@ -175,7 +165,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     context,
                     source = appId,
-                    destination = data.stardustAPIPackage.destination,
+                    destination = data.stardustAPIPackage.receiverId,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = dataToSend)
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
@@ -202,7 +192,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         }
 
         val newArray = reed.encode(dataList)
-        val bittelFileList = newArray.withIndex().associate { (index, data) ->
+        val fileList = newArray.withIndex().associate { (index, data) ->
             index.toFloat() to StardustFilePackage(
                 current = index,
                 data = data,
@@ -210,7 +200,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             )
         }
 
-        return bittelFileList to paddingAdded
+        return fileList to paddingAdded
     }
 
     private fun createPackages(files: List<File>): Map<Float, StardustFilePackage> {
@@ -255,8 +245,8 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             sendInterval = if (radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) 300L else 900L
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
                 context = context,
-                source = data.stardustAPIPackage.source,
-                destination = data.stardustAPIPackage.destination,
+                source = data.stardustAPIPackage.senderId,
+                destination = data.stardustAPIPackage.receiverId,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = stardustFilePackage.toArrayInt()
             )
@@ -345,7 +335,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             require(packageNum > 0) { "packageNum must be > 0" }
 
             // Step 1: raw percentage
-            var percent = 10 + factor / kotlin.math.sqrt(packageNum.toDouble())
+            var percent = 10 + factor / sqrt(packageNum.toDouble())
 
             // Step 2: clamp between 5% and 100%
             percent = percent.coerceIn(5.0, 100.0)

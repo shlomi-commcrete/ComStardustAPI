@@ -6,17 +6,16 @@ import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
-import com.commcrete.aiaudio.media.WavHelper
 import com.commcrete.stardust.enums.FunctionalityType
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
@@ -41,7 +40,8 @@ object PttSendManager {
     private lateinit var cacheDir: File
     private var fileToSave: File? = null
     var carrier : Carrier? = null
-    var chatID: String? = null
+    var chatId: String? = null
+    var receiverId: String? = null
     private var viewModel : PttInterface? = null
     var aiEnabled = false
 
@@ -53,15 +53,44 @@ object PttSendManager {
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
-    fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, chatID: String? = null) {
+    fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, receiverId: String? = null, chatId: String? = null) {
         toEncodeQueue.trySend(pcmArray)
         fileToSave = file
         this.carrier = carrier
-        this.chatID = chatID
+        this.receiverId = receiverId
+        this.chatId = chatId
     }
 
     fun finish(context: Context) {
-        saveTofile(context, byteArrayOf(), finish = true) // Need to delete
+        saveToFile(context, byteArrayOf()) // Need to delete
+        Log.d(TAG, "3 seconds elapsed, saving to file.")
+        needToRun = false
+        val file = fileToSave ?: return
+        try {
+            val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+            val receiverId = receiverId ?: return
+
+            CoroutineScope(Dispatchers.IO).launch {
+                val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
+                WavHelper.createWavFile(sampleArray, 24000, file)
+                Log.d(TAG, "WAV file created: ${file.absolutePath}")
+
+                DataManager.getAppRepo(context).saveMessage(
+                    MessageEntity(
+                        chatId = chatId,
+                        senderID = appId,
+                        receiverID = receiverId,
+                        attachmentPath = file.absolutePath,
+                        state = MessageState.SENT,
+                        type = MessageType.PTT_AI,
+                        epochTimeMs = RecorderUtils.ts
+                    )
+                )
+                RecorderUtils.ts = 0
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating WAV file", e)
+        }
     }
 
     private fun startEncodingJob(context: Context) {
@@ -94,16 +123,19 @@ object PttSendManager {
     }
 
     private fun handleTokenizerChunk(context: Context, pcmArray: ShortArray) {
-        Log.d(TAG_ENCODE, "Encoding PCM chunk of size")
-        val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
-        Log.d(TAG_ENCODE, "Tokenizer encoded chunk size")
-        Log.d(TAG, "Encoded chunk size ${chunkCodes.size}")
+        CoroutineScope(Dispatchers.IO).launch {
+            Log.d(TAG_ENCODE, "Encoding PCM chunk of size")
+            val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
+            Log.d(TAG_ENCODE, "Tokenizer encoded chunk size")
+            Log.d(TAG, "Encoded chunk size ${chunkCodes.size}")
 
-        val packedData = BitPacking12.pack12(chunkCodes.toList())
+            val packedData = BitPacking12.pack12(chunkCodes.toList())
 
-        sendData(context, packedData)
+            sendData(context, packedData)
 
-        saveTofile(context, packedData) // Need to delete
+            saveToFile(context, packedData)
+
+        }
     }
 
     // Equivalent to private void SendData(byte[] data)
@@ -111,54 +143,25 @@ object PttSendManager {
         Log.d(TAG, "Send msg: ${data.size} data: ${data.toHexString()}")
         val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
 
-        Scopes.getDefaultCoroutine().launch {
-            val bittelPackage = viewModel?.let {
-                val fullData = ByteArray(data.size + 1)
-                fullData[0] = 0x00
-                System.arraycopy(data, 0, fullData, 1, data.size)
-                val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
-                StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = it.getSource(),
-                    destination = it.getDestenation() ?: "" ,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
-                    data = audioIntArray)
-            }
-            val isLast = data.size != 30
-
-
-            bittelPackage?.let { bittelPackage ->
-                bittelPackage.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
-                bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
-                bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
-                DataManager.sendDataToBle(bittelPackage)
-            }
-
+        val bittelPackage = viewModel?.let {
+            val fullData = ByteArray(data.size + 1)
+            fullData[0] = 0x00
+            System.arraycopy(data, 0, fullData, 1, data.size)
+            val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
+            StardustPackageUtils.getStardustPackage(
+                context = context,
+                source = it.getSource(),
+                destination = it.getDestination(),
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
+                data = audioIntArray)
         }
+        val isLast = data.size != 30
 
-    }
-
-    private fun savePtt(chatID : String, path : String, context: Context){
-        Scopes.getDefaultCoroutine().launch {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-                val chatsRepo = DataManager.getChatsRepo(context)
-                val chatItem = chatsRepo.getChatByBittelID(chatID)
-                chatItem?.message = Message(
-                    senderID = it,
-                    text = "PTT Sent",
-                    seen = true
-                )
-                chatItem?.let { chatsRepo.addChat(it) }
-                DataManager.getAppRepo(DataManager.context).saveMessage(
-                    context = context,
-                    isPTT = true,
-                    messageItem = MessageItem(senderID = it,
-                        epochTimeMs = RecorderUtils.ts, senderName = "" ,
-                        chatId = chatID, text = "", fileLocation = path,
-                        isAudio = true, seen = MessageState.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)
-                )
-            }
-            RecorderUtils.ts = 0
+        bittelPackage?.let { bittelPackage ->
+            bittelPackage.stardustControlByte.stardustPartType = if(isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+            bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
+            bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
+            DataManager.sendDataToBle(bittelPackage)
         }
     }
 
@@ -180,8 +183,11 @@ object PttSendManager {
     private val frameBuffer = mutableListOf<ShortArray>()
     private var lastPCM  : ShortArray? = null
     private var lastTokens  : List<Long>? = null
-    private fun saveTofile(context: Context, packData: ByteArray, finish : Boolean = false) {
+
+
+    private fun saveToFile(context: Context, packData: ByteArray) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
+
         if (!needToRun || !DataManager.getSavePTTFilesRequired(context)) return
 
         if (isFirst) {
@@ -196,22 +202,6 @@ object PttSendManager {
         frameBuffer.add(finalPcmData)
         lastTokens = unpack
         lastPCM = finalPcmData
-
-        if ((System.currentTimeMillis() - startRecording > 45000) || finish) {
-            Log.d(TAG, "3 seconds elapsed, saving to file.")
-            needToRun = false
-            val file = fileToSave
-            try {
-                file?.let {
-                    val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-                    WavHelper.createWavFile(sampleArray, 24000, file)
-                    Log.d(TAG, "WAV file created: ${file.absolutePath}")
-                    savePtt(context = DataManager.context, chatID = chatID ?:"", path = fileToSave?.absolutePath?:"")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error creating WAV file", e)
-            }
-        }
     }
 
     private var isFirst2 = true;

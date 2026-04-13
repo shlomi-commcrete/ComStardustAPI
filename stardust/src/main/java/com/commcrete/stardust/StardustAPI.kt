@@ -6,7 +6,7 @@ import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
-import com.commcrete.stardust.room.chats.ChatItem
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.util.Carrier

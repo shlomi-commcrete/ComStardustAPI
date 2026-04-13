@@ -6,7 +6,7 @@ import com.commcrete.stardust.util.DataManager.cleanAllDatabases
 import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
 import kotlinx.coroutines.*
 
-object UsersUtils {
+object RegisteredUserUtils {
 
     var onUserUpdatedListener: OnUserUpdated? = null
 
@@ -18,7 +18,14 @@ object UsersUtils {
 
 
     fun isRegisteredUser(id: String): Boolean {
-        return mRegisterUser?.let { id == it.appId || id == it.bittelId } ?: false
+        return isRegisteredUser(listOf(id))
+    }
+
+    fun isRegisteredUser(ids: Collection<String?>): Boolean {
+        val user = mRegisterUser ?: return false
+        return ids.any { id ->
+            id != null && (id == user.appId || id == user.bittelId)
+        }
     }
 
     suspend fun logout(): Boolean = withContext(Dispatchers.IO) {

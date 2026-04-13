@@ -3,11 +3,13 @@ package com.commcrete.stardust.util.audio
 import com.commcrete.stardust.stardust.model.StardustPackage
 
 interface PttInterface {
+
+    fun getChatId(): String
     fun getSource(): String
 
-    fun getDestenation(): String?
+    fun getDestination(): String
 
-    fun sendDataToBle(bittelPackage: StardustPackage)
+    fun sendDataToBle(pkg: StardustPackage)
 
     fun maxPTTTimeoutReached() {}
 }

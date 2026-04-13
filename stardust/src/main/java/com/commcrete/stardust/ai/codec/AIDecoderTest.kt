@@ -184,7 +184,7 @@ object AIDecoderTest {
                     pcmArray = chunk,
                     file = outputFile,
                     carrier = carrier,
-                    chatID = chatId
+                    receiverId = chatId
                 )
                 delay(500)
             }

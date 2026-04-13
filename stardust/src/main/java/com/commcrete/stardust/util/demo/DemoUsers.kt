@@ -1,15 +1,13 @@
-package com.commcrete.bittell.util.demo
+package com.commcrete.stardust.util.demo
 
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.request_objects.model.user_list.User
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.contacts.ChatContact
+import com.commcrete.stardust.room.legacy_db.chats.ChatItem
+import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.stardust.model.getSrcDestMin4Bytes
 import com.commcrete.stardust.util.FolderReader
 import com.google.gson.JsonObject
-import java.util.Date
 
 class DemoUsers {
 
@@ -91,7 +89,7 @@ class DemoUsers {
         isBittel: Boolean,
         bittelId: String
     ) : ChatContact {
-        return ChatContact(displayName = getName(userId, appId, name), number = "$loop" , bittelId = bittelId, smartphoneBittelId = appId,
+        return ChatContact(displayName = name, number = "$loop" , bittelId = bittelId, smartphoneBittelId = appId,
             isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel)
     }
 
@@ -108,27 +106,12 @@ class DemoUsers {
         val message = Message(senderID = appId, text = "Hi",
             seen = true)
         val user = User(
-            phone = appId, displayName = getName(userId, appId, name) , appId = arrayOf(appId), bittelId = arrayOf(bittelId)
+            phone = appId, displayName = name , appId = arrayOf(appId), bittelId = arrayOf(bittelId)
         )
-        val chatItem = ChatItem(chat_id = appId, name = getName(userId, appId, name), message = null, bittelIDS = bittelId,
+        val chatItem = ChatItem(chat_id = appId, name = name, message = null, bittelIDS = bittelId,
             user = user, isSniffer = isSniffer, isGroup = isGroup, isBittel = isBittel, imageName = image
         )
         return chatItem
     }
 
-    private fun getMessageItem(appId: String, name: String, loop: Int, userId: String): MessageItem {
-        val messageItem =
-            MessageItem(senderID = appId, text = "Hi", epochTimeMs = Date().time+loop,
-                chatId = appId, seen = MessageState.SEEN, senderName = getName(userId, appId, name))
-        return messageItem
-    }
-
-    private fun getName (userId : String, appId : String, name: String): String {
-//        when (userId) {
-//            "10000004" -> {return "$appId $name"}
-//            "10000006" -> {return name }
-//            "10000002" -> {return name }
-//        }
-        return name
-    }
 }
