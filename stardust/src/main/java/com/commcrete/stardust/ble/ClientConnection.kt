@@ -14,8 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
-import com.commcrete.stardust.room.old_db.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -35,7 +33,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import no.nordicsemi.andorid.ble.test.spec.Characteristics
-import no.nordicsemi.android.ble.BleManager
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
 import java.util.Locale
@@ -97,7 +94,7 @@ internal class ClientConnection(
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
                 addMessageToQueue(versionPackage)
             }
@@ -1014,7 +1011,7 @@ internal class ClientConnection(
                 val txPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src ,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
                     data = data)
                 addMessageToQueue(txPackage)
@@ -1030,7 +1027,7 @@ internal class ClientConnection(
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src ,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                 addMessageToQueue(configurationSavePackage)
             }

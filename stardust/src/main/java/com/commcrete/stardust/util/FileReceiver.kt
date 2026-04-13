@@ -7,13 +7,17 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
@@ -22,7 +26,7 @@ class FileReceiver(
     val context: Context,
     val firstPackage: StardustFileStartPackage,
     val stardustPackage: StardustPackage,
-    val onLastPackageReceived: (key: String) -> Unit) {
+    val onLastPackageReceived: (receiver: FileReceiver) -> Unit) {
 
     val dataList: MutableList<StardustFilePackage> = mutableListOf()
     var lastReportedProgress: Int = 0
@@ -69,13 +73,17 @@ class FileReceiver(
         checkData()
     }
 
+    @Volatile private var isDisposed = false
+
     fun addDataPackage(filePackage: StardustFilePackage) {
+        if (isDisposed) return
         dataList.add(filePackage)
         updateProgress()
         resetReceiveTimer()
     }
 
     fun resetReceiveTimer() {
+        if (isDisposed) return
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         val timesDelay = calculateDelay()
@@ -86,20 +94,30 @@ class FileReceiver(
     }
 
     fun removeReceiveTimer() {
+        if (isDisposed) return
+        isDisposed = true  // Seal receiver: prevents re-entry from late packets or in-flight coroutines
         try {
-            onLastPackageReceived.invoke(data.id)
+            onLastPackageReceived.invoke(this)
         } catch (e: Exception) {
             Log.e("FileReceiver", "Error invoking callback", e)
         } finally {
-            // Always clean up handler callbacks, even if callback fails
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
         }
     }
 
+    fun dispose() {
+        isDisposed = true
+        handler.removeCallbacks(runnable)
+        handler.removeCallbacksAndMessages(null)
+        dataList.clear()
+    }
+
     fun updateProgress() {
+        if (isDisposed) return
         checkMissingPackages()
         Scopes.getMainCoroutine().launch {
+            if (isDisposed) return@launch
             val newProgress = ((dataList.size.toDouble() / firstPackage.total) * 100).toInt()
 
             // Only update if progress has actually changed
@@ -117,8 +135,9 @@ class FileReceiver(
     }
 
     private fun checkData() {
+        if (isDisposed) return
         // Check if we have all main packages or reached the last package
-        val isComplete = hasMainPackages() || 
+        val isComplete = hasMainPackages() ||
                          (dataList.isNotEmpty() && firstPackage.total == dataList.last().current + 1)
 
         if (isComplete) {
@@ -132,6 +151,7 @@ class FileReceiver(
 
     private fun notifyTransferComplete() {
         Scopes.getMainCoroutine().launch {
+            if (isDisposed) return@launch
             try {
                 DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
             } catch (e: Exception) {
@@ -153,6 +173,7 @@ class FileReceiver(
 
     private fun updateFailure(failure: FileFailure) {
         Scopes.getMainCoroutine().launch {
+            if (isDisposed) return@launch
             try {
                 DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
             } catch (e: Exception) {
@@ -267,49 +288,27 @@ class FileReceiver(
     }
 
     private fun saveToMessages (file: File) {
-        Scopes.getDefaultCoroutine().launch {
+        val appId = mRegisterUser?.appId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
-            val type = (if(data.fileType == FileUtils.FileType.File) "File Received" else "Image Received") + ": $mFileName"
-            val chatsRepo = DataManager.getAppRepo(context)
-            var chatItem = chatsRepo.getChatByDeviceId(data.chatID)
-            if(chatItem == null) {
-                chatItem = UsersUtils.createNewBittelUserSender(chatsRepo, stardustPackage)
-            }
-            chatItem.let { chat ->
-                val chatContact = chat.user
-                chatContact?.let { contact ->
-                    contact.appId?.let { appIdArray ->
-                        val displayName = chatsRepo.getChatByDeviceId(data.senderID)?.name ?: data.senderID
-
-                        if(appIdArray.isNotEmpty()) {
-                            chat.message = Message(senderID = data.senderID, text = type, seen = true)
-                            chatsRepo.addChat(chat)
-                            val messageItem = MessageItem(
-                                senderID = data.senderID,
-                                epochTimeMs = System.currentTimeMillis(),
-                                senderName = displayName,
-                                chatId = data.chatID,
-                                text = type,
-                                fileLocation = file.absolutePath,
-                                isFile = data.fileType == FileUtils.FileType.File, isImage = data.fileType == FileUtils.FileType.Image)
-                            DataManager.getAppRepo(context).saveMessage( context = context, messageItem )
-                            UsersUtils.saveMessageToDatabase(context, appIdArray[0], messageItem)
-                            val numOfUnread = chat.numOfUnseenMessages
-                            chatsRepo.updateNumOfUnseenMessages(data.chatID, numOfUnread + 1)
-                            Scopes.getMainCoroutine().launch {
-                                UsersUtils.messageReceived.value = messageItem
-                                PlayerUtils.playNotificationSound (context)
-                            }
-                        }
-                    }
-                }
-            }
+            DataManager.getAppRepo(context).saveMessage(
+                message = MessageEntity(
+                    senderID = data.senderID,
+                    receiverID = appId,
+                    text = mFileName,
+                    attachmentPath = file.absolutePath,
+                    state = MessageState.RECEIVED,
+                    type = if(data.fileType == FileUtils.FileType.File) MessageType.FILE else MessageType.IMAGE
+                ),
+                groupId = data.chatID
+            )
+            PlayerUtils.playNotificationSound(context)
         }
     }
 
     fun getRealSenderID(sourceID: String, destinationID: String): String {
         val userAppId = mRegisterUser?.appId
-        return if(GroupsUtils.isGroup(sourceID) && userAppId != null && (!destinationID.equals( userAppId, ignoreCase = true))) destinationID else sourceID
+        return if(GroupsUtils.isLocalGroup(sourceID) && userAppId != null && (!destinationID.equals( userAppId, ignoreCase = true))) destinationID else sourceID
     }
 
     enum class FileFailure {

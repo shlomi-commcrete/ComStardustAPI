@@ -13,6 +13,9 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
@@ -124,6 +127,36 @@ class AppRepository(
             }
         }
 
+    /** Returns all known group IDs from the dedicated group-id source. */
+    suspend fun getAllGroupIds(): List<String> = withContext(Dispatchers.IO) {
+        val ids = contactsDao.getResolvedGroupIds()
+            .map { normalizeId(it) }
+            .distinct()
+
+        groupIdsCacheMutex.withLock {
+            groupIdsCache = ids.toSet()
+            isGroupIdsCacheInitialized = true
+        }
+
+        ids
+    }
+
+    /**
+     * Returns the display name of the contact that owns [id], searching across
+     * user IDs, group IDs, and device IDs. Returns null if no contact owns [id].
+     */
+    suspend fun getContactNameById(id: String): String? = withContext(Dispatchers.IO) {
+        contactsDao.findContactNameById(normalizeId(id))
+    }
+
+    /**
+     * Returns the display name of the GROUP contact that owns [groupId].
+     * Returns null if no group contact owns that ID.
+     */
+    suspend fun getGroupNameById(groupId: String): String? = withContext(Dispatchers.IO) {
+        contactsDao.findGroupNameById(normalizeId(groupId))
+    }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private suspend fun createPrivateChat(contact: ContactEntity, contactId: Int) {
@@ -216,6 +249,8 @@ class AppRepository(
      */
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null) =
         saveMutex.withLock {
+            if(!canMessageBeSaved(message)) { return }
+
             withContext(Dispatchers.IO) {
                 val senderId = message.senderID.trim().lowercase()
                 val contactId = ensureSenderExists(senderId) ?: return@withContext
@@ -223,6 +258,11 @@ class AppRepository(
                 messagesDao.addMessage(message.copy(chatId = chatId?.toString()))
             }
         }
+
+    private fun canMessageBeSaved(message: MessageEntity): Boolean {
+        // Only save PTT messages if the user has enabled the setting to save them.
+        return !((message.type == MessageType.PTT_AI || message.type == MessageType.PTT_CODEC) && !DataManager.getSavePTTFilesRequired(context))
+    }
 
     /** Ensures sender exists in DB, auto-creating a USER contact if not. Returns the contact ID. */
     private suspend fun ensureSenderExists(senderId: String): Int? {

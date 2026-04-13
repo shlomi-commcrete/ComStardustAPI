@@ -16,7 +16,8 @@ class RegisterUser (var displayName : String? = "",
                     var token : String? = "",
                     var bittelId : String? = "",
                     var bittelName : String? = "",
-                    var bittelMacAddress : String? = "") {
+                    var bittelMacAddress : String? = "")
+{
     var bittelUser : BittelUser? = null
 }
 

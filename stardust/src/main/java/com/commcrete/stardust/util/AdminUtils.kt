@@ -40,7 +40,7 @@ object AdminUtils {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE,
                     data = intData.toIntArray().toTypedArray().reversedArray())
                 clientConnection.addMessageToQueue(deletePackage)

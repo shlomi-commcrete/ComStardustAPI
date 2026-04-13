@@ -269,7 +269,7 @@ object StardustInitConnectionHandler {
             val pkg = StardustPackageUtils.getStardustPackage(
                 context = ctx,
                 source = src,
-                destenation = dst,
+                destination = dst,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS
             )
             pkg.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
@@ -302,7 +302,7 @@ object StardustInitConnectionHandler {
         val pkg = StardustPackageUtils.getStardustPackage(
             context = ctx,
             source = appId,
-            destenation = addr.stardustID,
+            destination = addr.stardustID,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
             data = payload.toIntArray().toTypedArray()
         )
@@ -312,7 +312,7 @@ object StardustInitConnectionHandler {
 
     private fun afterUpdateAddressAck() {
         // Your existing local side-effects:
-        GroupsUtils.deleteAllGroups(ctx)
+        GroupsUtils.deleteAllDeviceGroups(ctx)
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
@@ -323,7 +323,7 @@ object StardustInitConnectionHandler {
         val pkg = StardustPackageUtils.getStardustPackage(
             context = ctx,
             source = src,
-            destenation = dst,
+            destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
             data = payload
         )
@@ -338,7 +338,7 @@ object StardustInitConnectionHandler {
             val (src, dst) = requireSrcDst() ?: return@launch
             val pkg = StardustPackageUtils.getStardustPackage(
                 context = ctx,
-                source = src, destenation = dst,
+                source = src, destination = dst,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
                 data = payload
             )
@@ -353,7 +353,7 @@ object StardustInitConnectionHandler {
         val pkg = StardustPackageUtils.getStardustPackage(
             context = ctx,
             source = src,
-            destenation = dst,
+            destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.READ_STATUS
         )
         conn.addMessageToQueue(pkg)
@@ -372,7 +372,7 @@ object StardustInitConnectionHandler {
         val pkg = StardustPackageUtils.getStardustPackage(
             context = ctx,
             source = src,
-            destenation = dst,
+            destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE
         )
         conn.addMessageToQueue(pkg)

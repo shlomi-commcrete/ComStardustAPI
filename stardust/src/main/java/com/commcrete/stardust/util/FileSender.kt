@@ -175,7 +175,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                 val fileStartMessage = StardustPackageUtils.getStardustPackage(
                     context,
                     source = appId,
-                    destenation = data.stardustAPIPackage.destination,
+                    destination = data.stardustAPIPackage.destination,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = dataToSend)
                 fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
@@ -256,7 +256,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
                 context = context,
                 source = data.stardustAPIPackage.source,
-                destenation = data.stardustAPIPackage.destination,
+                destination = data.stardustAPIPackage.destination,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = stardustFilePackage.toArrayInt()
             )

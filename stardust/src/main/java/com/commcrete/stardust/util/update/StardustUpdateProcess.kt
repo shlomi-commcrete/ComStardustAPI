@@ -3,7 +3,6 @@ package com.commcrete.stardust.util.update
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.provider.ContactsContract.Data
 import com.commcrete.stardust.R
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -54,7 +53,7 @@ object StardustUpdateProcess {
                     val versionPackage = StardustPackageUtils.getStardustPackage(
                         context = context,
                         source = src,
-                        destenation = dst,
+                        destination = dst,
                         stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION,
                         data = getBittelUpdateFilePackage()
                     )
@@ -73,7 +72,7 @@ object StardustUpdateProcess {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS
                 )
                 clientConnection.addMessageToQueue(versionPackage)
@@ -112,7 +111,7 @@ object StardustUpdateProcess {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.BURN_BITTEL_VERSION,
                     data = getBittelUpdateDataFile()
                 )

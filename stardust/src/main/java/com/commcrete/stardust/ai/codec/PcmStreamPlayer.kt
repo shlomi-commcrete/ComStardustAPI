@@ -16,17 +16,17 @@ import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.old_db.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.BleMediaConnector
 import com.commcrete.stardust.util.audio.PlayerUtils
-import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -177,7 +177,7 @@ object PcmStreamPlayer : BleMediaConnector() {
                     .setTransferMode(AudioTrack.MODE_STREAM)
                     .setBufferSizeInBytes(bufferSizeInBytes)
                     .build()
-                syncBleDevice(DataManager.context)
+                syncBleDevice(context)
                 Log.d(PLAYBACK_TRACE_TAG, "ensureLegacyTrack created track=${legacyTrack?.hashCode()} buffer=$bufferSizeInBytes")
             }
 
@@ -359,7 +359,7 @@ object PcmStreamPlayer : BleMediaConnector() {
                 Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")
                 if(!isFileInit){
                     Log.d("PcmStreamPlayer", "Initializing PTT input file...")
-                    initPttInputFile(DataManager.context, from, source, null)
+                    initPttInputFile(context, from, source, null)
                 }
             }
         }
@@ -441,37 +441,20 @@ object PcmStreamPlayer : BleMediaConnector() {
         }
     }
 
-
-    private fun updateAudioReceived(chatId: String, senderId: String, isAudioReceived : Boolean){
-        if(!DataManager.getSavePTTFilesRequired(context) || chatId.isEmpty()) { return }
-
-        Scopes.getDefaultCoroutine().launch {
-            val repo = DataManager.getAppRepo(context)
-            repo.updateAudioReceived(chatId, isAudioReceived)
-            val chatItem = repo.getChatByDeviceId(chatId)
-            chatItem?.let {
-                chatItem.message = Message(senderID = senderId, text = "Ptt Received", seen = true)
-                repo.addChat(it)
-                repo.updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
-            }
-        }
-    }
-
     private fun initPttInputFile(
         context: Context,
         destinations: String,
         source: String,
         snifferContacts: List<ChatContact>?
     ): File? {
+        val appId = UsersUtils.mRegisterUser?.appId ?: return null
         if (snifferContacts != null) {
             return PlayerUtils.initPttSnifferFile(context, destinations, snifferContacts)
         }
 
         val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
-        val packageToPass = StardustAPIPackage(source, destination)
-        this.destination = destinations
-        val realSource = packageToPass.getRealSourceId()
-        updateAudioReceived(source, realSource, true)
+
+        this.destination = destination
 
         val dir = File(context.filesDir, source)
 
@@ -484,30 +467,30 @@ object PcmStreamPlayer : BleMediaConnector() {
 
         val file = fileToWrite ?: File(dir, "$ts-$source.pcm")
 
+        val ids = GroupsUtils.resolveGroupAndContact(source, destinations)
+
         if (!file.exists()) {
             file.createNewFile()
             fileToWrite = file
             isFileInit = true
 
             CoroutineScope(Dispatchers.IO).launch {
-                val userName = UsersUtils.getUserName(realSource)
-                DataManager.getAppRepo(DataManager.context).saveMessage(
-                    context = context,
-                    isPTT = true,
-                    messageItem = MessageItem(
-                        senderID = realSource,
-                        epochTimeMs = ts.toLong(),
-                        senderName = userName,
-                        chatId = source,
-                        text = "",
-                        fileLocation = file.absolutePath,
-                        isAudio = true,
-                        audioType = RecorderUtils.CODE_TYPE.AI.id
-                    )
+                DataManager.getAppRepo(context).saveMessage(
+                    MessageEntity(
+                        senderID = ids.senderId,
+                        receiverID = appId,
+                        attachmentPath = file.absolutePath,
+                        state = MessageState.RECEIVING,
+                        type = MessageType.PTT_AI,
+                        epochTimeMs = ts.toLong()
+                    ),
+                    ids.groupId
                 )
             }
 
-            DataManager.getCallbacks()?.startedReceivingPTT(packageToPass, file)
+            DataManager.getCallbacks()?.startedReceivingPTT(
+                StardustAPIPackage(senderId = ids.senderId, groupId = ids.groupId, receiverId = appId),
+                file)
         }
 
         return file

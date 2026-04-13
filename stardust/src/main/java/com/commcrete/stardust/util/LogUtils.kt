@@ -1,7 +1,6 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
-import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.request_objects.Details
@@ -15,11 +14,7 @@ import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.stardust.model.StardustLogPackage
 import com.commcrete.stardust.stardust.model.StardustLogParser
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.launch
-import java.util.Date
 
 object LogUtils {
 
@@ -46,7 +41,7 @@ object LogUtils {
                 val logPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS,
                     data = logSizeData)
                 clientConnection.addMessageToQueue(logPackage)

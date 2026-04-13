@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
-import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
@@ -609,19 +608,19 @@ object StardustPackageUtils {
     }
 
 
-    fun getStardustPackage (context: Context, source : String, destenation : String, stardustOpCode: StardustOpCode, data : Array<Int>? = null) : StardustPackage {
-        val bittelPackage = StardustPackage(
+    fun getStardustPackage (context: Context, source: String, destination: String, stardustOpCode: StardustOpCode, data: Array<Int>? = null) : StardustPackage {
+        val dataPackage = StardustPackage(
             context = context,
             syncBytes = SYNC_BYTES,
             stardustOpCode = stardustOpCode,
             stardustControlByte = stardustOpCode.stardustControlByte,
             length = if(data.isNullOrEmpty()) 0 else data.size,
-            destinationBytes = hexStringToByteArray(destenation),
+            destinationBytes = hexStringToByteArray(destination),
             sourceBytes = hexStringToByteArray(source)
         )
-        bittelPackage.data = data
-        bittelPackage.checkXor = getCheckXor(bittelPackage.getStardustPackageToCheckXor())
-        return bittelPackage
+        dataPackage.data = data
+        dataPackage.checkXor = getCheckXor(dataPackage.getStardustPackageToCheckXor())
+        return dataPackage
     }
 
     fun changeSource(bittelPackage: StardustPackage, source: String){

@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust.model
 import android.location.Location
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.CoordinatesUtil
+import java.util.Date
 
 class StardustLocationParser : StardustParser() {
 
@@ -13,70 +14,63 @@ class StardustLocationParser : StardustParser() {
         const val sosTypeLength = 1
     }
 
-    fun parseLocation (StardustPackage: StardustPackage) : StardustLocationPackage? {
-        StardustPackage.data?.let { intArray ->
-            val byteArray = intArrayToByteArray(intArray.toMutableList())
-            var offset = 0
-            val locationBytes = cutByteArray(byteArray, locationLength, offset)
-            val locations = CoordinatesUtil().unpackLocation(locationBytes)
+    fun parseLocation(stardustPackage: StardustPackage): LocationPackage? {
+        val intArray = stardustPackage.data ?: return null
+        val byteArray = intArrayToByteArray(intArray.toMutableList())
+        val offset = 0
+        if (byteArray.size < offset + locationLength) return null
 
-            return StardustLocationPackage(
-                latitude = locations[0],
-                longitude = locations[1],
-                height = locations[2].toInt(),
-                year = 0,
-                month = 0,
-                day = 0,
-                hour = 0,
-                minute = 0,
-                second = 0
-            )
-        }
-        return null
+        val locationBytes = cutByteArray(byteArray, locationLength, offset)
+        val locations = CoordinatesUtil().unpackLocation(locationBytes)
+
+        return LocationPackage(
+            location = Location(stardustPackage.getSenderAsString()).apply {
+                latitude = locations[0].toDouble()
+                longitude = locations[1].toDouble()
+                altitude = locations[2].toDouble()
+            },
+            date = Date()
+        )
     }
 
-    fun parseSOS (StardustPackage: StardustPackage) : StardustSOSPackage? {
-        StardustPackage.data?.let { intArray ->
-            val byteArray = intArrayToByteArray(intArray.toMutableList())
-            var offset = 3
-            val sosTypeBytes = cutByteArray(byteArray, sosTypeLength, offset)
-            offset = offset.plus(sosTypeLength)
-            val locationBytes = cutByteArray(byteArray, locationLength, offset)
-            val locations = CoordinatesUtil().unpackLocation(locationBytes)
+    fun parseSOS(stardustPackage: StardustPackage): SOSPackage? {
+        val intArray = stardustPackage.data ?: return null
+        val byteArray = intArrayToByteArray(intArray.toMutableList())
 
-            return StardustSOSPackage(
-                latitude = locations[0],
-                longitude = locations[1],
-                height = locations[2].toInt(),
-                year = 0,
-                month = 0,
-                day = 0,
-                hour = 0,
-                minute = 0,
-                second = 0,
-                sosType = byteArrayToInt(sosTypeBytes)
-            )
-        }
-        return null
+        val sosTypeOffset = 3
+        val locationOffset = sosTypeOffset + sosTypeLength
+        if (byteArray.size < locationOffset + locationLength) return null
+
+        val sosTypeBytes = cutByteArray(byteArray, sosTypeLength, sosTypeOffset)
+        val locationBytes = cutByteArray(byteArray, locationLength, locationOffset)
+        val locations = CoordinatesUtil().unpackLocation(locationBytes)
+
+        return SOSPackage(
+            location = Location(stardustPackage.getSenderAsString()).apply {
+                latitude = locations[0].toDouble()
+                longitude = locations[1].toDouble()
+                altitude = locations[2].toDouble()
+            },
+            date = Date(),
+            sosType = byteArrayToInt(sosTypeBytes)
+        )
     }
 
-    fun parseSOSReal (StardustPackage: StardustPackage) : StardustSOSPackage? {
-        StardustPackage.data?.let { intArray ->
+    fun parseSOSReal(stardustPackage: StardustPackage): SOSPackage? {
+        stardustPackage.data?.let { intArray ->
             val byteArray = intArrayToByteArray(intArray.toMutableList())
-            var offset = 0
+            val offset = 0
+            if (byteArray.size < offset + locationLength) return null
             val locationBytes = cutByteArray(byteArray, locationLength, offset)
             val locations = CoordinatesUtil().unpackLocation(locationBytes)
 
-            return StardustSOSPackage(
-                latitude = locations[0],
-                longitude = locations[1],
-                height = locations[2].toInt(),
-                year = 0,
-                month = 0,
-                day = 0,
-                hour = 0,
-                minute = 0,
-                second = 0,
+            return SOSPackage(
+                location = Location(stardustPackage.getSenderAsString()).apply {
+                    latitude = locations[0].toDouble()
+                    longitude = locations[1].toDouble()
+                    altitude = locations[2].toDouble()
+                },
+                date = Date(),
                 sosType = 0
             )
         }

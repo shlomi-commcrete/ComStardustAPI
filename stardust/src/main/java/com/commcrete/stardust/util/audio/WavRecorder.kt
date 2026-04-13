@@ -16,10 +16,8 @@ import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.RepositoryProvider
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.toHex
@@ -448,7 +446,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                             text = "",
                             fileLocation = path,
                             isAudio = true,
-                            seen = SeenStatus.SENT,
+                            seen = MessageState.SENT,
                             audioType = RecorderUtils.CODE_TYPE.CODEC2.id)
                     )
                 }
@@ -500,7 +498,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                 StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = it.getSource(),
-                    destenation = it.getDestenation() ?: "" ,
+                    destination = it.getDestenation() ?: "" ,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                     data = audioIntArray)
             }

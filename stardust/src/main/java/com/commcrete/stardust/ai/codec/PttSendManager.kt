@@ -10,7 +10,7 @@ import com.commcrete.aiaudio.media.WavHelper
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.Carrier
@@ -120,7 +120,7 @@ object PttSendManager {
                 StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = it.getSource(),
-                    destenation = it.getDestenation() ?: "" ,
+                    destination = it.getDestenation() ?: "" ,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
                     data = audioIntArray)
             }
@@ -155,7 +155,7 @@ object PttSendManager {
                     messageItem = MessageItem(senderID = it,
                         epochTimeMs = RecorderUtils.ts, senderName = "" ,
                         chatId = chatID, text = "", fileLocation = path,
-                        isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)
+                        isAudio = true, seen = MessageState.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)
                 )
             }
             RecorderUtils.ts = 0

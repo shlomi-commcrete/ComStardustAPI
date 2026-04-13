@@ -7,15 +7,10 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.OpenStardustControlByte
-import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
@@ -26,15 +21,12 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.audio.ButtonListener
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.io.File
 
 @SuppressLint("StaticFieldLeak")
 object BittelUsbManager2 : BittelProtocol {
@@ -288,7 +280,7 @@ object BittelUsbManager2 : BittelProtocol {
                     val txPackage = StardustPackageUtils.getStardustPackage(
                         context = context,
                         source = src ,
-                        destenation = dst,
+                        destination = dst,
                         stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
                         data = data)
                     DataManager.getClientConnection(context).addMessageToQueue(txPackage)
@@ -307,7 +299,7 @@ object BittelUsbManager2 : BittelProtocol {
                     val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                         context = context,
                         source = src ,
-                        destenation = dst,
+                        destination = dst,
                         stardustOpCode =StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                     DataManager.getClientConnection(context)?.addMessageToQueue(configurationSavePackage)
                 }

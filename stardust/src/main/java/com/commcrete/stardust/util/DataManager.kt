@@ -25,15 +25,14 @@ import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
-import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesRepository
+import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.room.new_db.AppRepository
+import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -45,6 +44,7 @@ import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -54,7 +54,7 @@ import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
 import java.io.RandomAccessFile
-import java.util.Date
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
 @SuppressLint("StaticFieldLeak")
@@ -75,17 +75,12 @@ object DataManager : StardustAPI, PttInterface{
 
     private var savePTTFiles: Boolean? = null
 
-    private var hasTimber = false
     var isPlayPttFromSdk = true
 
-    private val fileSenders = mutableMapOf<String, FileSender>() // <uuid, FileSender>
+    private val fileSenders = ConcurrentHashMap<String, FileSender>() // <uuid, FileSender>
 
     fun requireContext (context: Context) {
         this.context = context
-//       if(!hasTimber) { // TODO: for debug only
-//            Timber.plant(Timber.DebugTree())
-//            hasTimber = true
-//        }
         SharedPreferencesUtil.getIsErased(context).let {
             if(it) {
                 throw IllegalStateException("Device is erased, please reset the device")
@@ -147,12 +142,12 @@ object DataManager : StardustAPI, PttInterface{
 
         val messageNum = 1
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)  ?: return
-        Scopes.getDefaultCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
-                    source = stardustAPIPackage.source,
-                    destenation = stardustAPIPackage.destination,
+                    source = stardustAPIPackage.senderId,
+                    destination = stardustAPIPackage.receiverId,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data =  split)
                 mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
@@ -162,27 +157,22 @@ object DataManager : StardustAPI, PttInterface{
                 mPackage.idNumber = id
                 mPackage.stardustControlByte.stardustDeliveryType = radio.second
                 sendDataToBle(mPackage)
-                delay(if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.HR)800 else 4000)
+                delay(if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.HR) 800 else 4000)
             }
+            saveSentMessage(context, text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
         }
-        saveSentMessage(context, text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
     }
 
-    private fun saveSentMessage (context: Context, text :String, userId : String, sender: String){
-        requireContext(context)
-        val messageItem = MessageItem(chatId = userId, text = text, epochTimeMs = Date().time, senderID = sender)
-        Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = getChatsRepo(context)
-            val messagesRepository = getMessagesRepo(context)
-            val chatItem = chatsRepo.getChatByBittelID(userId)
-            chatItem?.message = Message(
-                senderID = sender,
+    private suspend fun saveSentMessage(context: Context, text: String, receiver: String, sender: String, groupId: String? = null) {
+        getAppRepo(context).saveMessage(
+            message = MessageEntity(
                 text = text,
-                seen = false
-            )
-            chatItem?.let { chatsRepo.addChat(it) }
-            messagesRepository.saveMessage(context = context, messageItem = messageItem)
-        }
+                senderID = sender,
+                receiverID = receiver,
+                state = MessageState.SENT,
+            ),
+            groupId = groupId
+        )
     }
 
     fun setMPluginContext (context: Context) {
@@ -195,29 +185,30 @@ object DataManager : StardustAPI, PttInterface{
         requireContext(context)
         AIModuleInitializer.initModules(context, pluginContext)
     }
+
     @SuppressLint("MissingPermission")
     override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File? {
         requireContext(context)
-        this.source = stardustAPIPackage.source
-        this.destination = stardustAPIPackage.destination
+        this.source = stardustAPIPackage.senderId
+        this.destination = stardustAPIPackage.receiverId
         RecorderUtils.init(this)
-        return RecorderUtils.startRecording(stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType)
+        return RecorderUtils.startRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
     override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?) {
         requireContext(context)
-        RecorderUtils.stopRecording(stardustAPIPackage.destination, stardustAPIPackage.carrier, codeType, file)
+        RecorderUtils.stopRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType, file)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
         requireContext(context)
         val stardustPackage = StardustPackageUtils.getStardustPackage(
             context = context,
-            source = stardustAPIPackage.destination,
-            destenation = stardustAPIPackage.source ,
+            source = stardustAPIPackage.senderId,
+            destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
+        LocationUtils.sendLocation(context, stardustPackage, location, getClientConnection(context), isHR = radio.second)
     }
 
     override fun sendImage(
@@ -279,8 +270,8 @@ object DataManager : StardustAPI, PttInterface{
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
         val stardustPackage = StardustPackageUtils.getStardustPackage(
             context = context,
-            source = stardustAPIPackage.source,
-            destenation = stardustAPIPackage.destination,
+            source = stardustAPIPackage.senderId,
+            destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
         Scopes.getDefaultCoroutine().launch {
@@ -338,7 +329,7 @@ object DataManager : StardustAPI, PttInterface{
         requireContext(context)
         requireFileLocation(fileLocation)
         UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
-        GroupsUtils.resetGroupIds(context)
+        GroupsUtils.resetLocalGroupIds(context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {
@@ -372,11 +363,8 @@ object DataManager : StardustAPI, PttInterface{
 
     fun getConnectedDevices (context: Context) : BluetoothDevice? {
         requireContext(context)
-        return if(getClientConnection(context).mDevice != null) {
-            getClientConnection(context).mDevice
-        } else {
-            getClientConnection(context).getBlePairedStardustDevice()
-        }
+        val connection = getClientConnection(context)
+        return connection.mDevice ?: connection.getBlePairedStardustDevice()
     }
 
     fun bondOnStartup (context: Context) {
@@ -401,6 +389,7 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun disconnectFromDevice(context: Context) {
         requireContext(context)
+        cleanupPackageHandlerOnDisconnect()
         getClientConnection(context).disconnectFromBLEDevice()
     }
 
@@ -461,8 +450,13 @@ object DataManager : StardustAPI, PttInterface{
 
     fun unpairDeviceBLE (context: Context) {
         requireContext(context)
+        cleanupPackageHandlerOnDisconnect()
         val clientConnection = getClientConnection(context)
         clientConnection.removeBittelBond()
+    }
+
+    private fun cleanupPackageHandlerOnDisconnect() {
+        bittelPackageHandler?.cleanupOnDisconnect()
     }
 
     fun getPortUtils (context: Context): PortUtils {

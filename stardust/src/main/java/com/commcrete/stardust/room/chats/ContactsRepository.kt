@@ -3,7 +3,6 @@ package com.commcrete.stardust.room.chats
 import androidx.lifecycle.LiveData
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDao
-import com.commcrete.stardust.util.GroupsUtils
 
 class ChatsRepository (private val chatsDao: ChatsDao) {
 
@@ -34,7 +33,6 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
     }
     suspend fun addChat(chatItem: ChatItem) {
         chatsDao.addChat(chatItem)
-        if(chatItem.isGroup) GroupsUtils.addGroupIds(listOf(chatItem.chat_id))
     }
 
     suspend fun deleteUser (chatID : String) {
@@ -43,9 +41,6 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
 
     suspend fun addChats(chatItems: List<ChatItem>) {
         chatsDao.addChats(chatItems)
-        chatItems
-            .mapNotNull { if (it.isGroup) it.chat_id else null }
-            .also { GroupsUtils.addGroupIds(it) }
     }
 
     suspend fun updateChatName(chatId: String, name : String) = chatsDao.updateChatName(chatId, name)
@@ -57,7 +52,6 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
     suspend fun updateNumOfUnseenMessages(chatId: String, numOfUnseenMessages: Int) = chatsDao.updateNumOfUnseenMessages(chatId, numOfUnseenMessages)
     suspend fun clearData () : Boolean {
         chatsDao.clearData()
-        GroupsUtils.clearData()
         return true
     }
 

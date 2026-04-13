@@ -69,6 +69,39 @@ interface ContactsDao {
     @Query("SELECT contact_id FROM app_contact_devices WHERE device_id = :deviceId LIMIT 1")
     suspend fun findContactIdByDeviceId(deviceId: String): Int?
 
+    /**
+     * Returns the contact name for [id] by searching across all three identity
+     * tables (user IDs, group IDs, device IDs) in a single query.
+     * Returns null when no contact owns that ID.
+     */
+    @Query(
+        """
+        SELECT c.name
+        FROM contacts_table c
+        INNER JOIN (
+            SELECT contact_id FROM app_contact_user_ids WHERE user_id = :id
+            UNION
+            SELECT contact_id FROM app_contact_group_ids WHERE group_id = :id
+            UNION
+            SELECT contact_id FROM app_contact_devices WHERE device_id = :id
+        ) ids ON ids.contact_id = c.id
+        LIMIT 1
+        """
+    )
+    suspend fun findContactNameById(id: String): String?
+
+    @Query(
+        """
+        SELECT c.name
+        FROM contacts_table c
+        JOIN app_contact_group_ids gid ON gid.contact_id = c.id
+        WHERE gid.group_id = :id
+        LIMIT 1
+        """
+    )
+    suspend fun findGroupNameById(id: String): String?
+    
+
     /** Returns IDs of all contacts that are not of type GROUP. */
     @Query("SELECT id FROM contacts_table WHERE type != 'GROUP'")
     suspend fun getAllMemberContactIds(): List<Int>

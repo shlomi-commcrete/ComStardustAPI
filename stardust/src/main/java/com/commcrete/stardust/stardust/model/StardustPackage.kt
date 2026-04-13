@@ -1,12 +1,11 @@
 package com.commcrete.stardust.stardust.model
 
 import android.content.Context
-import androidx.compose.ui.text.toLowerCase
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
 import com.commcrete.stardust.stardust.StardustPackageUtils.byteArrayToIntArray
-import java.util.Locale
+import com.commcrete.stardust.util.GroupsUtils
 
 data class StardustPackage(
     val context: Context,
@@ -29,6 +28,16 @@ data class StardustPackage(
     var isDemandAck : Boolean? = false
     var messageNumber : Int = 1
     var idNumber : Long = 1
+
+    val senderId: String
+
+    val groupId: String?
+
+    init {
+        val ids = GroupsUtils.resolveGroupAndContact(getSourceAsString(), getDestAsString())
+        senderId = ids.senderId
+        groupId = ids.groupId
+    }
 
 
     companion object{
@@ -191,11 +200,11 @@ data class StardustPackage(
         }
     }
 
-    fun getSourceAsString () : String {
+    fun getSourceAsString() : String {
         return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().lowercase()
     }
 
-    fun getDestAsString () : String {
+    fun getDestAsString() : String {
         return try {
             intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().lowercase()
         }catch (e : Exception) {

@@ -1,24 +1,20 @@
 package com.commcrete.stardust.util.audio
 
 import android.content.Context
-import android.media.MediaPlayer
 import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.annotation.OptIn
-import androidx.annotation.RawRes
 import androidx.lifecycle.MutableLiveData
-import androidx.media3.common.util.UnstableApi
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.media.PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
-import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.old_db.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
@@ -26,7 +22,6 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.ustadmobile.codec2.Codec2Decoder
@@ -118,7 +113,6 @@ object PlayerUtils : BleMediaConnector() {
             PLAYBACK_TRACE_TAG,
             "playAudio receiver=$receiverID sender=$senderID size=${pttAudio.size} sniffer=${snifferContacts != null} flag=${DataManager.isPlayPttFromSdk}"
         )
-        val myId = mRegisterUser?.appId.orEmpty()
 
         val isLocalGroupCall = when {
             snifferContacts != null ->
@@ -133,7 +127,6 @@ object PlayerUtils : BleMediaConnector() {
         val shouldHandleAudio = when {
             snifferContacts != null ->
                 !isMyId(
-                    myId,
                     snifferContacts[0].bittelId,
                     snifferContacts[1].bittelId
                 ) && !isLocalGroupCall
@@ -176,21 +169,21 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun handleSnifferMessage (
-        bittelPackage: StardustPackage,
+        dataPackage: StardustPackage,
         id: String,
         snifferContacts: List<ChatContact>?
     ) {
         Log.d(
             PLAYBACK_TRACE_TAG,
-            "handleSnifferMessage source=${bittelPackage.getSourceAsString()} destination=${bittelPackage.getDestAsString()} id=$id"
+            "handleSnifferMessage source=${dataPackage.getSourceAsString()} destination=${dataPackage.getDestAsString()} id=$id"
         )
-        getPackageByFrames(bittelPackage, id, snifferContacts)
+        getPackageByFrames(dataPackage, id, snifferContacts)
     }
 
-    private fun getPackageByFrames(bittelPackage: StardustPackage, receiverID: String, snifferContacts: List<ChatContact>? = null){
-        bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
+    private fun getPackageByFrames(dataPackage: StardustPackage, receiverID: String, snifferContacts: List<ChatContact>? = null){
+        dataPackage.data?.let { dataArray -> //dataArray = Array<Int>
             val byteArray = intArrayToByteArray(dataArray.toMutableList())
-            source = bittelPackage.getSourceAsString()
+            source = dataPackage.getSourceAsString()
             Log.d(
                 PLAYBACK_TRACE_TAG,
                 "getPackageByFrames source=$source receiver=$receiverID rawSize=${byteArray.size} sniffer=${snifferContacts != null}"
@@ -337,62 +330,83 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    fun saveBittelMessageToDatabase(context: Context, bittelPackage: StardustPackage){
-        Scopes.getDefaultCoroutine().launch {
+    private data class SavedPttContext(
+        val appId: String,
+        val senderId: String,
+        val groupId: String?
+    )
 
-            if(bittelPackage.getSourceAsString().isNotEmpty()){
-                val chatsRepo = ChatsRepository(com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(context).chatsDao())
-                val packageToPass = StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString())
-                val realSource = packageToPass.getRealSourceId()
-                getPackageByFrames(bittelPackage, bittelPackage.getDestAsString())
-                val chatItem = chatsRepo.getChatByBittelID(realSource)
-                chatItem?.let { chat ->
-                    val chatContact = chat.user
-                    chatContact?.let { contact ->
-                        val chatName = if(packageToPass.isGroup) "${contact.displayName} to Group" else contact.displayName
-                        val message = "PTT From : $chatName"
-                        Scopes.getMainCoroutine().launch {
-                            isPttReceived.value = message
-                        }
-                    }
-                }
-            }
+    private suspend fun savePttMessageAndNotify(
+        appContext: Context,
+        dataPackage: StardustPackage,
+        appId: String,
+        messageType: MessageType
+    ): SavedPttContext {
+        val senderId = dataPackage.getSenderAsString()
+        val groupId = dataPackage.getGroupAsString()
+        val repo = DataManager.getAppRepo(appContext)
+
+        repo.saveMessage(
+            MessageEntity(
+                senderID = senderId,
+                epochTimeMs = System.currentTimeMillis(),
+                type = messageType,
+                receiverID = appId,
+                state = MessageState.RECEIVED
+            ),
+            groupId
+        )
+
+        val senderName = repo.getContactNameById(senderId) ?: senderId
+        val groupName = groupId?.let { repo.getGroupNameById(it) }
+        val chatName = if(groupId != null) "$senderName to $groupName" else senderName
+        Scopes.getMainCoroutine().launch { isPttReceived.value = "PTT From : $chatName" }
+
+        return SavedPttContext(
+            appId = appId,
+            senderId = senderId,
+            groupId = groupId
+        )
+    }
+
+    fun onPTTCodecReceived(appContext: Context, dataPackage: StardustPackage){
+        val appId = mRegisterUser?.appId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            savePttMessageAndNotify(
+                appContext = appContext,
+                dataPackage = dataPackage,
+                appId = appId,
+                messageType = MessageType.PTT_CODEC
+            )
+            getPackageByFrames(dataPackage, dataPackage.getDestAsString())
         }
     }
 
-    fun saveBittelPTTAiToDatabase(bittelPackage: StardustPackage) {
-        Scopes.getDefaultCoroutine().launch {
-            val source = bittelPackage.getSourceAsString()
-            if(source.isNotEmpty()){
-                val chatsRepo = ChatsRepository(com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(DataManager.context).chatsDao())
-                val destination = bittelPackage.getDestAsString()
-                val packageToPass = StardustAPIPackage(source, destination)
-                val realSource = packageToPass.getRealSourceId()
-                val chatItem = chatsRepo.getChatByBittelID(realSource)
-                chatItem?.let { chat ->
-                    val chatContact = chat.user
-                    chatContact?.let { contact ->
-                        val chatName = if(packageToPass.isGroup) "${contact.displayName} to Group" else contact.displayName
-                        val message = "PTT From : $chatName"
-                        Scopes.getMainCoroutine().launch {
-                            isPttReceived.value = message
+    fun onPTTAiReceived(appContext: Context, dataPackage: StardustPackage) {
+        val appId = mRegisterUser?.appId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            val savedPttContext = savePttMessageAndNotify(
+                appContext = appContext,
+                dataPackage = dataPackage,
+                appId = appId,
+                messageType = MessageType.PTT_AI
+            )
 
-                        }
-                    }
-                }
-
-                bittelPackage.data?.let { dataArray -> //dataArray = Array<Int>
-                    val byteArray = intArrayToByteArray(dataArray.toMutableList())
-                    Log.d("PlayerUtils", "Received PTT AI data size: ${byteArray.size}")
-                    if (byteArray.size > 1) {
-                        val model = byteArray.copyOfRange(0, 1)
-                        val selectedModule = getModel(model[0].toInt())
-                        val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
-                        Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
-                        PttReceiveManager.addNewData(byteArray, realSource, source, selectedModule)
-                        //here
-                        DataManager.getCallbacks()?.receivePTT(packageToPass, byteArray)
-                    }
+            dataPackage.data?.let { dataArray -> //dataArray = Array<Int>
+                val byteArray = intArrayToByteArray(dataArray.toMutableList())
+                Log.d("PlayerUtils", "Received PTT AI data size: ${byteArray.size}")
+                if (byteArray.size > 1) {
+                    val model = byteArray.copyOfRange(0, 1)
+                    val selectedModule = getModel(model[0].toInt())
+                    val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
+                    Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
+                    PttReceiveManager.addNewData(byteArray, savedPttContext.senderId, source, selectedModule)
+                    DataManager.getCallbacks()?.receivePTT(
+                        StardustAPIPackage(
+                            senderId = savedPttContext.senderId,
+                            groupId = savedPttContext.groupId,
+                            receiverId = savedPttContext.appId
+                        ), byteArray)
                 }
             }
         }
@@ -410,7 +424,7 @@ object PlayerUtils : BleMediaConnector() {
             val data = arrayListOf<Byte>()
             for (byte in bDataCodec) data.add(byte)
             return data.toByteArray()
-        }catch (e : Exception) {
+        } catch (e : Exception) {
             e.printStackTrace()
             mCodec2Decoder.destroy()
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
@@ -532,34 +546,28 @@ object PlayerUtils : BleMediaConnector() {
         }
         CoroutineScope(Dispatchers.IO).launch {
             val repo = DataManager.getAppRepo(context)
-            repo.updateAudioReceived(chatId, isAudioReceived)
-            val chatItem = repo.getChatByDeviceId(chatId)
-            chatItem?.let {
-                chatItem.message = Message(senderID = senderID, text = "Ptt Received", seen = true)
-                repo.addChat(it)
-                repo.updateNumOfUnseenMessages(chatId, chatItem.numOfUnseenMessages + 1)
-            }
+            repo.updateMessageReceived(chatId, isAudioReceived)
         }
     }
 
 
     fun playNotificationSound(context: Context) {
-        try {
-            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
-            ringtone.play()
-        } catch (e: Exception) {
-            e.printStackTrace()
+        Handler(Looper.getMainLooper()).post {
+            try {
+                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+                ringtone.play()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
-
-
-    fun isMyId(myId : String, sender : String?, receiver : String?) : Boolean {
-        return sender.equals(myId, ignoreCase = true) || receiver.equals(myId, ignoreCase = true)
+    private fun isMyId(sender : String, receiver : String) : Boolean {
+        return UsersUtils.isRegisteredUser(sender) || UsersUtils.isRegisteredUser(receiver)
     }
 
-    fun isLocalGroup(sender : String?, receiver : String?) : Boolean {
-        return GroupsUtils.isGroup(sender) || GroupsUtils.isGroup(receiver)
+    private fun isLocalGroup(sender : String, receiver : String) : Boolean {
+        return GroupsUtils.isLocalGroup(sender) || GroupsUtils.isLocalGroup(receiver)
     }
 }

@@ -32,9 +32,9 @@ object RepositoryProvider {
                 val db = AppDatabase.getDatabase(context)
                 AppRepository(
                     chatsDao = db.appChatsDao(),
-                    contactsDao = db.appContactsDao(),
+                    chatsDao = db.appContactsDao(),
                     messagesDao = db.appMessagesDao(),
-                    chatSummaryDao = db.chatSummaryDao(),
+                    chatsDao = db.chatSummaryDao(),
                     scope = AppScopes.applicationScope,
                 ).also { repo ->
                     appRepository = repo

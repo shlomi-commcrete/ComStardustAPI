@@ -15,6 +15,8 @@ enum class MessageType {
     FILE,
     IMAGE,
     AUDIO,
+    PTT_AI,
+    PTT_CODEC,
     LOCATION,
     SOS,
     SOS_MAN_DOWN,

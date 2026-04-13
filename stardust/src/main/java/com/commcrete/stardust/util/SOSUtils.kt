@@ -36,7 +36,7 @@ object SOSUtils {
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = appId,
-                    destenation = stardustAPIPackage.destination,
+                    destination = stardustAPIPackage.destination,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
                 sosMessage.stardustControlByte.stardustDeliveryType = radio.second
@@ -53,7 +53,7 @@ object SOSUtils {
                 val sosMessage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = appId,
-                    destenation = stardustAPIPackage.destination,
+                    destination = stardustAPIPackage.destination,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
                 it.addMessageToQueue(sosMessage)
             }
@@ -70,7 +70,7 @@ object SOSUtils {
             val sosMessage = StardustPackageUtils.getStardustPackage(
                 context = context,
                 source = appId,
-                destenation = deviceId,
+                destination = deviceId,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
                 data = data)
             it.addMessageToQueue(sosMessage)

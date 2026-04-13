@@ -62,7 +62,7 @@ object StardustPolygonChange {
                 val txPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ,
                     data = data)
                 clientConnection.addMessageToQueue(txPackage)
@@ -83,7 +83,7 @@ object StardustPolygonChange {
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = src,
-                    destenation = dst,
+                    destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
                 clientConnection.addMessageToQueue(configurationSavePackage)
             }

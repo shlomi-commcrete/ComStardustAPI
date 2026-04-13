@@ -102,7 +102,7 @@ internal class PollingUtils (private val context: Context){
                         StardustPackageUtils.getStardustPackage(
                             context = context,
                             source = myId,
-                            destenation = nextUser,
+                            destination = nextUser,
                             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
                     )
                 }

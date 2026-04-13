@@ -13,15 +13,16 @@ import com.commcrete.stardust.room.contacts.ContactsDao
 import com.commcrete.stardust.room.messages.MessageItem
 import com.commcrete.stardust.room.messages.MessagesDao
 import com.commcrete.stardust.room.new_db.chat.AppChatEntity
-import com.commcrete.stardust.room.new_db.chat.ChatSummaryDao
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
+import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
 import com.commcrete.stardust.room.new_db.contact.ContactDeviceEntity
-import com.commcrete.stardust.room.new_db.chat.ContactEntity
-import com.commcrete.stardust.room.new_db.contact.ContactAppIdEntity
+import com.commcrete.stardust.room.new_db.contact.ContactEntity
+import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
+import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.AppContactsDao
-import com.commcrete.stardust.room.new_db.message.AppMessageEntity
-import com.commcrete.stardust.room.new_db.message.AppMessagesDao
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageDao
 
 /**
  * Unified Room database hosting both:
@@ -51,10 +52,12 @@ import com.commcrete.stardust.room.new_db.message.AppMessagesDao
         // New entities used by AppRepository going forward.
         AppChatEntity::class,
         ContactEntity::class,
-        ContactAppIdEntity::class,
+        ContactUserIdEntity::class,
+        ContactGroupIdEntity::class,
         DeviceEntity::class,
         ContactDeviceEntity::class,
-        AppMessageEntity::class,
+        MessageEntity::class,
+        ChatParticipantEntity::class,
     ],
     views = [ChatSummary::class],
     version = 8,
@@ -75,8 +78,8 @@ abstract class AppDatabase : RoomDatabase() {
     // New accessors for future use
     abstract fun appChatsDao(): AppChatsDao
     abstract fun appContactsDao(): AppContactsDao
-    abstract fun appMessagesDao(): AppMessagesDao
-    abstract fun chatSummaryDao(): ChatSummaryDao
+    abstract fun appMessagesDao(): MessageDao
+    abstract fun chatSummaryDao(): com.commcrete.stardust.room.new_db.chat.ChatDao
 
     companion object {
         private const val DATABASE_NAME = "app_database"

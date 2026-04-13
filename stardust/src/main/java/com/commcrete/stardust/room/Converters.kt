@@ -1,7 +1,7 @@
 package com.commcrete.stardust.room
 
 import androidx.room.TypeConverter
-import com.commcrete.stardust.room.messages.SeenStatus
+import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.google.gson.Gson
@@ -37,11 +37,11 @@ class Converters {
 
     class EnumConverter {
         @TypeConverter
-        fun fromSeenStatus(status: SeenStatus): Int = status.id
+        fun fromSeenStatus(status: MessageState): Int = status.id
 
         @TypeConverter
-        fun toSeenStatus(statusId: Int): SeenStatus =
-            SeenStatus.values().first { it.id == statusId }
+        fun toSeenStatus(statusId: Int): MessageState =
+            MessageState.values().first { it.id == statusId }
 
         @TypeConverter
         fun fromChatType(type: ChatType): String = type.name

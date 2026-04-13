@@ -6,221 +6,183 @@ import android.location.Location
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
-import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
-import com.commcrete.stardust.stardust.model.StardustLocationPackage
+import com.commcrete.stardust.stardust.model.LocationPackage
 import com.commcrete.stardust.util.CoordinatesUtil
-import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.contacts.ChatContact
-import com.commcrete.stardust.room.contacts.ContactsDao
-import com.commcrete.stardust.room.contacts.ContactsRepository
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
-import com.commcrete.stardust.room.new_db.AppDatabase
+import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.stardust.model.asString
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.UsersUtils
 import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.util.Date
 import kotlin.random.Random
 
 @SuppressLint("StaticFieldLeak")
 object LocationUtils  {
 
+    var location : Location? = null
+    private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private lateinit var context: Context
+    fun saveDeviceLocation(
+        appContext: Context,
+        dataPackage: StardustPackage,
+        locationPackage: LocationPackage,
+        isSOS : Boolean = false
+    ){
+        val appId = mRegisterUser?.appId ?: return
 
-    private var contactsDao : ContactsDao?= null
-    private var contactsRepository : ContactsRepository? = null
+        locationScope.launch {
+            val senderId = dataPackage.getSenderAsString()
+            val groupId = dataPackage.getGroupAsString()
 
-    var lastLocation : Location? = null
-
-
-    fun init(context: Context){
-        this.context = context
-        contactsDao = AppDatabase.getDatabase(this.context).contactsDao()
-        contactsDao?.let { contactsRepository = ContactsRepository(it) }
-
-    }
-    private fun getSenderName(senderID: String): String{
-        val contactsRepository = ContactsRepository(AppDatabase.getDatabase(context).contactsDao())
-        return contactsRepository.getUserNameByUserId(senderID)
-    }
-
-    fun saveBittelUserLocation(context: Context, bittelPackage: StardustPackage, bittelLocationPackage: StardustLocationPackage, isCreateNewUser : Boolean = true,
-                               isSOS : Boolean = false){
-        Scopes.getDefaultCoroutine().launch {
-            val chatContact = contactsRepository?.getChatContactByBittelID(bittelPackage.getSourceAsString())
-            val chatsRepo = DataManager.getAppRepo(context)
-            if(chatContact != null) {
-                chatContact.let { it ->
-                    val contact = it
-                    var whoSent = ""
-                    var displayName: String? = null
-                    val srcID = bittelPackage.getSourceAsString()
-                    if(GroupsUtils.isGroup(srcID) && !bittelPackage.getDestAsString().equals(mRegisterUser?.appId, ignoreCase = true)){
-                        whoSent = bittelPackage.getDestAsString()
-                        chatsRepo.getChatByDeviceId(whoSent)?.let {
-                            displayName = it.name
-                        }
-                    } else {
-                        displayName = contact.displayName
-                        whoSent = bittelPackage.getSourceAsString()
-                    }
-                    contact.lastUpdateTS = Date().time
-                    contact.lat = bittelLocationPackage.latitude.toDouble()
-                    contact.lon = bittelLocationPackage.longitude.toDouble()
-                    contact.isSOS = false
-                    contactsRepository?.addContact(contact)
-
-                    val text = "latitude : ${bittelLocationPackage.latitude}\n" +
-                            "longitude : ${bittelLocationPackage.longitude}\naltitude : ${bittelLocationPackage.height}"
-                    val message = MessageItem(senderID = whoSent, text = text, epochTimeMs =  Date().time , seen = SeenStatus.RECEIVED,
-                        senderName = displayName ?: whoSent, chatId = bittelPackage.getSourceAsString(), isLocation = true, isSOS = isSOS)
-                    DataManager.getAppRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
-                    chatsRepo.getChatByDeviceId(srcID)?.let { sender ->
-                        sender.message = Message(senderID = whoSent, text = "Location Received", seen = false)
-                        chatsRepo.addChat(sender)
-                        val numOfUnread = sender.numOfUnseenMessages
-                        chatsRepo.updateNumOfUnseenMessages(bittelPackage.getSourceAsString(), numOfUnread+1)
-                    }
-                    val pollingUtils = DataManager.getPollingUtils(context)
-                    if(pollingUtils.isRunning) {
-                        pollingUtils.handleResponse(bittelPackage)
-                    }
-                    val location = Location(whoSent).apply {
-                        latitude = bittelLocationPackage.latitude.toDouble()
-                        longitude = bittelLocationPackage.longitude.toDouble()
-                        altitude = bittelLocationPackage.height.toDouble()
-                    }
-
-                    PlayerUtils.playNotificationSound (context)
-                    DataManager.getCallbacks()?.receiveLocation(
-                        StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
-                        location)
-                }
-            } else if(isCreateNewUser) {
-                createNewContact(bittelPackage)
-                saveBittelUserLocation(context, bittelPackage, bittelLocationPackage, false)
+            val message = MessageEntity(
+                senderID = senderId,
+                text = locationPackage.location.asString(),
+                epochTimeMs = Date().time,
+                type = if(isSOS) MessageType.SOS else MessageType.LOCATION,
+                receiverID = appId,
+                state = MessageState.RECEIVED
+            )
+            try {
+                DataManager.getAppRepo(appContext).saveMessage(message, groupId)
+            } catch (e: Exception) {
+                Timber.tag("LocationUtils").e(e, "Failed to save location message")
             }
+
+            val pollingUtils = DataManager.getPollingUtils(appContext)
+            if(pollingUtils.isRunning) {
+                pollingUtils.handleResponse(dataPackage)
+            }
+
+            PlayerUtils.playNotificationSound(appContext)
+
+            DataManager.getCallbacks()?.receiveLocation(
+                StardustAPIPackage(
+                    senderId = senderId,
+                    receiverId = appId,
+                    carrier = CarriersUtils.getCarrierByControl(dataPackage.stardustControlByte.stardustDeliveryType)),
+                locationPackage.location)
         }
     }
-    suspend fun createNewContact(bittelPackage: StardustPackage){
-        val contact = ChatContact(displayName = bittelPackage.getSourceAsString(), number = bittelPackage.getSourceAsString(), bittelId = bittelPackage.getSourceAsString())
-        ContactsRepository(AppDatabase.getDatabase(context).contactsDao()).addContact(contact)
-    }
-    internal fun sendMyLocation(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                       isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null,
-                                randomID: String = ""){
+
+    internal fun sendMyLocation(
+        appContext: Context,
+        mPackage: StardustPackage,
+        clientConnection: ClientConnection,
+        isDemandAck : Boolean = false,
+        isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1,
+        opCode : StardustPackageUtils.StardustOpCode? = null,
+        randomID: String = "") {
+
         Log.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
-        if(lastLocation == null){
+        val location = location
+        if(location == null) {
             Log.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
-            sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
-        }else {
+            sendMissingLocation(appContext, mPackage, clientConnection, isDemandAck, isHR, opCode)
+        } else {
             Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
-            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode, randomID)
-        }
-    }
-
-    internal fun handleAck(mPackage: StardustPackage, clientConnection: ClientConnection, isDemandAck : Boolean = false,
-                                isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null){
-        if(lastLocation == null){
-            sendMissingLocation(mPackage, clientConnection, isDemandAck,isHR,opCode)
-        }else {
-            sendLocation(mPackage, lastLocation!!, clientConnection, isDemandAck,isHR,opCode)
-        }
-    }
-
-    fun getLocationForSOSMyLocation(): Array<Int> {
-        if(lastLocation == null){
-            return CoordinatesUtil().packEmptyLocation()
-        }else {
-            return CoordinatesUtil().packLocation(lastLocation!!)
+            sendLocation(appContext, mPackage, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
 
     fun getLocationForSOSMyLocation(location: Location): Array<Int> {
-        if(location == null){
-            return CoordinatesUtil().packEmptyLocation()
-        }else {
-            return CoordinatesUtil().packLocation(location)
-        }
+        return CoordinatesUtil().packLocation(location)
     }
 
-    private fun sendMissingLocation(mPackage: StardustPackage, clientConnection : ClientConnection, isDemandAck : Boolean = false,
-                                    isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null) {
+    private fun sendMissingLocation(
+        appContext: Context,
+        mPackage: StardustPackage,
+        clientConnection : ClientConnection,
+        isDemandAck : Boolean = false,
+        isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1,
+        opCode : StardustPackageUtils.StardustOpCode? = null
+    ) {
         // TODO: send Cant find location ToPreviousDevice
         // TODO: change xor check
-        Scopes.getDefaultCoroutine().launch {
-            val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(
-                context = context,
+        locationScope.launch {
+            val dataPackage = StardustPackageUtils.getStardustPackage(
+                context = appContext,
                 source = mPackage.getDestAsString(),
-                destenation = mPackage.getSourceAsString(),
-                stardustOpCode =
-                if(opCode == null) mPackage.stardustOpCode else opCode, data =  CoordinatesUtil().packEmptyLocation()
+                destination = mPackage.getSourceAsString(),
+                stardustOpCode = opCode ?: mPackage.stardustOpCode,
+                data =  CoordinatesUtil().packEmptyLocation()
             )
 
-            bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
+            dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+            dataPackage.stardustControlByte.stardustDeliveryType = isHR
             Log.d("LocationRequest", "send to ble ${System.currentTimeMillis()}")
-            clientConnection.sendMessage(bittelPackageToReturn)
+            try {
+                clientConnection.sendMessage(dataPackage)
+            } catch (e: Exception) {
+                Timber.tag("LocationUtils").e(e, "Failed to send missing location")
+            }
         }
     }
 
-    internal fun sendLocation(mPackage: StardustPackage, location: Location, clientConnection : ClientConnection, isDemandAck : Boolean = false,
-                             isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1, opCode : StardustPackageUtils.StardustOpCode? = null,
-                              randomID: String = "") {
-        // TODO: change xor check
+    internal fun sendLocation(
+        appContext: Context,
+        mPackage: StardustPackage,
+        location: Location,
+        clientConnection : ClientConnection,
+        isDemandAck : Boolean = false,
+        isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1,
+        opCode : StardustPackageUtils.StardustOpCode? = null,
+        randomID: String = "") {
 
-        Scopes.getDefaultCoroutine().launch {
-            val bittelPackageToReturn = StardustPackageUtils.getStardustPackage(
-                context = context,
+        // TODO: change xor check
+        // TODO: WTF is going on???
+
+        locationScope.launch {
+            val dataPackage = StardustPackageUtils.getStardustPackage(
+                context = appContext,
                 source = mPackage.getDestAsString(),
-                destenation = mPackage.getSourceAsString(),
-                stardustOpCode =
-                if(opCode == null) StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION else opCode,
+                destination = mPackage.getSourceAsString(),
+                stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
             val id = Random.nextLong(Long.MAX_VALUE)
-            bittelPackageToReturn.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-            bittelPackageToReturn.isDemandAck = isDemandAck
-            bittelPackageToReturn.idNumber = id
-            bittelPackageToReturn.stardustControlByte.stardustDeliveryType = isHR
+            dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+            dataPackage.isDemandAck = isDemandAck
+            dataPackage.idNumber = id
+            dataPackage.stardustControlByte.stardustDeliveryType = isHR
+
             Log.d("LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
-            clientConnection.sendMessage(bittelPackageToReturn, randomID)
 
-            val text = "latitude : ${location.latitude.getAfterDot(4)}\n" +
-                    "longitude : ${location.longitude.getAfterDot(6)}\naltitude : ${location.altitude.getAfterDot(0)}"
-            saveLocationSent(sender = mPackage.getDestAsString(), chatId = mPackage.getSourceAsString() , locationText = text, senderName = "" , idNumber = id)
+            try {
+                clientConnection.sendMessage(dataPackage, randomID)
+            } catch (e: Exception) {
+                Timber.tag("LocationUtils").e(e, "Failed to send location message to BLE")
+            }
+
+            val senderId = mPackage.getDestAsString()
+            val message = MessageEntity(
+                senderID = senderId,
+                text = location.asString(),
+                epochTimeMs = Date().time,
+                type = MessageType.LOCATION,
+                receiverID = mPackage.getSourceAsString(),
+                state = if(UsersUtils.isRegisteredUser(senderId)) MessageState.SENT else MessageState.RECEIVED,
+                isAckResponse = isDemandAck
+            )
+            try {
+                DataManager.getAppRepo(appContext).saveMessage(message)
+            } catch (e: Exception) {
+                Timber.tag("LocationUtils").e(e, "Failed to save sent location message")
+            }
         }
     }
 
-    suspend fun saveLocationSent (sender : String, locationText : String, senderName : String, chatId : String, isDemandAck: Boolean = false, idNumber : Long = 0) {
-        val message = MessageItem(senderID = sender, text = locationText, epochTimeMs =  Date().time ,
-            senderName = senderName, chatId = chatId, isLocation = true, seen = if(chatId != "00000002") SeenStatus.SENT else SeenStatus.SEEN)
-        message.isAck = isDemandAck
-        message.idNumber = idNumber
-        val chatsRepo = DataManager.getAppRepo(context)
-        var senderObj : ChatItem? = null
-        senderObj = chatsRepo.getChatByDeviceId(chatId)
-        senderObj?.let {
-            message.senderName = it.name
-            DataManager.getAppRepo(DataManager.context).saveMessage(context = DataManager.context, messageItem = message)
-            it.message = Message(senderID = sender, text = "Location Sent", seen = true)
-            chatsRepo.addChat(it)
-            val numOfUnread = it.numOfUnseenMessages
-            chatsRepo.updateNumOfUnseenMessages(sender, numOfUnread+1)
-        }
-    }
-
-    fun Double.getAfterDot (numAfterDot : Int): String {
-        return String.format("%.${numAfterDot}f", this)
-    }
 }
 
 

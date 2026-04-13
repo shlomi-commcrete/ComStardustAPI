@@ -59,8 +59,6 @@ data class MessageEntity(
 
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    @ColumnInfo(name = "id_number")
-    var idNumber: Long = 1,
 
     @ColumnInfo(name = "chat_id")
     var chatId: String? = null,
@@ -72,7 +70,7 @@ data class MessageEntity(
     var receiverID: String,
 
     @ColumnInfo(name = "text")
-    val text: String,
+    val text: String = "",
 
     @ColumnInfo(name = "attachment_path")
     var attachmentPath: String? = null,
@@ -83,8 +81,11 @@ data class MessageEntity(
     @ColumnInfo(name = "type")
     var type: MessageType = MessageType.TEXT,
 
+    @ColumnInfo(name = "is_ack_response")
+    val isAckResponse: Boolean = false,
+
     @ColumnInfo(name = "epoch_time_ms")
-    val epochTimeMs: Long,
+    val epochTimeMs: Long = System.currentTimeMillis(),
 ) {
 
     init {
@@ -151,7 +152,6 @@ fun MessageItem.toAppMessageEntity(): MessageEntity {
         chatId = chatId,
         type = type,
         attachmentPath = fileLocation,
-        idNumber = idNumber,
         receiverID = UsersUtils.mRegisterUser?.appId ?: "unknown_receiver"
     )
 }
