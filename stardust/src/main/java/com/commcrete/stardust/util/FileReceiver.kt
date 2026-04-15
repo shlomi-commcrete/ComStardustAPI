@@ -7,7 +7,10 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
@@ -216,6 +219,7 @@ class FileReceiver(
             }
             Log.d("FileReceiver", "File saved successfully: ${targetFile.absolutePath}")
             saveToMessages(targetFile)
+            PlayerUtils.playNotificationSound(context)
             when (data.fileType) {
                 FileUtils.FileType.File -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
                 FileUtils.FileType.Image -> DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
@@ -293,14 +297,14 @@ class FileReceiver(
                 message = MessageEntity(
                     senderID = data.senderID,
                     receiverID = appId,
-                    text = mFileName,
-                    attachmentPath = file.absolutePath,
                     state = MessageState.RECEIVED,
-                    type = if(data.fileType == FileUtils.FileType.File) MessageType.FILE else MessageType.IMAGE
-                ),
-                groupId = data.chatID
+                    extraData = MessageExtraData.Attachment(
+                        title = mFileName,
+                        path = file.absolutePath,
+                        subtype = data.fileType.toAttachmentType()
+                    )
+                )
             )
-            PlayerUtils.playNotificationSound(context)
         }
     }
 

@@ -4,6 +4,7 @@ plugins {
     id("kotlin-parcelize")
     id("kotlin-kapt")
     id("maven-publish")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 // ✅ Load API key (prefer from ~/.gradle/gradle.properties, fallback to environment var)
@@ -99,6 +100,8 @@ dependencies {
     implementation ("pub.devrel:easypermissions:3.0.0")
 
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
+
+    implementation ("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
 
     implementation ("com.github.mik3y:usb-serial-for-android:3.8.0")
 

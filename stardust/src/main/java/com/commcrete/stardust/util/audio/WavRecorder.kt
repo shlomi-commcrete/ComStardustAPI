@@ -15,7 +15,9 @@ import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -406,10 +408,13 @@ class WavRecorder(
                         chatId = chatID,
                         senderID = appId,
                         receiverID = receiverId,
-                        attachmentPath = path,
                         state = MessageState.SENT,
-                        type = MessageType.PTT_CODEC,
-                        epochTimeMs = RecorderUtils.ts
+                        type = MessageType.PTT,
+                        epochTimeMs = RecorderUtils.ts,
+                        extraData = MessageExtraData.PTT(
+                            path = path,
+                            encoderType = EncoderType.CODEC2
+                        )
                     )
                 )
                 RecorderUtils.ts = 0

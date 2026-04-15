@@ -17,6 +17,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
@@ -63,7 +64,7 @@ object StardustInitConnectionHandler {
     }
 
 
-    var listener: InitConnectionListener? = null
+    var listener: InitConnectionListener = object : InitConnectionListener {}
 
     private var state = State.DISCONNECTED
         set(value) {
@@ -107,7 +108,7 @@ object StardustInitConnectionHandler {
     /**
      * Try to consume package. Return true if consumed.
      */
-    fun onIncoming(p: StardustPackage): Boolean {
+    fun onIncoming(context: Context, p: StardustPackage): Boolean {
         Timber.tag("InitHandler").d("isRunning=$isRunning state=$state op=${p.stardustOpCode}")
         if (!isRunning) return false
 
@@ -137,7 +138,7 @@ object StardustInitConnectionHandler {
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> if (state == State.DELETING_GROUPS) {
                 handleAckOrRetry(
                     p,
-                    onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups() } },
+                    onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups(appContext = context) } },
                     onRetry = { sendDeleteGroups() }
                 ); return true
             }
@@ -147,7 +148,7 @@ object StardustInitConnectionHandler {
                 handleAckOrRetry(
                     p,
                     onAck = { transitionTo(State.READING_CONFIGURATION) { requestConfiguration() } },
-                    onRetry = { sendAddGroups() }
+                    onRetry = { sendAddGroups(appContext = context) }
                 ); return true
             }
 
@@ -208,7 +209,7 @@ object StardustInitConnectionHandler {
 
     private fun startTimeoutFor(step: State) {
         timeoutJob?.cancel()
-        timeoutJob = Scopes.getMainCoroutine().launch {
+        timeoutJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 // awaitCancellation is clearer than delay(Long.MAX_VALUE)
                 withTimeout(STEP_TIMEOUT_MS) { awaitCancellation() }
@@ -223,7 +224,7 @@ object StardustInitConnectionHandler {
                             ?: failAndStop("No addresses cached")
                     }
                     State.DELETING_GROUPS -> retryOrFail { sendDeleteGroups() }
-                    State.ADDING_GROUPS -> retryOrFail { sendAddGroups() }
+                    State.ADDING_GROUPS -> retryOrFail { sendAddGroups(appContext = context) }
                     State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
                     State.UPDATING_ADMIN_MODE -> retryOrFail { sendUpdateAdminMode() }
                     else -> {}
@@ -332,19 +333,17 @@ object StardustInitConnectionHandler {
     }
 
     // 4) Add groups
-    private fun sendAddGroups(appContext: Context) {
-        Scopes.getDefaultCoroutine().launch {
-            val payload = buildAddGroupsPayload(appContext)
-            val (src, dst) = requireSrcDst() ?: return@launch
-            val pkg = StardustPackageUtils.getStardustPackage(
-                context = ctx,
-                source = src, destination = dst,
-                stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-                data = payload
-            )
-            conn.addMessageToQueue(pkg)
-            Timber.tag("InitHandler").d("Sent ADD_GROUPS")
-        }
+    private suspend fun sendAddGroups(appContext: Context) {
+        val payload = buildAddGroupsPayload(appContext)
+        val (src, dst) = requireSrcDst() ?: return
+        val pkg = StardustPackageUtils.getStardustPackage(
+            context = ctx,
+            source = src, destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
+            data = payload
+        )
+        conn.addMessageToQueue(pkg)
+        Timber.tag("InitHandler").d("Sent ADD_GROUPS")
     }
 
     // 5) Get configuration
@@ -476,7 +475,7 @@ object StardustInitConnectionHandler {
 
     private fun onInitRunning () {
         state = State.RUNNING
-        listener?.running(State.RUNNING)
+        listener.running(State.RUNNING)
     }
 
     fun isSyncing(): Boolean {

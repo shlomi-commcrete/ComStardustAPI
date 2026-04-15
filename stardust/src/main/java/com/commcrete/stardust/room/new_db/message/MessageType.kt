@@ -12,15 +12,27 @@ package com.commcrete.stardust.room.new_db.message
  */
 enum class MessageType {
     TEXT,
-    FILE,
-    IMAGE,
-    AUDIO,
-    PTT_AI,
-    PTT_CODEC,
+    ATTACHMENT,
+    PTT,
     LOCATION,
-    SOS,
-    SOS_MAN_DOWN,
-    SOS_MIA,
-    SOS_HOSTILE,
+    SOS
+}
+
+enum class AttachmentType {
+    IMAGE,
+    FILE,
+}
+
+enum class SosType {
+    MAN_DOWN,
+    MIA,
+    HOSTILE,
+    REINFORCEMENT
+}
+
+
+enum class EncoderType {
+    CODEC2,
+    AI
 }
 

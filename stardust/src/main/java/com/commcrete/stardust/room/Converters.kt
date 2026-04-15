@@ -1,11 +1,16 @@
 package com.commcrete.stardust.room
 
 import androidx.room.TypeConverter
-import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.contact.ContactType
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 
 class Converters {
@@ -41,7 +46,7 @@ class Converters {
 
         @TypeConverter
         fun toSeenStatus(statusId: Int): MessageState =
-            MessageState.values().first { it.id == statusId }
+            MessageState.entries.first { it.id == statusId }
 
         @TypeConverter
         fun fromChatType(type: ChatType): String = type.name
@@ -60,5 +65,21 @@ class Converters {
 
         @TypeConverter
         fun toContactType(value: String): ContactType = ContactType.valueOf(value)
+
+        @TypeConverter
+        fun fromMessageExtraData(extraData: MessageExtraData?): String? {
+            if (extraData == null) return null
+            return json.encodeToString(extraData)
+        }
+
+        @TypeConverter
+        fun toMessageExtraData(value: String?): MessageExtraData? {
+            if (value.isNullOrBlank()) return null
+            return runCatching { json.decodeFromString<MessageExtraData>(value) }.getOrNull()
+        }
+
+        companion object {
+            private val json = Json { ignoreUnknownKeys = true }
+        }
     }
 }

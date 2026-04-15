@@ -8,8 +8,8 @@ import androidx.room.TypeConverters
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDao
+import com.commcrete.stardust.room.legacy_db.messages.MessageItem
+import com.commcrete.stardust.room.legacy_db.messages.MessagesDao
 
 @Database(entities = [MessageItem::class], version = 25, exportSchema = false)
 @TypeConverters(Converters.EnumConverter::class)

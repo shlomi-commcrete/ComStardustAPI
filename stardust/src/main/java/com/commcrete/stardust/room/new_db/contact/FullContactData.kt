@@ -1,37 +1,78 @@
 package com.commcrete.stardust.room.new_db.contact
 
-import androidx.room.Embedded
-import androidx.room.Relation
-
 /**
- * Full contact data including all related identifiers and devices.
+ * Write model for inserting/updating contacts.
  *
- * Supported combinations:
- * 1. groupId only (GROUP contacts)
- * 2. userId only (USER contacts)
- * 3. devices only (DEVICE contacts)
- * 4. userId + devices (USER contacts with associated devices)
+ * Each subtype contains only relevant identity/device data for that contact kind.
  */
-data class FullContactData(
-    @Embedded
-    val contact: ContactEntity,
+sealed class FullContactData {
+    abstract val contact: ContactEntity
 
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "contact_id"
-    )
-    val userId: ContactUserIdEntity? = null,
+    data class User(
+        override val contact: ContactEntity,
+        val userId: String,
+        val devices: List<DeviceEntity> = emptyList(),
+    ) : FullContactData()
 
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "contact_id"
-    )
-    val groupId: ContactGroupIdEntity? = null,
+    data class Group(
+        override val contact: ContactEntity,
+        val groupId: String,
+    ) : FullContactData()
 
-    @Relation(
-        parentColumn = "id",
-        entityColumn = "contact_id"
-    )
-    val devices: List<ContactDeviceWithDeviceData> = emptyList(),
-)
+    data class Device(
+        override val contact: ContactEntity,
+        val deviceId: String,
+        val deviceData: DeviceEntity,
+    ) : FullContactData()
 
+    companion object {
+        fun createUserContact(
+            name: String,
+            image: String?,
+            userId: String?,
+            deviceId: String? = null,
+            model: String? = null,
+            serial: String? = null,
+        ): FullContactData? {
+            val normalizedUserId = userId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            val normalizedDeviceId = deviceId?.trim()?.takeIf { it.isNotEmpty() }
+            return User(
+                contact = ContactEntity(name = name, image = image, type = ContactType.USER),
+                userId = normalizedUserId,
+                devices = normalizedDeviceId?.let {
+                    listOf(DeviceEntity(deviceId = it, model = model, serial = serial))
+                } ?: emptyList(),
+            )
+        }
+
+        fun createGroupContact(
+            name: String,
+            image: String?,
+            groupId: String?): FullContactData? {
+            val normalizedGroupId = groupId?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return Group(
+                contact = ContactEntity(name = name, image = image, type = ContactType.GROUP),
+                groupId = normalizedGroupId,
+            )
+        }
+
+        fun createDeviceContact(
+            name: String,
+            image: String?,
+            deviceId: String,
+            model: String? = null,
+            serial: String? = null,
+        ): FullContactData? {
+            val normalizedDeviceId = deviceId.trim().takeIf { it.isNotEmpty() } ?: return null
+            return Device(
+                contact = ContactEntity(name = name, image = image, type = ContactType.DEVICE),
+                deviceId = normalizedDeviceId,
+                deviceData = DeviceEntity(
+                    deviceId = normalizedDeviceId,
+                    model = model,
+                    serial = serial,
+                ),
+            )
+        }
+    }
+}

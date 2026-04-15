@@ -6,12 +6,14 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import com.commcrete.aiaudio.media.PcmStreamPlayer
+import com.commcrete.stardust.ai.codec.PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
-import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -92,48 +94,51 @@ object PlayerUtils : BleMediaConnector() {
     var fileToWriteSniffer : File? = null
 
 
-    private fun playCodecAudio(
-        context: Context,
-        pttAudio: ByteArray,
-        dataPackage: StardustPackage,
-        destinationId: String
-    ) {
-
-        playPTT(pttAudio)
-
-        resetTimer()
-        setTs()
-
-        pttScope.launch {
-
-            runCatching {
-                val pkg = StardustAPIPackage(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId)
-
-                if (!isFileInit) {
-                    val file = initPttInputFile(context = context, senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = MessageType.PTT_CODEC) ?: return@runCatching
-                    DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
-                }
-                else {
-                    DataManager.getCallbacks()?.receivePTT(pkg, pttAudio)
-                }
-                byteArrayOutputStream.write(pttAudio)
-            }.onFailure {
-                it.printStackTrace()
-            }
-        }
-    }
-
-
-    private fun getCodecPackageByFrames(dataPackage: StardustPackage, destinationId: String) {
+    private fun parseAIPackageByFrames(dataPackage: StardustPackage): ParsedAiData? {
         dataPackage.data?.let { dataArray -> //dataArray = Array<Int>
             val byteArray = intArrayToByteArray(dataArray.toMutableList())
-            source = dataPackage.getSourceAsString()
-            playCodecPttFromPackage(byteArray, dataPackage, destinationId)
+
+            if (byteArray.size > 1) {
+                val model = byteArray.copyOfRange(0, 1)
+                val selectedModule = getModel(model[0].toInt())
+                val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
+
+                Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
+
+                return ParsedAiData(
+                    decodedBytes = withoutFirstByte,
+                    selectedModule = selectedModule
+                )
+            }
         }
+        return null
+    }
+
+    private data class ParsedAiData(
+        val decodedBytes: ByteArray,
+        val selectedModule: WavTokenizerDecoder.ModelType?
+    )
+
+    private fun parseCodecPackageByFrames(dataPackage: StardustPackage): ByteArray? {
+        val parsedData = dataPackage.data?.let { dataArray -> intArrayToByteArray(dataArray.toMutableList()) } ?: return null
+        val bytes = splitByteArray(parsedData, 7)
+        val bytesListToPlay : MutableList<ByteArray> = mutableListOf()
+
+        for(mByte in bytes) {
+            Timber.tag("decodedBytes").d("decodedBytes : ${parsedData.size}")
+            val decodedBytes = handleBittelAudioMessage(mByte)
+
+            if(!mByte.contentEquals(embpyByte)) {
+                bytesListToPlay.add(decodedBytes)
+            }
+        }
+
+        return combine(bytesListToPlay)
     }
 
 
     private fun playPTT(audioStream: ByteArray) {
+        PcmStreamPlayer.ensureLegacyTrack((14080 * bufferSizeMulti).toInt(), speedFactor)
         PcmStreamPlayer.playLegacyStream(
             audioData = audioStream,
             bufferSizeInBytes = audioStream.size,
@@ -150,12 +155,12 @@ object PlayerUtils : BleMediaConnector() {
         dataOutputStream.close()
     }
 
-    private suspend fun initPttInputFile(
+    suspend fun initPttInputFile(
         context: Context,
         senderId: String,
         groupId: String? = null,
         receiverId: String,
-        type: MessageType) : File? {
+        type: EncoderType) : File? {
 
         val appId = mRegisterUser?.appId ?: return null
 
@@ -164,20 +169,23 @@ object PlayerUtils : BleMediaConnector() {
         val directory = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}")
         val file = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}/$ts-$source.pcm")
 
-        if(directory != null){
+        if(directory != null) {
             if(!directory.exists()) { directory.mkdir() }
             if (file != null) {
-                if(!file.exists()){
+                if(!file.exists()) {
                     file.createNewFile()
                     fileToWrite = file
                     DataManager.getAppRepo(context).saveMessage(
                         MessageEntity(
                             senderID = senderId,
                             receiverID = appId,
-                            attachmentPath = file.absolutePath,
                             state = MessageState.RECEIVING,
-                            type = type,
-                            epochTimeMs = ts.toLong()
+                            type = MessageType.PTT,
+                            epochTimeMs = ts.toLong(),
+                            extraData = MessageExtraData.PTT(
+                                encoderType = type,
+                                path = file.absolutePath
+                            )
                         ), groupId
                     )
 
@@ -250,85 +258,83 @@ object PlayerUtils : BleMediaConnector() {
         handler.postDelayed(runnable, 2000)
     }
 
-    fun setTs(){
-        if(ts.isEmpty()){
+    fun setTs() {
+        if(ts.isEmpty()) {
             ts = (System.currentTimeMillis()).toString()
         }
     }
 
-    private data class SavedPttContext(
-        val appId: String,
-        val senderId: String,
-        val groupId: String?
-    )
-
-    private suspend fun savePttMessageAndNotify(
+    private suspend fun saveReceivingPttMessage(
         appContext: Context,
         dataPackage: StardustPackage,
         appId: String,
-        messageType: MessageType
-    ): SavedPttContext {
+        encoderType: EncoderType,
+        file: File
+    ): Long? {
         val senderId = dataPackage.senderId
         val groupId = dataPackage.groupId
         val repo = DataManager.getAppRepo(appContext)
 
-        repo.saveMessage(
+        return repo.saveMessage(
             MessageEntity(
                 senderID = senderId,
-                type = messageType,
+                type = MessageType.PTT,
                 receiverID = appId,
-                state = MessageState.RECEIVED
+                state = MessageState.RECEIVING,
+                extraData = MessageExtraData.PTT(
+                    path = file.absolutePath,
+                    encoderType = encoderType
+                ),
+                epochTimeMs = System.currentTimeMillis()
             ),
             groupId
         )
-
-        return SavedPttContext(
-            appId = appId,
-            senderId = senderId,
-            groupId = groupId
-        )
     }
 
-    fun onPTTCodecReceived(appContext: Context, dataPackage: StardustPackage) {
-        val appId = mRegisterUser?.appId ?: return
-        CoroutineScope(Dispatchers.IO).launch {
-            savePttMessageAndNotify(
-                appContext = appContext,
-                dataPackage = dataPackage,
-                appId = appId,
-                messageType = MessageType.PTT_CODEC
-            )
-            getCodecPackageByFrames(dataPackage, appId)
+    fun onPTTCodecReceived(dataPackage: StardustPackage) {
+        val destinationId = mRegisterUser?.appId ?: return
+        val parsedData = parseCodecPackageByFrames(dataPackage) ?: return
+
+        source = dataPackage.getSourceAsString()
+        resetTimer()
+
+        updateReceivingPtt(dataPackage, destinationId, parsedData)
+
+        playPTT(parsedData)
+    }
+
+    private fun updateReceivingPtt(
+        dataPackage: StardustPackage,
+        destinationId: String,
+        parsedData: ByteArray
+    ) {
+        pttScope.launch {
+
+            runCatching {
+                val pkg = StardustAPIPackage(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId)
+
+                if (!isFileInit) {
+                    setTs()
+                    val file = initPttInputFile(context = context, senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = EncoderType.CODEC2) ?: return@runCatching
+                    DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
+                }
+                else {
+                    DataManager.getCallbacks()?.receivePTT(pkg, parsedData)
+                }
+                byteArrayOutputStream.write(parsedData)
+            }.onFailure {
+                it.printStackTrace()
+            }
         }
     }
 
-    fun onPTTAiReceived(appContext: Context, dataPackage: StardustPackage) {
-        val appId = mRegisterUser?.appId ?: return
+    fun onPTTAiReceived(dataPackage: StardustPackage) {
+        val destinationId = mRegisterUser?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
-            val savedPttContext = savePttMessageAndNotify(
-                appContext = appContext,
-                dataPackage = dataPackage,
-                appId = appId,
-                messageType = MessageType.PTT_AI
-            )
+            val parsedData = parseAIPackageByFrames(dataPackage) ?: return@launch
 
-            dataPackage.data?.let { dataArray -> //dataArray = Array<Int>
-                val byteArray = intArrayToByteArray(dataArray.toMutableList())
-                Log.d("PlayerUtils", "Received PTT AI data size: ${byteArray.size}")
-                if (byteArray.size > 1) {
-                    val model = byteArray.copyOfRange(0, 1)
-                    val selectedModule = getModel(model[0].toInt())
-                    val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
-                    Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
-                    PttReceiveManager.addNewData(byteArray, savedPttContext.senderId, source, selectedModule)
-                    DataManager.getCallbacks()?.receivePTT(
-                        StardustAPIPackage(
-                            senderId = savedPttContext.senderId,
-                            groupId = savedPttContext.groupId,
-                            receiverId = savedPttContext.appId
-                        ), byteArray)
-                }
-            }
+            PttReceiveManager.addNewData(parsedData.decodedBytes, dataPackage.senderId, source, parsedData.selectedModule)
+
         }
     }
 
@@ -424,21 +430,6 @@ object PlayerUtils : BleMediaConnector() {
         }
     }
 
-    private fun playCodecPttFromPackage(byteArray: ByteArray, dataPackage: StardustPackage, destinationId: String) {
-        PcmStreamPlayer.ensureLegacyTrack((14080 * bufferSizeMulti).toInt(), speedFactor)
-        val bytes = splitByteArray(byteArray, 7)
-        val bytesListToPlay : MutableList<ByteArray> = mutableListOf()
-        for(mByte in bytes) {
-            Timber.tag("decodedBytes").d("decodedBytes : ${byteArray.size}")
-            val decodedBytes = handleBittelAudioMessage(mByte)
-            if(!mByte.contentEquals(embpyByte)) {
-                bytesListToPlay.add(decodedBytes)
-            }
-        }
-        val combined = combine(bytesListToPlay)
-
-        playCodecAudio(context, combined, dataPackage, destinationId)
-    }
 
     fun combine(byteArrayList: List<ByteArray>): ByteArray {
         var combinedSize = 0

@@ -1,4 +1,4 @@
-package com.commcrete.stardust.room.messages
+package com.commcrete.stardust.room.legacy_db.messages
 
 import android.os.Parcelable
 import androidx.room.ColumnInfo

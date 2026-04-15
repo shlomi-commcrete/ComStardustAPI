@@ -26,6 +26,7 @@ import java.util.UUID
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import com.commcrete.stardust.room.new_db.message.AttachmentType
 
 object FileUtils {
     fun createFile(context : Context, folderName : String = "logs"
@@ -466,7 +467,20 @@ object FileUtils {
             File -> FunctionalityType.FILE
             Image -> FunctionalityType.IMAGE
         }
+
+        fun toAttachmentType(): AttachmentType = when (this) {
+            File -> AttachmentType.FILE
+            Image -> AttachmentType.IMAGE
+        }
+
+        companion object {
+            fun fromAttachmentType(type: AttachmentType): FileType = when (type) {
+                AttachmentType.FILE -> File
+                AttachmentType.IMAGE -> Image
+            }
+        }
     }
+
 
     sealed class FileTransferData(
         open val id: String = UUID.randomUUID().toString(),

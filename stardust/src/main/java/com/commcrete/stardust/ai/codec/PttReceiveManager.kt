@@ -4,8 +4,13 @@ import android.media.MediaCodec
 import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import com.commcrete.aiaudio.media.PcmStreamPlayer
+import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.ai.codec.PcmStreamPlayer.initPttInputFile
+import com.commcrete.stardust.ai.codec.PcmStreamPlayer.isFileInit
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +37,7 @@ object PttReceiveManager {
     private var source : String? = ""
     private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
     private var aiDecodeData: AIDecodeData? = null
+
     fun init() {
         startDecodingJob()
     }
@@ -91,6 +97,7 @@ object PttReceiveManager {
     }
 
     private suspend fun handleTokenizerChunk(decodedData: ByteArray) {
+        val source = this.source ?: return
         val unpack = BitPacking12.unpack12(decodedData)
 
         // Check if last unpack was received within 800ms
@@ -118,39 +125,22 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-//        aiDecodeData?.onPcmReady?.invoke(finalPcmData)
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, this.from, this.source)
-    }
+        val destination = from.trim().replace("[\"", "").replace("\"]", "")
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val ids = GroupsUtils.resolveGroupAndContact(source, destination)
+        val pkg = StardustAPIPackage(senderId = ids.senderId, groupId = ids.groupId, receiverId = appId)
+        Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")
 
-    suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {
+        if(!isFileInit){
+            Log.d("PcmStreamPlayer", "Initializing PTT input file...")
+            val file = initPttInputFile(context, pkg) ?: return
 
-        // Check if last unpack was received within 800ms
-        val currentTime = System.currentTimeMillis()
-        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
-            lastUnpack
+            DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
         } else {
-            null
+            DataManager.getCallbacks()?.receivePTT(pkg, decodedData)
         }
-        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
-            lastDecodedSamples
-        } else {
-            null
-        }
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
 
-        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, modelTypeSelected)
-        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
-
-        // Save current unpack and timestamp for next iteration
-        lastUnpack = unpack
-        lastDecodedSamples = finalPcmData
-        lastUnpackTime = currentTime
-
-        // Add buffering delay only if there was no previous unpack (first packet)
-        if (previousUnpack == null)
-            delay(BUFFERING_TIME_MS)
-
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, "from", "source")
+        PcmStreamPlayer.enqueue(finalPcmData, 24000, destination)
     }
 
     private fun ByteArray.toHexString(): String =

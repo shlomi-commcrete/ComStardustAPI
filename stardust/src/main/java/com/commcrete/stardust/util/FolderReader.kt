@@ -257,6 +257,8 @@ object FolderReader {
         var name : String = "",
         var type : String = "",
         var image : String = "",
+        var model : String = "",
+        var serial : String = "",
     )
 
     val HEADER_ALIASES = mapOf(
@@ -264,7 +266,9 @@ object FolderReader {
         "device_id" to listOf("device_id", "device id", "deviceid"),
         "name" to listOf("name"),
         "type" to listOf("type"),
-        "image" to listOf("image", "img", "picture")
+        "image" to listOf("image", "img", "picture"),
+        "model" to listOf("model"),
+        "serial" to listOf("serial")
     )
 
     fun Row.getByAliases(headerMap: Map<String, Int>, key: String): String? {

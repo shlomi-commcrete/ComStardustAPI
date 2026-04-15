@@ -5,7 +5,6 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
-import com.commcrete.stardust.room.messages.MessageItem
 import kotlinx.coroutines.flow.Flow
 
 // SeenStatus int values: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5
@@ -14,27 +13,27 @@ import kotlinx.coroutines.flow.Flow
 interface MessageDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun addMessage(messageItem: MessageEntity): Long
+    suspend fun addMessage(message: MessageEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun addMessages(messageItems: List<MessageEntity>): List<Long>
+    suspend fun addMessages(messages: List<MessageEntity>): List<Long>
 
     @Update
-    suspend fun updateMessage(messageItem: MessageEntity)
+    suspend fun updateMessage(message: MessageEntity)
 
     @Query("""
         SELECT * FROM messages
         WHERE chat_id = :chatId AND state != 5
         ORDER BY epoch_time_ms ASC
     """)
-    fun getAllMessagesByChatId(chatId: String): Flow<List<MessageItem>>
+    fun getAllMessagesByChatId(chatId: String): Flow<List<MessageEntity>>
 
     @Query("""
         SELECT * FROM messages
         WHERE chat_id = :chatId AND sender_id = :senderId AND state != 5
         ORDER BY epoch_time_ms ASC
     """)
-    fun getChatMessagesBySenderId(chatId: String, senderId: String): Flow<List<MessageItem>>
+    fun getChatMessagesBySenderId(chatId: String, senderId: String): Flow<List<MessageEntity>>
 
 
     @Query("""
@@ -49,7 +48,7 @@ interface MessageDao {
         startTimestamp: Long,
         endTimestamp: Long,
         limit: Int = 50
-    ): Flow<List<MessageItem>>
+    ): Flow<List<MessageEntity>>
 
     @Query("""
         SELECT * FROM messages
@@ -63,7 +62,7 @@ interface MessageDao {
         startTimestamp: Long,
         endTimestamp: Long,
         limit: Int = 50
-    ): Flow<List<MessageItem>>
+    ): Flow<List<MessageEntity>>
 
     @Query("DELETE FROM messages WHERE chat_id = :chatId")
     fun clearChatMessages(chatId: String)
@@ -241,5 +240,5 @@ interface MessageDao {
         ORDER BY m.epoch_time_ms DESC
         """
     )
-    suspend fun getMessagesBySender(contactId: Int): List<MessageItem>
+    suspend fun getMessagesBySender(contactId: Int): List<MessageEntity>
 }

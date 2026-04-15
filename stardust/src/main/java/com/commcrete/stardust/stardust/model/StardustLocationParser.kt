@@ -24,7 +24,7 @@ class StardustLocationParser : StardustParser() {
         val locations = CoordinatesUtil().unpackLocation(locationBytes)
 
         return LocationPackage(
-            location = Location(stardustPackage.getSenderAsString()).apply {
+            location = Location(stardustPackage.senderId).apply {
                 latitude = locations[0].toDouble()
                 longitude = locations[1].toDouble()
                 altitude = locations[2].toDouble()
@@ -46,7 +46,7 @@ class StardustLocationParser : StardustParser() {
         val locations = CoordinatesUtil().unpackLocation(locationBytes)
 
         return SOSPackage(
-            location = Location(stardustPackage.getSenderAsString()).apply {
+            location = Location(stardustPackage.senderId).apply {
                 latitude = locations[0].toDouble()
                 longitude = locations[1].toDouble()
                 altitude = locations[2].toDouble()
@@ -65,7 +65,7 @@ class StardustLocationParser : StardustParser() {
             val locations = CoordinatesUtil().unpackLocation(locationBytes)
 
             return SOSPackage(
-                location = Location(stardustPackage.getSenderAsString()).apply {
+                location = Location(stardustPackage.senderId).apply {
                     latitude = locations[0].toDouble()
                     longitude = locations[1].toDouble()
                     altitude = locations[2].toDouble()

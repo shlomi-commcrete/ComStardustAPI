@@ -11,15 +11,14 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.LocationPackage
 import com.commcrete.stardust.util.CoordinatesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.asString
-import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
-import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,45 +33,34 @@ object LocationUtils  {
     var location : Location? = null
     private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun saveDeviceLocation(
+    fun saveLocationMessage(
         appContext: Context,
-        dataPackage: StardustPackage,
+        dataPackage: StardustAPIPackage,
         locationPackage: LocationPackage,
-        isSOS : Boolean = false
-    ){
-        val appId = mRegisterUser?.appId ?: return
+        state: MessageState,
+        isAckResponse: Boolean = false
+    ) {
 
         locationScope.launch {
-            val senderId = dataPackage.getSenderAsString()
-            val groupId = dataPackage.getGroupAsString()
 
             val message = MessageEntity(
-                senderID = senderId,
-                text = locationPackage.location.asString(),
-                epochTimeMs = Date().time,
-                type = if(isSOS) MessageType.SOS else MessageType.LOCATION,
-                receiverID = appId,
-                state = MessageState.RECEIVED
+                senderID = dataPackage.senderId,
+                type = MessageType.LOCATION,
+                receiverID = dataPackage.receiverId,
+                state = state,
+                extraData = MessageExtraData.Location(
+                    latitude = locationPackage.location.latitude,
+                    longitude = locationPackage.location.longitude,
+                    altitude = locationPackage.location.altitude,
+                    isAckResponse = isAckResponse
+                )
             )
             try {
-                DataManager.getAppRepo(appContext).saveMessage(message, groupId)
+                DataManager.getAppRepo(appContext).saveMessage(message, dataPackage.groupId)
             } catch (e: Exception) {
                 Timber.tag("LocationUtils").e(e, "Failed to save location message")
             }
 
-            val pollingUtils = DataManager.getPollingUtils(appContext)
-            if(pollingUtils.isRunning) {
-                pollingUtils.handleResponse(dataPackage)
-            }
-
-            PlayerUtils.playNotificationSound(appContext)
-
-            DataManager.getCallbacks()?.receiveLocation(
-                StardustAPIPackage(
-                    senderId = senderId,
-                    receiverId = appId,
-                    carrier = CarriersUtils.getCarrierByControl(dataPackage.stardustControlByte.stardustDeliveryType)),
-                locationPackage.location)
         }
     }
 
@@ -113,8 +101,8 @@ object LocationUtils  {
         locationScope.launch {
             val dataPackage = StardustPackageUtils.getStardustPackage(
                 context = appContext,
-                source = mPackage.getDestAsString(),
-                destination = mPackage.getSourceAsString(),
+                source = mPackage.getSourceAsString(),
+                destination = mPackage.getDestAsString(),
                 stardustOpCode = opCode ?: mPackage.stardustOpCode,
                 data =  CoordinatesUtil().packEmptyLocation()
             )
@@ -141,13 +129,13 @@ object LocationUtils  {
         randomID: String = "") {
 
         // TODO: change xor check
-        // TODO: WTF is going on???
+        //TODO: WTF is going on???
 
         locationScope.launch {
             val dataPackage = StardustPackageUtils.getStardustPackage(
                 context = appContext,
-                source = mPackage.getDestAsString(),
-                destination = mPackage.getSourceAsString(),
+                source = mPackage.getSourceAsString(),
+                destination = mPackage.getDestAsString(),
                 stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
@@ -165,21 +153,18 @@ object LocationUtils  {
                 Timber.tag("LocationUtils").e(e, "Failed to send location message to BLE")
             }
 
-            val senderId = mPackage.getDestAsString()
-            val message = MessageEntity(
-                senderID = senderId,
-                text = location.asString(),
-                epochTimeMs = Date().time,
-                type = MessageType.LOCATION,
-                receiverID = mPackage.getSourceAsString(),
-                state = if(RegisteredUserUtils.isRegisteredUser(senderId)) MessageState.SENT else MessageState.RECEIVED,
-                isAckResponse = isDemandAck
+            saveLocationMessage(
+                appContext,
+                StardustAPIPackage(
+                    senderId = mPackage.getSourceAsString(),
+                    receiverId = mPackage.getDestAsString(),
+                    groupId = mPackage.groupId
+                ),
+                LocationPackage(location, Date()),
+                MessageState.SENT,
+                isDemandAck
             )
-            try {
-                DataManager.getAppRepo(appContext).saveMessage(message)
-            } catch (e: Exception) {
-                Timber.tag("LocationUtils").e(e, "Failed to save sent location message")
-            }
+
         }
     }
 

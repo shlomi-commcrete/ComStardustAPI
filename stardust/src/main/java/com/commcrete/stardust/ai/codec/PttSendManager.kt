@@ -7,7 +7,9 @@ import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
 import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -80,10 +82,13 @@ object PttSendManager {
                         chatId = chatId,
                         senderID = appId,
                         receiverID = receiverId,
-                        attachmentPath = file.absolutePath,
                         state = MessageState.SENT,
-                        type = MessageType.PTT_AI,
-                        epochTimeMs = RecorderUtils.ts
+                        type = MessageType.PTT,
+                        epochTimeMs = RecorderUtils.ts,
+                        extraData = MessageExtraData.PTT(
+                            path = file.absolutePath,
+                            encoderType = EncoderType.AI
+                        )
                     )
                 )
                 RecorderUtils.ts = 0

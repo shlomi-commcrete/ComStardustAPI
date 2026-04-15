@@ -14,8 +14,9 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.messages.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
@@ -28,21 +29,21 @@ import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
-import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
-import com.commcrete.stardust.stardust.model.asString
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.SOSUtils
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +108,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 return@launch
             }
 
-            if (StardustInitConnectionHandler.onIncoming(mPackage)) {
+            if (StardustInitConnectionHandler.onIncoming(context, mPackage)) {
                 synchronized(packageProcessingLock) { resetTimer() }
                 return@launch
             }
@@ -152,10 +153,10 @@ internal class StardustPackageHandler(private val context: Context ,
                 if (control.stardustPackageType == StardustControlByte.StardustPackageType.DATA)
                     handleText(context, mPackage)
                 else
-                    handlePTT(context, mPackage)
+                    handlePTT(mPackage)
             }
-            StardustPackageUtils.StardustOpCode.SEND_PTT                         -> handlePTT(context, mPackage)
-            StardustPackageUtils.StardustOpCode.SEND_PTT_AI                      -> handlePTTAI(context, mPackage)
+            StardustPackageUtils.StardustOpCode.SEND_PTT                         -> handlePTT(mPackage)
+            StardustPackageUtils.StardustOpCode.SEND_PTT_AI                      -> handlePTTAI(mPackage)
             StardustPackageUtils.StardustOpCode.REQUEST_LOCATION                 -> handleLocationRequested(context, mPackage, randomID)
             StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION                 -> handleLocationReceived(context, mPackage)
             StardustPackageUtils.StardustOpCode.GET_ADDRESSES                    -> handleAddressesReceived(context, mPackage)
@@ -240,7 +241,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleUpdateDataResponse(context: Context, mPackage: StardustPackage) {
-        if(mPackage.isAck() && StardustUpdateProcess.isProcessRunning){
+        if(mPackage.isAck() && StardustUpdateProcess.isProcessRunning) {
             StardustUpdateProcess.startSendingUpdateData(context)
         } else {
             StardustUpdateProcess.cancelProcess()
@@ -257,7 +258,7 @@ internal class StardustPackageHandler(private val context: Context ,
         val deviceBatteryPackage = StardustBatteryParser().parseBattery(mPackage)
         val missingGroups = StardustGroupStatusParser().parseGroupStatus(mPackage)
         AppEvents.updateBattery(deviceBatteryPackage)
-        if(missingGroups && GroupsUtils.hasLocalGroups(context)){
+        if(missingGroups && GroupsUtils.hasLocalGroups(context)) {
             GroupsUtils.addGroupsToLocal(context)
         }
     }
@@ -362,9 +363,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleUpdatePolygonFreqResponse(mPackage: StardustPackage) {
-        if(mPackage.isAck()){
-            StardustPolygonChange.updateServerOfFreqChange()
-        }
+        if(mPackage.isAck()) { StardustPolygonChange.updateServerOfFreqChange() }
     }
 
     private fun handleUpdatePolygonFreq(context: Context, ) {
@@ -375,45 +374,33 @@ internal class StardustPackageHandler(private val context: Context ,
         val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration(context, mPackage)
         if (!result.applied) return
         if (result.hasPresetsWithoutConfig && StardustInitConnectionHandler.isConnectedSuccessfully()) {
-            listener?.onInitDone(StardustInitConnectionHandler.State.PRESET_ERROR)
+            listener.onInitDone(StardustInitConnectionHandler.State.PRESET_ERROR)
         }
         AdminUtils.updateBittelAdminMode(context)
     }
 
     private fun handleSOS(mPackage: StardustPackage) {
-        val sosPackage = StardustLocationParser().parseSOS(mPackage)
-        sosPackage ?: return
-        saveSosMessage(mPackage, sosPackage)
-    }
-
-    private fun saveSosMessage(
-        mPackage: StardustPackage,
-        sosPackage: SOSPackage
-    ) {
         val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+
         handlerScope.launch {
             try {
-                DataManager.getAppRepo(context).saveMessage(
-                    message = MessageEntity(
-                        senderID = mPackage.senderId,
-                        receiverID = appId,
-                        text = sosPackage.location.asString(),
-                        state = MessageState.RECEIVED,
-                        type = MessageType.SOS
-                    ),
-                    groupId = mPackage.groupId
+                val sosPackage = StardustLocationParser().parseSOS(mPackage)
+                sosPackage ?: return@launch
+                val pkg = StardustAPIPackage(
+                    senderId = mPackage.senderId,
+                    groupId = mPackage.groupId,
+                    receiverId = appId
+                )
+                SOSUtils.saveSOSMessage(
+                    context = context,
+                    type = sosPackage.sosType,
+                    location = sosPackage.location,
+                    stardustAPIPackage = pkg,
+                    state = MessageState.RECEIVED
                 )
 
                 PlayerUtils.playNotificationSound(context)
-                DataManager.getCallbacks()?.receiveSOS(
-                    StardustAPIPackage(
-                        senderId = mPackage.senderId,
-                        groupId = mPackage.groupId,
-                        receiverId = appId,
-                    ),
-                    location = sosPackage.location,
-                    type = sosPackage.sosType
-                )
+                DataManager.getCallbacks()?.receiveSOS(pkg, sosPackage.location, sosPackage.sosType)
             } catch (e: Exception) {
                 Timber.tag("StardustPackageHandler").e(e, "Failed to save SOS message")
             }
@@ -421,35 +408,13 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleAddressesReceived(context: Context, mPackage: StardustPackage) {
-        val addressesPackage = StardustAddressesParser().parseAddresses(mPackage)
-        addressesPackage?.let {
-            registerDevice(addressesPackage.stardustID)
+        StardustAddressesParser().parseAddresses(mPackage)?.let { addressesPackage ->
+            registerDevice(context, addressesPackage.stardustID)
             updateDeviceSmartphoneAddress(context, addressesPackage)
         }
     }
 
-    private fun updateDeviceSmartphoneAddress(context: Context, addressesPackage: StardustAddressesPackage) {
-        // Added fix , push the id i have in my app
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
-        val data = arrayListOf<Int>()
-        data.addAll(StardustPackageUtils.hexStringToByteArray(appId))
-        data.add(0)
-        data.add(0)
-        data.add(0)
-        data.add(0)
-        data.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-        val mPackage = StardustPackageUtils.getStardustPackage(
-            context = context,
-            source = appId,
-            destination = addressesPackage.stardustID,
-            stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
-            data = data.toIntArray().toTypedArray()
-        )
-
-        DataManager.getClientConnection(context).addMessageToQueue(mPackage)
-    }
-
-    private fun registerDevice(deviceId: String){
+    private fun registerDevice(context: Context, deviceId: String){
         val savedUser = SharedPreferencesUtil.getAppUser(context)
         val deviceName = SharedPreferencesUtil.getBittelDeviceName(context)
 
@@ -470,8 +435,53 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handleLocationReceived(context: Context, mPackage: StardustPackage){
-        if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK){
+    /**
+     * Sends UPDATE_ADDRESS packet to device with this app's ID and device type.
+     * Packet structure: [appId_4bytes][padding_4bytes][device_type_1byte]
+     */
+    private fun updateDeviceSmartphoneAddress(context: Context, addressesPackage: StardustAddressesPackage) {
+        val appId = RegisteredUserUtils.mRegisterUser?.appId
+        if (appId.isNullOrBlank()) {
+            Timber.tag("UpdateAddress").w("Cannot send UPDATE_ADDRESS: appId not registered")
+            return
+        }
+
+        val clientConnection = DataManager.getClientConnection(context)
+
+        try {
+            val payload = buildUpdateAddressPayload(appId)
+            val mPackage = StardustPackageUtils.getStardustPackage(
+                context = context,
+                source = appId,
+                destination = addressesPackage.stardustID,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
+                data = payload
+            )
+            clientConnection.addMessageToQueue(mPackage)
+            Timber.tag("UpdateAddress").d(
+                "Sent UPDATE_ADDRESS from $appId to ${addressesPackage.stardustID}"
+            )
+        } catch (e: Exception) {
+            Timber.tag("UpdateAddress").e(e, "Failed to send UPDATE_ADDRESS packet")
+        }
+    }
+
+    /**
+     * Builds UPDATE_ADDRESS payload: appId (4 bytes) + padding (4 bytes) + device type (1 byte).
+     */
+    private fun buildUpdateAddressPayload(appId: String): Array<Int> {
+        return arrayListOf<Int>().apply {
+            addAll(StardustPackageUtils.hexStringToByteArray(appId))
+            // 4-byte padding (reserved for future use)
+            repeat(4) { add(0) }
+            // Device type indicator (smartphone)
+            add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
+        }.toIntArray().toTypedArray()
+    }
+
+    private fun handleLocationReceived(context: Context, mPackage: StardustPackage) {
+        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
             handleAck(
                 appContext = context,
                 source = mPackage.getSourceAsString(),
@@ -479,12 +489,27 @@ internal class StardustPackageHandler(private val context: Context ,
                 deliveryType = mPackage.stardustControlByte.stardustDeliveryType
             )
         }
-        val locationPackage = StardustLocationParser().parseLocation(mPackage)
-        locationPackage?.let { LocationUtils.saveDeviceLocation(context, mPackage, it) }
+        val locationPackage = StardustLocationParser().parseLocation(mPackage) ?: return
+        val pkg = StardustAPIPackage(
+            senderId = mPackage.senderId,
+            groupId = mPackage.groupId,
+            receiverId = appId,
+            carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
+        )
+        LocationUtils.saveLocationMessage(context, pkg, locationPackage, MessageState.RECEIVED)
+
+        val pollingUtils = DataManager.getPollingUtils(context)
+        if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
+
+        PlayerUtils.playNotificationSound(context)
+
+        DataManager.getCallbacks()?.receiveLocation(
+            stardustAPIPackage = pkg,
+            location = locationPackage.location)
     }
 
-    private fun handleLocationRequested(context: Context, mPackage: StardustPackage, randomID: String){
-        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED ) return
+    private fun handleLocationRequested(context: Context, mPackage: StardustPackage, randomID: String) {
+        if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED) return
         Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         DataManager.getClientConnection(context).let {
             LocationUtils.sendMyLocation(
@@ -496,12 +521,12 @@ internal class StardustPackageHandler(private val context: Context ,
         }
     }
 
-    private fun handlePTTAI(appContext: Context, mPackage: StardustPackage) {
-        PlayerUtils.onPTTAiReceived(appContext = appContext, dataPackage = mPackage)
+    private fun handlePTTAI(mPackage: StardustPackage) {
+        PlayerUtils.onPTTAiReceived(dataPackage = mPackage)
     }
 
-    private fun handlePTT(appContext: Context, mPackage: StardustPackage) {
-        PlayerUtils.onPTTCodecReceived(appContext = appContext, dataPackage = mPackage)
+    private fun handlePTT(mPackage: StardustPackage) {
+        PlayerUtils.onPTTCodecReceived(dataPackage = mPackage)
     }
 
     private fun handleText(context: Context, mPackage: StardustPackage) {
@@ -509,7 +534,7 @@ internal class StardustPackageHandler(private val context: Context ,
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {
-            if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK){
+            if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
                 handleAck(
                     appContext = context,
                     source = mPackage.getSourceAsString(),
@@ -524,9 +549,9 @@ internal class StardustPackageHandler(private val context: Context ,
                         message = MessageEntity(
                             senderID = mPackage.senderId,
                             receiverID = appId,
-                            text = text,
                             state = MessageState.RECEIVED,
-                            type = MessageType.TEXT
+                            type = MessageType.TEXT,
+                            extraData = MessageExtraData.Text(text)
                         ),
                         groupId = mPackage.groupId
                     )

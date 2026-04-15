@@ -111,6 +111,20 @@ object GroupsUtils {
     )
 
     /**
+     * Synchronous resolver for constructor/init contexts where suspend calls are not possible.
+     * Falls back to sourceId when repository/context is not ready.
+     */
+    fun resolveGroupAndContactSync(sourceId: String, destinationId: String): GroupContactResolution {
+        return runCatching {
+            runBlocking(Dispatchers.IO) {
+                resolveGroupAndContact(sourceId = sourceId, destinationId = destinationId)
+            }
+        }.getOrElse {
+            GroupContactResolution(groupId = null, senderId = sourceId)
+        }
+    }
+
+    /**
      * Resolves groupId + real senderId from packet source/destination.
      * Rule: when source is a local group and destination is the current app user,
      * the real sender is the group itself.

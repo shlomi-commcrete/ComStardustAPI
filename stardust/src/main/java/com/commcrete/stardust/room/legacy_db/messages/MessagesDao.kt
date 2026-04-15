@@ -1,4 +1,4 @@
-package com.commcrete.stardust.room.messages
+package com.commcrete.stardust.room.legacy_db.messages
 
 
 import androidx.room.Dao

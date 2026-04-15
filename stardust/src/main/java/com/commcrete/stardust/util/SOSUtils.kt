@@ -10,8 +10,10 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 
@@ -46,7 +48,7 @@ object SOSUtils {
         sosMessage.stardustControlByte.stardustDeliveryType = radio.second
         sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
         DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
-        saveSOSSent(context, type,stardustAPIPackage, location)
+        saveSOSMessage(context, type,stardustAPIPackage, location)
     }
 
     fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
@@ -83,33 +85,32 @@ object SOSUtils {
             requireAck = true
         )
 
-        saveSOSSent(context, 0 , sosPackage, location)
+        saveSOSMessage(context, 0 , sosPackage, location)
     }
 
-    suspend fun saveSOSSent (
+    suspend fun saveSOSMessage (
         context: Context,
         type: Int,
         stardustAPIPackage: StardustAPIPackage,
-        location: Location
+        location: Location,
+        state: MessageState = MessageState.SENT
     ) {
-        val type = when (type) {
-            SOS_REPORT_TYPES.HOSTILE.type -> MessageType.SOS_HOSTILE
-            SOS_REPORT_TYPES.MAN_DOWN.type -> MessageType.SOS_MAN_DOWN
-            SOS_REPORT_TYPES.LOST.type -> MessageType.SOS_MIA
-            else -> MessageType.SOS
-        }
 
         DataManager.getAppRepo(context).saveMessage(
             MessageEntity(
                 senderID = stardustAPIPackage.senderId,
                 receiverID = stardustAPIPackage.receiverId,
-                text = location.toString(),
-                state = MessageState.SENT,
-                type = type
-            )
+                state = state,
+                type = MessageType.SOS,
+                extraData = MessageExtraData.Sos(
+                    latitude = location.latitude,
+                    longitude = location.longitude,
+                    altitude = location.altitude,
+                    subtype = SOS_REPORT_TYPES.fromCode(type)?.toSosType()
+                )
+            ), stardustAPIPackage.groupId
         )
     }
-
 
     enum class SOS_TYPES (val type : Int, val sosName : String,val image : Int, val imageVector: ImageVector) {
         VEHICLE (0, "Vehicle Issues", R.drawable.sos_vehicle_truck, Icons.Filled.LocalFireDepartment),
@@ -120,12 +121,37 @@ object SOSUtils {
         CUSTOM (5, "Custom", R.drawable.sos_crime, Icons.Filled.LocalFireDepartment)
     }
 
-    enum class SOS_REPORT_TYPES(val type : Int, val sosName : String, val image : Int, val imageVector: ImageVector) {
-        HOSTILE (10, "Hostile", R.drawable.hostile, Icons.Filled.LocalFireDepartment), //SKULL? 147/148 Arma
-        MAN_DOWN (11, "Man Down", R.drawable.medical, Icons.Filled.LocalFireDepartment ), //MEDIC 175 Arma
-        LOST (12, "M.I.A", R.drawable.mia, Icons.Filled.LocalFireDepartment), // Question mark 145/146 Arma
-        REINFORCEMENT (13, "Need Reinforcement", R.drawable.sos_lost, Icons.Filled.LocalFireDepartment); // Hand 207
+    enum class SOS_REPORT_TYPES(
+        val type: Int,
+        val sosName: String,
+        val image: Int,
+        val imageVector: ImageVector,
+    ) {
+        HOSTILE (10, "Hostile", R.drawable.hostile, Icons.Filled.LocalFireDepartment),
+        MAN_DOWN (11,  "Man Down", R.drawable.medical, Icons.Filled.LocalFireDepartment),
+        LOST (12, "M.I.A", R.drawable.mia, Icons.Filled.LocalFireDepartment),
+        REINFORCEMENT (13, "Need Reinforcement", R.drawable.sos_lost, Icons.Filled.LocalFireDepartment);
 
+
+        fun toSosType(): SosType = when(this) {
+            HOSTILE -> SosType.HOSTILE
+            MAN_DOWN -> SosType.MAN_DOWN
+            LOST -> SosType.MIA
+            REINFORCEMENT -> SosType.REINFORCEMENT
+        }
+
+        companion object {
+            fun fromCode(code: Int): SOS_REPORT_TYPES? =
+                entries.firstOrNull { it.type == code }
+
+            fun toReportType(type: SosType): SOS_REPORT_TYPES = when(type) {
+                SosType.HOSTILE -> HOSTILE
+                SosType.MAN_DOWN -> MAN_DOWN
+                SosType.MIA -> LOST
+                SosType.REINFORCEMENT -> REINFORCEMENT
+            }
+
+        }
     }
 
 }

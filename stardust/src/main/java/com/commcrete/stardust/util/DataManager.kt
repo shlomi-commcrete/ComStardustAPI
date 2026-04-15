@@ -6,7 +6,7 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
-import com.commcrete.bittell.util.demo.DemoDataUtil
+import com.commcrete.stardust.util.ContactsFileParserUtil
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getIsAck
@@ -26,6 +26,7 @@ import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -152,10 +153,10 @@ object DataManager : StardustAPI, PttInterface{
     private suspend fun saveSentMessage(context: Context, text: String, receiver: String, sender: String, groupId: String? = null) {
         getAppRepo(context).saveMessage(
             message = MessageEntity(
-                text = text,
                 senderID = sender,
                 receiverID = receiver,
                 state = MessageState.SENT,
+                extraData = MessageExtraData.Text(text = text)
             ),
             groupId = groupId
         )
@@ -173,7 +174,7 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     @SuppressLint("MissingPermission")
-    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File? {
+    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
         requireContext(context)
         this.source = stardustAPIPackage.senderId
         this.destination = stardustAPIPackage.receiverId
@@ -181,7 +182,7 @@ object DataManager : StardustAPI, PttInterface{
         return RecorderUtils.startRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?) {
+    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File?) {
         requireContext(context)
         RecorderUtils.stopRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType, file)
     }
@@ -455,9 +456,9 @@ object DataManager : StardustAPI, PttInterface{
         return FolderReader
     }
 
-    fun getDataUtil (context: Context): DemoDataUtil {
+    fun getDataUtil (context: Context): ContactsFileParserUtil {
         requireContext(context)
-        return DemoDataUtil
+        return ContactsFileParserUtil
     }
 
     fun getPlayerUtils (context: Context): PlayerUtils {

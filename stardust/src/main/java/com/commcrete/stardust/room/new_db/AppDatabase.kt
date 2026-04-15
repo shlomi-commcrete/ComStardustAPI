@@ -10,8 +10,8 @@ import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.legacy_db.chats.ChatsDao
 import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.legacy_db.contacts.ContactsDao as LegacyContactsDao
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDao
+import com.commcrete.stardust.room.legacy_db.messages.MessageItem
+import com.commcrete.stardust.room.legacy_db.messages.MessagesDao
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -61,7 +61,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         ChatParticipantEntity::class,
     ],
     views = [ChatSummary::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 @TypeConverters(

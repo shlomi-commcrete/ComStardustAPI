@@ -15,7 +15,7 @@ data class StardustPackage(
     var stardustControlByte: StardustControlByte,
     var stardustOpCode: StardustPackageUtils.StardustOpCode,
     val length: Int,
-    var data: Array<Int>? = null,
+    val data: Array<Int>? = null,
     var checkXor: Int? = 0,
     var pullTimer : Int = 0,
     var lengthForCrypt : Int = 0,
@@ -34,7 +34,10 @@ data class StardustPackage(
     val groupId: String?
 
     init {
-        val ids = GroupsUtils.resolveGroupAndContact(getSourceAsString(), getDestAsString())
+        val ids = GroupsUtils.resolveGroupAndContactSync(
+            sourceId = getSourceAsString(),
+            destinationId = getDestAsString()
+        )
         senderId = ids.senderId
         groupId = ids.groupId
     }
@@ -43,24 +46,24 @@ data class StardustPackage(
     companion object{
         const val MAX_RETRY_COUNTER = 0
         const val DELAY_TS = 15L
+        private const val DEFAULT_PADDED_DATA_SIZE = 4
 
         fun isDifferentLengthCheck(
             StardustControlByte: StardustControlByte,
             StardustOpCode: StardustPackageUtils.StardustOpCode
         ) : Boolean{
             return StardustOpCode == StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION
-//                    || (StardustOpCode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && StardustControlByte.StardustlPackageType == StardustControlByte.StardustPackageType.DATA)
         }
     }
 
-    private fun encryptData (context: Context) {
+    private fun encryptData(context: Context) {
         val byteArray = getDataForEncryption()
         val encrypted = CryptoUtils.encryptData(context, byteArray)
         lengthForCrypt = byteArray.size
         cryptData = byteArrayToIntArray(encrypted)
     }
 
-    private fun getDataForEncryption () : ByteArray{
+    private fun getDataForEncryption() : ByteArray{
         val packageToCheck = mutableListOf<Int>()
         for (data in destinationBytes) {
             appendToIntArray(data, packageToCheck)
@@ -82,7 +85,7 @@ data class StardustPackage(
         return intArrayToByteArray(packageToCheck)
     }
 
-    fun getStardustPackageToCheckXor () : MutableList<Int> {
+    fun getStardustPackageToCheckXor() : MutableList<Int> {
         val packageToCheck = mutableListOf<Int>()
         val packageToEncrypt = mutableListOf<Int>()
         for (data in destinationBytes) {
@@ -136,7 +139,7 @@ data class StardustPackage(
         return intArrayToByteArray(packageToSend)
     }
 
-    fun getStardustPackageToSendList () : List<ByteArray>{
+    fun getStardustPackageToSendList() : List<ByteArray>{
         val packageToSend = mutableListOf<Int>()
         for (data in syncBytes) {
             appendToIntArray(data, packageToSend)
@@ -160,7 +163,7 @@ data class StardustPackage(
         }
         val listIterator = packageToSend.toList().chunked(20)
         var byteArrayList : MutableList<ByteArray> = mutableListOf()
-        for( mPackage in listIterator){
+        for(mPackage in listIterator){
             byteArrayList.add(intArrayToByteArray(mPackage.toMutableList()))
         }
         return byteArrayList
@@ -174,14 +177,12 @@ data class StardustPackage(
         getPaddedData(data).let {
             return String(intArrayToByteArray(it.toMutableList()))
         }
-        return null
     }
 
     fun getDataSizeLength () : Int {
         getPaddedData(data).let {
             return it.size
         }
-        return 0
     }
 
     fun intArrayToHexString(intArray: Array<Int>): String {
@@ -193,10 +194,10 @@ data class StardustPackage(
         }
 
         val stringToReturn = stringBuilder.toString().replace("ffffff", "")
-        if(stringToReturn.startsWith("0000")){
-            return stringToReturn.replaceFirst("0000","")
-        }else {
-            return stringToReturn
+        return if(stringToReturn.startsWith("0000")) {
+            stringToReturn.replaceFirst("0000","")
+        } else {
+            stringToReturn
         }
     }
 
@@ -207,7 +208,7 @@ data class StardustPackage(
     fun getDestAsString() : String {
         return try {
             intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().lowercase()
-        }catch (e : Exception) {
+        } catch (e : Exception) {
             "null"
         }
 
@@ -216,7 +217,7 @@ data class StardustPackage(
     fun toHex (): String {
         try {
             return getStardustPackageToSend(context).joinToString(" ") { "%02X".format(it.toLong() and 0xFF) }
-        }catch (e : Exception){
+        }catch (e : Exception) {
             e.printStackTrace()
             return ""
         }
@@ -225,92 +226,72 @@ data class StardustPackage(
     fun toHexEnc (): String {
         try {
             return getDataForEncryption().joinToString(" ") { "%02X".format(it.toLong() and 0xFF) }
-        }catch (e : Exception){
+        } catch (e : Exception){
             e.printStackTrace()
             return ""
         }
     }
 
-    fun getPaddedData(data: Array<Int>?): Array<Int> {
-        val size = 4
-        if (data == null) {
-            // null → return zero-padded array
-            return Array(size) { 0 }
-        }
-        if (data.size < size) {
-            // smaller → pad with zeros
-            val result = Array(size) { 0 }
-            for (i in data.indices) {
-                result[i] = data[i]
-            }
-            return result
-        }
-        // large enough → return original array
-        return data
+    fun getPaddedData(data: Array<Int>?, minSize: Int = DEFAULT_PADDED_DATA_SIZE): Array<Int> {
+        require(minSize >= 0) { "minSize must be non-negative" }
+
+        val source = data ?: emptyArray()
+        if (source.size >= minSize) return source
+
+        val padded = Array(minSize) { 0 }
+        source.copyInto(padded, endIndex = source.size)
+        return padded
     }
 
-    fun dataToHex (): String {
-        try {
-            getPaddedData(data).let {
-                val stringBuilder = StringBuilder()
-                stringBuilder.append(intArrayToHexString(it))
-                stringBuilder.append("\n")
-            }
-        }catch (e : Exception){
-            e.printStackTrace()
-            return "\n"
-        }
-        return "\n"
-    }
-
-    fun encryptPackage () {
-
-    }
-
-    fun decryptPackage () {
-
-    }
 
     override fun toString(): String {
-        if(stardustOpCode == StardustPackageUtils.StardustOpCode.PING || stardustOpCode == StardustPackageUtils.StardustOpCode.PING_RESPONSE){
+        if (stardustOpCode == StardustPackageUtils.StardustOpCode.PING ||
+            stardustOpCode == StardustPackageUtils.StardustOpCode.PING_RESPONSE
+        ) {
             return ""
         }
-        val stringBuilder = StringBuilder()
-        stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
-        stringBuilder.append("Full Byte Array : \n")
-        stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
-        stringBuilder.append("OpCode : ${stardustOpCode}\n")
-        stringBuilder.append("Destenation : ${getDestAsString()}\n")
-        stringBuilder.append("Source : ${getSourceAsString()}\n")
-        stringBuilder.append("Length : $length\n")
-        getPaddedData(data).let {
-            if(stardustControlByte.stardustPackageType == StardustControlByte.StardustPackageType.SPEECH || stardustOpCode == StardustPackageUtils.StardustOpCode.REQUEST_LOCATION ){
-                stringBuilder.append("Data : \n")
-                for (mData in it ) {
-                    stringBuilder.append("$mData ")
-                }
-                stringBuilder.append("\n")
-            }else {
-                stringBuilder.append("Data : ${getDataAsString()}\n")
-            }
+
+        val paddedData = getPaddedData(data)
+        val isBinaryPayload =
+            stardustControlByte.stardustPackageType == StardustControlByte.StardustPackageType.SPEECH ||
+                stardustOpCode == StardustPackageUtils.StardustOpCode.REQUEST_LOCATION
+
+        val dataPreview = if (isBinaryPayload) {
+            paddedData.joinToString(" ")
+        } else {
+            getDataAsString()?.takeIf { it.isNotBlank() } ?: paddedData.joinToString(" ")
         }
-        try {
-            stringBuilder.append("toHex : ${toHex()}\n")
-        }catch (e : Exception) {
-            e.printStackTrace()
+
+        val destination = runCatching { getDestAsString() }.getOrElse { "<unknown>" }
+        val source = runCatching { getSourceAsString() }.getOrElse { "<unknown>" }
+        val hex = runCatching { toHex() }.getOrElse { "<unavailable>" }
+        val beforeEnc = runCatching { toHexEnc() }.getOrElse { "<unavailable>" }
+
+        return buildString {
+            appendLine("&&&&&&&&&&&&&&&&&&&&&&&&&&")
+            appendLine("StardustPackage")
+            appendLine("&&&&&&&&&&&&&&&&&&&&&&&&&&")
+            appendLine("OpCode : $stardustOpCode")
+            appendLine("Destination : $destination")
+            appendLine("Source : $source")
+            appendLine("SenderId : $senderId")
+            appendLine("GroupId : ${groupId ?: "-"}")
+            appendLine(
+                "Control : pkg=${stardustControlByte.stardustPackageType}, " +
+                    "delivery=${stardustControlByte.stardustDeliveryType}, " +
+                    "ack=${stardustControlByte.stardustAcknowledgeType}, " +
+                    "part=${stardustControlByte.stardustPartType}, " +
+                    "server=${stardustControlByte.stardustServer}, " +
+                    "msg=${stardustControlByte.stardustMessageType}"
+            )
+            appendLine("Length : $length")
+            appendLine("Padded Length : ${paddedData.size}")
+            appendLine("Data : $dataPreview")
+            appendLine("Data Bytes : ${paddedData.joinToString(" ")}")
+            appendLine("toHex : $hex")
+            appendLine("Before Enc : $beforeEnc")
+            append("&&&&&&&&&&&&&&&&&&&&&&&&&&")
         }
-        try {
-            stringBuilder.append("Before Enc : ${toHexEnc()}\n")
-        }catch (e : Exception) {
-            e.printStackTrace()
-        }
-        try {
-            stringBuilder.append("Padded Data : ${getPaddedData(data)}\n")
-        }catch (e : Exception) {
-            e.printStackTrace()
-        }
-        stringBuilder.append("&&&&&&&&&&&&&&&&&&&&&&&&&&\n")
-        return stringBuilder.toString()
     }
 
     fun isAbleToSendAgain(): Boolean {
@@ -322,22 +303,18 @@ data class StardustPackage(
     }
 
     fun isAck(): Boolean {
-        if(data!=null && data?.size!! >= 1){
-            return (data!![0] == Ack)
-        }
-        return false
+        return if(!data.isNullOrEmpty()) data[0] == Ack else false
     }
 
-    fun isEqual(bittelPackage: StardustPackage) : Boolean{
-        return (this.stardustOpCode == bittelPackage.stardustOpCode &&
-                this.stardustControlByte.stardustPackageType == bittelPackage.stardustControlByte.stardustPackageType &&
-                this.stardustControlByte.stardustAcknowledgeType == bittelPackage.stardustControlByte.stardustAcknowledgeType &&
-                this.stardustControlByte.stardustPackageType == bittelPackage.stardustControlByte.stardustPackageType &&
-                this.stardustControlByte.stardustServer == bittelPackage.stardustControlByte.stardustServer &&
-                this.stardustControlByte.stardustMessageType == bittelPackage.stardustControlByte.stardustMessageType
-                && this.data.contentEquals(bittelPackage.data))
+    fun isEqual(pkg: StardustPackage) : Boolean{
+        return (this.stardustOpCode == pkg.stardustOpCode &&
+                this.stardustControlByte.stardustPackageType == pkg.stardustControlByte.stardustPackageType &&
+                this.stardustControlByte.stardustAcknowledgeType == pkg.stardustControlByte.stardustAcknowledgeType &&
+                this.stardustControlByte.stardustPackageType == pkg.stardustControlByte.stardustPackageType &&
+                this.stardustControlByte.stardustServer == pkg.stardustControlByte.stardustServer &&
+                this.stardustControlByte.stardustMessageType == pkg.stardustControlByte.stardustMessageType &&
+                this.data.contentEquals(pkg.data))
     }
-
 }
 
 fun String.getSrcDestMin4Bytes() : String {

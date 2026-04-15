@@ -1,4 +1,4 @@
-package com.commcrete.aiaudio.media
+package com.commcrete.stardust.ai.codec
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -10,23 +10,18 @@ import android.media.AudioTrack
 import android.media.MediaRouter
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.ai.codec.WavHelper
-import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
-import com.commcrete.stardust.room.messages.MessageState
+import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
-import com.commcrete.stardust.util.GroupsUtils
-import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.audio.BleMediaConnector
-import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
@@ -64,21 +59,18 @@ object PcmStreamPlayer : BleMediaConnector() {
     private const val LEGACY_MIN_WRITE_SIZE = 40
     private const val PLAYBACK_TRACE_TAG = "PTTPlaybackTrace"
 
-    private var isFileInit = false
+    var isFileInit = false
     private var destination : String = ""
     private var source : String = ""
     private var fileToWrite : File? = null
     private var ts = ""
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val runnable : Runnable = Runnable {
-        Scopes.getMainCoroutine().launch {
+        CoroutineScope(Dispatchers.IO).launch {
             Log.d("PcmStreamPlayer", "Stopping file write due to inactivity.")
             val file = fileToWrite
             Log.d("PcmStreamPlayer", "File to write: ${file?.absolutePath}")
-            file?.let {
-                Log.d("PcmStreamPlayer", "Saving frames to WAV file: ${it.absolutePath}")
-                saveFramesToWav(it)
-            }
+            file?.let { saveFramesToWav(it) }
 
             isFileInit = false
             fileToWrite = null
@@ -87,7 +79,6 @@ object PcmStreamPlayer : BleMediaConnector() {
             isRecoded = false
             isFirst = true
             startRecored = 0L
-
         }
     }
     @Synchronized
@@ -107,25 +98,23 @@ object PcmStreamPlayer : BleMediaConnector() {
 
         val bufferSize = maxOf(minBuf, bytesForBuffering)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            audioTrack = AudioTrack.Builder()
-                .setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(sampleRate)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build()
-                )
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setBufferSizeInBytes(bufferSize)
-                .build()
-        }
+        audioTrack = AudioTrack.Builder()
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            .setAudioFormat(
+                AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(sampleRate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+            )
+            .setTransferMode(AudioTrack.MODE_STREAM)
+            .setBufferSizeInBytes(bufferSize)
+            .build()
         startPlaybackLoop()
     }
 
@@ -351,18 +340,12 @@ object PcmStreamPlayer : BleMediaConnector() {
     }
 
     /** Enqueue a PCM16 mono frame. Recreates track if sample rate has changed. */
-    fun enqueue(frame: ShortArray, sampleRate: Int, from : String, source: String?) {
+    fun enqueue(frame: ShortArray, sampleRate: Int, destination : String) {
+
         resetTimer()
-        setTs()
-        Scopes.getDefaultCoroutine().launch {
-            source?.let {
-                Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")
-                if(!isFileInit){
-                    Log.d("PcmStreamPlayer", "Initializing PTT input file...")
-                    initPttInputFile(context, from, source, null)
-                }
-            }
-        }
+        this@PcmStreamPlayer.destination = destination
+
+
         ensureTrack(sampleRate)
         frameChannel.trySend(frame)
     }
@@ -395,7 +378,7 @@ object PcmStreamPlayer : BleMediaConnector() {
     private var isFirst = true;
     private var isRecoded = false;
     private var startRecored = 0L
-    private fun saveFramesToWav(file: File) {
+    private suspend fun saveFramesToWav(file: File) {
         Log.d("PcmStreamPlayer", "saveFramesToWav called.")
         Log.d("PcmStreamPlayer", "Number of buffered frames: ${frameBuffer.size}")
         Log.d("PcmStreamPlayer", "isRecoded: $isRecoded")
@@ -407,16 +390,14 @@ object PcmStreamPlayer : BleMediaConnector() {
             startRecored = System.currentTimeMillis()
         }
 
-        Scopes.getDefaultCoroutine().launch {
-            delay(1500)
-            if (System.currentTimeMillis() - startRecored > 1500) {
-                Log.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
+        delay(1500)
+        if (System.currentTimeMillis() - startRecored > 1500) {
+            Log.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
 //             Save buffered frames to WAV file
-                val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-                WavHelper.createWavFile(sampleArray, currentSampleRate, file)
-                frameBuffer.clear()
-                isRecoded = false
-            }
+            val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
+            WavHelper.createWavFile(sampleArray, currentSampleRate, file)
+            frameBuffer.clear()
+            isRecoded = false
         }
     }
 
@@ -441,20 +422,10 @@ object PcmStreamPlayer : BleMediaConnector() {
         }
     }
 
-    private fun initPttInputFile(
+    suspend fun initPttInputFile(
         context: Context,
-        destinations: String,
-        source: String,
-        snifferContacts: List<ChatContact>?
+        ids: StardustAPIPackage
     ): File? {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return null
-        if (snifferContacts != null) {
-            return PlayerUtils.initPttSnifferFile(context, destinations, snifferContacts)
-        }
-
-        val destination = destinations.trim().replace("[\"", "").replace("\"]", "")
-
-        this.destination = destination
 
         val dir = File(context.filesDir, source)
 
@@ -467,39 +438,35 @@ object PcmStreamPlayer : BleMediaConnector() {
 
         val file = fileToWrite ?: File(dir, "$ts-$source.pcm")
 
-        val ids = GroupsUtils.resolveGroupAndContact(source, destinations)
 
         if (!file.exists()) {
+            setTs()
             file.createNewFile()
             fileToWrite = file
             isFileInit = true
 
-            CoroutineScope(Dispatchers.IO).launch {
-                DataManager.getAppRepo(context).saveMessage(
-                    MessageEntity(
-                        senderID = ids.senderId,
-                        receiverID = appId,
-                        attachmentPath = file.absolutePath,
-                        state = MessageState.RECEIVING,
-                        type = MessageType.PTT_AI,
-                        epochTimeMs = ts.toLong()
-                    ),
-                    ids.groupId
-                )
-            }
+            DataManager.getAppRepo(context).saveMessage(
+                MessageEntity(
+                    senderID = ids.senderId,
+                    receiverID = ids.receiverId,
+                    state = MessageState.RECEIVING,
+                    type = MessageType.PTT,
+                    epochTimeMs = ts.toLong(),
+                    extraData = MessageExtraData.PTT(
+                        path = file.absolutePath,
+                        encoderType = EncoderType.AI
+                    )
+                ),
+                ids.groupId
+            )
 
-            DataManager.getCallbacks()?.startedReceivingPTT(
-                StardustAPIPackage(senderId = ids.senderId, groupId = ids.groupId, receiverId = appId),
-                file)
         }
 
         return file
     }
 
-    private fun setTs(){
-        if(ts.isEmpty()){
-            ts = (System.currentTimeMillis()).toString()
-        }
+    private fun setTs() {
+        if(ts.isEmpty()) { ts = (System.currentTimeMillis()).toString() }
     }
     private fun resetTimer(){
         handler.removeCallbacks(runnable)

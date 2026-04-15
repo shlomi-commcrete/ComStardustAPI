@@ -12,6 +12,7 @@ import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.example.chunkrecorder.AudioRecorderAI
 import com.ustadmobile.codec2.Codec2
+import com.commcrete.stardust.room.new_db.message.EncoderType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -47,13 +48,13 @@ object RecorderUtils {
     fun startRecording(
         destination: String,
         carrier: Carrier?,
-        codeType: CODE_TYPE?
+        codeType: AudioEncoderType?
     ): File? {
         Log.d("AudioRecorder", "Start recording")
 
         Scopes.getMainCoroutine().launch { canRecord.value = false }
 
-        return if (codeType == CODE_TYPE.CODEC2) {
+        return if (codeType == AudioEncoderType.CODEC2) {
             startCodec2Recording(destination, carrier)
         } else {
             startAIRecording(destination, carrier)
@@ -143,12 +144,12 @@ object RecorderUtils {
     fun stopRecording(
         receiverId: String,
         carrier: Carrier?,
-        codeType: CODE_TYPE?,
+        codeType: AudioEncoderType?,
         file: File?
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
-        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(receiverId, carrier, file)
+        if (codeType == AudioEncoderType.CODEC2) stopCodec2Recording(receiverId, carrier, file)
         else stopAIRecording()
 
         Scopes.getMainCoroutine().launch {
@@ -215,7 +216,26 @@ object RecorderUtils {
         return newFile
     }
 
-    enum class CODE_TYPE (val id : Int, val codecName: String){
-        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Classic Codec Encoder")
+    enum class AudioEncoderType(
+        val id: Int,
+        val title: String,
+    ) {
+        AI( 1, "Neural Audio Encoder (NAE)"),
+        CODEC2( 0, "Classic Codec Encoder");
+
+        fun toEncoderType(): EncoderType = when(this) {
+            AI -> EncoderType.AI
+            CODEC2 -> EncoderType.CODEC2
+        }
+
+        companion object {
+
+            fun fromEncoderType(type: EncoderType): AudioEncoderType =
+                when(type) {
+                    EncoderType.CODEC2 -> CODEC2
+                    EncoderType.AI -> AI
+                }
+
+        }
     }
 }

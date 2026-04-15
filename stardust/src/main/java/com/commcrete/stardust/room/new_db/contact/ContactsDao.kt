@@ -13,25 +13,16 @@ import kotlinx.coroutines.flow.Flow
 interface ContactsDao {
 
 
-    @Query("SELECT name FROM contacts_table WHERE id = :id LIMIT 1")
-    suspend fun getChatName(id: String) : String?
-
-    @Query("UPDATE contacts_table SET name=:name WHERE id = :id")
-    suspend fun updateChatName(id: String, name : String)
-
-    /**
-     * Get full contact data by ID, including all related user IDs and devices.
-     * Joins with app_contact_user_ids and app_contact_devices.
-     */
-    @Transaction
     @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
-    suspend fun getFullChatData(id: Int): FullContactData?
+    suspend fun getContactEntity(id: Int): ContactEntity?
 
     @Query(
         """
         SELECT user_id FROM app_contact_user_ids
         UNION
         SELECT device_id FROM app_contact_devices
+        UNION 
+        SELECT group_id FROM app_contact_group_ids
         """
     )
     fun getAllContactIds(): List<String>
@@ -41,6 +32,9 @@ interface ContactsDao {
 
     @Query("SELECT device_id FROM app_contact_devices")
     fun getAllDevicesIds(): List<String>
+
+    @Query("SELECT group_id FROM app_contact_group_ids")
+    fun getAllGroupIds(): List<String>
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertContact(contact: ContactEntity): Long
@@ -150,74 +144,117 @@ interface ContactsDao {
     )
     suspend fun findResolvedGroupChatIdByGroupId(groupId: String): Int?
 
-    @Transaction
-    suspend fun addContacts(contacts: List<FullContactData>) {
-        contacts.forEach { addContact(it) }
-    }
-
     /** Inserts/updates all contacts and returns each one paired with its resolved contact ID. */
     @Transaction
-    suspend fun addContactsAndGetIds(contacts: List<FullContactData>): List<Pair<FullContactData, Int>> =
-        contacts.map { it to addContactAndGetId(it) }
+    suspend fun addContacts(contacts: List<FullContactData>): List<Pair<FullContactData, Int>> =
+        contacts.map { it to addContact(it) }
 
-    /** Same as [addContact] but returns the resolved contact ID. */
     @Transaction
-    suspend fun addContactAndGetId(fullContactData: FullContactData): Int {
-        addContact(fullContactData)
-        val normalized = fullContactData.userId?.userId?.normalizedIdOrNull()
-            ?: fullContactData.groupId?.groupId?.normalizedIdOrNull()
-            ?: fullContactData.devices
-                .mapNotNull { it.contactDevice.deviceId.normalizedIdOrNull() }
-                .firstOrNull()
-        return normalized?.let {
-            findContactIdByUserId(it) 
-                ?: findContactIdByGroupId(it)
-                ?: findContactIdByDeviceId(it)
-        } ?: 0
+    suspend fun addContact(fullContactData: FullContactData): Int {
+        val normalizedPrimaryId = resolveNormalizedPrimaryId(fullContactData) ?: return 0
+        val normalizedDevices = resolveNormalizedDevices(fullContactData)
+
+        val existingByPrimaryId = findExistingByPrimaryId(fullContactData, normalizedPrimaryId)
+        val existingByDevice = findExistingByDevice(normalizedDevices)
+
+        val contactId = resolveOrCreateContactId(
+            fullContactData = fullContactData,
+            existingByPrimaryId = existingByPrimaryId,
+            existingByDevice = existingByDevice,
+        )
+
+        upsertPrimaryIdentity(
+            fullContactData = fullContactData,
+            normalizedPrimaryId = normalizedPrimaryId,
+            contactId = contactId,
+            normalizedDevices = normalizedDevices,
+        )
+        upsertDeviceLinks(normalizedDevices, contactId)
+
+        return contactId
     }
 
-    @Transaction
-    suspend fun addContact(fullContactData: FullContactData) {
-        val normalizedUserId = fullContactData.userId?.userId?.normalizedIdOrNull()
-        val normalizedGroupId = fullContactData.groupId?.groupId?.normalizedIdOrNull()
+    private fun resolveNormalizedPrimaryId(fullContactData: FullContactData): String? =
+        when (fullContactData) {
+            is FullContactData.User -> fullContactData.userId.normalizedIdOrNull()
+            is FullContactData.Group -> fullContactData.groupId.normalizedIdOrNull()
+            is FullContactData.Device -> fullContactData.deviceId.normalizedIdOrNull()
+        }
 
-        val normalizedDeviceRows = fullContactData.devices
-            .mapNotNull { row ->
-                row.contactDevice.deviceId.normalizedIdOrNull()?.let { normalizedId ->
-                    row.copy(
-                        contactDevice = row.contactDevice.copy(deviceId = normalizedId),
-                        device = row.device?.copy(deviceId = normalizedId),
-                    )
+    private fun resolveNormalizedDevices(fullContactData: FullContactData): List<DeviceEntity> {
+        val sourceDevices: List<DeviceEntity> = when (fullContactData) {
+            is FullContactData.User -> fullContactData.devices
+            is FullContactData.Group -> emptyList()
+            is FullContactData.Device -> listOf(fullContactData.deviceData)
+        }
+
+        return sourceDevices
+            .mapNotNull { device ->
+                device.deviceId.normalizedIdOrNull()?.let { normalizedId ->
+                    device.copy(deviceId = normalizedId)
                 }
             }
-            .distinctBy { it.contactDevice.deviceId }
+            .distinctBy { it.deviceId }
+    }
 
-        val existingByUser = normalizedUserId?.let { findContactIdByUserId(it) }
-        val existingByGroup = normalizedGroupId?.let { findContactIdByGroupId(it) }
-        val existingByDevice = normalizedDeviceRows
-            .firstNotNullOfOrNull { findContactIdByDeviceId(it.contactDevice.deviceId) }
+    private suspend fun findExistingByPrimaryId(
+        fullContactData: FullContactData,
+        normalizedPrimaryId: String,
+    ): Int? = when (fullContactData) {
+        is FullContactData.User -> findContactIdByUserId(normalizedPrimaryId)
+            ?: findContactIdByDeviceId(normalizedPrimaryId)
+        is FullContactData.Group -> findContactIdByGroupId(normalizedPrimaryId)
+        is FullContactData.Device -> findContactIdByDeviceId(normalizedPrimaryId)
+    }
 
-        val contactId = existingByUser
-            ?: existingByGroup
+    private suspend fun findExistingByDevice(normalizedDevices: List<DeviceEntity>): Int? =
+        normalizedDevices.firstNotNullOfOrNull { findContactIdByDeviceId(it.deviceId) }
+
+    private suspend fun resolveOrCreateContactId(
+        fullContactData: FullContactData,
+        existingByPrimaryId: Int?,
+        existingByDevice: Int?,
+    ): Int {
+        val contactId = existingByPrimaryId
             ?: existingByDevice
             ?: insertContact(fullContactData.contact.copy(id = 0)).toInt()
 
-        if (existingByUser != null || existingByGroup != null || existingByDevice != null) {
+        if (existingByPrimaryId != null || existingByDevice != null) {
             updateContact(fullContactData.contact.copy(id = contactId))
         }
 
-        normalizedUserId?.let { userId ->
-            upsertUserAppId(ContactUserIdEntity(userId = userId, contactId = contactId))
-        }
+        return contactId
+    }
 
-        normalizedGroupId?.let { groupId ->
-            upsertGroupId(ContactGroupIdEntity(groupId = groupId, contactId = contactId))
-        }
+    private suspend fun upsertPrimaryIdentity(
+        fullContactData: FullContactData,
+        normalizedPrimaryId: String,
+        contactId: Int,
+        normalizedDevices: List<DeviceEntity>,
+    ) {
+        when (fullContactData) {
+            is FullContactData.User -> {
+                upsertUserAppId(ContactUserIdEntity(userId = normalizedPrimaryId, contactId = contactId))
+            }
 
-        normalizedDeviceRows.forEach { deviceRow ->
-            val deviceId = deviceRow.contactDevice.deviceId
-            upsertDevice(deviceRow.device ?: DeviceEntity(deviceId = deviceId))
-            upsertContactDevice(deviceRow.contactDevice.copy(contactId = contactId))
+            is FullContactData.Group -> {
+                upsertGroupId(ContactGroupIdEntity(groupId = normalizedPrimaryId, contactId = contactId))
+            }
+
+            is FullContactData.Device -> {
+                val hasPrimaryDevice = normalizedDevices.any { it.deviceId == normalizedPrimaryId }
+                if (!hasPrimaryDevice) {
+                    upsertDevice(DeviceEntity(deviceId = normalizedPrimaryId))
+                    upsertContactDevice(ContactDeviceEntity(deviceId = normalizedPrimaryId, contactId = contactId))
+                }
+            }
+        }
+    }
+
+    private suspend fun upsertDeviceLinks(normalizedDevices: List<DeviceEntity>, contactId: Int) {
+        normalizedDevices.forEach { device ->
+            upsertDevice(device)
+            upsertContactDevice(ContactDeviceEntity(deviceId = device.deviceId, contactId = contactId))
         }
     }
 

@@ -659,7 +659,7 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putBoolean(KEY_LOCATION_MANUAL, isErased).apply()
     }
 
-    fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
+    fun setCodecType(context: Context, codecType: RecorderUtils.AudioEncoderType) {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefs(context).edit().putInt(KEY_INPUT_CODEC, codecType.id).apply()
     }
@@ -681,13 +681,13 @@ object SharedPreferencesUtil {
         return  resilience
     }
 
-    fun getCodecType(context: Context): RecorderUtils.CODE_TYPE {
+    fun getCodecType(context: Context): RecorderUtils.AudioEncoderType {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        val codecId = getPrefs(context).getInt(KEY_INPUT_CODEC, RecorderUtils.CODE_TYPE.CODEC2.id)
+        val codecId = getPrefs(context).getInt(KEY_INPUT_CODEC, RecorderUtils.AudioEncoderType.CODEC2.id)
         when (codecId) {
-            RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
-            RecorderUtils.CODE_TYPE.AI.id -> return RecorderUtils.CODE_TYPE.AI
-            else -> return RecorderUtils.CODE_TYPE.CODEC2
+            RecorderUtils.AudioEncoderType.CODEC2.id -> return RecorderUtils.AudioEncoderType.CODEC2
+            RecorderUtils.AudioEncoderType.AI.id -> return RecorderUtils.AudioEncoderType.AI
+            else -> return RecorderUtils.AudioEncoderType.CODEC2
         }
     }
 

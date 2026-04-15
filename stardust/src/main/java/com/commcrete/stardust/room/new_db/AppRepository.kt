@@ -7,8 +7,6 @@ import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
 import com.commcrete.stardust.room.new_db.chat.ChatType
-import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
-import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
@@ -71,7 +69,7 @@ class AppRepository(
      */
     suspend fun insertContactsWithChats(contacts: List<FullContactData>) =
         withContext(Dispatchers.IO) {
-            val inserted = contactsDao.addContactsAndGetIds(contacts)
+            val inserted = contactsDao.addContacts(contacts)
             val existingGroupChatIds = chatsDao.getAllGroupChatIds()
             val allMemberIds = contactsDao.getAllMemberContactIds()
 
@@ -98,7 +96,7 @@ class AppRepository(
      */
     suspend fun insertContactWithChat(contact: FullContactData) =
         withContext(Dispatchers.IO) {
-            val contactId = contactsDao.addContactAndGetId(contact)
+            val contactId = contactsDao.addContact(contact)
             
             // Add to contacts cache
             addContactToCache(contact, contactId)
@@ -271,25 +269,28 @@ class AppRepository(
 
     /**
      * Resolves chat context then inserts [message]:
-     * 1. If [message.senderID] is unknown in DB — auto-inserts a USER contact via [insertContactWithChat].
+     * 1. If sender id is unknown in DB — auto-inserts a USER contact via [insertContactWithChat].
      * 2. If [groupId] is not null — finds (or creates) the GROUP chat for that group ID.
      * 3. If [groupId] is null — finds the sender's private chat.
+     *
+     * @return inserted Room row ID, or null when message is filtered/not resolvable.
      */
-    suspend fun saveMessage(message: MessageEntity, groupId: String? = null) =
+    suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         saveMutex.withLock {
-            if(!canMessageBeSaved(message)) { return }
+            if (!canMessageBeSaved(message)) return@withLock null
 
             withContext(Dispatchers.IO) {
                 val senderId = message.senderID.trim().lowercase()
-                val contactId = ensureSenderExists(senderId) ?: return@withContext
+                val contactId = ensureSenderExists(senderId) ?: return@withContext null
                 val chatId = if (groupId != null) resolveGroupChatId(groupId) else resolvePrivateChatId(contactId)
-                messagesDao.addMessage(message.copy(chatId = chatId?.toString()))
+                val chatIdString = chatId?.toString() ?: return@withContext null
+                messagesDao.addMessage(message.copy(chatId = chatIdString))
             }
         }
 
     private fun canMessageBeSaved(message: MessageEntity): Boolean {
         // Only save PTT messages if the user has enabled the setting to save them.
-        return !((message.type == MessageType.PTT_AI || message.type == MessageType.PTT_CODEC) && !DataManager.getSavePTTFilesRequired(context))
+        return !(message.type == MessageType.PTT && !DataManager.getSavePTTFilesRequired(context))
     }
 
     /** Ensures sender exists in DB, auto-creating a USER contact if not. Returns the contact ID. */
@@ -305,14 +306,11 @@ class AppRepository(
         val existing = contactsDao.findContactIdByUserId(normalizedSenderId)
             ?: contactsDao.findContactIdByDeviceId(normalizedSenderId)
         if (existing == null) {
-            insertContactWithChat(
-                FullContactData(
-                    contact = ContactEntity(name = senderId, type = ContactType.USER),
-                    userId = ContactUserIdEntity(userId = normalizedSenderId, contactId = 0),
-                    groupId = null,
-                    devices = emptyList(),
-                )
-            )
+            FullContactData.createUserContact(
+                name = senderId,
+                image = null,
+                userId = normalizedSenderId,
+            )?.let { insertContactWithChat(it) }
         }
         return contactsDao.findContactIdByUserId(normalizedSenderId)
             ?: contactsDao.findContactIdByDeviceId(normalizedSenderId)
@@ -359,14 +357,11 @@ class AppRepository(
 
     /** Creates a new GROUP contact + its group chat when neither exists yet. Returns the new chat ID. */
     private suspend fun createGroupContactAndChat(normalizedGroupId: String, groupId: String): Int? {
-        insertContactWithChat(
-            FullContactData(
-                contact = ContactEntity(name = groupId, type = ContactType.GROUP),
-                userId = null,
-                groupId = ContactGroupIdEntity(groupId = normalizedGroupId, contactId = 0),
-                devices = emptyList(),
-            )
-        )
+        FullContactData.createGroupContact(
+            name = groupId,
+            image = null,
+            groupId = normalizedGroupId,
+        )?.let { insertContactWithChat(it) }
         addGroupIdToCache(normalizedGroupId)
         val newGroupContactId = contactsDao.findContactIdByGroupId(normalizedGroupId)
         return newGroupContactId?.let { chatsDao.findGroupChatIdByContactId(it) }
@@ -409,14 +404,19 @@ class AppRepository(
     private suspend fun addContactToCache(contact: FullContactData, contactId: Int) {
         contactsCacheMutex.withLock {
             val updates = mutableMapOf<String, Int>()
-            // Map the userId to this contactId when present.
-            contact.userId?.let { appId ->
-                updates[normalizeId(appId.userId)] = contactId
-            }
-            // Map all deviceIds to this contactId
-            contact.devices.forEach { device ->
-                device.device?.let { deviceEntity ->
-                    updates[normalizeId(deviceEntity.deviceId)] = contactId
+            when (contact) {
+                is FullContactData.User -> {
+                    updates[normalizeId(contact.userId)] = contactId
+                    contact.devices.forEach { device ->
+                        updates[normalizeId(device.deviceId)] = contactId
+                    }
+                }
+                is FullContactData.Group -> {
+                    updates[normalizeId(contact.groupId)] = contactId
+                }
+                is FullContactData.Device -> {
+                    updates[normalizeId(contact.deviceId)] = contactId
+                    updates[normalizeId(contact.deviceData.deviceId)] = contactId
                 }
             }
             contactsCache = contactsCache + updates

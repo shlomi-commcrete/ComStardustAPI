@@ -6,7 +6,10 @@ import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -107,13 +110,12 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                     chatId = data.chatId,
                     senderID = data.stardustAPIPackage.senderId,
                     receiverID = data.stardustAPIPackage.receiverId,
-                    text = data.file.name,
-                    attachmentPath = destFile.absolutePath,
                     state = MessageState.SENT,
-                    type = when(data.fileType) {
-                        FileType.Image -> MessageType.IMAGE
-                        FileType.File -> MessageType.FILE
-                    }
+                    extraData = MessageExtraData.Attachment(
+                        title = data.file.name,
+                        path = destFile.absolutePath,
+                        subtype = data.fileType.toAttachmentType()
+                    )
                 ))
 
         } catch (e: Exception) {
