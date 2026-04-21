@@ -33,35 +33,27 @@ object LocationUtils  {
     var location : Location? = null
     private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun saveLocationMessage(
+    suspend fun saveLocationMessage(
         appContext: Context,
         dataPackage: StardustAPIPackage,
         locationPackage: LocationPackage,
         state: MessageState,
         isAckResponse: Boolean = false
-    ) {
+    ): Long? {
 
-        locationScope.launch {
-
-            val message = MessageEntity(
-                senderID = dataPackage.senderId,
-                type = MessageType.LOCATION,
-                receiverID = dataPackage.receiverId,
-                state = state,
-                extraData = MessageExtraData.Location(
-                    latitude = locationPackage.location.latitude,
-                    longitude = locationPackage.location.longitude,
-                    altitude = locationPackage.location.altitude,
-                    isAckResponse = isAckResponse
-                )
+        val message = MessageEntity(
+            senderID = dataPackage.senderId,
+            type = MessageType.LOCATION,
+            receiverID = dataPackage.receiverId,
+            state = state,
+            extraData = MessageExtraData.Location(
+                latitude = locationPackage.location.latitude,
+                longitude = locationPackage.location.longitude,
+                altitude = locationPackage.location.altitude,
+                isAckResponse = isAckResponse
             )
-            try {
-                DataManager.getAppRepo(appContext).saveMessage(message, dataPackage.groupId)
-            } catch (e: Exception) {
-                Timber.tag("LocationUtils").e(e, "Failed to save location message")
-            }
-
-        }
+        )
+        return DataManager.getAppRepo(appContext).saveMessage(message, dataPackage.groupId)
     }
 
     internal fun sendMyLocation(
@@ -139,7 +131,17 @@ object LocationUtils  {
                 stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
-            val id = Random.nextLong(Long.MAX_VALUE)
+            val id = saveLocationMessage(
+                appContext,
+                StardustAPIPackage(
+                    senderId = mPackage.getSourceAsString(),
+                    receiverId = mPackage.getDestAsString(),
+                    groupId = mPackage.groupId
+                ),
+                LocationPackage(location, Date()),
+                MessageState.SENT,
+                isDemandAck
+            )
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             dataPackage.isDemandAck = isDemandAck
             dataPackage.idNumber = id
@@ -152,18 +154,6 @@ object LocationUtils  {
             } catch (e: Exception) {
                 Timber.tag("LocationUtils").e(e, "Failed to send location message to BLE")
             }
-
-            saveLocationMessage(
-                appContext,
-                StardustAPIPackage(
-                    senderId = mPackage.getSourceAsString(),
-                    receiverId = mPackage.getDestAsString(),
-                    groupId = mPackage.groupId
-                ),
-                LocationPackage(location, Date()),
-                MessageState.SENT,
-                isDemandAck
-            )
 
         }
     }

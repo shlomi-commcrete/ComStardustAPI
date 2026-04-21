@@ -5,6 +5,10 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import com.commcrete.stardust.room.new_db.contact.ContactEntity
+import com.commcrete.stardust.room.new_db.contact.ContactType
+import com.commcrete.stardust.room.new_db.contact.DeviceEntity
+import com.commcrete.stardust.room.new_db.contact.FullContactData
 import kotlinx.android.parcel.Parcelize
 import java.util.Locale
 
@@ -51,4 +55,58 @@ data class ChatContact (
         bittelId = bittelId?.lowercase(Locale.ROOT)
         smartphoneBittelId = smartphoneBittelId?.lowercase(Locale.ROOT)
     }
+
+    fun toFullContactData(): FullContactData? {
+        val normalizedBittelId = bittelId?.trim()?.takeIf { it.isNotEmpty() }
+        val normalizedSmartphoneId = smartphoneBittelId?.trim()?.takeIf { it.isNotEmpty() }
+
+        return when {
+            isGroup && normalizedBittelId != null -> {
+                FullContactData.Group(
+                    contact = ContactEntity(
+                        name = displayName,
+                        image = photoURI,
+                        type = ContactType.GROUP,
+                        createdAt = System.currentTimeMillis(),
+                        lastUpdatedAt = lastUpdateAt,
+                    ),
+                    groupId = normalizedBittelId,
+                )
+            }
+            isBittel || (normalizedBittelId != null && normalizedSmartphoneId == null) -> {
+                normalizedBittelId?.let { deviceId ->
+                    FullContactData.Device(
+                        contact = ContactEntity(
+                            name = displayName,
+                            image = photoURI,
+                            type = ContactType.DEVICE,
+                            createdAt = System.currentTimeMillis(),
+                            lastUpdatedAt = lastUpdateAt,
+                        ),
+                        deviceId = deviceId,
+                        deviceData = DeviceEntity(id = deviceId),
+                    )
+                }
+            }
+            normalizedSmartphoneId != null -> {
+                FullContactData.User(
+                    contact = ContactEntity(
+                        name = displayName,
+                        image = photoURI,
+                        type = ContactType.USER,
+                        createdAt = System.currentTimeMillis(),
+                        lastUpdatedAt = lastUpdateAt,
+                    ),
+                    userId = normalizedSmartphoneId,
+                    devices = normalizedBittelId?.let { deviceId ->
+                        listOf(DeviceEntity(id = deviceId))
+                    } ?: emptyList(),
+                )
+            }
+            else -> null
+        }
+    }
+
 }
+
+

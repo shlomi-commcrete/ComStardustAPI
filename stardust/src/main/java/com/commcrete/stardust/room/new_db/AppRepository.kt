@@ -11,6 +11,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageType
@@ -26,6 +27,13 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import androidx.core.content.edit
+import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
+import com.commcrete.stardust.room.legacy_db.messages.MessageItem
+import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
+import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.SharedPreferencesUtil
+import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 
 /**
  * Unified repository that combines chats, contacts and messages operations
@@ -58,6 +66,10 @@ class AppRepository(
     private var contactsCache: Map<String, Int> = emptyMap() // Maps normalized userId/deviceId -> contactId
     @Volatile
     private var isContactsCacheInitialized: Boolean = false
+
+    private val chatIdsCacheMutex = Mutex()
+    @Volatile
+    private var chatIdsCache: Map<String, String> = emptyMap() // cache key -> chatId string
 
     // ─────────────────────────────────────────────────────────────────────
     // Contacts + Chats
@@ -166,6 +178,11 @@ class AppRepository(
         contactsDao.findContactNameById(normalizeId(id))
     }
 
+    suspend fun getContactNameByIdOrId(id: String): String = withContext(Dispatchers.IO) {
+        val normalizeId = normalizeId(id)
+        contactsDao.findContactNameById(normalizeId) ?: normalizeId
+    }
+
     /**
      * Returns the display name of the GROUP contact that owns [groupId].
      * Returns null if no group contact owns that ID.
@@ -183,6 +200,68 @@ class AppRepository(
         if (contact.type == ContactType.GROUP) contact else null
     }
 
+
+    suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
+        val selfId = RegisteredUserUtils.mRegisterUser?.appId
+            ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+        
+        if (selfId == null) {
+            // No registered user — return all app + group contacts
+            val appRows = contactsDao.getAllAppContactRows()
+            val groupRows = contactsDao.getAllGroupContactRows()
+            mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+        } else {
+            // Exclude self from app contacts
+            val appRows = contactsDao.getAllAppContactRowsExceptUser(selfId)
+            val groupRows = contactsDao.getAllGroupContactRows()
+            mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+        }
+    }
+
+    private fun mapAppContactRowsToFullContactData(rows: List<ContactsDao.AppContactRow>): List<FullContactData> {
+        if (rows.isEmpty()) return emptyList()
+        return rows.groupBy { it.contact.id }.values.mapNotNull { groupedRows ->
+            val contact = groupedRows.first().contact
+            when (contact.type) {
+                ContactType.USER -> {
+                    val userId = groupedRows.firstNotNullOfOrNull { normalizeIdOrNull(it.userId) }
+                        ?: return@mapNotNull null
+                    val devices = groupedRows
+                        .mapNotNull { row ->
+                            val deviceId = normalizeIdOrNull(row.deviceId) ?: return@mapNotNull null
+                            DeviceEntity(id = deviceId, model = row.deviceModel, serial = row.deviceSerial) to
+                                    (row.deviceSlot ?: Int.MAX_VALUE)
+                        }
+                        .sortedBy { it.second }
+                        .map { it.first }
+                        .distinctBy { it.id }
+                    FullContactData.User(contact = contact, userId = userId, devices = devices)
+                }
+                ContactType.DEVICE -> {
+                    val best = groupedRows
+                        .asSequence()
+                        .mapNotNull { row ->
+                            val deviceId = normalizeIdOrNull(row.deviceId) ?: return@mapNotNull null
+                            Triple(deviceId, row.deviceModel, row.deviceSerial) to (row.deviceSlot ?: Int.MAX_VALUE)
+                        }
+                        .minByOrNull { it.second }?.first ?: return@mapNotNull null
+                    FullContactData.Device(
+                        contact = contact,
+                        deviceId = best.first,
+                        deviceData = DeviceEntity(id = best.first, model = best.second, serial = best.third),
+                    )
+                }
+                ContactType.GROUP -> null
+            }
+        }
+    }
+
+    private fun mapGroupContactRowsToFullContactData(rows: List<ContactsDao.GroupContactRow>): List<FullContactData> =
+        rows.mapNotNull { row ->
+            val groupId = normalizeIdOrNull(row.groupId) ?: return@mapNotNull null
+            FullContactData.Group(contact = row.contact, groupId = groupId)
+        }
+
     // ── Private helpers ──────────────────────────────────────────────────
 
     private suspend fun createPrivateChat(contact: ContactEntity, contactId: Int) {
@@ -192,8 +271,6 @@ class AppRepository(
         )
     }
 
-    /** Creates a GROUP chat. [groupContactId] is the GROUP contact itself — stored as a
-     *  participant so the chat can later be looked up via [ChatDao.findGroupChatIdByContactId]. */
     private suspend fun createGroupChat(
         contact: ContactEntity,
         groupContactId: Int,
@@ -205,7 +282,7 @@ class AppRepository(
         )
     }
 
-    private suspend fun addToExistingGroupChats(contactId: Int, groupChatIds: List<Int>) {
+    private suspend fun addToExistingGroupChats(contactId: Int, groupChatIds: List<String>) {
         if (groupChatIds.isEmpty()) return
         chatsDao.addParticipants(
             groupChatIds.map { chatId -> ChatParticipantEntity(chatId = chatId, contactId = contactId) }
@@ -235,15 +312,14 @@ class AppRepository(
      * ```
      */
     fun getMessages(
-        chatId: Int,
+        chatId: String,
         participantId: String? = null,
         limit: Int = PAGE_SIZE,
     ): Flow<List<MessageEntity>> {
-        val id = chatId.toString()
         return if (participantId != null)
-            messagesDao.getLatestMessagesByParticipant(id, participantId.trim().lowercase(), limit)
+            messagesDao.getLatestMessagesByParticipant(chatId, participantId.trim().lowercase(), limit)
         else
-            messagesDao.getLatestMessages(id, limit)
+            messagesDao.getLatestMessages(chatId, limit)
     }
 
     /**
@@ -255,16 +331,15 @@ class AppRepository(
      * filter consistent.
      */
     suspend fun loadOlderMessages(
-        chatId: Int,
+        chatId: String,
         beforeEpochMs: Long,
         participantId: String? = null,
         limit: Int = PAGE_SIZE,
     ): List<MessageEntity> = withContext(Dispatchers.IO) {
-        val id = chatId.toString()
         if (participantId != null)
-            messagesDao.loadOlderMessagesByParticipant(id, participantId.trim().lowercase(), beforeEpochMs, limit)
+            messagesDao.loadOlderMessagesByParticipant(chatId, participantId.trim().lowercase(), beforeEpochMs, limit)
         else
-            messagesDao.loadOlderMessages(id, beforeEpochMs, limit)
+            messagesDao.loadOlderMessages(chatId, beforeEpochMs, limit)
     }
 
     /**
@@ -283,7 +358,7 @@ class AppRepository(
                 val senderId = message.senderID.trim().lowercase()
                 val contactId = ensureSenderExists(senderId) ?: return@withContext null
                 val chatId = if (groupId != null) resolveGroupChatId(groupId) else resolvePrivateChatId(contactId)
-                val chatIdString = chatId?.toString() ?: return@withContext null
+                val chatIdString = chatId ?: return@withContext null
                 messagesDao.addMessage(message.copy(chatId = chatIdString))
             }
         }
@@ -317,17 +392,12 @@ class AppRepository(
     }
 
     /** Finds the private chat ID for [contactId]. */
-    private suspend fun resolvePrivateChatId(contactId: Int): Int? =
+    private suspend fun resolvePrivateChatId(contactId: Int): String? =
         chatsDao.findPrivateChatIdByContactId(contactId)
 
-    /**
-     * Finds or creates the GROUP chat whose GROUP contact has group_id == [groupId].
-     * Returns the chat ID, or null if resolution fails.
-     */
-    private suspend fun resolveGroupChatId(groupId: String): Int? {
+    private suspend fun resolveGroupChatId(groupId: String): String? {
         val normalizedGroupId = normalizeId(groupId)
 
-        // Fast path for hot message insert loop.
         if (isGroupIdCached(normalizedGroupId)) {
             return contactsDao.findResolvedGroupChatIdByGroupId(normalizedGroupId)
                 ?: createGroupContactAndChat(normalizedGroupId, groupId)
@@ -344,8 +414,7 @@ class AppRepository(
         }
     }
 
-    /** Finds the group chat for an existing GROUP contact, creating one if it doesn't exist yet. */
-    private suspend fun findOrCreateGroupChat(groupContactId: Int, groupId: String): Int? {
+    private suspend fun findOrCreateGroupChat(groupContactId: Int, groupId: String): String? {
         return chatsDao.findGroupChatIdByContactId(groupContactId)
             ?: run {
                 val groupContact = contactsDao.getContactById(groupContactId)
@@ -355,8 +424,7 @@ class AppRepository(
             }
     }
 
-    /** Creates a new GROUP contact + its group chat when neither exists yet. Returns the new chat ID. */
-    private suspend fun createGroupContactAndChat(normalizedGroupId: String, groupId: String): Int? {
+    private suspend fun createGroupContactAndChat(normalizedGroupId: String, groupId: String): String? {
         FullContactData.createGroupContact(
             name = groupId,
             image = null,
@@ -365,6 +433,70 @@ class AppRepository(
         addGroupIdToCache(normalizedGroupId)
         val newGroupContactId = contactsDao.findContactIdByGroupId(normalizedGroupId)
         return newGroupContactId?.let { chatsDao.findGroupChatIdByContactId(it) }
+    }
+
+    /**
+     * Resolves chatId for an incoming package using participantId + optional groupId.
+     * Uses cache for hot packet flow and DB lookup on cache miss.
+     */
+    fun getChatIdForReceivedPackage(participantId: String, groupId: String?): String {
+        val normalizedParticipantId = normalizeIdOrNull(participantId) ?: return ""
+        val normalizedGroupId = normalizeIdOrNull(groupId)
+        val cacheKey = buildReceivedChatCacheKey(
+            groupId = normalizedGroupId,
+            participantId = normalizedParticipantId,
+        )
+
+        chatIdsCache[cacheKey]?.let { return it }
+
+        return runBlocking(Dispatchers.IO) {
+            val resolved = resolveChatIdForReceivedPackage(
+                participantId = normalizedParticipantId,
+                groupId = normalizedGroupId,
+            ) ?: ""
+
+            if (resolved.isNotBlank()) {
+                chatIdsCacheMutex.withLock {
+                    chatIdsCache = chatIdsCache + (cacheKey to resolved)
+                }
+            }
+
+            resolved
+        }
+    }
+
+    /**
+     * Resolves chat for an incoming package using participantId + optional groupId.
+     * Applies the same cache + DB lookup flow as [getChatIdForReceivedPackage].
+     */
+    fun getChatForReceivedPackage(participantId: String, groupId: String?): ChatEntity? {
+        val chatId = getChatIdForReceivedPackage(participantId, groupId)
+        if (chatId.isBlank()) return null
+        return runBlocking(Dispatchers.IO) {
+            chatsDao.getChatById(chatId)
+        }
+    }
+
+    private fun buildReceivedChatCacheKey(groupId: String?, participantId: String): String {
+        // Group packages map to a single chat regardless of who sent the package.
+        return groupId?.let { "group:$it" } ?: "private:$participantId"
+    }
+
+    private suspend fun resolveChatIdForReceivedPackage(
+        participantId: String,
+        groupId: String?,
+    ): String? {
+        if (groupId != null) {
+            return contactsDao.findResolvedGroupChatIdByGroupId(groupId)
+                ?: contactsDao.findContactIdByGroupId(groupId)
+                    ?.let { chatsDao.findGroupChatIdByContactId(it) }
+        }
+
+        val contactId = contactsDao.findContactIdByUserId(participantId)
+            ?: contactsDao.findContactIdByDeviceId(participantId)
+            ?: return null
+
+        return chatsDao.findPrivateChatIdByContactId(contactId)
     }
 
     private fun normalizeId(value: String): String = value.trim().lowercase()
@@ -408,7 +540,7 @@ class AppRepository(
                 is FullContactData.User -> {
                     updates[normalizeId(contact.userId)] = contactId
                     contact.devices.forEach { device ->
-                        updates[normalizeId(device.deviceId)] = contactId
+                        updates[normalizeId(device.id)] = contactId
                     }
                 }
                 is FullContactData.Group -> {
@@ -416,7 +548,7 @@ class AppRepository(
                 }
                 is FullContactData.Device -> {
                     updates[normalizeId(contact.deviceId)] = contactId
-                    updates[normalizeId(contact.deviceData.deviceId)] = contactId
+                    updates[normalizeId(contact.deviceData.id)] = contactId
                 }
             }
             contactsCache = contactsCache + updates
@@ -443,9 +575,98 @@ class AppRepository(
         return result
     }
 
-    suspend fun updateMessageReceived(messageId: String) {
+
+    suspend fun updateMessageReceived(messageId: Long) {
         messagesDao.updateMessageState(messageId, MessageState.RECEIVED)
     }
+
+    /** Archives a single message by ID. Returns true when a row was updated. */
+    suspend fun archiveMessage(messageId: Int): Boolean = withContext(Dispatchers.IO) {
+        messagesDao.archiveMessage(messageId) > 0
+    }
+
+    /** Archives multiple messages by ID. Returns number of rows updated. */
+    suspend fun archiveMessages(messageIds: Collection<Int>): Int = withContext(Dispatchers.IO) {
+        val ids = messageIds.distinct()
+        if (ids.isEmpty()) return@withContext 0
+        messagesDao.archiveMessages(ids)
+    }
+
+    suspend fun archiveMessagesInRange(startTimestamp: Long, endTimestamp: Long): Boolean = withContext(Dispatchers.IO) {
+        messagesDao.archiveAllMessages(startTimestamp, endTimestamp) > 0
+    }
+
+    /**
+     * Marks all RECEIVED / RECEIVING messages in [chatId] that arrived on or before
+     * [untilEpochMs] as SEEN.  Defaults to the current system time so calling
+     * `updateChatRead(chatId)` marks every already-received message as read.
+     *
+     * The ChatSummary live query will automatically re-emit with unseenCount = 0
+     * once the update is committed.
+     */
+    suspend fun updateChatRead(chatId: String, untilEpochMs: Long = System.currentTimeMillis()) =
+        withContext(Dispatchers.IO) {
+            messagesDao.markMessagesAsSeenUntil(chatId, untilEpochMs)
+        }
+
+    /** Returns all chat IDs currently stored in the database. */
+    suspend fun getChatIds(): List<String> = withContext(Dispatchers.IO) {
+        chatsDao.getAllChatIds()
+    }
+
+    /** Fetches just the ChatEntity by ID (lightweight, no participants). Returns null if not found. */
+    suspend fun getShortChatDataByChatId(chatId: String): ChatEntity? = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
+        chatsDao.getChatById(normalizedChatId)
+    }
+
+    /** Fetches a single chat by its ID with participants. Returns null if not found. */
+    suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
+        chatsDao.getChatWithParticipants(normalizedChatId)
+    }
+
+    /** Deletes a chat by ID. Related messages/participants are deleted by FK cascade. */
+    suspend fun deleteChat(chatId: String): Boolean = saveMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext false
+            val deletedRows = chatsDao.deleteChatById(normalizedChatId)
+            if (deletedRows > 0) {
+                chatIdsCacheMutex.withLock {
+                    chatIdsCache = chatIdsCache.filterValues { it != normalizedChatId }
+                }
+            }
+            deletedRows > 0
+        }
+    }
+
+    suspend fun findNewChatIdByPreviousChatId(previousChatId: String): String? = withContext(Dispatchers.IO) {
+        chatsDao.findNewChatIdByPreviousChatId(previousChatId.trim().lowercase())
+    }
+
+    /**
+     * Resolves a list of previous chat IDs (groupId / deviceId / userId from the legacy DB)
+     * to new chat IDs, preserving input order.
+     *
+     * Duplicate inputs are resolved with a single DB call each and the result is reused
+     * for subsequent positions, so the list may contain the same value multiple times
+     * without extra queries.
+     *
+     * @return positionally aligned list — `null` at index i means no chat was found for
+     *         `previousChatIds[i]`.
+     */
+    suspend fun findNewChatIdsByPreviousChatIds(previousChatIds: List<String>): List<String?> =
+        withContext(Dispatchers.IO) {
+            // Resolve each unique ID once, then map positions back
+            val cache = mutableMapOf<String, String?>()
+            previousChatIds.map { raw ->
+                val key = raw.trim().lowercase()
+                if (key.isEmpty()) return@map null
+                cache.getOrPut(key) {
+                    chatsDao.findNewChatIdByPreviousChatId(key)
+                }
+            }
+        }
 
     suspend fun clearData(): Boolean = saveMutex.withLock {
         withContext(Dispatchers.IO) {
@@ -518,7 +739,11 @@ class AppRepository(
             contactsCache = emptyMap()
             isContactsCacheInitialized = false
         }
+        chatIdsCacheMutex.withLock {
+            chatIdsCache = emptyMap()
+        }
     }
+
 
     // ─────────────────────────────────────────────────────────────────────
     // One-time migration from legacy databases
@@ -533,53 +758,46 @@ class AppRepository(
      * once per installation.  Safe to call multiple times — subsequent calls
      * return immediately.
      */
-//    suspend fun migrateFromLegacyDatabases(context: Context) = withContext(Dispatchers.IO) {
-//        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-//        if (prefs.getBoolean(KEY_MIGRATION_DONE, false)) return@withContext
-//
-//        try {
-//            // ── 1. Chats ──────────────────────────────────────────────────
-//            val oldChatsDb = ChatsDatabase.getDatabase(context)
-//            val chats: List<ChatItem> = oldChatsDb.chatsDao().readChats()
-//            if (chats.isNotEmpty()) {
-//                chatsDao.addChats(chats.map { it.toAppChatEntity() })
-//                Timber.d("Migration: copied ${chats.size} chat(s)")
-//            }
-//            oldChatsDb.close()
-//
-//            // ── 2. Contacts ───────────────────────────────────────────────
-//            val oldContactsDb = ContactsDatabase.getDatabase(context)
-//            val contacts: List<ChatContact> = oldContactsDb.contactsDao().readAllContacts()
-//            if (contacts.isNotEmpty()) {
-//                contactsDao.addA(contacts)
-//                Timber.d("Migration: copied ${contacts.size} contact(s)")
-//            }
-//            oldContactsDb.close()
-//
-//            // ── 3. Messages ───────────────────────────────────────────────
-//            val oldMessagesDb = MessagesDatabase.getDatabase(context)
-//            val messages: List<MessageItem> = oldMessagesDb.messagesDao().getAllMessages()
-//            if (messages.isNotEmpty()) {
-//                messagesDao.addMessages(messages.map { it.toAppMessageEntity() })
-//                Timber.d("Migration: copied ${messages.size} message(s)")
-//            }
-//            oldMessagesDb.close()
-//
-//            // ── 4. Delete legacy database files ───────────────────────────
-//            context.deleteDatabase("chats_database")
-//            context.deleteDatabase("contacts_database")
-//            context.deleteDatabase("messages_database")
-//            Timber.d("Migration: legacy databases deleted")
-//
-//            // ── 5. Mark done ──────────────────────────────────────────────
-//            prefs.edit().putBoolean(KEY_MIGRATION_DONE, true).apply()
-//            Timber.d("Migration: completed successfully")
-//
-//        } catch (e: Exception) {
-//            Timber.e(e, "Migration: failed — legacy data retained, will retry on next launch")
-//            // Do NOT set the flag — the migration will be attempted again next time
-//        }
-//    }
+    suspend fun migrateFromLegacyDatabases(context: Context) = withContext(Dispatchers.IO) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_MIGRATION_DONE, false)) return@withContext
+
+        try {
+
+            // ── 2. Contacts ───────────────────────────────────────────────
+            val oldContactsDb = ContactsDatabase.getDatabase(context)
+            val contacts: List<ChatContact> = oldContactsDb.contactsDao().getAllContact()
+            if (contacts.isNotEmpty()) {
+                val parsedContacts: List<FullContactData> = contacts.mapNotNull { it.toFullContactData() }
+                insertContactsWithChats(parsedContacts)
+                Timber.d("Migration: copied ${contacts.size} contact(s)")
+            }
+            oldContactsDb.close()
+
+            // ── 3. Messages ───────────────────────────────────────────────
+            val oldMessagesDb = MessagesDatabase.getDatabase(context)
+            val messages: List<MessageItem> = oldMessagesDb.messagesDao().getAllMessages()
+            if (messages.isNotEmpty()) {
+                messagesDao.addMessages(messages.map { it.toAppMessageEntity() })
+                Timber.d("Migration: copied ${messages.size} message(s)")
+            }
+            oldMessagesDb.close()
+
+            // ── 4. Delete legacy database files ───────────────────────────
+            context.deleteDatabase("chats_database")
+            context.deleteDatabase("contacts_database")
+            context.deleteDatabase("messages_database")
+            Timber.d("Migration: legacy databases deleted")
+
+            // ── 5. Mark done ──────────────────────────────────────────────
+            prefs.edit().putBoolean(KEY_MIGRATION_DONE, true).apply()
+            Timber.d("Migration: completed successfully")
+
+        } catch (e: Exception) {
+            Timber.e(e, "Migration: failed — legacy data retained, will retry on next launch")
+            // Do NOT set the flag — the migration will be attempted again next time
+        }
+    }
 
 
 
@@ -594,4 +812,6 @@ class AppRepository(
             "messages_database",
         )
     }
+
 }
+

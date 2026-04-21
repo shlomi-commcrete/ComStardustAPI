@@ -9,15 +9,15 @@ import androidx.room.PrimaryKey
 )
 data class DeviceEntity(
     @PrimaryKey
-    @ColumnInfo(name = "device_id")
-    val deviceId: String,
+    @ColumnInfo(name = "id")
+    val id: String,
     @ColumnInfo(name = "model")
     val model: String? = null,
     @ColumnInfo(name = "serial")
     val serial: String? = null,
 ) {
     init {
-        require(deviceId.isNotBlank()) { "deviceId cannot be blank" }
+        require(id.isNotBlank()) { "deviceId cannot be blank" }
     }
 }
 

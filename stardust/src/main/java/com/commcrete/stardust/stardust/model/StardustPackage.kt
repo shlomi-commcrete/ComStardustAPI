@@ -5,7 +5,10 @@ import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
 import com.commcrete.stardust.stardust.StardustPackageUtils.byteArrayToIntArray
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 
 data class StardustPackage(
     val context: Context,
@@ -15,7 +18,7 @@ data class StardustPackage(
     var stardustControlByte: StardustControlByte,
     var stardustOpCode: StardustPackageUtils.StardustOpCode,
     val length: Int,
-    val data: Array<Int>? = null,
+    var data: Array<Int>? = null,
     var checkXor: Int? = 0,
     var pullTimer : Int = 0,
     var lengthForCrypt : Int = 0,
@@ -27,11 +30,13 @@ data class StardustPackage(
 
     var isDemandAck : Boolean? = false
     var messageNumber : Int = 1
-    var idNumber : Long = 1
+    var idNumber: Long? = null
 
     val senderId: String
 
     val groupId: String?
+
+    val chatId: String
 
     init {
         val ids = GroupsUtils.resolveGroupAndContactSync(
@@ -40,6 +45,9 @@ data class StardustPackage(
         )
         senderId = ids.senderId
         groupId = ids.groupId
+        chatId = runBlocking(Dispatchers.IO) {
+            DataManager.getAppRepo(context).getChatIdForReceivedPackage(senderId, groupId)
+        }
     }
 
 
@@ -303,7 +311,7 @@ data class StardustPackage(
     }
 
     fun isAck(): Boolean {
-        return if(!data.isNullOrEmpty()) data[0] == Ack else false
+        return data?.getOrNull(0) == Ack
     }
 
     fun isEqual(pkg: StardustPackage) : Boolean{

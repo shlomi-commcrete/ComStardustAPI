@@ -155,9 +155,9 @@ object FileUtils {
         return context.contentResolver.getType(uri) ?: "application/octet-stream"
     }
 
-    fun getAllChatFilesDirs(context: Context, chatIDs: List<String>): List<File> {
+    suspend fun getAllChatFilesDirs(context: Context): List<File> {
         val rootDir = context.filesDir
-
+        val chatIDs: List<String> = DataManager.getAppRepo(context).getChatIds().map { it.toString() }
         return rootDir.listFiles()
             ?.filter { it.isDirectory && chatIDs.contains(it.name)}
             ?.sortedBy { it.name }
@@ -502,7 +502,6 @@ object FileUtils {
             val stardustAPIPackage: StardustAPIPackage,
             val file: File,
             override val fileType: FileType,
-            val destinationName: String,
             override val numOfPackages: Int,
             override val timestamp: Long = System.currentTimeMillis()
         ) : FileTransferData(
@@ -515,9 +514,7 @@ object FileUtils {
         data class Receive(
             override val id: String = UUID.randomUUID().toString(),
             override val chatId: String,
-            val senderID: String,
-            val chatName: String,
-            val realSenderName: String = senderID,
+            val senderId: String,
             val fileName: String,
             val fileEnding: String,
             override val fileType: FileType,

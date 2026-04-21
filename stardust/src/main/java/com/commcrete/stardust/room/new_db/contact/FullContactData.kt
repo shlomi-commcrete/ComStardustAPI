@@ -25,6 +25,12 @@ sealed class FullContactData {
         val deviceData: DeviceEntity,
     ) : FullContactData()
 
+    val mainCommunicationId: String = when(this) {
+            is User -> userId
+            is Group -> groupId
+            is Device -> deviceId
+    }
+
     companion object {
         fun createUserContact(
             name: String,
@@ -40,7 +46,7 @@ sealed class FullContactData {
                 contact = ContactEntity(name = name, image = image, type = ContactType.USER),
                 userId = normalizedUserId,
                 devices = normalizedDeviceId?.let {
-                    listOf(DeviceEntity(deviceId = it, model = model, serial = serial))
+                    listOf(DeviceEntity(id = it, model = model, serial = serial))
                 } ?: emptyList(),
             )
         }
@@ -68,7 +74,7 @@ sealed class FullContactData {
                 contact = ContactEntity(name = name, image = image, type = ContactType.DEVICE),
                 deviceId = normalizedDeviceId,
                 deviceData = DeviceEntity(
-                    deviceId = normalizedDeviceId,
+                    id = normalizedDeviceId,
                     model = model,
                     serial = serial,
                 ),

@@ -165,7 +165,6 @@ class WavRecorder(
     fun stopRecordingNow(
         context: Context,
         retry : Int = 0,
-        chatID: String,
         receiverId: String,
         path: String,
         carrier: Carrier?) {
@@ -186,7 +185,7 @@ class WavRecorder(
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
-                    stopRecording(context, retryNum, chatID, path, receiverId, carrier)
+                    stopRecording(context, retryNum, receiverId = receiverId, path = path, carrier)
                 } finally {
                     removeSyncBleDevices(context)
                     recordingThread = null
@@ -197,11 +196,11 @@ class WavRecorder(
                 }
             }
             // ✅ Save PTT regardless of whether recorder was null
-            saveOrRemovePttFile(context, chatID, receiverId, path)
+            saveOrRemovePttFile(context, receiverId, path)
         } catch (e: Exception) {
             Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
 
-            stopRecording(context, retryNum, chatID, receiverId, path, carrier)
+            stopRecording(context, retryNum, receiverId = receiverId, path = path, carrier)
         } finally {
             // ✅ Always notify
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
@@ -214,13 +213,12 @@ class WavRecorder(
     fun stopRecording(
         context: Context,
         retry : Int = 0,
-        chatID: String,
         receiverId: String,
         path: String,
         carrier: Carrier?) {
         CoroutineScope(Dispatchers.IO).launch {
             delay(200)
-            stopRecordingNow(context, retry, chatID, receiverId, path,  carrier)
+            stopRecordingNow(context, retry, receiverId, path,  carrier)
         }
     }
 
@@ -396,7 +394,7 @@ class WavRecorder(
         data[43] = (contentSize shr 24 and 0xff).toByte()
     }
 
-    private fun saveOrRemovePttFile(context: Context, chatID: String, receiverId: String, path: String) {
+    private fun saveOrRemovePttFile(context: Context, receiverId: String, path: String) {
         val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             if(!DataManager.getSavePTTFilesRequired(context)) {
@@ -405,7 +403,6 @@ class WavRecorder(
             } else {
                 DataManager.getAppRepo(context).saveMessage(
                     MessageEntity(
-                        chatId = chatID,
                         senderID = appId,
                         receiverID = receiverId,
                         state = MessageState.SENT,
@@ -423,14 +420,9 @@ class WavRecorder(
     }
 
     private fun charsToBytes(chars: CharArray?): ByteArray? {
-        var byteArray : ByteArray? = null
-        chars?.let {chars: CharArray ->
-            byteArray= ByteArray(chars.size)
-            chars.forEachIndexed { index, c ->
-                byteArray[index] = c.code.toByte()
-            }
+        return chars?.let { charArray ->
+            ByteArray(charArray.size) { i -> charArray[i].code.toByte() }
         }
-        return byteArray
     }
 
     private fun sendData(byteArray: ByteArray, isLast : Boolean = false, carrier: Carrier? = null) {
@@ -479,7 +471,6 @@ class WavRecorder(
                 stopRecording(
                     context = context,
                     retry = 0,
-                    chatID = it.getChatId(),
                     receiverId = it.getDestination(),
                     path = file.absolutePath,
                     carrier = carrier

@@ -4,7 +4,6 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
-import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 
 @Entity(
@@ -12,7 +11,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
     primaryKeys = ["chat_id", "contact_id"],
     foreignKeys = [
         ForeignKey(
-            entity = ChatItem::class,
+            entity = ChatEntity::class,
             parentColumns = ["id"],
             childColumns = ["chat_id"],
             onDelete = ForeignKey.CASCADE,
@@ -33,7 +32,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 )
 data class ChatParticipantEntity(
     @ColumnInfo(name = "chat_id")
-    val chatId: Int,
+    val chatId: String,
     @ColumnInfo(name = "contact_id")
     val contactId: Int,
 )

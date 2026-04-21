@@ -1,6 +1,8 @@
 package com.commcrete.stardust.room.new_db.contact
 
+import androidx.room.ColumnInfo
 import androidx.room.Dao
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -11,6 +13,30 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ContactsDao {
+
+    /** Flat projection row used for reconstructing USER/DEVICE FullContactData. */
+    data class AppContactRow(
+        @Embedded
+        val contact: ContactEntity,
+        @ColumnInfo(name = "user_id")
+        val userId: String?,
+        @ColumnInfo(name = "device_id")
+        val deviceId: String?,
+        @ColumnInfo(name = "device_model")
+        val deviceModel: String?,
+        @ColumnInfo(name = "device_serial")
+        val deviceSerial: String?,
+        @ColumnInfo(name = "device_slot")
+        val deviceSlot: Int?,
+    )
+
+    /** Flat projection row used for reconstructing GROUP FullContactData. */
+    data class GroupContactRow(
+        @Embedded
+        val contact: ContactEntity,
+        @ColumnInfo(name = "group_id")
+        val groupId: String,
+    )
 
 
     @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
@@ -84,6 +110,36 @@ interface ContactsDao {
     )
     suspend fun findContactNameById(id: String): String?
 
+
+    /**
+     * Returns all USER and GROUP contacts. DEVICE-only contacts are excluded.
+     */
+    @Query(
+        """
+        SELECT DISTINCT c.*
+        FROM contacts_table c
+        INNER JOIN (
+            SELECT contact_id FROM app_contact_user_ids
+            UNION
+            SELECT contact_id FROM app_contact_group_ids
+        ) ids ON ids.contact_id = c.id
+        """
+    )
+    suspend fun getUserAndGroupContacts(): List<ContactEntity>
+
+    @Query(
+        """
+        SELECT DISTINCT c.*
+        FROM contacts_table c
+        INNER JOIN (
+            SELECT contact_id FROM app_contact_user_ids WHERE user_id != :excludedUserId
+            UNION
+            SELECT contact_id FROM app_contact_group_ids
+        ) ids ON ids.contact_id = c.id
+        """
+    )
+    suspend fun getUserAndGroupContactsExceptUser(excludedUserId: String): List<ContactEntity>
+    
     @Query(
         """
         SELECT c.name
@@ -102,6 +158,57 @@ interface ContactsDao {
 
     @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
     suspend fun getContactById(id: Int): ContactEntity?
+
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id AS user_id,
+            cd.device_id AS device_id,
+            d.model AS device_model,
+            d.serial AS device_serial,
+            cd.slot AS device_slot
+        FROM contacts_table c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices cd ON cd.contact_id = c.id
+        LEFT JOIN devices d ON d.id = cd.device_id
+        WHERE c.type = 'USER'
+        ORDER BY c.id ASC, cd.slot ASC, cd.assigned_at ASC
+        """
+    )
+    suspend fun getAllAppContactRows(): List<AppContactRow>
+
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id AS user_id,
+            cd.device_id AS device_id,
+            d.model AS device_model,
+            d.serial AS device_serial,
+            cd.slot AS device_slot
+        FROM contacts_table c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices cd ON cd.contact_id = c.id
+        LEFT JOIN devices d ON d.id = cd.device_id
+        WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
+        ORDER BY c.id ASC, cd.slot ASC, cd.assigned_at ASC
+        """
+    )
+    suspend fun getAllAppContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
+
+    @Query(
+        """
+        SELECT
+            c.*,
+            g.group_id AS group_id
+        FROM contacts_table c
+        INNER JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE c.type = 'GROUP'
+        ORDER BY c.id ASC
+        """
+    )
+    suspend fun getAllGroupContactRows(): List<GroupContactRow>
 
     /**
      * Live stream of group IDs (group_id) that are fully resolved:
@@ -142,7 +249,7 @@ interface ContactsDao {
         LIMIT 1
         """
     )
-    suspend fun findResolvedGroupChatIdByGroupId(groupId: String): Int?
+    suspend fun findResolvedGroupChatIdByGroupId(groupId: String): String?
 
     /** Inserts/updates all contacts and returns each one paired with its resolved contact ID. */
     @Transaction
@@ -190,11 +297,11 @@ interface ContactsDao {
 
         return sourceDevices
             .mapNotNull { device ->
-                device.deviceId.normalizedIdOrNull()?.let { normalizedId ->
-                    device.copy(deviceId = normalizedId)
+                device.id.normalizedIdOrNull()?.let { normalizedId ->
+                    device.copy(id = normalizedId)
                 }
             }
-            .distinctBy { it.deviceId }
+            .distinctBy { it.id }
     }
 
     private suspend fun findExistingByPrimaryId(
@@ -208,7 +315,7 @@ interface ContactsDao {
     }
 
     private suspend fun findExistingByDevice(normalizedDevices: List<DeviceEntity>): Int? =
-        normalizedDevices.firstNotNullOfOrNull { findContactIdByDeviceId(it.deviceId) }
+        normalizedDevices.firstNotNullOfOrNull { findContactIdByDeviceId(it.id) }
 
     private suspend fun resolveOrCreateContactId(
         fullContactData: FullContactData,
@@ -242,9 +349,9 @@ interface ContactsDao {
             }
 
             is FullContactData.Device -> {
-                val hasPrimaryDevice = normalizedDevices.any { it.deviceId == normalizedPrimaryId }
+                val hasPrimaryDevice = normalizedDevices.any { it.id == normalizedPrimaryId }
                 if (!hasPrimaryDevice) {
-                    upsertDevice(DeviceEntity(deviceId = normalizedPrimaryId))
+                    upsertDevice(DeviceEntity(id = normalizedPrimaryId))
                     upsertContactDevice(ContactDeviceEntity(deviceId = normalizedPrimaryId, contactId = contactId))
                 }
             }
@@ -254,7 +361,7 @@ interface ContactsDao {
     private suspend fun upsertDeviceLinks(normalizedDevices: List<DeviceEntity>, contactId: Int) {
         normalizedDevices.forEach { device ->
             upsertDevice(device)
-            upsertContactDevice(ContactDeviceEntity(deviceId = device.deviceId, contactId = contactId))
+            upsertContactDevice(ContactDeviceEntity(deviceId = device.id, contactId = contactId))
         }
     }
 

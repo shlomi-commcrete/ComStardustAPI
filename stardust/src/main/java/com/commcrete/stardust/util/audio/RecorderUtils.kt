@@ -144,8 +144,8 @@ object RecorderUtils {
     fun stopRecording(
         receiverId: String,
         carrier: Carrier?,
-        codeType: AudioEncoderType?,
-        file: File?
+        codeType: AudioEncoderType,
+        file: File
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
@@ -158,9 +158,9 @@ object RecorderUtils {
         }
     }
 
-    private fun stopCodec2Recording(chatID: String, carrier: Carrier?, file: File?) {
+    private fun stopCodec2Recording(receiverID: String, carrier: Carrier?, file: File) {
         wavRecorder?.run {
-            file?.let { stopRecording(retry = 0, chatID, it.absolutePath, DataManager.context, carrier) }
+            stopRecording(context = context, retry = 0, receiverId = receiverID, path = file.absolutePath, carrier = carrier)
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
                 wavRecorder = null
@@ -229,6 +229,11 @@ object RecorderUtils {
         }
 
         companion object {
+            fun fromId(id: Int): AudioEncoderType? =
+                entries.firstOrNull { it.id == id }
+
+            fun fromIdOrDefault(id: Int, default: AudioEncoderType = CODEC2): AudioEncoderType =
+                fromId(id) ?: default
 
             fun fromEncoderType(type: EncoderType): AudioEncoderType =
                 when(type) {

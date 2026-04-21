@@ -21,7 +21,7 @@ object SOSUtils {
 
     suspend fun sendAlert(
         context: Context,
-        type: Int,
+        sosType: SOS_REPORT_TYPES?,
         text: String ? = null,
         location: Location,
         stardustAPIPackage: StardustAPIPackage) {
@@ -31,7 +31,7 @@ object SOSUtils {
         var data : Array<Int> = arrayOf()
         data = data.plus(if(text.isNullOrEmpty()) 12 else (12 + text.length))
         data = data.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
-        data = data.plus(type)
+        data = data.plus(sosType?.type ?: 0)
         data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
         text?.let {
             data = data.plus(StardustPackageUtils.byteArrayToIntArray(it.toByteArray()))
@@ -48,7 +48,7 @@ object SOSUtils {
         sosMessage.stardustControlByte.stardustDeliveryType = radio.second
         sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
         DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
-        saveSOSMessage(context, type,stardustAPIPackage, location)
+        saveSOSMessage(context, sosType, stardustAPIPackage, location)
     }
 
     fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
@@ -85,12 +85,12 @@ object SOSUtils {
             requireAck = true
         )
 
-        saveSOSMessage(context, 0 , sosPackage, location)
+        saveSOSMessage(context, null , sosPackage, location)
     }
 
     suspend fun saveSOSMessage (
         context: Context,
-        type: Int,
+        type: SOS_REPORT_TYPES?,
         stardustAPIPackage: StardustAPIPackage,
         location: Location,
         state: MessageState = MessageState.SENT
@@ -106,7 +106,7 @@ object SOSUtils {
                     latitude = location.latitude,
                     longitude = location.longitude,
                     altitude = location.altitude,
-                    subtype = SOS_REPORT_TYPES.fromCode(type)?.toSosType()
+                    subtype = type?.toSosType()
                 )
             ), stardustAPIPackage.groupId
         )

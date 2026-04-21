@@ -8,6 +8,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import com.commcrete.bittell.util.bittel_package.UARTManager
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -19,6 +20,7 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.ButtonListener
@@ -27,6 +29,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.Locale
 
 @SuppressLint("StaticFieldLeak")
 object BittelUsbManager2 : BittelProtocol {
@@ -64,9 +67,9 @@ object BittelUsbManager2 : BittelProtocol {
 
     fun connectToUnknownDevice (context: Context, device: UsbDevice) {
         if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
+            || device.productName?.toLowerCase(Locale.ROOT)?.contains("jbox") == true) {
             connectToAudioDevice(context, device)
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        } else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
             connectToDevice(context, device)
         }
     }
@@ -153,7 +156,7 @@ object BittelUsbManager2 : BittelProtocol {
 
 
     private fun connectToAudioDevice (context: Context, device: UsbDevice) {
-        if(!isConnectedAudio){
+        if(!isConnectedAudio) {
             Timber.tag("SerialInOutputManager").d("connectToAudioDevice : ${device.productName}")
             uartManagerAudio = UARTManager(context)
             val connectionStatus = uartManagerAudio?.connectDevice(
@@ -182,14 +185,11 @@ object BittelUsbManager2 : BittelProtocol {
                 device.deviceId,
                 object : UARTManager.CTSChange {
                 override fun onCTSChanged(isActive: Boolean) {
-                    Timber.tag("SerialInOutputManager").d("onCTSChanged : $isActive")
-                    Timber.tag("notifyData PTT").d("onCTSChanged : ${isActive}")
-                    ButtonListener.notifyData(isActive, DataManager.context)
+                    ButtonListener.notifyData(DataManager.context, isActive)
                 }
 
             })
-            if(connectionStatus == true) {}
-        } else { }
+        }
     }
 
     private fun connectToDevice(context: Context, device: UsbDevice) {

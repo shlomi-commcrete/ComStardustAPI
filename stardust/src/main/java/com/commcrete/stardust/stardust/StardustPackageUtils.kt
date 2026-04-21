@@ -729,17 +729,17 @@ object StardustPackageUtils {
 
     fun handlePackageReceived (context: Context, byteArray: ByteArray, randomID: String) {
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
-            lastByteArray = byteArray
+        lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
 //            logByteArray("handlePackageReceivedbyteArray $randomID", byteArray)
-            Log.d("handlePackageReceived $randomID", "handlePackageReceived")
-            try {
-                if(packagesList.isNotEmpty() && packagesList[packagesList.lastIndex] == null ){
-                    packagesList.removeAt(packagesList.lastIndex)
-                }
-            }catch (e : Exception) {
-                e.printStackTrace()
+        Log.d("handlePackageReceived $randomID", "handlePackageReceived")
+        try {
+            if(packagesList.isNotEmpty() && packagesList[packagesList.lastIndex] == null ){
+                packagesList.removeAt(packagesList.lastIndex)
             }
+        } catch (e : Exception) {
+            e.printStackTrace()
+        }
         Log.d("handlePackageReceived $randomID", "removeAt")
 
         if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
@@ -750,22 +750,22 @@ object StardustPackageUtils {
         val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(context, byteArray)
         Log.d("handlePackageReceived $randomID", "isFinished")
         val mPackage =  packagesList[packagesList.lastIndex]
-            if(isFinished == StardustPackageParser.PackageState.VALID){
-                val dataForStardustPackage = packagesList[packagesList.lastIndex]
-                val bittelPackage = dataForStardustPackage.mPackage
-                dataForStardustPackage.spareData?.let {
-                    if(it.isNotEmpty()){
-                        handlePackageReceived(context, it, randomID)
-                    }
+        if(isFinished == StardustPackageParser.PackageState.VALID){
+            val dataForStardustPackage = packagesList[packagesList.lastIndex]
+            val bittelPackage = dataForStardustPackage.mPackage
+            dataForStardustPackage.spareData?.let {
+                if(it.isNotEmpty()){
+                    handlePackageReceived(context, it, randomID)
                 }
-                bittelPackage?.let {
-                    bittelPackageHandler?.handleStardustPackage(context, it, randomID)
-                    packagesList.remove(mPackage)
-                }
-            } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
-                packagesList.remove(mPackage)
-
             }
+            bittelPackage?.let {
+                bittelPackageHandler?.handleStardustPackage(context, it, randomID)
+                packagesList.remove(mPackage)
+            }
+        } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
+            packagesList.remove(mPackage)
+
+        }
 //        }
         resetTimer()
         resetTimerByteArray()

@@ -30,19 +30,30 @@ sealed class MessageExtraData {
         val encoderType: EncoderType = EncoderType.CODEC2,
     ) : MessageExtraData()
 
+    /**
+     * Common base for any [MessageExtraData] that carries geographic coordinates.
+     * Both [Location] and [Sos] share latitude/longitude/altitude; use this type
+     * whenever only the coordinates matter.
+     */
+    sealed class GeoData : MessageExtraData() {
+        abstract val latitude: Double
+        abstract val longitude: Double
+        abstract val altitude: Double
+    }
+
     @Serializable
     data class Location(
-        val latitude: Double,
-        val longitude: Double,
-        val altitude: Double? = null,
+        override val latitude: Double,
+        override val longitude: Double,
+        override val altitude: Double,
         val isAckResponse: Boolean = false,
-    ) : MessageExtraData()
+    ) : GeoData()
 
     @Serializable
     data class Sos(
-        val latitude: Double,
-        val longitude: Double,
-        val altitude: Double? = null,
+        override val latitude: Double,
+        override val longitude: Double,
+        override val altitude: Double,
         val subtype: SosType? = null,
-    ) : MessageExtraData()
+    ) : GeoData()
 }

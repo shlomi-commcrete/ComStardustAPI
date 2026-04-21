@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
@@ -37,13 +38,17 @@ import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
+import no.nordicsemi.android.ble.BleManager as NordicBleManager
 
 internal class ClientConnection(
     private val context: Context
-) : BleManager(context), BittelProtocol {
+) : NordicBleManager(context), BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
+        const val MAX_WRITE_RETRIES = 3
+        const val RETRY_DELAY_MS = 500L
+        const val WRITE_ERROR_CODE = 2147483647
     }
     private val TAG = ClientConnection::class.java.simpleName
 
@@ -168,9 +173,9 @@ internal class ClientConnection(
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
-                            com.commcrete.stardust.ble.BleManager.isBleConnected = false
-                            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
-                            com.commcrete.stardust.ble.BleManager.updateStatus()
+                            BleManager.isBleConnected = false
+                            BleManager.bleConnectionStatus.value = false
+                            BleManager.updateStatus()
                         }
                     }
                 }
@@ -204,12 +209,12 @@ internal class ClientConnection(
                     super.onServicesDiscovered(gatt, status)
                     setDevice()
                     Scopes.getMainCoroutine().launch {
-                        if(com.commcrete.stardust.ble.BleManager.isPaired.value == true){
+                        if(BleManager.isPaired.value == true){
                             Timber.tag(LOG_TAG).d("gattConnection")
                             gattConnection = gatt
-                            com.commcrete.stardust.ble.BleManager.isBleConnected = true
-                            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = true
-                            com.commcrete.stardust.ble.BleManager.updateStatus()
+                            BleManager.isBleConnected = true
+                            BleManager.bleConnectionStatus.value = true
+                            BleManager.updateStatus()
                             resetRSSITimer()
                         }
                     }
@@ -309,7 +314,7 @@ internal class ClientConnection(
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         // Handle the RSSI value
                         Scopes.getMainCoroutine().launch {
-                            com.commcrete.stardust.ble.BleManager.rssi.value = rssi
+                            BleManager.rssi.value = rssi
                             DataManager.getCallbacks()?.onRSSIChanged(rssi)
                         }
                     }
@@ -332,8 +337,8 @@ internal class ClientConnection(
                 if(!isConnected) {
                     disconnectFromBLEDevice(true)
                 } else if(
-                    !com.commcrete.stardust.ble.BleManager.isBleConnected
-                    && com.commcrete.stardust.ble.BleManager.isBluetoothToggleEnabled){
+                    !BleManager.isBleConnected
+                    && BleManager.isBluetoothToggleEnabled){
                         mDevice?.let { connectDevice(it) }
                 }
             }
@@ -400,7 +405,7 @@ internal class ClientConnection(
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
 //            com.commcrete.stardust.ble.BleManager.isBleConnected = false
 //            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
-            com.commcrete.stardust.ble.BleManager.updateStatus()
+            BleManager.updateStatus()
             removeRSSITimer()
             removePingTimer()
         }
@@ -423,7 +428,7 @@ internal class ClientConnection(
         device.name?.let {
             val connectedDevice = getBleConnectedDevice(device.address)
             if(connectedDevice != null) {
-                com.commcrete.stardust.ble.BleManager.isPaired.value = true
+                BleManager.isPaired.value = true
                 connectDevice(device)
                 return
             }
@@ -453,7 +458,7 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun bondToBleDeviceStartup(connectedDevice: BluetoothDevice) {
         Scopes.getMainCoroutine().launch {
-            com.commcrete.stardust.ble.BleManager.isPaired.value = true
+            BleManager.isPaired.value = true
         }
         connectDevice(connectedDevice)
         this.deviceName = connectedDevice.name
@@ -477,7 +482,7 @@ internal class ClientConnection(
                         device?.let {
                             CoroutineScope(Dispatchers.IO).launch {
                                 Scopes.getMainCoroutine().launch {
-                                    com.commcrete.stardust.ble.BleManager.isPaired.value = true
+                                    BleManager.isPaired.value = true
                                 }
                                 connectDevice(device)
                                 removeBondTimer()
@@ -538,7 +543,7 @@ internal class ClientConnection(
 
         mDevice = null
         Scopes.getMainCoroutine().launch {
-            com.commcrete.stardust.ble.BleManager.isPaired.value = false
+            BleManager.isPaired.value = false
         }
     }
 
@@ -713,7 +718,7 @@ internal class ClientConnection(
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
         Log.d("checkXorfini $randomID", "sendMessage")
         if(bittelPackage.isAbleToSendAgain()){
-            if(!com.commcrete.stardust.ble.BleManager.isBluetoothEnabled() && !com.commcrete.stardust.ble.BleManager.isUSBConnected){
+            if(!BleManager.isBluetoothEnabled() && !BleManager.isUSBConnected){
                 Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
             }
             Log.d("isAbleToSendAgain $randomID", "sendMessage")
@@ -728,7 +733,7 @@ internal class ClientConnection(
                 val id = deviceLastDigit
                 val uuid = Characteristics.getWriteChar(id)
                 bittelPackage.updateRetryCounter()
-                if(com.commcrete.stardust.ble.BleManager.isUSBConnected) {
+                if(BleManager.isUSBConnected) {
                     BittelUsbManager2.sendDataToUart(bittelPackage)
                 }else {
                     gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
@@ -751,66 +756,112 @@ internal class ClientConnection(
     private fun writePackage(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
         bittelPackage: StardustPackage,
-        count : Int = 0
-        , randomID: String = ""
+        count: Int = 0,
+        randomID: String = ""
     ) {
-        Log.d("Ble write $randomID", "writePackage attempt ${bittelPackage.stardustOpCode}")
-        if(count>3){
+        Timber.tag(LOG_TAG).d("writePackage attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
+
+        if (count > MAX_WRITE_RETRIES) {
+            Timber.tag(LOG_TAG).w("Max write retries exceeded for ${bittelPackage.stardustOpCode}")
             return
         }
-        if(count > 0) {
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val write = gattConnection?.writeCharacteristic(
-                        bluetoothGattCharacteristic,
-                        bittelPackage.getStardustPackageToSend(context),
-                        WRITE_TYPE_DEFAULT
-                    )
-                    write?.let {
-                        if(write !=0){
-                            writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
-                            if(write == 2147483647) {
-                                reconnectToDevice()
-                            }
-                        } else {
-                            checkIfPackageDemandsAck(bittelPackage)
-                        }
-                    }
-                } else {
-                    bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
-                    val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
-                    write?.let {
-                        if(!it){
-                            writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
-                        }
-                    }
-                }
-            }, 500)
+
+        if (count > 0) {
+            scheduleRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
         } else {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val write = gattConnection?.writeCharacteristic(
-                    bluetoothGattCharacteristic,
-                    bittelPackage.getStardustPackageToSend(context),
-                    WRITE_TYPE_DEFAULT
-                )
-                write?.let {
-                    if(write !=0){
-                        writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
-                        if(write == 2147483647) {
-                            reconnectToDevice()
-                        }
-                    } else {
-                        checkIfPackageDemandsAck(bittelPackage)
-                    }
-                }
-            } else {
-                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
-                val write = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic)
-                write?.let {
-                    if(!it){
-                        writePackage(bluetoothGattCharacteristic, bittelPackage, count+1)
-                    }
-                }
+            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        }
+    }
+
+    /**
+     * Schedules a delayed retry of the write operation.
+     */
+    private fun scheduleRetry(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        }, RETRY_DELAY_MS)
+    }
+
+    /**
+     * Performs the actual write operation using platform-appropriate API.
+     */
+    @SuppressLint("MissingPermission")
+    private fun performWrite(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            performWriteAndroid13Plus(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        } else {
+            performWriteLegacy(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        }
+    }
+
+    /**
+     * Android 13+ write path using new BluetoothGatt API.
+     */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @SuppressLint("MissingPermission")
+    private fun performWriteAndroid13Plus(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ) {
+        val writeResult = gattConnection?.writeCharacteristic(
+            bluetoothGattCharacteristic,
+            bittelPackage.getStardustPackageToSend(context),
+            WRITE_TYPE_DEFAULT
+        )
+
+        when {
+            writeResult == null -> {
+                Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
+            }
+            writeResult == 0 -> {
+                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
+                checkIfPackageDemandsAck(bittelPackage)
+            }
+            writeResult == WRITE_ERROR_CODE -> {
+                Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
+                reconnectToDevice()
+            }
+            else -> {
+                Timber.tag(LOG_TAG).w("Write returned: $writeResult, retrying...")
+                // Re-enter via writePackage so retry delay and retry cap are enforced.
+                writePackage(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
+            }
+        }
+    }
+
+    /**
+     * Legacy (Android < 13) write path using deprecated but stable API.
+     */
+    @SuppressLint("MissingPermission", "Deprecation")
+    private fun performWriteLegacy(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ) {
+        bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
+        val writeSuccess = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic) ?: false
+
+        when {
+            writeSuccess -> {
+                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
+                checkIfPackageDemandsAck(bittelPackage)
+            }
+            else -> {
+                Timber.tag(LOG_TAG).w("Write failed, retrying... (attempt ${count + 1})")
+                performWrite(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
             }
         }
     }
@@ -832,44 +883,83 @@ internal class ClientConnection(
             }
     }
 
-    private fun checkIfPackageDemandsAck (bittelPackage: StardustPackage) {
-        if((bittelPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && bittelPackage.stardustControlByte.stardustPackageType == StardustControlByte.StardustPackageType.DATA
-                    && bittelPackage.stardustControlByte.stardustMessageType != StardustControlByte.StardustMessageType.SNIFFED) || bittelPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.REQUEST_LOCATION){
-            if(bittelPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK){
-                val ackSystem = AckSystem(bittelPackage, object : AckSystem.AckSystemNotify {
-                    override fun onFailure() {
-                        try {
-                            mutableAckAwaitingList.removeAt(0)
-                        }catch (e : Exception) {
-                            e.printStackTrace()
-                        }
-                    }
+    /**
+     * Sets up ACK tracking for packages that demand acknowledgment.
+     * Initiates a timeout-based ACK system that removes the package from queue on success/failure.
+     */
+    private fun checkIfPackageDemandsAck(bittelPackage: StardustPackage) {
+        if (!shouldDemandAck(bittelPackage)) return
+        if (!isDemandAckEnabled(bittelPackage)) return
 
-                    override fun onSuccess() {
-                        try {
-                            val message = mutableAckAwaitingList[0]
-                            mutableAckAwaitingList.removeAt(0)
-                            syncMessageReceivedStatus(message)
-                        }catch (e : Exception) {
-                            e.printStackTrace()
-                        }
-                        // TODO: change message to Received
-                    }
+        createAndStartAckSystem(bittelPackage)
+    }
 
-                })
-                ackSystem.delayTS = DELAY_TS_LR
-                ackSystem.start()
-                mutableAckAwaitingList.add(ackSystem)
+    /**
+     * Determines if a package type requires ACK based on opcode and control byte flags.
+     */
+    private fun shouldDemandAck(bittelPackage: StardustPackage): Boolean {
+        val isTextMessage = bittelPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE &&
+            bittelPackage.stardustControlByte.stardustPackageType == StardustControlByte.StardustPackageType.DATA &&
+            bittelPackage.stardustControlByte.stardustMessageType != StardustControlByte.StardustMessageType.SNIFFED
+
+        val isLocationRequest = bittelPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.REQUEST_LOCATION
+
+        return isTextMessage || isLocationRequest
+    }
+
+    /**
+     * Checks if the specific packet has the DEMAND_ACK flag set.
+     */
+    private fun isDemandAckEnabled(bittelPackage: StardustPackage): Boolean =
+        bittelPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK
+
+    /**
+     * Creates an AckSystem for the package and adds it to the waiting queue.
+     */
+    private fun createAndStartAckSystem(bittelPackage: StardustPackage) {
+        val ackSystem = AckSystem(bittelPackage, createAckCallback())
+        ackSystem.delayTS = DELAY_TS_LR
+        ackSystem.start()
+        mutableAckAwaitingList.add(ackSystem)
+        Timber.tag(LOG_TAG).d("ACK tracking started for opCode: ${bittelPackage.stardustOpCode}")
+    }
+
+    /**
+     * Creates the callback handler for ACK success/failure.
+     */
+    private fun createAckCallback(): AckSystem.AckSystemNotify =
+        object : AckSystem.AckSystemNotify {
+            override fun onFailure() {
+                removeFirstAckFromQueue("ACK timeout")
             }
+
+            override fun onSuccess() {
+                if (mutableAckAwaitingList.isNotEmpty()) {
+                    val ackSystem = mutableAckAwaitingList.removeAt(0)
+                    syncMessageReceivedStatus(ackSystem)
+                    Timber.tag(LOG_TAG).d("ACK received and processed")
+                } else {
+                    Timber.tag(LOG_TAG).w("ACK received but no pending ACK in queue")
+                }
+            }
+        }
+
+    /**
+     * Safely removes the first ACK from the queue, logging any issues.
+     */
+    private fun removeFirstAckFromQueue(reason: String) {
+        if (mutableAckAwaitingList.isNotEmpty()) {
+            mutableAckAwaitingList.removeAt(0)
+            Timber.tag(LOG_TAG).d("ACK removed from queue - reason: $reason")
+        } else {
+            Timber.tag(LOG_TAG).w("Attempted to remove ACK but queue is empty - reason: $reason")
         }
     }
 
     fun syncMessageReceivedStatus(message: AckSystem) {
-        Scopes.getDefaultCoroutine().launch {
-            val bittelPackage = message.stardustPackage
-            DataManager.getAppRepo(context).updateAckReceived(chatid = bittelPackage.getDestAsString(),
-                messageNumber = bittelPackage.idNumber)
-
+        val msgId = message.stardustPackage.idNumber ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            DataManager.getAppRepo(context).updateMessageReceived(msgId)
         }
     }
 
@@ -1034,4 +1124,6 @@ internal class ClientConnection(
         }
     }
 }
+
+
 

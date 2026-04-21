@@ -52,7 +52,9 @@ class Converters {
         fun fromChatType(type: ChatType): String = type.name
 
         @TypeConverter
-        fun toChatType(value: String): ChatType = ChatType.valueOf(value)
+        fun toChatType(value: String): ChatType =
+            ChatType.entries.firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
+                ?: ChatType.PRIVATE
 
         @TypeConverter
         fun fromMessageType(type: MessageType): String = type.name

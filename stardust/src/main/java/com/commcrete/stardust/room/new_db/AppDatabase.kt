@@ -61,7 +61,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         ChatParticipantEntity::class,
     ],
     views = [ChatSummary::class],
-    version = 9,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(
@@ -80,7 +80,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appChatsDao(): ChatDao
     abstract fun appContactsDao(): NewContactsDao
     abstract fun appMessagesDao(): MessageDao
-    abstract fun chatSummaryDao(): ChatDao
 
     companion object {
         private const val DATABASE_NAME = "app_database"

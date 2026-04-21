@@ -400,7 +400,7 @@ internal class StardustPackageHandler(private val context: Context ,
                 )
 
                 PlayerUtils.playNotificationSound(context)
-                DataManager.getCallbacks()?.receiveSOS(pkg, sosPackage.location, sosPackage.sosType)
+                DataManager.getCallbacks()?.receiveSOS(pkg, sosPackage)
             } catch (e: Exception) {
                 Timber.tag("StardustPackageHandler").e(e, "Failed to save SOS message")
             }
@@ -481,31 +481,33 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleLocationReceived(context: Context, mPackage: StardustPackage) {
         val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
-        if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
-            handleAck(
-                appContext = context,
-                source = mPackage.getSourceAsString(),
-                destination = mPackage.getDestAsString(),
-                deliveryType = mPackage.stardustControlByte.stardustDeliveryType
+        handlerScope.launch {
+            if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
+                handleAck(
+                    appContext = context,
+                    source = mPackage.getSourceAsString(),
+                    destination = mPackage.getDestAsString(),
+                    deliveryType = mPackage.stardustControlByte.stardustDeliveryType
+                )
+            }
+
+            val locationPackage = StardustLocationParser().parseLocation(mPackage) ?: return@launch
+            val pkg = StardustAPIPackage(
+                senderId = mPackage.senderId,
+                groupId = mPackage.groupId,
+                receiverId = appId,
+                carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
             )
+            LocationUtils.saveLocationMessage(context, pkg, locationPackage, MessageState.RECEIVED)
+            val pollingUtils = DataManager.getPollingUtils(context)
+            if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
+
+            PlayerUtils.playNotificationSound(context)
+
+            DataManager.getCallbacks()?.receiveLocation(
+                stardustAPIPackage = pkg,
+                location = locationPackage.location)
         }
-        val locationPackage = StardustLocationParser().parseLocation(mPackage) ?: return
-        val pkg = StardustAPIPackage(
-            senderId = mPackage.senderId,
-            groupId = mPackage.groupId,
-            receiverId = appId,
-            carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
-        )
-        LocationUtils.saveLocationMessage(context, pkg, locationPackage, MessageState.RECEIVED)
-
-        val pollingUtils = DataManager.getPollingUtils(context)
-        if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
-
-        PlayerUtils.playNotificationSound(context)
-
-        DataManager.getCallbacks()?.receiveLocation(
-            stardustAPIPackage = pkg,
-            location = locationPackage.location)
     }
 
     private fun handleLocationRequested(context: Context, mPackage: StardustPackage, randomID: String) {
@@ -534,16 +536,16 @@ internal class StardustPackageHandler(private val context: Context ,
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {
-            if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
-                handleAck(
-                    appContext = context,
-                    source = mPackage.getSourceAsString(),
-                    destination = mPackage.getDestAsString(),
-                    deliveryType = mPackage.stardustControlByte.stardustDeliveryType
-                )
-            }
-            val text = getCharValue(mPackage.getDataAsString())
             handlerScope.launch {
+                if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
+                    handleAck(
+                        appContext = context,
+                        source = mPackage.getSourceAsString(),
+                        destination = mPackage.getDestAsString(),
+                        deliveryType = mPackage.stardustControlByte.stardustDeliveryType
+                    )
+                }
+                val text = getCharValue(mPackage.getDataAsString())
                 try {
                     DataManager.getAppRepo(context).saveMessage(
                         message = MessageEntity(
@@ -580,29 +582,27 @@ internal class StardustPackageHandler(private val context: Context ,
         if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.ACK] != LimitationType.ENABLED ||
             ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED) return
 
-        handlerScope.launch {
-            try {
-                val dataPackage = StardustPackageUtils.getStardustPackage(
-                    context = appContext,
-                    source = source,
-                    destination = destination,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE,
-                    data = arrayOf(StardustPackageUtils.Ack, 0x00)
-                )
-                dataPackage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-                dataPackage.stardustControlByte.stardustDeliveryType = deliveryType
+        try {
+            val dataPackage = StardustPackageUtils.getStardustPackage(
+                context = appContext,
+                source = source,
+                destination = destination,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE,
+                data = arrayOf(StardustPackageUtils.Ack, 0x00)
+            )
+            dataPackage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+            dataPackage.stardustControlByte.stardustDeliveryType = deliveryType
 
-                DataManager.getClientConnection(appContext).let {
-                    LocationUtils.sendMyLocation(
-                        appContext = appContext,
-                        mPackage = dataPackage,
-                        clientConnection = it,
-                        opCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE,
-                        isHR = deliveryType)
-                }
-            } catch (e: Exception) {
-                Timber.tag("StardustPackageHandler").e(e, "Failed to handle ACK")
+            DataManager.getClientConnection(appContext).let {
+                LocationUtils.sendMyLocation(
+                    appContext = appContext,
+                    mPackage = dataPackage,
+                    clientConnection = it,
+                    opCode = StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE,
+                    isHR = deliveryType)
             }
+        } catch (e: Exception) {
+            Timber.tag("StardustPackageHandler").e(e, "Failed to handle ACK")
         }
     }
 

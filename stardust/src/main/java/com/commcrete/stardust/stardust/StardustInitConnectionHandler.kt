@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
+import androidx.media3.common.C
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
@@ -123,6 +124,7 @@ object StardustInitConnectionHandler {
             // 2) Update address → expect UPDATE_ADDRESS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> if (state == State.UPDATING_SMARTPHONE_ADDR) {
                 handleAckOrRetry(
+                    context,
                     p,
                     onAck = { afterUpdateAddressAck() },
                     onRetry = {
@@ -137,6 +139,7 @@ object StardustInitConnectionHandler {
             // 3) Delete groups → expect DELETE_GROUPS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> if (state == State.DELETING_GROUPS) {
                 handleAckOrRetry(
+                    context,
                     p,
                     onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups(appContext = context) } },
                     onRetry = { sendDeleteGroups() }
@@ -146,6 +149,7 @@ object StardustInitConnectionHandler {
             // 4) Add groups → expect ADD_GROUPS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> if (state == State.ADDING_GROUPS) {
                 handleAckOrRetry(
+                    context,
                     p,
                     onAck = { transitionTo(State.READING_CONFIGURATION) { requestConfiguration() } },
                     onRetry = { sendAddGroups(appContext = context) }
@@ -164,6 +168,7 @@ object StardustInitConnectionHandler {
             // 6) Update admin mode → expect SET_ADMIN_MODE_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> if (state == State.UPDATING_ADMIN_MODE) {
                 handleAckOrRetry(
+                    context,
                     p,
                     onAck = { finishAdminModeUpdate() },
                     onRetry = { sendUpdateAdminMode() }
@@ -190,10 +195,10 @@ object StardustInitConnectionHandler {
         attempts[next] = n
         Timber.tag("InitHandler").d("Step $next - attempt $n/$MAX_ATTEMPTS")
         send()
-        startTimeoutFor(next)
+        startTimeoutFor(ctx, next)
     }
 
-    private fun retryOrFail(send: () -> Unit) {
+    private fun retryOrFail(context: Context, send: () -> Unit) {
         state.let { state ->
             val n = (attempts[state] ?: 0) + 1
             if (n > MAX_ATTEMPTS) {
@@ -203,11 +208,11 @@ object StardustInitConnectionHandler {
             attempts[state] = n
             Timber.tag("InitHandler").w("Retrying $state (attempt $n/$MAX_ATTEMPTS)")
             send()
-            startTimeoutFor(state)
+            startTimeoutFor(context, state)
         }
     }
 
-    private fun startTimeoutFor(step: State) {
+    private fun startTimeoutFor(context: Context, step: State) {
         timeoutJob?.cancel()
         timeoutJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -218,15 +223,15 @@ object StardustInitConnectionHandler {
                 if (state != step) return@launch
                 Timber.tag("InitHandler").w("$step timeout")
                 when (step) {
-                    State.REQUESTING_ADDRESSES -> retryOrFail { sendGetAddresses() }
-                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail {
+                    State.REQUESTING_ADDRESSES -> retryOrFail(context) { sendGetAddresses() }
+                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail(context) {
                         lastAddresses?.let { sendUpdateSmartphoneAddress(it) }
                             ?: failAndStop("No addresses cached")
                     }
-                    State.DELETING_GROUPS -> retryOrFail { sendDeleteGroups() }
-                    State.ADDING_GROUPS -> retryOrFail { sendAddGroups(appContext = context) }
-                    State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
-                    State.UPDATING_ADMIN_MODE -> retryOrFail { sendUpdateAdminMode() }
+                    State.DELETING_GROUPS -> retryOrFail(context) { sendDeleteGroups() }
+                    State.ADDING_GROUPS -> retryOrFail(context) { sendAddGroups(appContext = context) }
+                    State.READING_CONFIGURATION -> retryOrFail(context) { requestConfiguration() }
+                    State.UPDATING_ADMIN_MODE -> retryOrFail(context) { sendUpdateAdminMode() }
                     else -> {}
                 }
             } catch (e: CancellationException) {
@@ -237,6 +242,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleAckOrRetry(
+        context: Context,
         p: StardustPackage,
         onAck: () -> Unit,
         onRetry: () -> Unit
@@ -247,7 +253,7 @@ object StardustInitConnectionHandler {
             onAck()
         } else {
             Timber.tag("InitHandler").w("$state NACK")
-            retryOrFail(onRetry)
+            retryOrFail(context, onRetry)
         }
     }
 
@@ -333,17 +339,19 @@ object StardustInitConnectionHandler {
     }
 
     // 4) Add groups
-    private suspend fun sendAddGroups(appContext: Context) {
-        val payload = buildAddGroupsPayload(appContext)
+    private fun sendAddGroups(appContext: Context) {
         val (src, dst) = requireSrcDst() ?: return
-        val pkg = StardustPackageUtils.getStardustPackage(
-            context = ctx,
-            source = src, destination = dst,
-            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-            data = payload
-        )
-        conn.addMessageToQueue(pkg)
-        Timber.tag("InitHandler").d("Sent ADD_GROUPS")
+        CoroutineScope(Dispatchers.IO).launch {
+            val payload = buildAddGroupsPayload(appContext)
+            val pkg = StardustPackageUtils.getStardustPackage(
+                context = ctx,
+                source = src, destination = dst,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
+                data = payload
+            )
+            conn.addMessageToQueue(pkg)
+            Timber.tag("InitHandler").d("Sent ADD_GROUPS")
+        }
     }
 
     // 5) Get configuration
@@ -361,7 +369,7 @@ object StardustInitConnectionHandler {
 
     private fun handleConfiguration(p: StardustPackage) {
         val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration(ctx, p)
-        if (!result.applied) return retryOrFail { requestConfiguration() }
+        if (!result.applied) return retryOrFail(ctx) { requestConfiguration() }
         transitionTo(State.UPDATING_ADMIN_MODE) { sendUpdateAdminMode() }
     }
 

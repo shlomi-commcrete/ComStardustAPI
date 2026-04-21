@@ -10,9 +10,9 @@ import androidx.room.PrimaryKey
     indices = [Index(value = ["id"], unique = true)]
 )
 data class ChatEntity(
-    @PrimaryKey(autoGenerate = true)
+    @PrimaryKey
     @ColumnInfo(name = "id")
-    val id: Int = 0,
+    val id: String = java.util.UUID.randomUUID().toString(),
     @ColumnInfo(name = "name")
     val name: String = "",
     @ColumnInfo(name = "image")

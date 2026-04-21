@@ -6,12 +6,9 @@ import android.os.Looper
 import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
-import com.commcrete.stardust.room.messages.MessageState
-import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
@@ -33,48 +30,26 @@ class FileReceiver(
     var lastReportedProgress: Int = 0
     val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
-    var data = FileUtils.FileTransferData.Receive(
-        id = getUniqueKey(stardustPackage),
-        senderID = getRealSenderID(sourceID = stardustPackage.getSourceAsString(), destinationID = stardustPackage.getDestAsString()),
-        chatID = stardustPackage.getSourceAsString(),
-        fileName = firstPackage.fileName,
-        fileEnding = firstPackage.fileEnding,
-        fileType = firstPackage.fileType,
-        deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
-        numOfPackages = firstPackage.total,
-    )
-    
-    init {
-        // Load chat names asynchronously in the background (non-blocking)
-        Scopes.getDefaultCoroutine().launch {
-            try {
-                val chatsRepo = DataManager.getChatsRepo(context)
-                val loadedChatName = chatsRepo.getChatName(data.chatID) ?: data.chatID
-                val loadedSenderName = if(data.chatID != data.realSenderName) {
-                    chatsRepo.getChatName(data.senderID) ?: data.senderID
-                } else loadedChatName
-                
-                // Switch to main thread only for quick data update
-                Scopes.getMainCoroutine().launch {
-                    data = data.copy(
-                        chatName = loadedChatName,
-                        realSenderName = loadedSenderName
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e("FileReceiver", "Error loading chat names", e)
-                // Names remain as IDs if loading fails
-            }
-        }
-    }
+    var data: FileUtils.FileTransferData.Receive
 
     private val receivingInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
-    private val runnable : Runnable = Runnable {
-        checkData()
-    }
+    private val runnable : Runnable = Runnable { checkData() }
 
     @Volatile private var isDisposed = false
+
+    init {
+        data = FileUtils.FileTransferData.Receive(
+            id = getUniqueKey(stardustPackage),
+            senderId = stardustPackage.senderId,
+            chatId = stardustPackage.chatId,
+            fileName = firstPackage.fileName,
+            fileEnding = firstPackage.fileEnding,
+            fileType = firstPackage.fileType,
+            deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
+            numOfPackages = firstPackage.total,
+        )
+    }
 
     fun addDataPackage(filePackage: StardustFilePackage) {
         if (isDisposed) return
@@ -151,8 +126,8 @@ class FileReceiver(
     }
 
     private fun notifyTransferComplete() {
+        if (isDisposed) return
         Scopes.getMainCoroutine().launch {
-            if (isDisposed) return@launch
             try {
                 DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
             } catch (e: Exception) {
@@ -173,8 +148,8 @@ class FileReceiver(
     }
 
     private fun updateFailure(failure: FileFailure) {
+        if (isDisposed) return
         Scopes.getMainCoroutine().launch {
-            if (isDisposed) return@launch
             try {
                 DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
             } catch (e: Exception) {
@@ -187,7 +162,7 @@ class FileReceiver(
 
     private fun saveFile () {
         removeReceiveTimer()
-        val destDir = File("${context.filesDir}/${data.chatID}/files")
+        val destDir = File("${context.filesDir}/${data.chatId}/files")
         if (!destDir.exists()) {
             destDir.mkdirs()
         }
@@ -295,7 +270,7 @@ class FileReceiver(
             val mFileName = trimUntilUnderscore(file.name)
             DataManager.getAppRepo(context).saveMessage(
                 message = MessageEntity(
-                    senderID = data.senderID,
+                    senderID = data.senderId,
                     receiverID = appId,
                     state = MessageState.RECEIVED,
                     extraData = MessageExtraData.Attachment(
@@ -306,11 +281,6 @@ class FileReceiver(
                 )
             )
         }
-    }
-
-    fun getRealSenderID(sourceID: String, destinationID: String): String {
-        val userAppId = mRegisterUser?.appId
-        return if(GroupsUtils.isLocalGroupId(sourceID) && userAppId != null && (!destinationID.equals( userAppId, ignoreCase = true))) destinationID else sourceID
     }
 
     enum class FileFailure {

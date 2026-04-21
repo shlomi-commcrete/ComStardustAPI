@@ -43,7 +43,7 @@ interface MessageDao {
         ORDER BY epoch_time_ms DESC
         LIMIT :limit
     """)
-    suspend fun getMessagesByChatInRange(
+    fun getMessagesByChatInRange(
         chatId: String,
         startTimestamp: Long,
         endTimestamp: Long,
@@ -57,7 +57,7 @@ interface MessageDao {
         ORDER BY epoch_time_ms DESC
         LIMIT :limit
     """)
-    suspend fun getMessagesBySenderInRange(
+    fun getMessagesBySenderInRange(
         senderId: String,
         startTimestamp: Long,
         endTimestamp: Long,
@@ -78,7 +78,16 @@ interface MessageDao {
     suspend fun clearChatInRange(chatId: String, startTimestamp: Long, endTimestamp: Long)
 
     @Query("UPDATE messages SET state = :state WHERE id = :messageId")
-    suspend fun updateMessageState(messageId: String, state: MessageState)
+    suspend fun updateMessageState(messageId: Long, state: MessageState)
+
+    @Query("UPDATE messages SET state = 5 WHERE id = :messageId AND state != 5")
+    suspend fun archiveMessage(messageId: Int): Int
+
+    @Query("UPDATE messages SET state = 5 WHERE id IN (:messageIds) AND state != 5")
+    suspend fun archiveMessages(messageIds: List<Int>): Int
+
+    @Query("UPDATE messages SET state = 5 WHERE epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp")
+    suspend fun archiveAllMessages(startTimestamp: Long, endTimestamp: Long): Int
 
     /**
      * Marks every RECEIVED (2) and RECEIVING (4) message in [chatId] as SEEN (1).
@@ -93,12 +102,18 @@ interface MessageDao {
     """)
     suspend fun markAllMessagesAsSeen(chatId: String)
 
+    /**
+     * Marks as SEEN every RECEIVED message in [chatId] whose timestamp
+     * is ≤ [untilEpochMs].  Useful for "read up to here" semantics.
+     */
     @Query("""
         UPDATE messages
         SET state = 1
-        WHERE id = :messageId AND state IN (0, 4)
+        WHERE chat_id = :chatId
+          AND state = 2
+          AND epoch_time_ms <= :untilEpochMs
     """)
-    suspend fun markMessageAsSeen(messageId: String)
+    suspend fun markMessagesAsSeenUntil(chatId: String, untilEpochMs: Long)
 
     /** Archive all messages in a time range by setting state = ARCHIVED (5). */
     @Query("""
@@ -108,17 +123,6 @@ interface MessageDao {
         AND epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp
     """)
     suspend fun archiveMessagesInRange(chatId: String?, startTimestamp: Long, endTimestamp: Long)
-
-    @Query("""
-        UPDATE messages
-        SET state = :ackState
-        WHERE TRIM(LOWER(chat_id)) = TRIM(LOWER(:chatId))
-    """)
-    suspend fun updateAckReceived(
-        chatId: String,
-        messageNumber: Long,
-        ackState: MessageState = MessageState.RECEIVED
-    )
 
     @Query("DELETE FROM messages")
     fun clearData()

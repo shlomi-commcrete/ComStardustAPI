@@ -29,12 +29,15 @@ interface ChatDao {
     @Upsert
     suspend fun upsertChats(chats: List<ChatEntity>)
 
+    @Query("DELETE FROM chats WHERE id = :chatId")
+    suspend fun deleteChatById(chatId: String): Int
+
     // ── Chat + participants (transactional) ──────────────────────────────
 
     @Transaction
     suspend fun insertChatWithParticipants(chat: ChatEntity, participantIds: List<Int>) {
-        val chatId = upsertChat(chat).toInt()
-        replaceParticipants(chatId, participantIds)
+        upsertChat(chat)
+        replaceParticipants(chat.id, participantIds)
     }
 
     @Transaction
@@ -53,10 +56,10 @@ interface ChatDao {
     suspend fun addParticipants(refs: List<ChatParticipantEntity>)
 
     @Query("DELETE FROM chat_participants WHERE chat_id = :chatId")
-    suspend fun clearParticipants(chatId: Int)
+    suspend fun clearParticipants(chatId: String)
 
     @Transaction
-    suspend fun replaceParticipants(chatId: Int, participantIds: List<Int>) {
+    suspend fun replaceParticipants(chatId: String, participantIds: List<Int>) {
         clearParticipants(chatId)
         if (participantIds.isNotEmpty()) {
             addParticipants(
@@ -76,10 +79,10 @@ interface ChatDao {
 
     /** Single-chat summary — useful for a header while the user is inside a chat. */
     @Query("SELECT * FROM chat_summary WHERE chatId = :chatId LIMIT 1")
-    fun getChatSummary(chatId: Int): Flow<ChatSummary?>
+    fun getChatSummary(chatId: String): Flow<ChatSummary?>
 
     @Query("SELECT id FROM chats WHERE type = 'GROUP'")
-    suspend fun getAllGroupChatIds(): List<Int>
+    suspend fun getAllGroupChatIds(): List<String>
 
     @Query("""
         SELECT c.id FROM chats c
@@ -87,7 +90,7 @@ interface ChatDao {
         WHERE c.type = 'PRIVATE' AND cp.contact_id = :contactId
         LIMIT 1
     """)
-    suspend fun findPrivateChatIdByContactId(contactId: Int): Int?
+    suspend fun findPrivateChatIdByContactId(contactId: Int): String?
 
     @Query("""
         SELECT c.id FROM chats c
@@ -95,11 +98,51 @@ interface ChatDao {
         WHERE c.type = 'GROUP' AND cp.contact_id = :contactId
         LIMIT 1
     """)
-    suspend fun findGroupChatIdByContactId(contactId: Int): Int?
+    suspend fun findGroupChatIdByContactId(contactId: Int): String?
+
+
+    @Query("""
+        SELECT c.id
+        FROM chats c
+        JOIN chat_participants cp ON cp.chat_id = c.id
+        WHERE (
+            c.type = 'GROUP'
+            AND cp.contact_id IN (
+                SELECT cg.contact_id
+                FROM app_contact_group_ids cg
+                WHERE TRIM(LOWER(cg.group_id)) = TRIM(LOWER(:previousChatId))
+            )
+        )
+        OR (
+            c.type = 'PRIVATE'
+            AND cp.contact_id IN (
+                SELECT cu.contact_id
+                FROM app_contact_user_ids cu
+                WHERE TRIM(LOWER(cu.user_id)) = TRIM(LOWER(:previousChatId))
+            )
+        )
+        OR (
+            c.type = 'PRIVATE'
+            AND cp.contact_id IN (
+                SELECT cd.contact_id
+                FROM app_contact_devices cd
+                WHERE TRIM(LOWER(cd.device_id)) = TRIM(LOWER(:previousChatId))
+            )
+        )
+        ORDER BY c.last_updated_ms DESC
+        LIMIT 1
+    """)
+    suspend fun findNewChatIdByPreviousChatId(previousChatId: String): String?
+
+    @Query("SELECT id FROM chats")
+    suspend fun getAllChatIds(): List<String>
+
+    @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")
+    suspend fun getChatById(chatId: String): ChatEntity?
 
     @Transaction
     @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")
-    suspend fun getChatWithParticipants(chatId: Int): ChatWithParticipants?
+    suspend fun getChatWithParticipants(chatId: String): ChatWithParticipants?
 
     @Transaction
     @Query("SELECT * FROM chats ORDER BY last_updated_ms DESC")

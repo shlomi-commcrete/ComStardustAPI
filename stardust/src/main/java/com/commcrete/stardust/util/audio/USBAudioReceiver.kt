@@ -10,11 +10,15 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.startPTT
 import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.RegisteredUserUtils
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -57,24 +61,28 @@ object ButtonListener {
         }
     }
 
-    fun notifyData(isClicked: Boolean, context: Context) {
+    fun notifyData(context: Context, isClicked: Boolean) {
+        Timber.tag("SerialInOutputManager").d("onCTSChanged : $isClicked")
+        Timber.tag("notifyData PTT").d("onCTSChanged : ${isClicked}")
+        val pttPackage = StardustAPIPackage(
+            senderId = DataManager.getSource(),
+            receiverId = DataManager.getDestination()
+        )
         // Update LiveData on main thread
         Scopes.getMainCoroutine().launch {
             isPlayPTT.value = isClicked
         }
 
         // Start or stop PTT recording on background thread
-        Scopes.getDefaultCoroutine().launch {
-            val uid = SharedPreferencesUtil.getLastUser(context)
-            if (uid.isEmpty()) return@launch
+        CoroutineScope(Dispatchers.IO).launch {
 
             if (isClicked) {
                 // Start recording
-                currentFile = startPttRecord(context, uid)
+                currentFile = startPttRecord(context, pttPackage)
                 Timber.tag("isPlayPTT").d("startRecording")
             } else {
                 // Stop recording
-                currentFile?.let { dismissPttRecording(context, uid, it) }
+                currentFile?.let { dismissPttRecording(context, pttPackage, it) }
                 Timber.tag("isPlayPTT").d("finishRecording")
                 currentFile = null
             }
@@ -84,14 +92,12 @@ object ButtonListener {
     fun getCurrentFile(): File? = currentFile
 
     @SuppressLint("MissingPermission")
-    fun dismissPttRecording (context: Context, chatID: String, file: File?) {
-        val pttPackage = StardustAPIPackage(RegisteredUserUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
-        stopPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context), file)
+    fun dismissPttRecording (context: Context, pttPackage: StardustAPIPackage, file: File) {
+        stopPTT(context = context, stardustAPIPackage = pttPackage, codeType = SharedPreferencesUtil.getCodecType(context), file = file)
     }
 
     @SuppressLint("MissingPermission")
-    fun startPttRecord(context: Context, chatID : String): File? {
-        val pttPackage = StardustAPIPackage(RegisteredUserUtils.mRegisterUser?.appId ?: "0" , chatID, false, null)
+    fun startPttRecord(context: Context, pttPackage : StardustAPIPackage): File? {
         return startPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context))
     }
 

@@ -302,7 +302,7 @@ object PcmStreamPlayer : BleMediaConnector() {
         val bleDevice = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS, context)
         bleDevice?.let {
             legacyTrack?.setPreferredDevice(it)
-            audioManager.startBluetoothSco()
+            audioManager.setCommunicationDevice(it)
             audioManager.setBluetoothScoOn(true)
             if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
                 try {

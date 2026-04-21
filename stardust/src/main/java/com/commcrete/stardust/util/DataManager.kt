@@ -125,18 +125,19 @@ object DataManager : StardustAPI, PttInterface{
         val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
             getAsciiValue(text) ))
         val splitData = splitMessage(data)
-        val id = Random.nextLong(Long.MAX_VALUE)
 
         val messageNum = 1
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)  ?: return
         CoroutineScope(Dispatchers.IO).launch {
+            val id = saveSentMessage(context, text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
+
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
                     source = stardustAPIPackage.senderId,
                     destination = stardustAPIPackage.receiverId,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
-                    data =  split)
+                    data = split)
                 mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
                 mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
@@ -146,12 +147,11 @@ object DataManager : StardustAPI, PttInterface{
                 sendDataToBle(mPackage)
                 delay(if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.HR) 800 else 4000)
             }
-            saveSentMessage(context, text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
         }
     }
 
-    private suspend fun saveSentMessage(context: Context, text: String, receiver: String, sender: String, groupId: String? = null) {
-        getAppRepo(context).saveMessage(
+    private suspend fun saveSentMessage(context: Context, text: String, receiver: String, sender: String, groupId: String? = null): Long? {
+        return getAppRepo(context).saveMessage(
             message = MessageEntity(
                 senderID = sender,
                 receiverID = receiver,
@@ -182,9 +182,9 @@ object DataManager : StardustAPI, PttInterface{
         return RecorderUtils.startRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File?) {
+    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
         requireContext(context)
-        RecorderUtils.stopRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType, file)
+        RecorderUtils.stopRecording(receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
     }
 
     override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
@@ -266,10 +266,10 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
 
-    override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {
+    override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?) {
         requireContext(context)
         CoroutineScope(Dispatchers.IO).launch {
-            SOSUtils.sendAlert(context = context, location = location, type = type, stardustAPIPackage = stardustAPIPackage)
+            SOSUtils.sendAlert(context = context, location = location, sosType = type, stardustAPIPackage = stardustAPIPackage)
         }
     }
 
@@ -496,13 +496,12 @@ object DataManager : StardustAPI, PttInterface{
     suspend fun cleanAllDatabases(context: Context): Boolean = getAppRepo(context).clearData()
 
     suspend fun deleteChatFiles(
-        context: Context,
-        chatIds: List<String>
+        context: Context
     ): CleanResult = withContext(Dispatchers.IO) {
 
         withProcessFileLock(context, "clean_user_files") {
 
-            val dirs = FileUtils.getAllChatFilesDirs(context, chatIds)
+            val dirs = FileUtils.getAllChatFilesDirs(context)
             val failed = mutableListOf<File>()
 
             dirs.forEachIndexed { index, dir ->

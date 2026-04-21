@@ -682,13 +682,8 @@ object SharedPreferencesUtil {
     }
 
     fun getCodecType(context: Context): RecorderUtils.AudioEncoderType {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val codecId = getPrefs(context).getInt(KEY_INPUT_CODEC, RecorderUtils.AudioEncoderType.CODEC2.id)
-        when (codecId) {
-            RecorderUtils.AudioEncoderType.CODEC2.id -> return RecorderUtils.AudioEncoderType.CODEC2
-            RecorderUtils.AudioEncoderType.AI.id -> return RecorderUtils.AudioEncoderType.AI
-            else -> return RecorderUtils.AudioEncoderType.CODEC2
-        }
+        return RecorderUtils.AudioEncoderType.fromId(codecId) ?: RecorderUtils.AudioEncoderType.CODEC2
     }
 
     @Deprecated("As there is no option to update this value from app now this function is unavailable")

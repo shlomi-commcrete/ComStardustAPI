@@ -8,9 +8,9 @@ import kotlinx.coroutines.flow.Flow
 interface ContactsDao {
 
     @Query("SELECT * FROM contacts ORDER BY contactId ASC")
-    fun getAllContact(): Flow<List<ChatContact>>
+    fun getAllContact(): List<ChatContact>
 
-    @Query("DELETE FROM chats")
+    @Query("DELETE FROM contacts")
     fun clearData()
 
 }

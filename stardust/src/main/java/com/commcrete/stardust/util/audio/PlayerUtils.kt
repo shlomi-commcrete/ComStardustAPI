@@ -447,7 +447,7 @@ object PlayerUtils : BleMediaConnector() {
         return result
     }
 
-    suspend fun updateAudioReceived(messageId: String) {
+    suspend fun updateAudioReceived(messageId: Long) {
         DataManager.getAppRepo(context).updateMessageReceived(messageId)
     }
 

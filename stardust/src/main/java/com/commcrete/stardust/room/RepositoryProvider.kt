@@ -32,10 +32,8 @@ object RepositoryProvider {
                 val db = AppDatabase.getDatabase(context)
                 AppRepository(
                     chatsDao = db.appChatsDao(),
-                    chatsDao = db.appContactsDao(),
-                    messagesDao = db.appMessagesDao(),
-                    chatsDao = db.chatSummaryDao(),
-                    scope = AppScopes.applicationScope,
+                    contactsDao = db.appContactsDao(),
+                    messagesDao = db.appMessagesDao()
                 ).also { repo ->
                     appRepository = repo
                     // Run the one-time migration in the background.

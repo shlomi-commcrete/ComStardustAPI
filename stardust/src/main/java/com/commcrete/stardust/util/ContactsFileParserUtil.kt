@@ -16,7 +16,7 @@ object ContactsFileParserUtil {
         DataManager.getAppRepo(appContext).insertContactsWithChats(contacts)
     }
 
-    fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
+    private fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
         val result = mutableListOf<FullContactData>()
 
         for (contact in contacts) {
@@ -57,15 +57,6 @@ object ContactsFileParserUtil {
             fullContact?.let { result.add(it) }
         }
         return result
-    }
-
-    private fun setLocalUser(chatItem: ChatItem) {
-        val newUser = RegisterUser(
-            displayName = chatItem.name, password = "", licenseType = "", phone = "",
-            location = arrayOf(0.0, 0.0, 0.0), appId = chatItem.user?.appId?.get(0), bittelId =
-                chatItem.user?.bittelId?.get(0)
-        )
-        SharedPreferencesUtil.setAppUser(DataManager.context, newUser)
     }
 
 

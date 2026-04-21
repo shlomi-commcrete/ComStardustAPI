@@ -1,8 +1,10 @@
 package com.commcrete.stardust.stardust.model
 
 import android.location.Location
+import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.CoordinatesUtil
+import com.commcrete.stardust.util.SOSUtils
 import java.util.Date
 
 class StardustLocationParser : StardustParser() {
@@ -52,7 +54,7 @@ class StardustLocationParser : StardustParser() {
                 altitude = locations[2].toDouble()
             },
             date = Date(),
-            sosType = byteArrayToInt(sosTypeBytes)
+            sosType = byteArrayToInt(sosTypeBytes).let { SOSUtils.SOS_REPORT_TYPES.fromCode(it) }
         )
     }
 
@@ -71,7 +73,7 @@ class StardustLocationParser : StardustParser() {
                     altitude = locations[2].toDouble()
                 },
                 date = Date(),
-                sosType = 0
+                sosType = null
             )
         }
         return null
