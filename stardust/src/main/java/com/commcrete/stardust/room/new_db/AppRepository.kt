@@ -24,6 +24,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -31,6 +33,8 @@ import androidx.core.content.edit
 import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.legacy_db.messages.MessageItem
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
+import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
+import com.commcrete.stardust.room.new_db.chat.ShortParticipantInfo
 import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
@@ -676,6 +680,96 @@ class AppRepository(
         val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
         chatsDao.getChatWithParticipants(normalizedChatId)
     }
+
+    /**
+     * Extracts participant IDs from a ContactEntity.
+     *
+     * USER contacts may carry both a userId and multiple linked deviceIds,
+     * so this returns a list instead of a single item.
+     */
+    private suspend fun contactEntityToParticipantInfo(contact: ContactEntity): List<ShortParticipantInfo> {
+        return when (contact.type) {
+            ContactType.USER -> {
+                val rows = contactsDao.getAllAppContactRows()
+                    .filter { it.contact.id == contact.id }
+                if (rows.isEmpty()) return emptyList()
+
+                val items = mutableListOf<ShortParticipantInfo>()
+                rows.firstNotNullOfOrNull { it.userId }?.let { userId ->
+                    items += ShortParticipantInfo(id = userId, type = ContactType.USER)
+                }
+
+                rows.mapNotNull { it.deviceId }
+                    .distinct()
+                    .forEach { deviceId ->
+                        items += ShortParticipantInfo(id = deviceId, type = ContactType.DEVICE)
+                    }
+
+                items
+            }
+            ContactType.GROUP -> {
+                val groupId = contactsDao.getAllGroupContactRows()
+                    .firstOrNull { it.contact.id == contact.id }
+                    ?.groupId
+                groupId?.let { listOf(ShortParticipantInfo(id = it, type = ContactType.GROUP)) }
+                    ?: emptyList()
+            }
+            ContactType.DEVICE -> {
+                val deviceId = contactsDao.getAllAppContactRows()
+                    .firstOrNull { it.contact.id == contact.id }
+                    ?.deviceId
+                deviceId?.let { listOf(ShortParticipantInfo(id = it, type = ContactType.DEVICE)) }
+                    ?: emptyList()
+            }
+        }
+    }
+
+    /**
+     * Retrieves a chat with its participants as lightweight [ShortParticipantInfo] (id + type only).
+     *
+     * This is more efficient than fetching full FullContactData when you only need to know
+     * the participant's communication ID and type.
+     *
+     * @param chatId the chat ID to fetch
+     * @return ChatWithParticipantsAsFullContactData with participants as ParticipantInfo, or null if chat not found
+     */
+    suspend fun getChatWithParticipantsShortParticipantInfo(chatId: String): ChatWithParticipantsAsShortParticipantInfo? =
+        withContext(Dispatchers.IO) {
+            val chatWithContacts = chatsDao.getChatWithParticipants(chatId) ?: return@withContext null
+            
+            // Convert each ContactEntity participant to ParticipantInfo (id + type only)
+            val participantInfos = chatWithContacts.participants.flatMap { contactEntity ->
+                contactEntityToParticipantInfo(contactEntity)
+            }
+            
+            ChatWithParticipantsAsShortParticipantInfo(
+                chat = chatWithContacts.chat,
+                participants = participantInfos,
+            )
+        }
+
+    /**
+     * Observes all chats with their participants as lightweight [ShortParticipantInfo] (id + type only) - reactive.
+     *
+     * Each time the chats or participants change, this Flow emits a new list of chats
+     * with participants as ParticipantInfo objects.
+     *
+     * @return Flow of chat lists with participant IDs and types
+     */
+    fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
+        chatsDao.getAllChatsWithParticipants()
+            .flowOn(Dispatchers.IO)
+            .map { chatsWithContacts ->
+                chatsWithContacts.map { chatWithContacts ->
+                    val participantInfos = chatWithContacts.participants.flatMap { contactEntity ->
+                        contactEntityToParticipantInfo(contactEntity)
+                    }
+                    ChatWithParticipantsAsShortParticipantInfo(
+                        chat = chatWithContacts.chat,
+                        participants = participantInfos,
+                    )
+                }
+            }
 
     /** Deletes a chat by ID. Related messages/participants are deleted by FK cascade. */
     suspend fun deleteChat(chatId: String): Boolean = saveMutex.withLock {

@@ -27,31 +27,3 @@ data class ContactEntity(
     val lastUpdatedAt: Long? = 0,
 )
 
-fun ChatContact.toProfileEntity(resolvedContactId: Int = contactId): ContactEntity =
-    ContactEntity(
-        id = resolvedContactId,
-        name = displayName,
-        image = photoURI,
-        lastUpdatedAt = lastUpdateAt,
-        type = when {
-            isGroup -> ContactType.GROUP
-            isBittel || (smartphoneBittelId.isNullOrBlank() && hasDevice()) -> ContactType.DEVICE
-            else -> ContactType.USER
-        },
-    )
-
-fun ChatContact.deviceEntries(): List<Pair<Int, String>> = listOfNotNull(
-    normalizeId(bittelId)?.let { 0 to it },
-).distinctBy { it.second }
-
-fun ChatContact.normalizedUserId(): String? = normalizeId(smartphoneBittelId)
-
-fun ChatContact.hasDevice(): Boolean =
-    !normalizeId(bittelId).isNullOrBlank()
-
-private fun normalizeId(value: String?): String? =
-    value
-        ?.trim()
-        ?.lowercase(Locale.ROOT)
-        ?.takeIf { it.isNotEmpty() }
-
