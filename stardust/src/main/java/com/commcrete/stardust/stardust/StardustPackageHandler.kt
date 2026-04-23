@@ -126,7 +126,8 @@ internal class StardustPackageHandler(private val context: Context ,
     /** Caches the package unless it is a high-frequency no-op opcode (ping / port update). */
     private fun cachePackageIfNeeded(mPackage: StardustPackage) {
         if (mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.PING_RESPONSE &&
-            mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE) {
+            mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE &&
+            mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT) {
             savedPackage = mPackage
         }
     }
@@ -224,7 +225,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleSOSAck(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         DataManager.getCallbacks()?.handleSOSAck(
             StardustAPIPackage(
                 senderId = mPackage.senderId,
@@ -284,7 +285,7 @@ internal class StardustPackageHandler(private val context: Context ,
     private fun getConfiguration(context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val configurationPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
@@ -380,7 +381,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleSOS(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
 
         handlerScope.launch {
             try {
@@ -422,10 +423,10 @@ internal class StardustPackageHandler(private val context: Context ,
         if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
             deviceName.let { name ->
                 savedUser?.let { user ->
-                    val newUser = RegisterUser(displayName = user.displayName, licenseType = "", phone = user.phone,
-                        location = arrayOf(),
-                        bittelId = deviceId, bittelName = name, bittelMacAddress = name,
-                        appId = user.appId, token = user.token
+                    val newUser = RegisterUser(
+                        displayName = user.displayName,
+                        deviceId = deviceId,
+                        appId = user.appId,
                     )
                     if (user.appId != null) {
                         SharedPreferencesUtil.setAppUser(context, newUser)
@@ -440,7 +441,7 @@ internal class StardustPackageHandler(private val context: Context ,
      * Packet structure: [appId_4bytes][padding_4bytes][device_type_1byte]
      */
     private fun updateDeviceSmartphoneAddress(context: Context, addressesPackage: StardustAddressesPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId
         if (appId.isNullOrBlank()) {
             Timber.tag("UpdateAddress").w("Cannot send UPDATE_ADDRESS: appId not registered")
             return
@@ -480,7 +481,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleLocationReceived(context: Context, mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         handlerScope.launch {
             if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
                 handleAck(
@@ -532,7 +533,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleText(context: Context, mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {
