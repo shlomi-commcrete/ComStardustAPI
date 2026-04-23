@@ -42,31 +42,40 @@ class Converters {
 
     class EnumConverter {
         @TypeConverter
-        fun fromSeenStatus(status: MessageState): Int = status.id
+        fun fromSeenStatus(status: MessageState?): Int? = status?.id
 
         @TypeConverter
-        fun toSeenStatus(statusId: Int): MessageState =
-            MessageState.entries.first { it.id == statusId }
+        fun toSeenStatus(statusId: Int?): MessageState? =
+            statusId?.let { id -> MessageState.entries.firstOrNull { it.id == id } }
 
         @TypeConverter
-        fun fromChatType(type: ChatType): String = type.name
+        fun fromChatType(type: ChatType?): String? = type?.name
 
         @TypeConverter
-        fun toChatType(value: String): ChatType =
-            ChatType.entries.firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
+        fun toChatType(value: String?): ChatType =
+            value?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { v -> ChatType.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
                 ?: ChatType.PRIVATE
 
         @TypeConverter
-        fun fromMessageType(type: MessageType): String = type.name
+        fun fromMessageType(type: MessageType?): String? = type?.name
 
         @TypeConverter
-        fun toMessageType(value: String): MessageType = MessageType.valueOf(value)
+        fun toMessageType(value: String?): MessageType? =
+            value?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { v -> MessageType.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
 
         @TypeConverter
-        fun fromContactType(type: ContactType): String = type.name
+        fun fromContactType(type: ContactType?): String? = type?.name
 
         @TypeConverter
-        fun toContactType(value: String): ContactType = ContactType.valueOf(value)
+        fun toContactType(value: String?): ContactType =
+            value?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { v -> ContactType.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
+                ?: ContactType.USER
 
         @TypeConverter
         fun fromMessageExtraData(extraData: MessageExtraData?): String? {
@@ -84,4 +93,5 @@ class Converters {
             private val json = Json { ignoreUnknownKeys = true }
         }
     }
+
 }

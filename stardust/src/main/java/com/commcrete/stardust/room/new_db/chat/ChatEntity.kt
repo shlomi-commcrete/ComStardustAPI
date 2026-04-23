@@ -7,7 +7,10 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "chats",
-    indices = [Index(value = ["id"], unique = true)]
+    indices = [
+        Index(value = ["id"], unique = true),
+        Index(value = ["name"], unique = true)
+    ]
 )
 data class ChatEntity(
     @PrimaryKey
