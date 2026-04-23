@@ -8,7 +8,6 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import com.commcrete.bittell.util.bittel_package.UARTManager
-import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -20,7 +19,6 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
-import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.ButtonListener
@@ -273,7 +271,7 @@ object BittelUsbManager2 : BittelProtocol {
             context ->
             SharedPreferencesUtil.getAppUser(context)?.let {
                 val src = it.appId
-                val dst = it.bittelId
+                val dst = it.deviceId
                 if(src != null && dst != null) {
                     val uartPort = getUartPortType().type.intToByteArray().reversedArray()
                     val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
@@ -294,7 +292,7 @@ object BittelUsbManager2 : BittelProtocol {
             context ->
             SharedPreferencesUtil.getAppUser(context)?.let {
                 val src = it.appId
-                val dst = it.bittelId
+                val dst = it.deviceId
                 if(src != null && dst != null) {
                     val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                         context = context,

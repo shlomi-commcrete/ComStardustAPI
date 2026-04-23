@@ -34,7 +34,7 @@ object LogUtils {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val logToBytes = numOfLogs.intToByteArray().reversedArray()
                 val logSizeData = StardustPackageUtils.byteArrayToIntArray(logToBytes)

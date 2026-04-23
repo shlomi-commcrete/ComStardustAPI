@@ -66,8 +66,8 @@ object SOSUtils {
         data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
 
         val user = RegisteredUserUtils.mRegisterUser ?: return
-        val appId = user.appId ?: return
-        val deviceId = user.bittelId ?: return
+        val appId = user.value?.appId ?: return
+        val deviceId = user.value?.deviceId ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
             context = context,

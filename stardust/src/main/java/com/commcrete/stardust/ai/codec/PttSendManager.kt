@@ -69,7 +69,7 @@ object PttSendManager {
         needToRun = false
         val file = fileToSave ?: return
         try {
-            val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+            val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
             val receiverId = receiverId ?: return
 
             CoroutineScope(Dispatchers.IO).launch {

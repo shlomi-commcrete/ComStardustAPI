@@ -33,7 +33,7 @@ object AdminUtils {
         val clientConnection = DataManager.getClientConnection(DataManager.context)
         SharedPreferencesUtil.getAppUser(DataManager.context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             val intData = arrayListOf<Int>()
             intData.add(adminMode.type)
             if(src != null && dst != null) {

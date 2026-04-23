@@ -61,7 +61,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         ChatParticipantEntity::class,
     ],
     views = [ChatSummary::class],
-    version = 11,
+    version = 1,
     exportSchema = false
 )
 @TypeConverters(

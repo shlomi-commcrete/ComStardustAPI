@@ -247,13 +247,13 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putString(KEY_FIREBASE_TOKEN, token).apply()
     }
 
-    fun setAppUser (context: Context , appUser : RegisterUser) {
+    fun setAppUser(context: Context , appUser : RegisterUser) {
         getPrefs(context).edit().putString(KEY_APP_USER, appUser.toJson()).apply()
-        RegisteredUserUtils.mRegisterUser = appUser
+        RegisteredUserUtils.updateRegisteredUser(appUser)
     }
 
-    fun removeAppUser (context: Context) : Boolean{
-        RegisteredUserUtils.mRegisterUser = null
+    fun removeAppUser(context: Context) : Boolean{
+        RegisteredUserUtils.updateRegisteredUser(null)
         getPrefs(context).edit().remove(KEY_APP_USER).apply()
         return true
     }
@@ -264,7 +264,6 @@ object SharedPreferencesUtil {
             return Gson().fromJson(userString, RegisterUser::class.java)
         }
         return null
-
     }
 
     fun getEspPortSelected(context: Context) : Boolean {
@@ -730,8 +729,4 @@ object SharedPreferencesUtil {
         return WavTokenizerDecoder.ModelType.General
     }
 
-}
-
-interface OnUserUpdated {
-    fun onUpdated(appUser: RegisterUser?)
 }

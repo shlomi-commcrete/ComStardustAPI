@@ -2,7 +2,6 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
-import androidx.media3.common.C
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
@@ -407,14 +406,8 @@ object StardustInitConnectionHandler {
         if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
             val newUser = RegisterUser(
                 displayName = savedUser.displayName,
-                licenseType = "",
-                phone = savedUser.phone,
-                location = arrayOf(),
-                bittelId = bittelId,
-                bittelName = deviceName,
-                bittelMacAddress = deviceName,
+                deviceId = bittelId,
                 appId = savedUser.appId,
-                token = savedUser.token
             )
             savedUser.appId?.let { SharedPreferencesUtil.setAppUser(ctx, newUser) }
             Timber.tag("InitHandler").d("Registered Bittel with id=$bittelId name=$deviceName")
@@ -430,7 +423,7 @@ object StardustInitConnectionHandler {
     private fun requireSrcDst(): Pair<String, String>? {
         val u = SharedPreferencesUtil.getAppUser(ctx) ?: return null.also { failAndStop("No app user") }
         val src = u.appId ?: return null.also { failAndStop("No appId") }
-        val dst = u.bittelId ?: return null.also { failAndStop("No bittelId") }
+        val dst = u.deviceId ?: return null.also { failAndStop("No bittelId") }
         return src to dst
     }
     private fun requireSrcDstOrNull(): Pair<String?, String?>? {

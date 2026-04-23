@@ -19,7 +19,7 @@ object GroupsUtils {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val deletePackage = StardustPackageUtils.getStardustPackage(
                     context = context,
@@ -35,7 +35,7 @@ object GroupsUtils {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             val intData = arrayListOf<Int>()
             for (group in groupId) {
                 intData.addAll(hexStringToByteArray(group).reversedArray())
@@ -59,7 +59,7 @@ object GroupsUtils {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             val intData = arrayListOf<Int>()
             intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
             if(src != null && dst != null) {
@@ -78,7 +78,7 @@ object GroupsUtils {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
 
             val intData = arrayListOf<Int>()
             for (group in groupId) {
@@ -146,7 +146,7 @@ object GroupsUtils {
     }
 
     private fun resolveSenderForSourceGroup(sourceId: String, destinationId: String): String {
-        val appId = mRegisterUser?.appId
+        val appId = mRegisterUser.value?.appId
         return if (appId != null && destinationId.equals(appId, ignoreCase = true)) {
             sourceId
         } else {

@@ -47,7 +47,7 @@ object StardustPolygonChange {
     private fun sendNewFreq (context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 // TODO: add number of polygon
                 val frequencyHRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
@@ -78,7 +78,7 @@ object StardustPolygonChange {
     fun sendSaveConfig (context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                     context = context,

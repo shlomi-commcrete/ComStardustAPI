@@ -48,7 +48,7 @@ object StardustUpdateProcess {
             }
             SharedPreferencesUtil.getAppUser(context)?.let {
                 val src = it.appId
-                val dst = it.bittelId
+                val dst = it.deviceId
                 if(src != null && dst != null) {
                     val versionPackage = StardustPackageUtils.getStardustPackage(
                         context = context,
@@ -67,7 +67,7 @@ object StardustUpdateProcess {
     private fun getCurrentBittelBootAddress (context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
@@ -106,7 +106,7 @@ object StardustUpdateProcess {
     fun startSendingUpdateData(context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,

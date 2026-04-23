@@ -126,7 +126,7 @@ object PttReceiveManager {
             delay(BUFFERING_TIME_MS)
 
         val destination = from.trim().replace("[\"", "").replace("\"]", "")
-        val appId = RegisteredUserUtils.mRegisterUser?.appId ?: return
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         val ids = GroupsUtils.resolveGroupAndContact(source, destination)
         val pkg = StardustAPIPackage(senderId = ids.senderId, groupId = ids.groupId, receiverId = appId)
         Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")

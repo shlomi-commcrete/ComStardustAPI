@@ -94,7 +94,7 @@ internal class ClientConnection(
     fun sendPing () {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
                     context = context,
@@ -1094,7 +1094,7 @@ internal class ClientConnection(
     override fun updateBlePort() {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
                 val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
@@ -1112,7 +1112,7 @@ internal class ClientConnection(
     override fun saveConfiguration() {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
-            val dst = it.bittelId
+            val dst = it.deviceId
             if(src != null && dst != null) {
                 val configurationSavePackage = StardustPackageUtils.getStardustPackage(
                     context = context,

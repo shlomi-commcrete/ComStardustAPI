@@ -116,7 +116,7 @@ data class MessageItem (
                 attachmentSubType = attachmentSubType,
                 text = text,
                 legacySosType = sosType),
-            receiverID = RegisteredUserUtils.mRegisterUser?.appId ?: "unknown_receiver"
+            receiverID = RegisteredUserUtils.mRegisterUser.value?.appId ?: "unknown_receiver"
         )
     }
 

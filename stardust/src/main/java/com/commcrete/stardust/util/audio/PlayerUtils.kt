@@ -162,7 +162,7 @@ object PlayerUtils : BleMediaConnector() {
         receiverId: String,
         type: EncoderType) : File? {
 
-        val appId = mRegisterUser?.appId ?: return null
+        val appId = mRegisterUser.value?.appId ?: return null
 
         this.destination = receiverId
 
@@ -201,7 +201,7 @@ object PlayerUtils : BleMediaConnector() {
         destinations: String,
         snifferContacts: List<ChatContact>?
     ) : File? {
-        val appId = mRegisterUser?.appId ?: return null
+        val appId = mRegisterUser.value?.appId ?: return null
         var sniffed : MutableList<ChatContact> = mutableListOf()
         val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations")
         val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations/$ts.pcm")
@@ -292,7 +292,7 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun onPTTCodecReceived(dataPackage: StardustPackage) {
-        val destinationId = mRegisterUser?.appId ?: return
+        val destinationId = mRegisterUser.value?.appId ?: return
         val parsedData = parseCodecPackageByFrames(dataPackage) ?: return
 
         source = dataPackage.getSourceAsString()
@@ -329,7 +329,6 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun onPTTAiReceived(dataPackage: StardustPackage) {
-        val destinationId = mRegisterUser?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val parsedData = parseAIPackageByFrames(dataPackage) ?: return@launch
 

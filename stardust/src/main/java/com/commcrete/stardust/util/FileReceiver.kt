@@ -265,7 +265,7 @@ class FileReceiver(
     }
 
     private fun saveToMessages (file: File) {
-        val appId = mRegisterUser?.appId ?: return
+        val appId = mRegisterUser.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
             DataManager.getAppRepo(context).saveMessage(

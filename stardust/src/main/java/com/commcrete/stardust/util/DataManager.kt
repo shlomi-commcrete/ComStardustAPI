@@ -315,7 +315,7 @@ object DataManager : StardustAPI, PttInterface{
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
         requireFileLocation(fileLocation)
-        RegisteredUserUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
+        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser(context))
         GroupsUtils.resetLocalGroupIds(context)
     }
 

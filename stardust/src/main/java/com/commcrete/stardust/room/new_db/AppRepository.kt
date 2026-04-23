@@ -22,6 +22,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -31,7 +32,6 @@ import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.legacy_db.messages.MessageItem
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
 import com.commcrete.stardust.util.RegisteredUserUtils
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.runBlocking
 import timber.log.Timber
 
@@ -202,7 +202,7 @@ class AppRepository(
 
 
     suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
-        val selfId = RegisteredUserUtils.mRegisterUser?.appId
+        val selfId = RegisteredUserUtils.mRegisterUser.value?.appId
             ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         
         if (selfId == null) {
@@ -340,6 +340,57 @@ class AppRepository(
             messagesDao.loadOlderMessagesByParticipant(chatId, participantId.trim().lowercase(), beforeEpochMs, limit)
         else
             messagesDao.loadOlderMessages(chatId, beforeEpochMs, limit)
+    }
+
+    /**
+     * Loads a target-scoped page (sender OR receiver == [targetId]) inside one chat.
+     *
+     * This works with the existing timestamp-based DAO by walking pages from newest
+     * backwards until the requested [page] is reached. Returned list is chronological.
+     */
+    suspend fun loadPageForTarget(
+        targetId: String,
+        chatId: String,
+        page: Int,
+        pageSize: Int = PAGE_SIZE,
+    ): List<MessageEntity> = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext emptyList()
+        val normalizedTargetId = normalizeIdOrNull(targetId) ?: return@withContext emptyList()
+        val safePage = page.coerceAtLeast(0)
+        val safePageSize = pageSize.coerceAtLeast(1)
+
+        var beforeEpochMs = Long.MAX_VALUE
+        var currentPage = emptyList<MessageEntity>()
+
+        repeat(safePage + 1) {
+            val batch = messagesDao.loadOlderMessagesByParticipant(
+                chatId = normalizedChatId,
+                participantId = normalizedTargetId,
+                beforeEpochMs = beforeEpochMs,
+                limit = safePageSize,
+            )
+
+            if (batch.isEmpty()) return@withContext emptyList()
+
+            currentPage = batch
+            beforeEpochMs = batch.first().epochTimeMs
+        }
+
+        currentPage
+    }
+
+    /**
+     * Live top-page stream for a single target in one chat.
+     */
+    fun observeLatestForTarget(
+        targetId: String,
+        chatId: String,
+        limit: Int = PAGE_SIZE,
+    ): Flow<List<MessageEntity>> {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return flowOf(emptyList())
+        val normalizedTargetId = normalizeIdOrNull(targetId) ?: return flowOf(emptyList())
+        val safeLimit = limit.coerceAtLeast(1)
+        return messagesDao.getLatestMessagesByParticipant(normalizedChatId, normalizedTargetId, safeLimit)
     }
 
     /**

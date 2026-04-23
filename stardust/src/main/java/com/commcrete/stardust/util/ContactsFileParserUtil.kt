@@ -3,7 +3,6 @@ package com.commcrete.stardust.util
 import android.content.Context
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -14,6 +13,22 @@ object ContactsFileParserUtil {
     suspend fun saveContactsToDatabase(appContext: Context, rawData: List<FolderReader.ExcelUser>) {
         val contacts = parseContactsForDb(rawData)
         DataManager.getAppRepo(appContext).insertContactsWithChats(contacts)
+    }
+
+    suspend fun registerSelectedUser(appContext: Context, selectedUser: FolderReader.ExcelUser): Boolean {
+        val appId = selectedUser.id.trim()
+        val deviceId = selectedUser.deviceId.getSrcDestMin4Bytes().trim()
+
+        if(appId.isEmpty()) { return false }
+
+        val newUser = RegisterUser(
+            displayName = selectedUser.name,
+            deviceId = deviceId,
+            appId = appId
+        )
+        SharedPreferencesUtil.setAppUser(appContext, newUser)
+        return true
+
     }
 
     private fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
