@@ -5,12 +5,20 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.ColumnInfo
 import kotlinx.coroutines.flow.Flow
 
 // SeenStatus int values: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5
 
 @Dao
 interface MessageDao {
+
+    /** (chatId, targetId, count) row used by bulk unseen-count observers. */
+    data class UnseenCountRow(
+        @ColumnInfo(name = "chat_id") val chatId: String,
+        @ColumnInfo(name = "target_id") val targetId: String,
+        @ColumnInfo(name = "unseen_count") val unseenCount: Int,
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addMessage(message: MessageEntity): Long
@@ -204,6 +212,132 @@ interface MessageDao {
         beforeEpochMs: Long,
         limit: Int,
     ): List<MessageEntity>
+
+    // ── Direct OFFSET-based pagination ───────────────────────────────────
+
+    /**
+     * Returns the [limit] non-archived messages on the requested page (0-based)
+     * for [chatId], ordered oldest-first within the page.
+     * Equivalent to walking [loadOlderMessages] N times, but in a single query.
+     */
+    @Query("""
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chat_id = :chatId AND state != 5
+            ORDER BY epoch_time_ms DESC, id DESC
+            LIMIT :limit OFFSET :offset
+        ) ORDER BY epoch_time_ms ASC, id ASC
+    """)
+    suspend fun loadPageForChat(
+        chatId: String,
+        limit: Int,
+        offset: Int,
+    ): List<MessageEntity>
+
+    /**
+     * Same as [loadPageForChat] but only counts messages where [participantId]
+     * is sender or receiver.
+     */
+    @Query("""
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chat_id = :chatId AND state != 5
+              AND (sender_id = :participantId OR receiver_id = :participantId)
+            ORDER BY epoch_time_ms DESC, id DESC
+            LIMIT :limit OFFSET :offset
+        ) ORDER BY epoch_time_ms ASC, id ASC
+    """)
+    suspend fun loadPageForTarget(
+        chatId: String,
+        participantId: String,
+        limit: Int,
+        offset: Int,
+    ): List<MessageEntity>
+
+    /**
+     * Page of messages in [chatId] where one of sender/receiver appears in [userIds].
+     * Use to scope a chat to the registered user (and any of their identities).
+     */
+    @Query("""
+        SELECT * FROM (
+            SELECT * FROM messages
+            WHERE chat_id = :chatId AND state != 5
+              AND (sender_id IN (:userIds) OR receiver_id IN (:userIds))
+            ORDER BY epoch_time_ms DESC, id DESC
+            LIMIT :limit OFFSET :offset
+        ) ORDER BY epoch_time_ms ASC, id ASC
+    """)
+    suspend fun loadPageForChatScopedToUsers(
+        chatId: String,
+        userIds: List<String>,
+        limit: Int,
+        offset: Int,
+    ): List<MessageEntity>
+
+    // ── Unseen counters ──────────────────────────────────────────────────
+
+    /**
+     * Reactive unseen count for [chatId]. Re-emits whenever any message in that
+     * chat is inserted, marked seen, archived, or deleted.
+     *
+     * "Unseen" = state IN (RECEIVED=2, RECEIVING=4).
+     * Uses the (chat_id, state, epoch_time_ms) index — runs as an index-only
+     * COUNT on hot calls.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM messages
+        WHERE chat_id = :chatId AND state IN (2, 4)
+    """)
+    fun observeUnseenCountForChat(chatId: String): Flow<Int>
+
+    /**
+     * Reactive unseen count for [chatId] scoped to messages where [targetId]
+     * is the sender OR receiver. Useful when a chat is "shared" between
+     * multiple participants and you want a per-target badge.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM messages
+        WHERE chat_id = :chatId
+          AND state IN (2, 4)
+          AND (sender_id = :targetId OR receiver_id = :targetId)
+    """)
+    fun observeUnseenCountForTarget(chatId: String, targetId: String): Flow<Int>
+
+    /**
+     * Bulk reactive unseen counts. Single Flow that emits rows
+     * (chatId, targetId, count) for every (chatId, targetId) pair where
+     * `chatId IN :chatIds` and `targetId IN :targetIds`.
+     *
+     * One COUNT query per emission for the whole list — much cheaper than
+     * N independent [observeUnseenCountForTarget] subscriptions.
+     */
+    @Query("""
+        SELECT chat_id AS chat_id, t AS target_id, COUNT(*) AS unseen_count
+        FROM (
+            SELECT chat_id, sender_id   AS t FROM messages
+            WHERE state IN (2, 4) AND chat_id IN (:chatIds) AND sender_id   IN (:targetIds)
+            UNION ALL
+            SELECT chat_id, receiver_id AS t FROM messages
+            WHERE state IN (2, 4) AND chat_id IN (:chatIds) AND receiver_id IN (:targetIds)
+        )
+        GROUP BY chat_id, t
+    """)
+    fun observeUnseenCountsForTargets(
+        chatIds: List<String>,
+        targetIds: List<String>,
+    ): Flow<List<UnseenCountRow>>
+
+    /**
+     * Reactive unseen count across every chat in [chatIds].
+     * Single COUNT — emits a Map-friendly row list.
+     */
+    @Query("""
+        SELECT chat_id AS chat_id, '' AS target_id, COUNT(*) AS unseen_count
+        FROM messages
+        WHERE state IN (2, 4) AND chat_id IN (:chatIds)
+        GROUP BY chat_id
+    """)
+    fun observeUnseenCountsForChats(chatIds: List<String>): Flow<List<UnseenCountRow>>
 
     /**
      * Resolve message sender to contact by checking both user_id and device_id.

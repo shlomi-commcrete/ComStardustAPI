@@ -4,8 +4,6 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
-import java.util.Locale
 
 @Entity(
     tableName = "contacts_table",

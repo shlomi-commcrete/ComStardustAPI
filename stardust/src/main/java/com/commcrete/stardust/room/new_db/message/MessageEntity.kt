@@ -7,9 +7,6 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
-import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
-import com.commcrete.stardust.room.new_db.contact.ContactDeviceEntity
-import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
 import java.util.Locale
 
 @Entity(
@@ -21,32 +18,9 @@ import java.util.Locale
             childColumns = ["chat_id"],
             onDelete = ForeignKey.CASCADE,
             onUpdate = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = ContactUserIdEntity::class,
-            parentColumns = ["user_id"],
-            childColumns = ["sender_id"],
-            onDelete = ForeignKey.SET_NULL,
-            onUpdate = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = ContactDeviceEntity::class,
-            parentColumns = ["device_id"],
-            childColumns = ["sender_id"],
-            onDelete = ForeignKey.SET_NULL,
-            onUpdate = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = ContactGroupIdEntity::class,
-            parentColumns = ["group_id"],
-            childColumns = ["sender_id"],
-            onDelete = ForeignKey.SET_NULL,
-            onUpdate = ForeignKey.CASCADE,
         )
     ],
     indices = [
-        Index(value = ["epoch_time_ms"], unique = true),
-        Index(value = ["chat_id"]),
         Index(value = ["chat_id", "epoch_time_ms"]),
         Index(value = ["chat_id", "state", "epoch_time_ms"]),
         Index(value = ["sender_id"]),

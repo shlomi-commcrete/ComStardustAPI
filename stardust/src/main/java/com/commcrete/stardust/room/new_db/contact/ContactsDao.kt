@@ -38,6 +38,26 @@ interface ContactsDao {
         val groupId: String,
     )
 
+    /**
+     * Lightweight (chatId, participantId, type) row used to assemble
+     * [com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo]
+     * in a single bulk query rather than per-participant lookups.
+     *
+     * USER contacts emit one row per linked deviceId AND one row for the userId.
+     * DEVICE contacts emit one row with the deviceId.
+     * GROUP contacts emit one row with the groupId.
+     */
+    data class ChatParticipantIdRow(
+        @ColumnInfo(name = "chat_id") val chatId: String,
+        @ColumnInfo(name = "participant_id") val participantId: String,
+        @ColumnInfo(name = "kind") val kind: String, // "USER" | "DEVICE" | "GROUP"
+    )
+
+    /** (normalized id -> contactId) row used for repository contact-cache preload. */
+    data class IdContactRow(
+        @ColumnInfo(name = "norm_id") val normalizedId: String,
+        @ColumnInfo(name = "contact_id") val contactId: Int,
+    )
 
     @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
     suspend fun getContactEntity(id: Int): ContactEntity?
@@ -88,6 +108,108 @@ interface ContactsDao {
 
     @Query("SELECT contact_id FROM app_contact_devices WHERE device_id = :deviceId LIMIT 1")
     suspend fun findContactIdByDeviceId(deviceId: String): Int?
+
+    /** Single-shot lookup: returns contactId if [id] matches a userId or deviceId. */
+    @Query(
+        """
+        SELECT contact_id FROM app_contact_user_ids WHERE user_id   = :id
+        UNION
+        SELECT contact_id FROM app_contact_devices  WHERE device_id = :id
+        LIMIT 1
+        """
+    )
+    suspend fun findContactIdByUserOrDeviceId(id: String): Int?
+
+    /**
+     * All (normalizedId -> contactId) pairs across user_ids, device_ids, group_ids.
+     * Used by repository to build the contact-id cache in one round-trip.
+     */
+    @Query(
+        """
+        SELECT user_id   AS norm_id, contact_id FROM app_contact_user_ids
+        UNION ALL
+        SELECT device_id AS norm_id, contact_id FROM app_contact_devices
+        UNION ALL
+        SELECT group_id  AS norm_id, contact_id FROM app_contact_group_ids
+        """
+    )
+    suspend fun getAllIdToContactRows(): List<IdContactRow>
+
+    /**
+     * Returns every (chatId, participantId, kind) tuple in one query.
+     * For USER contacts emits BOTH the userId row and one row per linked deviceId.
+     * For DEVICE/GROUP contacts emits a single row.
+     */
+    @Query(
+        """
+        SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_user_ids u ON u.contact_id = c.id
+        WHERE c.type = 'USER'
+        UNION ALL
+        SELECT cp.chat_id, cd.device_id, 'DEVICE'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_devices cd ON cd.contact_id = c.id
+        WHERE c.type IN ('USER','DEVICE')
+        UNION ALL
+        SELECT cp.chat_id, g.group_id, 'GROUP'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE c.type = 'GROUP'
+        """
+    )
+    suspend fun getAllChatParticipantIdRows(): List<ChatParticipantIdRow>
+
+    /** Reactive variant of [getAllChatParticipantIdRows]. */
+    @Query(
+        """
+        SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_user_ids u ON u.contact_id = c.id
+        WHERE c.type = 'USER'
+        UNION ALL
+        SELECT cp.chat_id, cd.device_id, 'DEVICE'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_devices cd ON cd.contact_id = c.id
+        WHERE c.type IN ('USER','DEVICE')
+        UNION ALL
+        SELECT cp.chat_id, g.group_id, 'GROUP'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE c.type = 'GROUP'
+        """
+    )
+    fun observeAllChatParticipantIdRows(): Flow<List<ChatParticipantIdRow>>
+
+    /** Same as [getAllChatParticipantIdRows] but scoped to one chat. */
+    @Query(
+        """
+        SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_user_ids u ON u.contact_id = c.id
+        WHERE c.type = 'USER' AND cp.chat_id = :chatId
+        UNION ALL
+        SELECT cp.chat_id, cd.device_id, 'DEVICE'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_devices cd ON cd.contact_id = c.id
+        WHERE c.type IN ('USER','DEVICE') AND cp.chat_id = :chatId
+        UNION ALL
+        SELECT cp.chat_id, g.group_id, 'GROUP'
+        FROM chat_participants cp
+        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE c.type = 'GROUP' AND cp.chat_id = :chatId
+        """
+    )
+    suspend fun getChatParticipantIdRows(chatId: String): List<ChatParticipantIdRow>
 
     /**
      * Returns the contact name for [id] by searching across all three identity

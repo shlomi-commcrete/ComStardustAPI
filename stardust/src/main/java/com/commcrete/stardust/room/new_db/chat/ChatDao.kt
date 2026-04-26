@@ -7,10 +7,17 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.ColumnInfo
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChatDao {
+
+    /** (previousId -> resolved chatId) row produced by bulk previous-id lookup. */
+    data class PreviousChatIdRow(
+        @ColumnInfo(name = "previous_id") val previousId: String,
+        @ColumnInfo(name = "chat_id") val chatId: String,
+    )
 
     // ── Single chat ──────────────────────────────────────────────────────
 
@@ -133,6 +140,34 @@ interface ChatDao {
         LIMIT 1
     """)
     suspend fun findNewChatIdByPreviousChatId(previousChatId: String): String?
+
+    /**
+     * Bulk version of [findNewChatIdByPreviousChatId]. Resolves multiple legacy
+     * IDs in one query. Caller maps each input position back via the returned rows.
+     * Lower-cased / trimmed IDs are expected (both inputs and stored data).
+     */
+    @Query("""
+        SELECT prev.previous_id AS previous_id, prev.chat_id AS chat_id
+        FROM (
+            SELECT TRIM(LOWER(cg.group_id)) AS previous_id, cp.chat_id AS chat_id, c.last_updated_ms AS lu
+            FROM app_contact_group_ids cg
+            JOIN chat_participants cp ON cp.contact_id = cg.contact_id
+            JOIN chats c ON c.id = cp.chat_id AND c.type = 'GROUP'
+            UNION ALL
+            SELECT TRIM(LOWER(cu.user_id)), cp.chat_id, c.last_updated_ms
+            FROM app_contact_user_ids cu
+            JOIN chat_participants cp ON cp.contact_id = cu.contact_id
+            JOIN chats c ON c.id = cp.chat_id AND c.type = 'PRIVATE'
+            UNION ALL
+            SELECT TRIM(LOWER(cd.device_id)), cp.chat_id, c.last_updated_ms
+            FROM app_contact_devices cd
+            JOIN chat_participants cp ON cp.contact_id = cd.contact_id
+            JOIN chats c ON c.id = cp.chat_id AND c.type = 'PRIVATE'
+        ) prev
+        WHERE prev.previous_id IN (:previousChatIds)
+        ORDER BY prev.lu DESC
+    """)
+    suspend fun findNewChatIdRowsByPreviousChatIds(previousChatIds: List<String>): List<PreviousChatIdRow>
 
     @Query("SELECT id FROM chats")
     suspend fun getAllChatIds(): List<String>
