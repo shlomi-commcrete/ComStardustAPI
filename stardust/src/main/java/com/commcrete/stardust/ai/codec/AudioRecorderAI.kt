@@ -69,6 +69,16 @@ class AudioRecorderAI(
     private val samplesPerChunk = (sampleRate * chunkDurationMs / 1000.0).toInt() // 24,000
     private val bytesPerChunk = samplesPerChunk * bytesPerSample * channels
 
+    /**
+     * When true, every captured chunk is appended to a WAV file under
+     * `Downloads/Stardust/` BEFORE [processSamples] is called — so the file
+     * contains the raw, untouched mic signal for debugging.
+     */
+    var saveRawAudioToDownloads: Boolean = false
+
+    /** Writer used when [saveRawAudioToDownloads] is enabled. */
+    private val debugRawWriter = DebugRawWavWriter()
+
 
 
     fun start() {
@@ -171,6 +181,16 @@ class AudioRecorderAI(
         var chunkSampleIndex = 0
         var chunkIndex = 1
 
+        // Open raw debug capture file BEFORE we start recording so chunk #1 is captured.
+        if (saveRawAudioToDownloads) {
+            debugRawWriter.start(
+                context = context,
+                sampleRate = sampleRate,
+                channels = channels,
+                bitsPerSample = bitsPerSample
+            )
+        }
+
         audioRecord.startRecording()
 
         try {
@@ -195,6 +215,10 @@ class AudioRecorderAI(
                     consumed += toCopy
 
                     if (chunkSampleIndex == samplesPerChunk) {
+                        // 🔴 Capture RAW samples (pre-processing) for debugging.
+                        if (saveRawAudioToDownloads) {
+                            debugRawWriter.append(chunkSamples, samplesPerChunk)
+                        }
                         val processed = processSamples(chunkSamples, gain)
                         onChunkReady?.invoke(processed, chunkIndex++)
                         chunkSampleIndex = 0
@@ -204,6 +228,10 @@ class AudioRecorderAI(
         } finally {
             try {
                 if (chunkSampleIndex > 0) {
+                    // Capture RAW partial tail too, before processing.
+                    if (saveRawAudioToDownloads) {
+                        debugRawWriter.append(chunkSamples, chunkSampleIndex)
+                    }
                     val partial = processSamples(
                         chunkSamples.copyOf(chunkSampleIndex),
                         gain
@@ -215,6 +243,9 @@ class AudioRecorderAI(
             try {
                 audioRecord.stop()
             } catch (_: Exception) {}
+
+            // Close & finalize the debug WAV (patches header sizes).
+            try { debugRawWriter.stop() } catch (_: Throwable) {}
 
             audioRecord.release()
             disableBluetoothSco()
