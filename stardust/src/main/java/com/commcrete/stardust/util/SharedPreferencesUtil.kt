@@ -536,7 +536,7 @@ object SharedPreferencesUtil {
                     else -> { return AudioDeviceInfo.TYPE_UNKNOWN }
                 }
             }
-        }else {
+        } else {
             return AudioDeviceInfo.TYPE_UNKNOWN
         }
     }
