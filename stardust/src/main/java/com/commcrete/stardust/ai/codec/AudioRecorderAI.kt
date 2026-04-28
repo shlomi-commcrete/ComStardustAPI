@@ -374,23 +374,8 @@ class AudioRecorderAI(
      */
     var useSoftwareExpander: Boolean = true
 
-    /** How aggressive the downward expansion is. 4f = 1:4 (typical), 8f = brutal. */
-    var expanderRatio: Float = 4f
-
-    /**
-     * How far above the estimated noise floor a signal must be (in linear
-     * RMS multiples) to pass through un-attenuated. 3.0 ≈ +9.5 dB SNR.
-     */
-    var expanderOpenSnr: Float = 5.5f
-
-    /** Maximum attenuation the expander may apply, in linear gain. 0.05 ≈ −26 dB. */
-    var expanderMinGain: Float = 0.01f
-
-    /** Expander attack (seconds). Fast so we open quickly on speech onsets. */
-    var expanderAttackSec: Float = 0.005f
-
-    /** Expander release (seconds). Slow so tails of words don't get chopped. */
-    var expanderReleaseSec: Float = 0.100f
+    // Expander tuning (ratio / openSnr / minGain / attack / release) lives in
+    // [SourceProfile] now and is resolved per-source in [recordLoop].
 
     // --- Stateful DSP state (persist across chunks to avoid boundary clicks) ---
     private var dcEstimate: Float = 0f
@@ -662,7 +647,7 @@ class AudioRecorderAI(
 
             MediaRecorder.AudioSource.VOICE_RECOGNITION -> 2.2f
             MediaRecorder.AudioSource.VOICE_COMMUNICATION -> 2.8f
-            else -> expanderRatio
+            else -> 4f
         }
         val effectiveExpanderOpenSnr = profile?.expanderOpenSnr ?: when (effectiveSource) {
             MediaRecorder.AudioSource.DEFAULT,
@@ -670,7 +655,7 @@ class AudioRecorderAI(
 
             MediaRecorder.AudioSource.VOICE_RECOGNITION -> 3.2f
             MediaRecorder.AudioSource.VOICE_COMMUNICATION -> 3.8f
-            else -> expanderOpenSnr
+            else -> 5.5f
         }
         val effectiveExpanderMinGain = profile?.expanderMinGain ?: when (effectiveSource) {
             MediaRecorder.AudioSource.DEFAULT,
@@ -678,10 +663,10 @@ class AudioRecorderAI(
 
             MediaRecorder.AudioSource.VOICE_RECOGNITION -> 0.08f
             MediaRecorder.AudioSource.VOICE_COMMUNICATION -> 0.05f
-            else -> expanderMinGain
+            else -> 0.01f
         }
-        val effectiveExpanderAttackSec = profile?.expanderAttackSec ?: expanderAttackSec
-        val effectiveExpanderReleaseSec = profile?.expanderReleaseSec ?: expanderReleaseSec
+        val effectiveExpanderAttackSec = profile?.expanderAttackSec ?: 0.005f
+        val effectiveExpanderReleaseSec = profile?.expanderReleaseSec ?: 0.100f
 
         expander = if (useSoftwareExpander) {
             SoftwareExpander(
