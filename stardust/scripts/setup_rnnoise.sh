@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+#  setup_rnnoise.sh
+#
+#  Fetches xiph/rnnoise and prepares the source tree so CMake can build
+#  librnnoise_jni.so. Idempotent — safe to re-run.
+#
+#  Output layout (relative to repo root):
+#    stardust/src/main/cpp/rnnoise/
+#      ├── include/rnnoise.h
+#      └── src/*.c   (including the auto-generated rnn_data.c)
+#
+#  Requirements:
+#    - git
+#    - autotools (autoconf, automake, libtool)  ← only for ./autogen.sh
+#    - curl or wget                              ← to download model weights
+#    - bash, make
+#
+#  On macOS:   brew install autoconf automake libtool
+#  On Debian:  sudo apt install autoconf automake libtool
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CPP_DIR="$(cd "$SCRIPT_DIR/../src/main/cpp" && pwd)"
+RNNOISE_DIR="$CPP_DIR/rnnoise"
+RNNOISE_REPO="https://github.com/xiph/rnnoise.git"
+RNNOISE_REF="${RNNOISE_REF:-master}"
+
+echo "──────────────────────────────────────────────────"
+echo "  RNNoise setup"
+echo "  target: $RNNOISE_DIR"
+echo "  ref:    $RNNOISE_REF"
+echo "──────────────────────────────────────────────────"
+
+# 1) Clone (or update) the repo.
+if [ ! -d "$RNNOISE_DIR/.git" ]; then
+    echo "[1/3] Cloning $RNNOISE_REPO ..."
+    rm -rf "$RNNOISE_DIR"
+    git clone --depth 1 --branch "$RNNOISE_REF" "$RNNOISE_REPO" "$RNNOISE_DIR"
+else
+    echo "[1/3] Updating existing checkout ..."
+    git -C "$RNNOISE_DIR" fetch --depth 1 origin "$RNNOISE_REF"
+    git -C "$RNNOISE_DIR" checkout "$RNNOISE_REF"
+    git -C "$RNNOISE_DIR" reset --hard "origin/$RNNOISE_REF"
+fi
+
+# 2) Generate model data file (src/rnn_data.c or src/rnnoise_data.c).
+#    Newer revisions of xiph/rnnoise commit this file directly. Older ones
+#    require ./autogen.sh + ./configure (which downloads the weights tarball).
+DATA_FILE_PRESENT=0
+if [ -f "$RNNOISE_DIR/src/rnn_data.c" ] || [ -f "$RNNOISE_DIR/src/rnnoise_data.c" ]; then
+    DATA_FILE_PRESENT=1
+fi
+
+if [ "$DATA_FILE_PRESENT" -eq 0 ]; then
+    echo "[2/3] Generating model data via autotools ..."
+    if ! command -v autoreconf >/dev/null 2>&1; then
+        echo "ERROR: autotools not installed (need autoconf/automake/libtool)." >&2
+        echo "       macOS:   brew install autoconf automake libtool"          >&2
+        echo "       Debian:  sudo apt install autoconf automake libtool"      >&2
+        exit 1
+    fi
+    pushd "$RNNOISE_DIR" >/dev/null
+    ./autogen.sh
+    # configure downloads the model weights archive and unpacks it; the
+    # subsequent build step generates src/rnn_data.c from those weights.
+    ./configure --disable-examples --disable-doc
+    # We don't actually need to compile — just generate rnn_data.c.
+    # On most rnnoise versions, the data file is produced during `make`.
+    make -j src/rnn_data.lo || make -j src/rnn_data.o || make -j || true
+    popd >/dev/null
+else
+    echo "[2/3] Model data file already present — skipping autotools step."
+fi
+
+# 3) Final sanity check.
+if [ ! -f "$RNNOISE_DIR/include/rnnoise.h" ]; then
+    echo "ERROR: $RNNOISE_DIR/include/rnnoise.h is missing." >&2
+    exit 1
+fi
+if ! ls "$RNNOISE_DIR"/src/rnn_data.c "$RNNOISE_DIR"/src/rnnoise_data.c >/dev/null 2>&1; then
+    echo "ERROR: model data file (rnn_data.c / rnnoise_data.c) was not produced." >&2
+    echo "       Inspect $RNNOISE_DIR for build output and re-run."               >&2
+    exit 1
+fi
+
+echo "[3/3] Done. RNNoise sources are ready under:"
+echo "        $RNNOISE_DIR"
+echo
+echo "Next:"
+echo "  1. Open Android Studio and let it sync (CMake will pick up the sources)."
+echo "  2. Rebuild :stardust — librnnoise_jni.so will be packaged into the AAR."
+echo "  3. RnNoiseProcessor will auto-discover com.commcrete.rnnoise.RnNoise"
+echo "     at runtime via reflection and use the native denoiser."
+

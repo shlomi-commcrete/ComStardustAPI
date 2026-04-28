@@ -7,6 +7,10 @@ import android.media.MediaRecorder
 import android.preference.PreferenceManager
 import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
+import com.commcrete.stardust.AiSourceProfile
+import com.commcrete.stardust.AiSourceProfileDefaults
+import com.commcrete.stardust.AiSourceProfileSettings
+import com.commcrete.stardust.AiAudioSource
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
@@ -136,6 +140,8 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
+    private const val KEY_AI_SOURCE_PROFILE_SETTINGS = "ai_source_profile_settings"
+    private const val KEY_VOICE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
 
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -148,6 +154,98 @@ object SharedPreferencesUtil {
         }
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
 
+    }
+
+    private data class AiSourceProfileSettingsStorage(
+        val useSourceProfile: Boolean,
+        val preferProcessedSource: Boolean,
+        val profiles: Map<String, AiSourceProfile>,
+    )
+
+    fun getAiSourceProfileSettings(context: Context): AiSourceProfileSettings {
+        val json = getPrefs(context).getString(KEY_AI_SOURCE_PROFILE_SETTINGS, null)
+        if (json.isNullOrBlank()) return AiSourceProfileDefaults.settings
+
+        return try {
+            val type = object : TypeToken<AiSourceProfileSettingsStorage>() {}.type
+            val storage = Gson().fromJson<AiSourceProfileSettingsStorage>(json, type)
+                ?: return AiSourceProfileDefaults.settings
+
+            val normalizedProfiles = AiSourceProfileDefaults.profiles.mapValues { (source, defaultProfile) ->
+                val raw = storage.profiles[source.name] ?: defaultProfile
+                normalizeAiSourceProfile(raw)
+            }
+
+            AiSourceProfileSettings(
+                useSourceProfile = storage.useSourceProfile,
+                preferProcessedSource = storage.preferProcessedSource,
+                profiles = normalizedProfiles,
+            )
+        } catch (_: Exception) {
+            AiSourceProfileDefaults.settings
+        }
+    }
+
+    fun setAiSourceProfileSettings(context: Context, settings: AiSourceProfileSettings) {
+        val normalizedProfiles = AiSourceProfileDefaults.profiles.mapValues { (source, defaultProfile) ->
+            val raw = settings.profiles[source] ?: defaultProfile
+            normalizeAiSourceProfile(raw)
+        }
+
+        val storage = AiSourceProfileSettingsStorage(
+            useSourceProfile = settings.useSourceProfile,
+            preferProcessedSource = settings.preferProcessedSource,
+            profiles = normalizedProfiles.mapKeys { it.key.name },
+        )
+
+        getPrefs(context).edit()
+            .putString(KEY_AI_SOURCE_PROFILE_SETTINGS, Gson().toJson(storage))
+            .apply()
+    }
+
+    fun resetAiSourceProfileSettings(context: Context) {
+        getPrefs(context).edit().remove(KEY_AI_SOURCE_PROFILE_SETTINGS).apply()
+    }
+
+    /**
+     * Returns whether voice cancellation (noise/voice suppression on the
+     * recording pipeline) is enabled. Defaults to false when not set.
+     */
+    fun isVoiceCancellationEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_VOICE_CANCELLATION_ENABLED, false)
+    }
+
+    /** Persists the voice cancellation toggle. */
+    fun setVoiceCancellationEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_VOICE_CANCELLATION_ENABLED, enabled).apply()
+    }
+
+    fun getAiSourceProfile(context: Context, source: AiAudioSource): AiSourceProfile {
+        val settings = getAiSourceProfileSettings(context)
+        return settings.profiles[source] ?: AiSourceProfileDefaults.profiles[source]!!
+    }
+
+    fun setAiSourceProfile(context: Context, source: AiAudioSource, profile: AiSourceProfile) {
+        val currentSettings = getAiSourceProfileSettings(context)
+        val updatedProfiles = currentSettings.profiles.toMutableMap()
+        updatedProfiles[source] = profile
+        val updatedSettings = currentSettings.copy(profiles = updatedProfiles)
+        setAiSourceProfileSettings(context, updatedSettings)
+    }
+
+    private fun normalizeAiSourceProfile(profile: AiSourceProfile): AiSourceProfile {
+        return AiSourceProfile(
+            makeupGain = profile.makeupGain.coerceIn(0.1f, 6.0f),
+            agcTargetRms = profile.agcTargetRms.coerceIn(300f, 10000f),
+            agcMaxGain = profile.agcMaxGain.coerceIn(1f, 20f),
+            agcNoiseFloorRms = profile.agcNoiseFloorRms.coerceIn(0f, 5000f),
+            noiseGateRms = profile.noiseGateRms.coerceIn(0, 5000),
+            expanderRatio = profile.expanderRatio.coerceIn(1.0f, 8.0f),
+            expanderOpenSnr = profile.expanderOpenSnr.coerceIn(1.5f, 10.0f),
+            expanderMinGain = profile.expanderMinGain.coerceIn(0.001f, 1.0f),
+            expanderAttackSec = profile.expanderAttackSec.coerceIn(0.001f, 0.050f),
+            expanderReleaseSec = profile.expanderReleaseSec.coerceIn(0.020f, 0.500f),
+        )
     }
 
     fun getUserID(context: Context): String? {
@@ -329,7 +427,7 @@ object SharedPreferencesUtil {
     }
 
     fun getAIGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 100.toFloat())
+        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 50.toFloat())
     }
 
     fun setAIGain(context: Context, gain: Float) {

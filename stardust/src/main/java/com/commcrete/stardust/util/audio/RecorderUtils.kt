@@ -6,11 +6,14 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.AiSourceProfile
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
-import com.example.chunkrecorder.AudioRecorderAI
+import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.ai.codec.AudioRecorderAI
+import com.example.chunkrecorder.RnNoiseProcessor
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -105,12 +108,29 @@ object RecorderUtils {
 
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
         PttSendManager.restart()
+        val sourceProfileSettings = SharedPreferencesUtil.getAiSourceProfileSettings(DataManager.context)
 
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {
+            // Cleaning pipeline: hardware NS off (RNNoise replaces it),
+            // DC removal + HPF + RNNoise + noise gate.
+            useHardwareEffects = false
+            useDcRemoval = true
+            useHighPass = true
+            highPassCutoffHz = 80f
+            useSoftClip = true
+            useNoiseGate = true
+            noiseGateThresholdRms = 300
+            noiseProcessor = RnNoiseProcessor()
+
+            useSourceProfile = sourceProfileSettings.useSourceProfile
+            preferProcessedSource = sourceProfileSettings.preferProcessedSource
+            sourceProfileOverrides = sourceProfileSettings.profiles.mapKeys { it.key.androidSource }
+                .mapValues { (_, profile) -> profile.toRecorderSourceProfile() }
+
             onChunkReady = { pcmArray, _ ->
                 PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
             }
@@ -130,6 +150,22 @@ object RecorderUtils {
 
         Log.d("AudioRecorder", "AudioRecorderAI started")
     }
+
+    private fun AiSourceProfile.toRecorderSourceProfile(): AudioRecorderAI.SourceProfile {
+        return AudioRecorderAI.SourceProfile(
+            makeupGain = makeupGain,
+            agcTargetRms = agcTargetRms,
+            agcMaxGain = agcMaxGain,
+            agcNoiseFloorRms = agcNoiseFloorRms,
+            noiseGateRms = noiseGateRms,
+            expanderRatio = expanderRatio,
+            expanderOpenSnr = expanderOpenSnr,
+            expanderMinGain = expanderMinGain,
+            expanderAttackSec = expanderAttackSec,
+            expanderReleaseSec = expanderReleaseSec,
+        )
+    }
+
     private fun finishAIRecording(context: Context) {
         Scopes.getDefaultCoroutine().launch {
             delay(3000)
