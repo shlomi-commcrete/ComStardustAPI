@@ -474,11 +474,17 @@ class AudioRecorderAI(
         val baseGain = SharedPreferencesUtil.getAIGain(context) / 100f
 
         // ─── Resolve the actual input device BEFORE creating AudioRecord ────
-        // Prefer the explicit override; otherwise auto-pick the best external
-        // mic; otherwise fall back to whatever the audio HAL chooses (usually
-        // built-in).
+        // Priority:
+        //   1. User preference saved in SharedPreferencesUtil.KEY_INPUT_DEFAULT
+        //      (only if a matching device is currently connected and the
+        //      preference is not TYPE_UNKNOWN).
+        //   2. Explicit programmatic override via [preferredInputDevice].
+        //   3. Auto-pick the best external mic.
+        //   4. Null → let the audio HAL choose (usually built-in).
         val resolvedDevice: AudioDeviceInfo? =
-            preferredInputDevice ?: pickPreferredExternalInputDevice()
+            pickPreferredInputDeviceFromPrefs()
+                ?: preferredInputDevice
+                ?: pickPreferredExternalInputDevice()
 
         val isExternalMic = resolvedDevice?.let { isExternalInput(it) } == true
         val isBluetoothMic = resolvedDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
@@ -597,6 +603,20 @@ class AudioRecorderAI(
             val ok = audioRecord.setPreferredDevice(resolvedDevice)
             Log.d("AudioRecorder",
                 "setPreferredDevice(${resolvedDevice.productName})=$ok")
+
+            // On Android 12+ also pin the *communication* route so the audio
+            // policy can't re-route us to a freshly-attached USB / BT mic.
+            // Without this, KEY_INPUT_DEFAULT (e.g. TYPE_BUILTIN_MIC) is
+            // ignored as soon as a USB device is plugged in.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    am?.setCommunicationDevice(resolvedDevice)
+                } catch (e: Exception) {
+                    Log.w("AudioRecorder",
+                        "setCommunicationDevice(${resolvedDevice.type}) failed", e)
+                }
+            }
         }
 
         // Attach platform NS / AGC / AEC. Skip them on external mics: most OEM
@@ -809,6 +829,14 @@ class AudioRecorderAI(
             if (scoEnabledByUs) {
                 disableBluetoothSco()
                 scoEnabledByUs = false
+            }
+            // Release any communication-device pin we set in recordLoop so a
+            // subsequent playback / recording session can pick its own route.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                try {
+                    val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+                    am?.clearCommunicationDevice()
+                } catch (_: Throwable) {}
             }
         }
     }
@@ -1057,6 +1085,26 @@ class AudioRecorderAI(
         val am = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
             ?: return emptyList()
         return am.getDevices(AudioManager.GET_DEVICES_INPUTS).toList()
+    }
+
+    /**
+     * Looks up the user's saved input preference
+     * ([SharedPreferencesUtil.getInputDevice]) and returns a connected
+     * [AudioDeviceInfo] of that type, if any. Returns null when:
+     *  - the preference is TYPE_UNKNOWN (no user choice), or
+     *  - no currently-connected input device matches the preferred type.
+     *
+     * This is what makes `KEY_INPUT_DEFAULT` actually win over a freshly-
+     * plugged-in USB / BT peripheral.
+     */
+    private fun pickPreferredInputDeviceFromPrefs(): AudioDeviceInfo? {
+        val wanted = try {
+            SharedPreferencesUtil.getInputDevice(context)
+        } catch (_: Throwable) {
+            AudioDeviceInfo.TYPE_UNKNOWN
+        }
+        if (wanted == AudioDeviceInfo.TYPE_UNKNOWN) return null
+        return listInputDevices().firstOrNull { it.type == wanted }
     }
 
     /**

@@ -121,19 +121,53 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         }
         val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
 
-        if (wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-            val bleDevice =
-                getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
-            bleDevice?.let {
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice has device")
-                recorder?.setPreferredDevice(it)
+        // No explicit user preference → make sure we are NOT stuck on SCO from a
+        // previous session and let the platform pick its own default.
+        if (wantedInputDevice == AudioDeviceInfo.TYPE_UNKNOWN) {
+            try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.setCommunicationDevice(it)
+                    audioManager.clearCommunicationDevice()
                 }
-                audioManager.startBluetoothSco()
-                audioManager.isBluetoothScoOn = true
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice added")
+            } catch (_: Throwable) {}
+            try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
+            return
+        }
+
+        // Resolve the actual AudioDeviceInfo that matches the user preference
+        // (falls back through the configured input hierarchy).
+        val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
+        if (preferred == null) {
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice: no matching input device")
+            return
+        }
+
+        Log.d(TAG_PTT_DEBUG,
+            "mWavRecorder syncBleDevice: using ${preferred.productName}/${preferred.type}")
+
+        // 1. Force AudioRecord to capture from the chosen device — this is the
+        //    main fix: previously we only did this for BLUETOOTH_SCO, so a
+        //    plugged-in USB headset would silently hijack the mic.
+        try { recorder?.setPreferredDevice(preferred) } catch (_: Throwable) {}
+
+        // 2. On Android 12+ also pin the communication device so VOICE_* sources
+        //    don't get re-routed by audio policy when peripherals change.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { audioManager.setCommunicationDevice(preferred) } catch (e: Exception) {
+                Timber.tag(TAG_PTT_DEBUG).w(e, "setCommunicationDevice(${preferred.type}) failed")
             }
+        }
+
+        // 3. Only manage SCO when the chosen input actually is the BT SCO mic.
+        //    Otherwise SCO would silently override the user's wired/USB/built-in
+        //    selection.
+        if (preferred.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            try { audioManager.startBluetoothSco() } catch (_: Throwable) {}
+            try { audioManager.isBluetoothScoOn = true } catch (_: Throwable) {}
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice SCO enabled")
+        } else {
+            try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
         }
     }
 
@@ -144,19 +178,13 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
         } else {
             TODO("VERSION.SDK_INT < M")
         }
-        val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
-        if(wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices has device")
-            val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS, context)
-            bleDevice?.let {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.clearCommunicationDevice()
-                }
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices removed")
-
-            }}
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            }
+        } catch (_: Throwable) {}
+        try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+        try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
     }
 
     fun kill () {

@@ -12,6 +12,7 @@ import android.media.MediaRouter
 import android.media.RingtoneManager
 import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -291,19 +292,47 @@ object PlayerUtils : BleMediaConnector() {
     @SuppressLint("NewApi")
     private fun syncBleDevice (context: Context) {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
-        val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_OUTPUTS, context)
-        bleDevice?.let {
-            track?.setPreferredDevice(it)
-            audioManager.startBluetoothSco()
-            audioManager.setBluetoothScoOn(true)
-            if (it.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
-                try {
-                    routeAudioToMediaRouter(context)
-
-                }catch (e : Exception) {
-                    e.printStackTrace()
+        val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS, context)
+        if (preferred == null) {
+            // No explicit preference — make sure we are NOT stuck on SCO from a
+            // previous PTT and let the platform pick the default route.
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    audioManager.clearCommunicationDevice()
                 }
+            } catch (_: Throwable) {}
+            try { audioManager.setBluetoothScoOn(false) } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
+            return
+        }
+
+        // 1. Hint AudioTrack to use the chosen output.
+        try { track?.setPreferredDevice(preferred) } catch (_: Throwable) {}
+
+        // 2. On Android 12+ pin the *communication* route to the chosen device so
+        //    plugging/unplugging USB headset / BT headset cannot hijack playback.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try {
+                audioManager.setCommunicationDevice(preferred)
+            } catch (e: Exception) {
+                Timber.tag("PlayerUtils")
+                    .w(e, "setCommunicationDevice(${preferred.type}) failed")
             }
+        }
+
+        // 3. Only manage SCO when the chosen device is the BT SCO output.
+        //    Otherwise SCO would silently re-route the stream away from the
+        //    speaker / wired / USB output the user actually selected.
+        if (preferred.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            try { audioManager.startBluetoothSco() } catch (_: Throwable) {}
+            try { audioManager.setBluetoothScoOn(true) } catch (_: Throwable) {}
+        } else {
+            try { audioManager.setBluetoothScoOn(false) } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
+        }
+
+        if (preferred.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
+            try { routeAudioToMediaRouter(context) } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -321,10 +350,13 @@ object PlayerUtils : BleMediaConnector() {
     @SuppressLint("NewApi")
     private fun removeSyncBleDevices (context: Context) {
         val audioManager = DataManager.context.getSystemService(AudioManager::class.java)
-        val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_OUTPUTS, context)
-        bleDevice?.let {
-            audioManager.stopBluetoothSco()
-        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            }
+        } catch (_: Throwable) {}
+        try { audioManager.setBluetoothScoOn(false) } catch (_: Throwable) {}
+        try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
     }
 
     @SuppressLint("NewApi")
