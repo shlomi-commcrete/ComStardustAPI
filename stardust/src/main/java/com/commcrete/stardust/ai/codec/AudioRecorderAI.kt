@@ -182,26 +182,8 @@ class AudioRecorderAI(
      */
     var softwareAgcOnlyForExternalMic: Boolean = true
 
-    /** Target RMS level the AGC aims to reach (0..32767). ~3000 ≈ -20 dBFS. */
-    var agcTargetRms: Float = 3000f
-
-    /** Hard ceiling on how much the AGC may amplify a quiet signal. */
-    var agcMaxGain: Float = 8f
-
-    /** Floor on AGC gain (used to attenuate when input is too hot). */
-    var agcMinGain: Float = 0.25f
-
-    /**
-     * RMS below which AGC freezes its gain and stops amplifying — prevents
-     * pumping up pure room/hiss noise to target level during silences.
-     */
-    var agcNoiseFloorRms: Float = 80f
-
-    /** Attack time constant (seconds). Smaller = faster gain reduction on loud peaks. */
-    var agcAttackSec: Float = 0.010f
-
-    /** Release time constant (seconds). Larger = smoother gain rise on quiet speech. */
-    var agcReleaseSec: Float = 0.350f
+    // AGC tuning (target / max / min / noise-floor / attack / release) lives in
+    // [SourceProfile] now and is resolved per-source in [recordLoop].
 
     // ─── Per-AudioSource compensation ──────────────────────────────────────
     /**
@@ -236,6 +218,12 @@ class AudioRecorderAI(
          * still pushed up.
          */
         val agcNoiseFloorRms: Float,
+        /** Floor on AGC gain — used to ATTENUATE when the input is too hot. */
+        val agcMinGain: Float,
+        /** AGC attack (seconds). Smaller = faster gain reduction on loud peaks. */
+        val agcAttackSec: Float,
+        /** AGC release (seconds). Larger = smoother gain rise on quiet speech. */
+        val agcReleaseSec: Float,
         /**
          * Noise gate threshold (RMS). For pre-cleaned sources we keep this
          * very low so the gate doesn't cut the quiet-but-clean speech.
@@ -266,6 +254,9 @@ class AudioRecorderAI(
             agcTargetRms = 3000f,
             agcMaxGain = 6f,
             agcNoiseFloorRms = 120f,   // raw mic → don't pump up hiss
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 300,
             expanderRatio = 5.5f,
             expanderOpenSnr = 7.0f,
@@ -278,6 +269,9 @@ class AudioRecorderAI(
             agcTargetRms = 2600f,
             agcMaxGain = 3f,
             agcNoiseFloorRms = 180f,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 500,
             expanderRatio = 5.5f,
             expanderOpenSnr = 7.0f,
@@ -290,6 +284,9 @@ class AudioRecorderAI(
             agcTargetRms = 4500f,
             agcMaxGain = 10f,
             agcNoiseFloorRms = 100f,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 200,
             expanderRatio = 2.2f,
             expanderOpenSnr = 3.2f,
@@ -302,6 +299,9 @@ class AudioRecorderAI(
             agcTargetRms = 3000f,
             agcMaxGain = 4.0f,
             agcNoiseFloorRms = 140f,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 160,
             expanderRatio = 2.8f,
             expanderOpenSnr = 3.8f,
@@ -314,6 +314,9 @@ class AudioRecorderAI(
             agcTargetRms = 3500f,
             agcMaxGain = 8f,
             agcNoiseFloorRms = 80f,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 150,
             expanderRatio = 4.0f,
             expanderOpenSnr = 5.5f,
@@ -326,6 +329,9 @@ class AudioRecorderAI(
             agcTargetRms = 4000f,
             agcMaxGain = 10f,
             agcNoiseFloorRms = 60f,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = 80,
             expanderRatio = 4.0f,
             expanderOpenSnr = 5.5f,
@@ -585,9 +591,12 @@ class AudioRecorderAI(
 
         // AGC parameters: per-source values override the global defaults
         // unless the user has explicitly disabled the profile system.
-        val effectiveAgcTarget = profile?.agcTargetRms ?: agcTargetRms
-        val effectiveAgcMaxGain = profile?.agcMaxGain ?: agcMaxGain
-        val effectiveAgcNoiseFloor = profile?.agcNoiseFloorRms ?: agcNoiseFloorRms
+        val effectiveAgcTarget = profile?.agcTargetRms ?: 3000f
+        val effectiveAgcMaxGain = profile?.agcMaxGain ?: 8f
+        val effectiveAgcNoiseFloor = profile?.agcNoiseFloorRms ?: 80f
+        val effectiveAgcMinGain = profile?.agcMinGain ?: 0.25f
+        val effectiveAgcAttackSec = profile?.agcAttackSec ?: 0.010f
+        val effectiveAgcReleaseSec = profile?.agcReleaseSec ?: 0.350f
 
         Log.d(
             "AudioRecorder",
@@ -645,14 +654,15 @@ class AudioRecorderAI(
                 sampleRate = sampleRate,
                 targetRms = effectiveAgcTarget,
                 maxGain = effectiveAgcMaxGain,
-                minGain = agcMinGain,
+                minGain = effectiveAgcMinGain,
                 noiseFloorRms = effectiveAgcNoiseFloor,
-                attackSec = agcAttackSec,
-                releaseSec = agcReleaseSec
+                attackSec = effectiveAgcAttackSec,
+                releaseSec = effectiveAgcReleaseSec
             ).also {
                 Log.d("AudioRecorder",
                     "SoftwareAGC enabled target=$effectiveAgcTarget max=$effectiveAgcMaxGain " +
-                        "min=$agcMinGain floor=$effectiveAgcNoiseFloor")
+                        "min=$effectiveAgcMinGain floor=$effectiveAgcNoiseFloor " +
+                        "attack=$effectiveAgcAttackSec release=$effectiveAgcReleaseSec")
             }
         } else null
 

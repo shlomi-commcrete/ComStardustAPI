@@ -158,11 +158,6 @@ object RecorderUtils {
             agcMaxGain = agcMaxGain,
             agcNoiseFloorRms = agcNoiseFloorRms,
             noiseGateRms = noiseGateRms,
-            expanderRatio = expanderRatio,
-            expanderOpenSnr = expanderOpenSnr,
-            expanderMinGain = expanderMinGain,
-            expanderAttackSec = expanderAttackSec,
-            expanderReleaseSec = expanderReleaseSec,
         )
     }
 
