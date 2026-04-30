@@ -208,18 +208,15 @@ class AppRepository(
     suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
         val selfId = RegisteredUserUtils.mRegisterUser.value?.appId
             ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        
-        if (selfId == null) {
-            // No registered user — return all app + group contacts
-            val appRows = contactsDao.getAllAppContactRows()
-            val groupRows = contactsDao.getAllGroupContactRows()
-            mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+
+        val groupRows = contactsDao.getAllGroupContactRows()
+
+        val appRows = if (selfId == null) { contactsDao.getAllAppContactRows()
         } else {
-            // Exclude self from app contacts
-            val appRows = contactsDao.getAllAppContactRowsExceptUser(selfId)
-            val groupRows = contactsDao.getAllGroupContactRows()
-            mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+            contactsDao.getAllAppContactRowsExceptUser(selfId)
         }
+
+        mapGroupContactRowsToFullContactData(groupRows) + mapAppContactRowsToFullContactData(appRows)
     }
 
     private fun mapAppContactRowsToFullContactData(rows: List<ContactsDao.AppContactRow>): List<FullContactData> {

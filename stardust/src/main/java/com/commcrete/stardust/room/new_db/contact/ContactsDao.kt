@@ -285,17 +285,11 @@ interface ContactsDao {
         """
         SELECT
             c.*,
-            u.user_id AS user_id,
-            cd.device_id AS device_id,
-            d.model AS device_model,
-            d.serial AS device_serial,
-            cd.slot AS device_slot
+            u.user_id AS user_id
         FROM contacts_table c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
-        LEFT JOIN app_contact_devices cd ON cd.contact_id = c.id
-        LEFT JOIN devices d ON d.id = cd.device_id
         WHERE c.type = 'USER'
-        ORDER BY c.id ASC, cd.slot ASC, cd.assigned_at ASC
+        ORDER BY c.name ASC
         """
     )
     suspend fun getAllAppContactRows(): List<AppContactRow>
@@ -304,17 +298,11 @@ interface ContactsDao {
         """
         SELECT
             c.*,
-            u.user_id AS user_id,
-            cd.device_id AS device_id,
-            d.model AS device_model,
-            d.serial AS device_serial,
-            cd.slot AS device_slot
+            u.user_id AS user_id
         FROM contacts_table c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
-        LEFT JOIN app_contact_devices cd ON cd.contact_id = c.id
-        LEFT JOIN devices d ON d.id = cd.device_id
         WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
-        ORDER BY c.id ASC, cd.slot ASC, cd.assigned_at ASC
+        ORDER BY c.name ASC
         """
     )
     suspend fun getAllAppContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
@@ -327,7 +315,7 @@ interface ContactsDao {
         FROM contacts_table c
         INNER JOIN app_contact_group_ids g ON g.contact_id = c.id
         WHERE c.type = 'GROUP'
-        ORDER BY c.id ASC
+        ORDER BY c.name ASC
         """
     )
     suspend fun getAllGroupContactRows(): List<GroupContactRow>
