@@ -14,7 +14,6 @@ import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
@@ -180,7 +179,6 @@ object PlayerUtils : BleMediaConnector() {
                             senderID = senderId,
                             receiverID = appId,
                             state = MessageState.RECEIVING,
-                            type = MessageType.PTT,
                             epochTimeMs = ts.toLong(),
                             extraData = MessageExtraData.PTT(
                                 encoderType = type,
@@ -278,7 +276,6 @@ object PlayerUtils : BleMediaConnector() {
         return repo.saveMessage(
             MessageEntity(
                 senderID = senderId,
-                type = MessageType.PTT,
                 receiverID = appId,
                 state = MessageState.RECEIVING,
                 extraData = MessageExtraData.PTT(

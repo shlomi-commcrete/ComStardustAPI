@@ -6,11 +6,9 @@ import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.enums.FunctionalityType
-import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -18,8 +16,9 @@ import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import timber.log.Timber
 import java.io.File
 import kotlin.math.ceil
@@ -46,13 +45,19 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         updateStep(mutablePackagesMap.size)
     }
 
-    fun sendFile(onFileStatusChange: OnFileStatusChange) {
+    /**
+     * Kicks off the file send. The returned [Deferred] resolves to `true`
+     * after [saveLocalMessages] has finished persisting the local
+     * [MessageEntity], `false` if persistence failed. Callers that don't
+     * care about the local-save outcome can simply ignore the returned value.
+     */
+    fun sendFile(onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
         this.onFileStatusChange = onFileStatusChange
         isSendingInProgress = true
         val fileList = listOf(data.file)
         val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending(data)
-        CoroutineScope(Dispatchers.IO).launch {
+        return CoroutineScope(Dispatchers.IO).async {
             var packages = createPackages(fileList)
 
             if (data.stardustAPIPackage.spare > 0) {
@@ -93,18 +98,22 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         return randomMisses.toList()
     }
 
-    private suspend fun saveLocalMessages() {
+    /**
+     * Persist the locally-stored copy of the file + the corresponding
+     * [MessageEntity]. Returns `true` once the message entity has been
+     * written successfully, `false` if persistence threw.
+     */
+    private suspend fun saveLocalMessages(): Boolean {
         val destDir = File("${context.filesDir}/${data.chatId}/files").also { it.mkdirs() }
-        val destFile = File(destDir, "${data.file.nameWithoutExtension}.${data.file.extension}")
+        val destFile = File(destDir, data.file.name)
 
-        try {
-            when (data.fileType) {
-                FileType.Image -> data.file.inputStream().use { input ->
-                    destFile.outputStream().use { input.copyTo(it) }
-                }
-                FileType.File -> decompressTextFile(data.file, destFile)
-            }
+        // Try to copy the source into the chat-local directory. We do this in a
+        // dedicated try/catch so that a failed copy does NOT prevent us from
+        // persisting the MessageEntity — the message must still be saved even
+        // if the file vanished or is on a path we cannot read directly.
+        val copyOk = copySourceToLocal(destFile)
 
+        return try {
             DataManager.getAppRepo(context).saveMessage(
                 MessageEntity(
                     chatId = data.chatId,
@@ -113,14 +122,83 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
                     state = MessageState.SENT,
                     extraData = MessageExtraData.Attachment(
                         title = data.file.name,
-                        path = destFile.absolutePath,
+                        // Fall back to the original path if the local copy
+                        // failed; UI can still try to open it directly.
+                        path = if (copyOk) destFile.absolutePath else data.file.absolutePath,
                         subtype = data.fileType.toAttachmentType()
                     )
                 ))
-
+            true
         } catch (e: Exception) {
-            Timber.e(e, "Error saving file locally: ${data.file.name}")
+            Timber.e(e, "Error persisting MessageEntity for ${data.file.name}")
+            false
         }
+    }
+
+    /**
+     * Copy [data.file] into [destFile] for the given [data.fileType].
+     *
+     * `data.file` is a [java.io.File] but on Android the underlying path may
+     * not actually be readable via [java.io.FileInputStream]:
+     *  - URI-derived paths from SAF / MediaStore (`/document/image:1234`)
+     *  - cache files reaped between picker and send
+     *  - paths in another app's private storage
+     *
+     * We try, in order:
+     *   1. Direct file stream (works for normal app-private / public files).
+     *   2. ContentResolver via `Uri.fromFile(...)` (works for some paths).
+     *
+     * @return true on success, false if the source could not be opened — in
+     *         which case we log a diagnostic and let the caller decide.
+     */
+    private fun copySourceToLocal(destFile: File): Boolean {
+        val src = data.file
+        return try {
+            when (data.fileType) {
+                FileType.Image -> {
+                    openSourceStream(src)?.use { input ->
+                        destFile.outputStream().use { input.copyTo(it) }
+                    } ?: run {
+                        logUnreadableSource(src)
+                        return false
+                    }
+                }
+                FileType.File -> {
+                    if (!src.exists() || !src.canRead()) {
+                        logUnreadableSource(src)
+                        return false
+                    }
+                    decompressTextFile(src, destFile)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Timber.e(e, "Error copying source file locally: ${src.absolutePath}")
+            false
+        }
+    }
+
+    /** Returns an [java.io.InputStream] for [src] or null if unreadable. */
+    private fun openSourceStream(src: File): java.io.InputStream? {
+        // Path 1: real filesystem file.
+        if (src.exists() && src.canRead()) {
+            return runCatching { src.inputStream() }.getOrNull()
+        }
+        // Path 2: try ContentResolver in case the File is a thin wrapper around
+        // a content-URI-derived path. android.net.Uri.fromFile expects a real
+        // path so this only helps when the path *is* a valid file but read
+        // permissions are odd.
+        return runCatching {
+            context.contentResolver.openInputStream(android.net.Uri.fromFile(src))
+        }.getOrNull()
+    }
+
+    private fun logUnreadableSource(src: File) {
+        Timber.w(
+            "Source file unreadable: path=%s exists=%s canRead=%s length=%d",
+            src.absolutePath, src.exists(), src.canRead(),
+            runCatching { src.length() }.getOrDefault(-1L)
+        )
     }
 
     private fun first50BytesUtf8(input: String): String {

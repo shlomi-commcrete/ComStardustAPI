@@ -18,7 +18,6 @@ import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.audio.BleMediaConnector
@@ -450,7 +449,6 @@ object PcmStreamPlayer : BleMediaConnector() {
                     senderID = ids.senderId,
                     receiverID = ids.receiverId,
                     state = MessageState.RECEIVING,
-                    type = MessageType.PTT,
                     epochTimeMs = ts.toLong(),
                     extraData = MessageExtraData.PTT(
                         path = file.absolutePath,

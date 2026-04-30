@@ -17,7 +17,6 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -553,7 +552,6 @@ internal class StardustPackageHandler(private val context: Context ,
                             senderID = mPackage.senderId,
                             receiverID = appId,
                             state = MessageState.RECEIVED,
-                            type = MessageType.TEXT,
                             extraData = MessageExtraData.Text(text)
                         ),
                         groupId = mPackage.groupId

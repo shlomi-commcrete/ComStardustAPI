@@ -12,7 +12,6 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -101,7 +100,6 @@ object SOSUtils {
                 senderID = stardustAPIPackage.senderId,
                 receiverID = stardustAPIPackage.receiverId,
                 state = state,
-                type = MessageType.SOS,
                 extraData = MessageExtraData.Sos(
                     latitude = location.latitude,
                     longitude = location.longitude,

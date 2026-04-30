@@ -11,7 +11,6 @@ import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.Carrier
@@ -83,7 +82,6 @@ object PttSendManager {
                         senderID = appId,
                         receiverID = receiverId,
                         state = MessageState.SENT,
-                        type = MessageType.PTT,
                         epochTimeMs = RecorderUtils.ts,
                         extraData = MessageExtraData.PTT(
                             path = file.absolutePath,

@@ -48,11 +48,12 @@ data class MessageEntity(
     var state: MessageState? = MessageState.SENT,
 
     @ColumnInfo(name = "type")
-    var type: MessageType = MessageType.TEXT,
+    val type: MessageType = extraData.toMessageType(),
 
     @ColumnInfo(name = "epoch_time_ms")
     val epochTimeMs: Long = System.currentTimeMillis(),
 ) {
+
 
     init {
         senderID = senderID.lowercase(Locale.ROOT)

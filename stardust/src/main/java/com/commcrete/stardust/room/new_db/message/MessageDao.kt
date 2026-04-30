@@ -118,7 +118,7 @@ interface MessageDao {
         UPDATE messages
         SET state = 1
         WHERE chat_id = :chatId
-          AND state = 2
+          AND state  IN (2, 4)
           AND epoch_time_ms <= :untilEpochMs
     """)
     suspend fun markMessagesAsSeenUntil(chatId: String, untilEpochMs: Long)

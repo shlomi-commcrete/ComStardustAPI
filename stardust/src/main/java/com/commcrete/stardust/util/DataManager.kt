@@ -40,6 +40,7 @@ import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -122,13 +123,14 @@ object DataManager : StardustAPI, PttInterface{
 
     override fun sendMessage(context: Context, stardustAPIPackage: StardustAPIPackage, text: String) {
         requireContext(context)
-        val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
-            getAsciiValue(text) ))
-        val splitData = splitMessage(data)
-
-        val messageNum = 1
-        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)  ?: return
         CoroutineScope(Dispatchers.IO).launch {
+            val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
+                getAsciiValue(text) ))
+            val splitData = splitMessage(data)
+
+            val messageNum = 1
+            val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)  ?: return@launch
+
             val id = saveSentMessage(context, text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
 
             for (split in splitData) {
@@ -202,27 +204,27 @@ object DataManager : StardustAPI, PttInterface{
         context: Context,
         data: FileUtils.FileTransferData.Send,
         onFileStatusChange: OnFileStatusChange
-    ) {
-        onSendFile(context, data, onFileStatusChange)
+    ): Deferred<Boolean> {
+        return onSendFile(context, data, onFileStatusChange)
     }
 
     override fun sendFile(
         context: Context,
         data: FileUtils.FileTransferData.Send,
         onFileStatusChange: OnFileStatusChange
-    ) {
-        onSendFile(context, data, onFileStatusChange)
+    ): Deferred<Boolean> {
+        return onSendFile(context, data, onFileStatusChange)
     }
 
     private fun onSendFile(
         context: Context,
         data: FileUtils.FileTransferData.Send,
         onFileStatusChange: OnFileStatusChange
-    ) {
+    ): Deferred<Boolean> {
         requireContext(context)
         val sender = FileSender(context, data)
         fileSenders.put(data.id, sender)
-        sender.sendFile(object : OnFileStatusChange {
+        return sender.sendFile(object : OnFileStatusChange {
             override fun finishSending(data: FileUtils.FileTransferData.Send) {
                 super.finishSending(data)
                 onFileStatusChange.finishSending(data)

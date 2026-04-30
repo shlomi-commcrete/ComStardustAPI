@@ -57,3 +57,13 @@ sealed class MessageExtraData {
         val subtype: SosType? = null,
     ) : GeoData()
 }
+
+fun MessageExtraData?.toMessageType(): MessageType = when (this) {
+    is MessageExtraData.Text       -> MessageType.TEXT
+    is MessageExtraData.Attachment -> MessageType.ATTACHMENT
+    is MessageExtraData.PTT        -> MessageType.PTT
+    is MessageExtraData.Location   -> MessageType.LOCATION
+    is MessageExtraData.Sos        -> MessageType.SOS
+    null                           -> MessageType.TEXT
+}
+

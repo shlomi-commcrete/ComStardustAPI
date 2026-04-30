@@ -14,6 +14,7 @@ import com.commcrete.stardust.util.FileSender
 import com.commcrete.stardust.util.FileUtils.FileTransferData
 import com.commcrete.stardust.util.SOSUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
+import kotlinx.coroutines.Deferred
 import java.io.File
 
 interface StardustAPI {
@@ -23,8 +24,8 @@ interface StardustAPI {
     fun startPTT (context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
     fun stopPTT (context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
     fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun sendImage (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange)
-    fun sendFile (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange)
+    fun sendImage (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
+    fun sendFile (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
     fun stopSendFile (context: Context, data: FileTransferData.Send)
     fun requestLocation (context: Context,stardustAPIPackage: StardustAPIPackage)
     fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?)

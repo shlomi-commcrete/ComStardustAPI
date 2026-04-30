@@ -14,7 +14,6 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.asString
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -43,7 +42,6 @@ object LocationUtils  {
 
         val message = MessageEntity(
             senderID = dataPackage.senderId,
-            type = MessageType.LOCATION,
             receiverID = dataPackage.receiverId,
             state = state,
             extraData = MessageExtraData.Location(
