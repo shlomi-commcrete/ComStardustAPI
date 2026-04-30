@@ -287,6 +287,7 @@ class StardustConfigurationParser : StardustParser() {
                     snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
                     stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
+                    sosXCVR = SOSDataBytes.last().toInt(),
                     sosDestinations = parseSosDestinations(SOSDataBytes),
                     deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
                     deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
@@ -299,7 +300,7 @@ class StardustConfigurationParser : StardustParser() {
                     rdpLevel = StardustRDPLevel.entries[byteArrayToInt(rdpLevel)],
                 )
                 return bittelConfigurationPackage
-            }catch (e : Exception) {
+            } catch (e : Exception) {
                 e.printStackTrace()
             }
 
@@ -310,9 +311,8 @@ class StardustConfigurationParser : StardustParser() {
     private fun parseSosDestinations(bytes: ByteArray): List<String> {
         val headerSize = 1
         val idSize = 4
-        val expectedSize = headerSize + idSize * 2
 
-        if (bytes.size < expectedSize) return emptyList()
+        if (bytes.size < SOSDataLength) return emptyList()
 
         fun extractId(offset: Int): String =
             bytes.copyOfRange(offset, offset + idSize)

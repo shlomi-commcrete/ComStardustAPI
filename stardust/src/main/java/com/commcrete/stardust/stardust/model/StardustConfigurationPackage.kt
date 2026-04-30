@@ -41,6 +41,7 @@ data class StardustConfigurationPackage(
     var licenseType: LicenseType,
     val deviceModel: String,
     val deviceSerial: String,
+    val sosXCVR: Int,
     val sosDestinations: List<String>
 ) {
     private val TAG = "PresetValidation"

@@ -59,6 +59,28 @@ object SOSUtils {
         DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
     }
 
+    fun updateSosDestinations(context: Context, destinationId: String) {
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val deviceId = RegisteredUserUtils.mRegisterUser.value?.deviceId ?: return
+        val sosXCVR = ConfigurationUtils.bittelConfiguration.value?.sosXCVR ?: return
+
+        val sosMessage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            data = buildUpdateSosDestinationPayload(sosXCVR, destinationId),
+            source = appId,
+            destination = deviceId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION)
+        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+    }
+
+    private fun buildUpdateSosDestinationPayload(sosXCVR: Int, id: String): Array<Int> {
+        val parsedDestination = StardustPackageUtils.hexStringToByteArray(id)
+        return arrayListOf<Int>().apply {
+            add(sosXCVR)
+            repeat(2) { addAll(parsedDestination) }
+        }.toIntArray().toTypedArray()
+    }
+
     suspend fun sendSos (context: Context, location: Location) {
         var data : Array<Int> = arrayOf()
 

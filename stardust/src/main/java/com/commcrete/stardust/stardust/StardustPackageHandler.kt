@@ -185,7 +185,7 @@ internal class StardustPackageHandler(private val context: Context ,
             StardustPackageUtils.StardustOpCode.SOS_ACK                          -> handleSOSAck(mPackage)
             StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT                -> handleAppEvent(context, mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
-            StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION           -> getConfiguration(context)
+            StardustPackageUtils.StardustOpCode.SOS_DESTINATION_UPDATED           -> getConfiguration(context)
             else -> {}
         }
     }

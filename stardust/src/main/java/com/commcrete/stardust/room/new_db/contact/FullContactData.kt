@@ -25,7 +25,7 @@ sealed class FullContactData {
         val deviceData: DeviceEntity,
     ) : FullContactData()
 
-    val mainCommunicationId: String = when(this) {
+    fun getMainCommunicationId(): String = when(this) {
             is User -> userId
             is Group -> groupId
             is Device -> deviceId

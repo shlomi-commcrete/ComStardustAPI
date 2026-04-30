@@ -79,6 +79,14 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+        UPDATE_SOS_DESTINATION (0x04,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.NOT_SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
 
         SOS (0x05,
             StardustControlByte(
@@ -371,7 +379,7 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
-        UPDATE_SOS_DESTINATION(0x84,
+        SOS_DESTINATION_UPDATED(0x84,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
                 StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
