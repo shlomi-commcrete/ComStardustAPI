@@ -31,16 +31,17 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
-import com.commcrete.stardust.util.SharedPreferencesUtil.setAppUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import no.nordicsemi.andorid.ble.test.spec.Characteristics
 import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import no.nordicsemi.android.ble.BleManager as NordicBleManager
 
 internal class ClientConnection(
@@ -140,6 +141,9 @@ internal class ClientConnection(
 
     var hasCallback = false
     var deviceName : String?  = ""
+    private val servicesDiscoveredHandled = AtomicBoolean(false)
+    private val initStartTriggered = AtomicBoolean(false)
+    private var initStartJob: Job? = null
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
@@ -173,6 +177,7 @@ internal class ClientConnection(
                     if(status == 0 && newState == 2){
                         Handler(Looper.getMainLooper()).postDelayed({ gatt?.discoverServices() } , 2000)
                     } else {
+                        resetDiscoveryState()
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
@@ -210,48 +215,65 @@ internal class ClientConnection(
                 @SuppressLint("MissingPermission")
                 override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                     super.onServicesDiscovered(gatt, status)
-                    setDevice()
-                    Scopes.getMainCoroutine().launch {
+                    if (status != BluetoothGatt.GATT_SUCCESS) {
+                        Timber.tag(LOG_TAG).w("onServicesDiscovered failed with status=$status")
+                        return
+                    }
+                    if (!servicesDiscoveredHandled.compareAndSet(false, true)) {
+                        Timber.tag(LOG_TAG).d("onServicesDiscovered ignored (already handled)")
+                        return
+                    }
+
+                    Scopes.getDefaultCoroutine().launch {
+                        setDevice()
+
                         if(BleManager.isPaired.value == true){
-                            Timber.tag(LOG_TAG).d("gattConnection")
-                            gattConnection = gatt
-                            BleManager.isBleConnected = true
-                            BleManager.bleConnectionStatus.value = true
-                            BleManager.updateStatus()
-                            resetRSSITimer()
-                        }
-                    }
-                    gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
-                    val id = deviceLastDigit
-                    val readUUID = Characteristics.getReadChar(id)
-
-                    val readChar = gatt?.getService(Characteristics.getConnectChar(id))
-                        ?.getCharacteristic(readUUID)
-
-                    if(readChar != null){
-                        Timber.tag(LOG_TAG).d("has Char")
-                        gatt.setCharacteristicNotification(readChar, true)
-                        val desc = readChar.descriptors?.get(0)
-                        desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        gatt.writeDescriptor(desc)
-                    }
-                    StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-
-                    Handler(Looper.getMainLooper()).postDelayed({
-                        RegisteredUserUtils.mRegisterUser.value?.let {
-                            if(it.appId != null
-                                && getBlePairedStardustDevice() != null
-                                && StardustInitConnectionHandler.isSearchingToConnect()) {
-
-                                StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
-
-                                StardustInitConnectionHandler.start()
-
-                                resetConnectionTimer()
-                                resetPingTimer()
+                            Scopes.getMainCoroutine().launch {
+                                Timber.tag(LOG_TAG).d("gattConnection")
+                                gattConnection = gatt
+                                BleManager.isBleConnected = true
+                                BleManager.bleConnectionStatus.value = true
+                                BleManager.updateStatus()
+                                resetRSSITimer()
                             }
                         }
-                    }, 500)
+
+                        gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+                        val id = deviceLastDigit
+                        val readUUID = Characteristics.getReadChar(id)
+
+                        val readChar = gatt?.getService(Characteristics.getConnectChar(id))
+                            ?.getCharacteristic(readUUID)
+
+                        if(readChar != null){
+                            Timber.tag(LOG_TAG).d("has Char")
+                            gatt.setCharacteristicNotification(readChar, true)
+                            val desc = readChar.descriptors?.get(0)
+                            desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                            gatt.writeDescriptor(desc)
+                        }
+
+                        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+
+                        initStartJob?.cancel()
+                        initStartJob = launch {
+                            delay(500)
+                            RegisteredUserUtils.mRegisterUser.value?.let {
+                                if(it.appId != null
+                                    && getBlePairedStardustDevice() != null
+                                    && StardustInitConnectionHandler.isSearchingToConnect()
+                                    && initStartTriggered.compareAndSet(false, true)) {
+
+                                    StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
+
+                                    StardustInitConnectionHandler.start()
+
+                                    resetConnectionTimer()
+                                    resetPingTimer()
+                                }
+                            }
+                        }
+                    }
                 }
 
                 override fun onCharacteristicWrite(
@@ -381,6 +403,7 @@ internal class ClientConnection(
     }
 
     override fun onServicesInvalidated() {
+        resetDiscoveryState()
         characteristic = null
         indicationCharacteristics = null
         reliableCharacteristics = null
@@ -391,6 +414,7 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice) {
         if(!hasCallback) {
+            resetDiscoveryState()
             device.connectGatt(context, true, getBleGattCallback(device))
         }
     }
@@ -398,6 +422,7 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun disconnectFromBLEDevice (disconnectByForce: Boolean = false) {
         if(!disconnectByForce && !StardustInitConnectionHandler.isConnected()) return
+        resetDiscoveryState()
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null
@@ -421,6 +446,13 @@ internal class ClientConnection(
         mDevice = device
         hasCallback = true
         return gettCallback()
+    }
+
+    private fun resetDiscoveryState() {
+        servicesDiscoveredHandled.set(false)
+        initStartTriggered.set(false)
+        initStartJob?.cancel()
+        initStartJob = null
     }
 
     fun release() {
