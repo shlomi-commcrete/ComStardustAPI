@@ -187,8 +187,6 @@ object StardustInitConnectionHandler {
     // ───────────────────────── State helpers ─────────────────────────
 
     private fun transitionTo(next: State, send: () -> Unit) {
-        onInitRunning()
-
         state = next
         val n = (attempts[next] ?: 0) + 1
         attempts[next] = n
@@ -455,7 +453,7 @@ object StardustInitConnectionHandler {
 
     private fun onInitFailed(reason: String) {
         val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED
-        listener?.onInitFailed(resultState, reason)
+        listener.onInitFailed(resultState, reason)
     }
 
     private fun onInitDone() {
@@ -471,7 +469,7 @@ object StardustInitConnectionHandler {
             else -> State.SUCCESS
         }
         state = resultState
-        listener?.onInitDone(resultState)
+        listener.onInitDone(resultState)
     }
 
     private fun onInitRunning () {
