@@ -71,6 +71,7 @@ object SOSUtils {
             destination = deviceId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION)
         DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+        DataManager.getClientConnection(context).saveConfiguration()
     }
 
     private fun buildUpdateSosDestinationPayload(sosXCVR: Int, id: String): Array<Int> {

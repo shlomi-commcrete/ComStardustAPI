@@ -76,6 +76,7 @@ object SharedPreferencesUtil {
     //SOS Contacts
     private const val KEY_SOS_SELECTED_1 = "sos_selected_1"
     private const val KEY_SOS_SELECTED_2 = "sos_selected_2"
+    private const val KEY_SOS_LAST_DESTINATIONS = "sos_last_destinations"
 
     private const val KEY_EQ_BAND = "eq_band_"
 
@@ -727,6 +728,35 @@ object SharedPreferencesUtil {
 //            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
 //        }
         return WavTokenizerDecoder.ModelType.General
+    }
+
+    /**
+     * Persist the most recent list of SOS destination IDs (contact / chat /
+     * device IDs the user broadcast SOS to). Stored as a JSON-serialised
+     * `List<String>` so the order — typically "most-recent-first" — is
+     * preserved across app restarts.
+     *
+     * Pass an empty list to clear the stored history.
+     */
+    fun saveLastSosDestinations(context: Context, sosDestinations: List<String>) {
+        val json = Gson().toJson(sosDestinations)
+        getPrefs(context).edit().putString(KEY_SOS_LAST_DESTINATIONS, json).apply()
+    }
+
+    /**
+     * Returns the most recent list of SOS destination IDs previously stored
+     * via [saveLastSosDestinations], or an empty list when nothing has been
+     * saved yet / the stored value is corrupted.
+     */
+    fun getLastSosDestinations(context: Context): List<String> {
+        val json = getPrefs(context).getString(KEY_SOS_LAST_DESTINATIONS, null)
+        if (json.isNullOrEmpty()) return emptyList()
+        return try {
+            val type = object : TypeToken<List<String>>() {}.type
+            Gson().fromJson<List<String>>(json, type) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
 }

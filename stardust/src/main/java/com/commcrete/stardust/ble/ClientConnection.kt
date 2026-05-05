@@ -28,6 +28,7 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
@@ -1110,18 +1111,15 @@ internal class ClientConnection(
     }
 
     override fun saveConfiguration() {
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src ,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
-                addMessageToQueue(configurationSavePackage)
-            }
-        }
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val src = user.appId  ?: return
+        val dst = user.deviceId  ?: return
+        val configurationSavePackage = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = src ,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+        addMessageToQueue(configurationSavePackage)
     }
 }
 
