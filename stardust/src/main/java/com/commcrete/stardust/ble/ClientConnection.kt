@@ -144,6 +144,8 @@ internal class ClientConnection(
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
     private var initStartJob: Job? = null
+    private var discoverServicesJob: Job? = null
+    private var reconnectJob: Job? = null
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
@@ -175,7 +177,11 @@ internal class ClientConnection(
                     val mtu = gatt?.requestMtu(200)
                     Timber.tag("SetMtu").d("$mtu")
                     if(status == 0 && newState == 2){
-                        Handler(Looper.getMainLooper()).postDelayed({ gatt?.discoverServices() } , 2000)
+                        discoverServicesJob?.cancel()
+                        discoverServicesJob = Scopes.getDefaultCoroutine().launch {
+                            delay(2000)
+                            gatt?.discoverServices()
+                        }
                     } else {
                         resetDiscoveryState()
                         Scopes.getMainCoroutine().launch {
@@ -300,7 +306,7 @@ internal class ClientConnection(
                     characteristic: BluetoothGattCharacteristic
                 ) {
                     val randomID = fastRandomId()
-                    Log.d("Ble write $randomID", "onCharacteristicChanged")
+                    Timber.tag(LOG_TAG).d("onCharacteristicChanged id=$randomID")
 //                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
                     characteristic.value?.let {
 //                        Timber.tag("onCharacteristicChanged").d("without Value")
@@ -315,7 +321,7 @@ internal class ClientConnection(
                     value: ByteArray
                 ) {
                     super.onCharacteristicChanged(gatt, characteristic, value)
-                    Log.d("Ble write", "onCharacteristicChanged")
+                    Timber.tag(LOG_TAG).d("onCharacteristicChanged (value overload)")
 //                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
                 }
 
@@ -374,7 +380,15 @@ internal class ClientConnection(
     }
 
     override fun log(priority: Int, message: String) {
-        Log.println(priority, TAG, message)
+        when (priority) {
+            2 -> Timber.tag(TAG).v(message)
+            3 -> Timber.tag(TAG).d(message)
+            4 -> Timber.tag(TAG).i(message)
+            5 -> Timber.tag(TAG).w(message)
+            6 -> Timber.tag(TAG).e(message)
+            7 -> Timber.tag(TAG).wtf(message)
+            else -> Timber.tag(TAG).d(message)
+        }
     }
 
     override fun getMinLogPriority(): Int {
@@ -422,6 +436,8 @@ internal class ClientConnection(
     @SuppressLint("MissingPermission")
     fun disconnectFromBLEDevice (disconnectByForce: Boolean = false) {
         if(!disconnectByForce && !StardustInitConnectionHandler.isConnected()) return
+        reconnectJob?.cancel()
+        reconnectJob = null
         resetDiscoveryState()
         gattConnection?.disconnect()
         gattConnection?.close()
@@ -451,6 +467,8 @@ internal class ClientConnection(
     private fun resetDiscoveryState() {
         servicesDiscoveredHandled.set(false)
         initStartTriggered.set(false)
+        discoverServicesJob?.cancel()
+        discoverServicesJob = null
         initStartJob?.cancel()
         initStartJob = null
     }
@@ -462,33 +480,42 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
-        device.name?.let {
-            val connectedDevice = getBleConnectedDevice(device.address)
+        this.deviceName = deviceName
+        Scopes.getDefaultCoroutine().launch {
+            val connectedDevice = device.name?.let { getBleConnectedDevice(device.address) }
             if(connectedDevice != null) {
-                BleManager.isPaired.value = true
-                connectDevice(device)
-                return
+                Scopes.getMainCoroutine().launch {
+                    BleManager.isPaired.value = true
+                    connectDevice(device)
+                }
+                return@launch
+            }
+
+            Scopes.getMainCoroutine().launch {
+                resetBondTimer()
+                try {
+                    registerBondStateReceiver()
+                    Timber.tag(LOG_TAG).d("bondToBleDevice")
+                    device.connectGatt(context, false, object : BluetoothGattCallback() {})
+                } catch (e: Exception) {
+                    Timber.tag(LOG_TAG).e(e, "Failed to start bond flow")
+                }
             }
         }
-        this.deviceName = deviceName
-        resetBondTimer()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.applicationContext.registerReceiver(
-                    broadcastReceiver,
-                    IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-                    ,Context.RECEIVER_EXPORTED
-                )
-            }else {
-                context.applicationContext.registerReceiver(
-                    broadcastReceiver,
-                    IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-                ) }
-//            device.createBond()
-            Timber.tag(LOG_TAG).d("bondToBleDevice")
-            device.connectGatt(context, false, object  : BluetoothGattCallback() {})
-        } catch (e: Exception) {
-            e.printStackTrace()
+    }
+
+    private fun registerBondStateReceiver() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.applicationContext.registerReceiver(
+                broadcastReceiver,
+                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+                Context.RECEIVER_EXPORTED
+            )
+        } else {
+            context.applicationContext.registerReceiver(
+                broadcastReceiver,
+                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            )
         }
     }
 
@@ -512,12 +539,12 @@ internal class ClientConnection(
                     val bondState = getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
                     val bondTransition = "${previousBondState.toBondStateDescription()} to " +
                             bondState.toBondStateDescription()
-                    Log.w("Bond state change", "${device?.address} bond state changed | $bondTransition")
+                    Timber.tag(LOG_TAG).w("${device?.address} bond state changed | $bondTransition")
                     if(bondState == BluetoothDevice.BOND_BONDED && previousBondState == BluetoothDevice.BOND_BONDING) {
                         //device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
                         //device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
                         device?.let {
-                            CoroutineScope(Dispatchers.IO).launch {
+                            Scopes.getDefaultCoroutine().launch {
                                 Scopes.getMainCoroutine().launch {
                                     BleManager.isPaired.value = true
                                 }
@@ -529,11 +556,7 @@ internal class ClientConnection(
                         disconnectFromBLEDevice()
                     } else{
                         device?.let {
-                            try {
-                                it::class.java.getMethod("removeBond").invoke(it)
-                            } catch (e: Exception) {
-                                e.printStackTrace()
-                            }
+                            requestUnbond(it)
                         }
                         disconnectFromBLEDevice()
                     }
@@ -560,7 +583,7 @@ internal class ClientConnection(
         }.getOrDefault(false)
     }
 
-    fun removeBittelBond () {
+    fun removeBittelBond() {
         val deviceToUnbond = mDevice
             ?: SharedPreferencesUtil.getBittelDevice(context)
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
@@ -586,48 +609,19 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun getBleConnectedDevice(uuid : String) : BluetoothDevice?{
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        if(btManager == null || btManager.adapter == null) {
-            return null
-        }
-        val pairedDevices = btManager.adapter.bondedDevices
-
-        if (pairedDevices.size > 0) {
-
-            for (device in pairedDevices) {
-                val deviceName = device.name
-                val macAddress = device.address
-                val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    device.alias
-                } else {
-                    "Empty"
-                }
-
-                Log.i(
-                    " pairedDevices ",
-                    "paired device: $deviceName at $macAddress + $aliasing "
-                )
-                if(device.address.equals(uuid)){
-                    return device
-                }
+        for (device in getBondedDevices()) {
+            logPairedDevice(device)
+            if (device.address == uuid) {
+                return device
             }
         }
         return null
     }
     @SuppressLint("MissingPermission")
     fun getBleConnectedStardustDeviceBySavedAddress(savedAddress : String) : BluetoothDevice?{
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        if(btManager == null || btManager.adapter == null) {
-            return null
-        }
-        val pairedDevices = btManager.adapter.bondedDevices
-        if (pairedDevices.size > 0) {
-
-            for (device in pairedDevices) {
-                val macAddress = device.address
-                if(macAddress == savedAddress) {
-                    return device
-                }
+        for (device in getBondedDevices()) {
+            if(device.address == savedAddress) {
+                return device
             }
         }
         return null
@@ -635,35 +629,23 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun getBleConnectedStardustDevice() : BluetoothDevice? {
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        if(btManager == null || btManager.adapter == null) {
-            return null
-        }
-        val pairedDevices = btManager.adapter.bondedDevices
+        val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
 
-        if (pairedDevices.size > 0) {
-            val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
+        for (device in getBondedDevices()) {
+            if(savedAddress == device.address) {
+                return device
+            }
 
-            for (device in pairedDevices) {
-                val deviceName = device.name
-                val macAddress = device.address
-                if(savedAddress == macAddress) {
+            val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                device.alias?.lowercase(Locale.getDefault())
+            } else {
+                null
+            }
+
+            logPairedDevice(device)
+            aliasing?.let {
+                if(listOf("bittle", "bittel", "stardust").any { aliasing.contains(it) }) {
                     return device
-                }
-                val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    device.alias?.lowercase(Locale.getDefault())
-                } else {
-                    null
-                }
-
-                Log.i(
-                    " pairedDevices ",
-                    "paired device: $deviceName at $macAddress + $aliasing "
-                )
-                aliasing?.let {
-                     if(listOf("bittle", "bittel", "stardust").find { aliasing.contains(it) } != null) {
-                         return device
-                     }
                 }
             }
         }
@@ -676,57 +658,45 @@ internal class ClientConnection(
 
         if(savedAddress.isNullOrBlank()) { return null }
 
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
-        if(btManager == null || btManager.adapter == null) {
-            return null
-        }
-        val pairedDevices = btManager.adapter.bondedDevices
-
-        if (pairedDevices.size > 0) {
-
-            for (device in pairedDevices) {
-                val macAddress = device.address
-                if(savedAddress == macAddress) {
-                    return device
-                }
+        for (device in getBondedDevices()) {
+            if(savedAddress == device.address) {
+                return device
             }
         }
         return null
     }
     @SuppressLint("MissingPermission")
     fun getBleConnectedDevices(uuid : String) : BluetoothDevice?{
-        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-        if(btManager == null || btManager.adapter == null) {
-            return null
-        }
-        val pairedDevices = btManager.adapter.bondedDevices
+        for (device in getBondedDevices()) {
+            val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                device.alias
+            } else {
+                "Empty"
+            }
 
-        if (pairedDevices.size > 0) {
-
-            for (device in pairedDevices) {
-                val deviceName = device.name
-                val macAddress = device.address
-                val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    device.alias
-                } else {
-                    "Empty"
-                }
-
-                Log.i(
-                    " pairedDevices ",
-                    "paired device: $deviceName at $macAddress + $aliasing "
-                )
-                if(device.address.equals(uuid)
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true
-                    || aliasing?.lowercase(Locale.getDefault())?.contains("stardust") == true){
-                    return device
-                }
+            logPairedDevice(device)
+            if(device.address == uuid
+                || aliasing?.lowercase(Locale.getDefault())?.contains("bittle") == true
+                || aliasing?.lowercase(Locale.getDefault())?.contains("bittel") == true
+                || aliasing?.lowercase(Locale.getDefault())?.contains("stardust") == true){
+                return device
             }
         }
         SharedPreferencesUtil.setBittelDevice(context, "empty")
         SharedPreferencesUtil.setBittelDeviceName(context, "empty")
         return null
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun getBondedDevices(): Set<BluetoothDevice> {
+        val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager ?: return emptySet()
+        return btManager.adapter?.bondedDevices ?: emptySet()
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun logPairedDevice(device: BluetoothDevice) {
+        val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) device.alias else "Empty"
+        Timber.tag(LOG_TAG).d("paired device: ${device.name} at ${device.address} + $aliasing")
     }
 
     fun addMessageToQueue(bittelPackage: StardustPackage) {
@@ -743,29 +713,30 @@ internal class ClientConnection(
     fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
         // TODO: check if FunctionalityType is valid by licence here ??
         if(mutableAckAwaitingList.isNotEmpty() && isNeedAck(bittelPackage.stardustOpCode)) {
-            Handler(Looper.getMainLooper()).postDelayed({
+            Scopes.getDefaultCoroutine().launch {
+                delay(100)
                 sendMessage(bittelPackage, randomID)
-            }, 100)
+            }
             return
         }
         bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
 //        bittelPackage.StardustControlByte.bittelServer = if(SharedPreferencesUtil.getIsStardustServerBitEnabled(DataManager.context))
 //            StardustControlByte.StardustServer.SERVER else StardustControlByte.StardustServer.NOT_SERVER
-        Log.d("checkXor $randomID", "sendMessage")
+        Timber.tag(LOG_TAG).d("checkXor $randomID sendMessage")
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
-        Log.d("checkXorfini $randomID", "sendMessage")
+        Timber.tag(LOG_TAG).d("checkXorfini $randomID sendMessage")
         if(bittelPackage.isAbleToSendAgain()){
             if(!BleManager.isBluetoothEnabled() && !BleManager.isUSBConnected){
                 Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
             }
-            Log.d("isAbleToSendAgain $randomID", "sendMessage")
+            Timber.tag(LOG_TAG).d("isAbleToSendAgain $randomID sendMessage")
 
             Timber.tag(LOG_TAG).d("Sending Package $randomID")
             Scopes.getDefaultCoroutine().launch {
                 resetTimer(bittelPackage)
             }
             SharedPreferencesUtil.getAppUser(context)?.let {
-                Log.d("getAppUser $randomID", "sendMessage")
+                Timber.tag(LOG_TAG).d("getAppUser $randomID sendMessage")
 
                 val id = deviceLastDigit
                 val uuid = Characteristics.getWriteChar(id)
@@ -819,9 +790,10 @@ internal class ClientConnection(
         count: Int,
         randomID: String
     ) {
-        Handler(Looper.getMainLooper()).postDelayed({
+        Scopes.getDefaultCoroutine().launch {
+            delay(RETRY_DELAY_MS)
             performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }, RETRY_DELAY_MS)
+        }
     }
 
     /**
@@ -858,15 +830,15 @@ internal class ClientConnection(
             WRITE_TYPE_DEFAULT
         )
 
-        when {
-            writeResult == null -> {
+        when (writeResult) {
+            null -> {
                 Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
             }
-            writeResult == 0 -> {
+            0 -> {
                 Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
                 checkIfPackageDemandsAck(bittelPackage)
             }
-            writeResult == WRITE_ERROR_CODE -> {
+            WRITE_ERROR_CODE -> {
                 Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
                 reconnectToDevice()
             }
@@ -1116,16 +1088,20 @@ internal class ClientConnection(
 
     fun reconnectToDevice () {
         disconnectFromBLEDevice (true)
-        Handler(Looper.myLooper()!!).postDelayed({
+        reconnectJob?.cancel()
+        reconnectJob = Scopes.getDefaultCoroutine().launch {
+            delay(2000)
             mDevice?.let { connectDevice(it) }
-        },2000)
+        }
     }
 
     fun reconnectToDeviceFast () {
         disconnectFromBLEDevice ()
-        Handler(Looper.myLooper()!!).postDelayed({
+        reconnectJob?.cancel()
+        reconnectJob = Scopes.getDefaultCoroutine().launch {
+            delay(100)
             mDevice?.let { connectDevice(it) }
-        },100)
+        }
     }
 
     override fun updateBlePort() {
