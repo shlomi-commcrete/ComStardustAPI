@@ -121,6 +121,40 @@ interface ContactsDao {
     suspend fun findContactIdByUserOrDeviceId(id: String): Int?
 
     /**
+     * Returns the contactId that owns [id] across user / group / device identity
+     * tables, or null when no contact owns it. Matches the semantics of
+     * [FullContactData.getMainCommunicationId].
+     */
+    @Query(
+        """
+        SELECT contact_id FROM app_contact_user_ids  WHERE user_id   = :id
+        UNION
+        SELECT contact_id FROM app_contact_group_ids WHERE group_id  = :id
+        UNION
+        SELECT contact_id FROM app_contact_devices   WHERE device_id = :id
+        LIMIT 1
+        """
+    )
+    suspend fun findContactIdByMainCommunicationId(id: String): Int?
+
+    /**
+     * Returns the subset of [ids] that match a userId, groupId, or deviceId in any
+     * identity table — i.e. every id that already maps to a known contact.
+     * Single bulk query; callers can compute the missing set by subtracting the
+     * result from the input.
+     */
+    @Query(
+        """
+        SELECT user_id  AS norm_id FROM app_contact_user_ids  WHERE user_id  IN (:ids)
+        UNION
+        SELECT group_id AS norm_id FROM app_contact_group_ids WHERE group_id IN (:ids)
+        UNION
+        SELECT device_id AS norm_id FROM app_contact_devices  WHERE device_id IN (:ids)
+        """
+    )
+    suspend fun findExistingMainCommunicationIds(ids: List<String>): List<String>
+
+    /**
      * All (normalizedId -> contactId) pairs across user_ids, device_ids, group_ids.
      * Used by repository to build the contact-id cache in one round-trip.
      */
