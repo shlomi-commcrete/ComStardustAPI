@@ -15,6 +15,7 @@ import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
@@ -399,17 +400,14 @@ object StardustInitConnectionHandler {
     // ───────────────────────── Utilities ─────────────────────────
 
     private fun registerBittel(bittelId: String) {
-        val savedUser = SharedPreferencesUtil.getAppUser(ctx) ?: return
-        val deviceName = SharedPreferencesUtil.getBittelDeviceName(ctx) ?: return
-        if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
-            val newUser = RegisterUser(
-                displayName = savedUser.displayName,
-                deviceId = bittelId,
-                appId = savedUser.appId,
-            )
-            savedUser.appId?.let { SharedPreferencesUtil.setAppUser(ctx, newUser) }
-            Timber.tag("InitHandler").d("Registered Bittel with id=$bittelId name=$deviceName")
-        }
+        val savedUser = RegisteredUserUtils.mRegisterUser.value ?: return
+
+        val newUser = RegisterUser(
+            displayName = savedUser.displayName,
+            deviceId = bittelId,
+            appId = savedUser.appId,
+        )
+        savedUser.appId?.let { SharedPreferencesUtil.setAppUser(ctx, newUser) }
     }
 
     private fun handleVersion(p: StardustPackage) {

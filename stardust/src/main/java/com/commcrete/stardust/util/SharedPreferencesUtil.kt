@@ -191,25 +191,6 @@ object SharedPreferencesUtil {
         val isNewDeviceConnection = getBittelDevice(context) != bittelDevice
         if(isNewDeviceConnection) {
             getPrefs(context).edit().putString(KEY_BEETLE_DEVICE, bittelDevice).apply()
-
-            // Mirror the new bittel address into the registered app user's
-            // deviceId off the caller thread.
-            //
-            // setBittelDevice runs from BLE GATT callbacks
-            // (onServicesDiscovered → setDevice). Those callbacks should
-            // return promptly — Gson encode + apply() + the LiveData fan-out
-            // triggered by setAppUser pull main-thread observers
-            // synchronously and have appeared in input-dispatch ANR stacks
-            // during connect-to-unknown-device flows where the BT stack is
-            // already congested.
-            Scopes.getDefaultCoroutine().launch {
-                getAppUser(context)?.let { user ->
-                    if (user.deviceId != bittelDevice) {
-                        user.deviceId = bittelDevice
-                        setAppUser(context, user)
-                    }
-                }
-            }
         }
         setConnectedToUnknownDevice(context, isNewDeviceConnection)
     }

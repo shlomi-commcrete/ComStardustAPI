@@ -31,6 +31,8 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.SharedPreferencesUtil.getAppUser
+import com.commcrete.stardust.util.SharedPreferencesUtil.setAppUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -93,7 +95,7 @@ internal class ClientConnection(
     }
 
     fun sendPing () {
-        SharedPreferencesUtil.getAppUser(context)?.let {
+        RegisteredUserUtils.mRegisterUser.value?.let {
             val src = it.appId
             val dst = it.deviceId
             if(src != null && dst != null) {
@@ -222,9 +224,10 @@ internal class ClientConnection(
                     gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
                     val id = deviceLastDigit
                     val readUUID = Characteristics.getReadChar(id)
-                    val writeUUID = Characteristics.getWriteChar(id)
+
                     val readChar = gatt?.getService(Characteristics.getConnectChar(id))
                         ?.getCharacteristic(readUUID)
+
                     if(readChar != null){
                         Timber.tag(LOG_TAG).d("has Char")
                         gatt.setCharacteristicNotification(readChar, true)
@@ -233,8 +236,9 @@ internal class ClientConnection(
                         gatt.writeDescriptor(desc)
                     }
                     StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+
                     Handler(Looper.getMainLooper()).postDelayed({
-                        SharedPreferencesUtil.getAppUser(context)?.let {
+                        RegisteredUserUtils.mRegisterUser.value?.let {
                             if(it.appId != null
                                 && getBlePairedStardustDevice() != null
                                 && StardustInitConnectionHandler.isSearchingToConnect()) {
@@ -1093,7 +1097,7 @@ internal class ClientConnection(
     }
 
     override fun updateBlePort() {
-        SharedPreferencesUtil.getAppUser(context)?.let {
+        RegisteredUserUtils.mRegisterUser.value?.let {
             val src = it.appId
             val dst = it.deviceId
             if(src != null && dst != null) {
