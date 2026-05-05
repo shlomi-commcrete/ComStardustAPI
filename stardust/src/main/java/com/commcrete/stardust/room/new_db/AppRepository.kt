@@ -219,6 +219,25 @@ class AppRepository(
         mapGroupContactRowsToFullContactData(groupRows) + mapAppContactRowsToFullContactData(appRows)
     }
 
+    /**
+     * Returns every USER and DEVICE contact except the registered user themselves.
+     * Mirrors [getUserAndGroupContactsExceptSelf] but excludes GROUP contacts and
+     * includes standalone DEVICE contacts (plus devices attached to USER contacts).
+     */
+    suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
+        val selfId = RegisteredUserUtils.mRegisterUser.value?.appId
+            ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
+        val rows = if (selfId == null) {
+            contactsDao.getAllUserAndDeviceContactRows()
+        } else {
+            contactsDao.getAllUserAndDeviceContactRowsExceptUser(selfId)
+        }
+
+        mapAppContactRowsToFullContactData(rows)
+            .filter { it is FullContactData.User || it is FullContactData.Device }
+    }
+
     private fun mapAppContactRowsToFullContactData(rows: List<ContactsDao.AppContactRow>): List<FullContactData> {
         if (rows.isEmpty()) return emptyList()
         return rows.groupBy { it.contact.id }.values.mapNotNull { groupedRows ->

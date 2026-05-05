@@ -307,6 +307,54 @@ interface ContactsDao {
     )
     suspend fun getAllAppContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
 
+    /**
+     * Returns USER and DEVICE contacts with their device links joined in.
+     * Each USER contact may produce multiple rows (one per linked device); DEVICE
+     * contacts produce one row per device link. Used for assembling
+     * [FullContactData.User] (with attached devices) and [FullContactData.Device].
+     */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
+        FROM contacts_table c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
+        WHERE c.type IN ('USER', 'DEVICE')
+        ORDER BY c.name ASC, cd.slot ASC
+        """
+    )
+    suspend fun getAllUserAndDeviceContactRows(): List<AppContactRow>
+
+    /** Variant of [getAllUserAndDeviceContactRows] that excludes the registered user by user_id. */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
+        FROM contacts_table c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
+        WHERE c.type IN ('USER', 'DEVICE')
+          AND c.id NOT IN (
+              SELECT contact_id FROM app_contact_user_ids WHERE user_id = :excludedUserId
+          )
+        ORDER BY c.name ASC, cd.slot ASC
+        """
+    )
+    suspend fun getAllUserAndDeviceContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
+
     @Query(
         """
         SELECT
