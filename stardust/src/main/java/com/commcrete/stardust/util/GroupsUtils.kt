@@ -57,7 +57,7 @@ object GroupsUtils {
 
     fun deleteAllDeviceGroups (context: Context) {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        SharedPreferencesUtil.getAppUser(context)?.let {
+        mRegisterUser.value?.let {
             val src = it.appId
             val dst = it.deviceId
             val intData = arrayListOf<Int>()
@@ -76,7 +76,7 @@ object GroupsUtils {
 
     fun deleteDeviceGroups(context: Context, groupId : List<String>) {
         val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        SharedPreferencesUtil.getAppUser(context)?.let {
+        mRegisterUser.value?.let {
             val src = it.appId
             val dst = it.deviceId
 
