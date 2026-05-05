@@ -14,17 +14,13 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.stardust.model.asString
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.RegisteredUserUtils
-import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Date
-import kotlin.random.Random
 
 @SuppressLint("StaticFieldLeak")
 object LocationUtils  {
@@ -54,7 +50,7 @@ object LocationUtils  {
         return DataManager.getAppRepo(appContext).saveMessage(message, dataPackage.groupId)
     }
 
-    internal fun sendMyLocation(
+    internal fun respondToRequestedLocation(
         appContext: Context,
         mPackage: StardustPackage,
         clientConnection: ClientConnection,
@@ -63,14 +59,20 @@ object LocationUtils  {
         opCode : StardustPackageUtils.StardustOpCode? = null,
         randomID: String = "") {
 
+        val packageForResponse = mPackage.apply {
+            val temp = sourceBytes
+            sourceBytes = destinationBytes
+            destinationBytes = temp
+        }
+
         Log.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
         val location = location
         if(location == null) {
             Log.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
-            sendMissingLocation(appContext, mPackage, clientConnection, isDemandAck, isHR, opCode)
+            sendMissingLocation(appContext, packageForResponse, clientConnection, isDemandAck, isHR, opCode)
         } else {
             Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
-            sendLocation(appContext, mPackage, location, clientConnection, isDemandAck, isHR, opCode, randomID)
+            sendLocation(appContext, packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
 

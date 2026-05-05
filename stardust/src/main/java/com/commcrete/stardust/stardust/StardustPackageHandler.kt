@@ -511,10 +511,12 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleLocationRequested(context: Context, mPackage: StardustPackage, randomID: String) {
+
         if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED) return
+
         Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         DataManager.getClientConnection(context).let {
-            LocationUtils.sendMyLocation(
+            LocationUtils.respondToRequestedLocation(
                 appContext = context,
                 mPackage = mPackage,
                 clientConnection = it,
@@ -593,7 +595,7 @@ internal class StardustPackageHandler(private val context: Context ,
             dataPackage.stardustControlByte.stardustDeliveryType = deliveryType
 
             DataManager.getClientConnection(appContext).let {
-                LocationUtils.sendMyLocation(
+                LocationUtils.respondToRequestedLocation(
                     appContext = appContext,
                     mPackage = dataPackage,
                     clientConnection = it,
