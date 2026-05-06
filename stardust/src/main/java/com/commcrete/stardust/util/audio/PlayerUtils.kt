@@ -6,7 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import com.commcrete.stardust.ai.codec.PcmStreamPlayer
+import com.commcrete.stardust.ai.codec.Codec2PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
 import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
@@ -71,10 +71,10 @@ object PlayerUtils : BleMediaConnector() {
             }, 500)
             ts = ""
             isFileInit = false
-            PcmStreamPlayer.releaseLegacyTrack()
+            Codec2PcmStreamPlayer.releaseTrack()
             isPlaying = false
             if(numOfPackagesRecieved == 1) {
-                PcmStreamPlayer.writeMinimumSilenceAndPlay(byteArrayOutputStream.toByteArray().copyOf()) {
+                Codec2PcmStreamPlayer.writeMinimumSilenceAndPlay(byteArrayOutputStream.toByteArray().copyOf()) {
                     Timber.tag("WavRecorder.TAG_PTT_DEBUG").d("bufferSizeInFrames")
                 }
                 byteArrayOutputStream.reset()
@@ -137,8 +137,8 @@ object PlayerUtils : BleMediaConnector() {
 
 
     private fun playPTT(audioStream: ByteArray) {
-        PcmStreamPlayer.ensureLegacyTrack((14080 * bufferSizeMulti).toInt(), speedFactor)
-        PcmStreamPlayer.playLegacyStream(
+        Codec2PcmStreamPlayer.ensureTrack((14080 * bufferSizeMulti).toInt(), speedFactor)
+        Codec2PcmStreamPlayer.playStream(
             audioData = audioStream,
             bufferSizeInBytes = audioStream.size,
             receivedPkgs = numOfPackagesRecieved,

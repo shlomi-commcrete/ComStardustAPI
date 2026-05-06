@@ -5,8 +5,8 @@ import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.ai.codec.PcmStreamPlayer.initPttInputFile
-import com.commcrete.stardust.ai.codec.PcmStreamPlayer.isFileInit
+import com.commcrete.stardust.ai.codec.AIPcmStreamPlayer.initPttInputFile
+import com.commcrete.stardust.ai.codec.AIPcmStreamPlayer.isFileInit
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 object PttReceiveManager {
     private const val TAG = "PttManager"
     private const val BUFFERING_TIME_MS = 500L
-    private const val CONTEXT_FRESHNESS_MS = 2000L
     private var coroutineScope = CoroutineScope(Dispatchers.Default) // Scope for decoding and frame dropping
     private var decodingJob: Job? = null
     private var toDecodeQueue = Channel<ByteArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
@@ -100,81 +99,61 @@ object PttReceiveManager {
 
     private suspend fun handleTokenizerChunk(decodedData: ByteArray) {
         val unpack = BitPacking12.unpack12(decodedData)
-        val (previousUnpack, previousSample) = getPreviousContext()
 
-        val finalPcmData = decodePcm(unpack, previousUnpack, previousSample)
+        // Check if last unpack was received within 800ms
+        val currentTime = System.currentTimeMillis()
+        val previousUnpack = if (lastUnpack != null && (currentTime - lastUnpackTime) < 2000) {
+            lastUnpack
+        } else {
+            null
+        }
+        val previousSample = if (lastDecodedSamples != null && (currentTime - lastUnpackTime) < 2000) {
+            lastDecodedSamples
+        } else {
+            null
+        }
+        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
+//        val finalPcmData = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, aiDecodeData?.modelType ?: WavTokenizerDecoder.ModelType.General)
         Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples")
 
-        rememberContext(unpack, finalPcmData)
-
-        // Add buffering delay only if there was no previous unpack (first packet)
-        if (previousUnpack == null) {
-            delay(BUFFERING_TIME_MS)
-        }
-
-        notifyPttCallbacks(decodedData)
-        PcmStreamPlayer.enqueue(finalPcmData, 24000)
-    }
-
-    /** Returns the cached unpack/PCM context if it is still fresh (within the timeout). */
-    private fun getPreviousContext(): Pair<List<Long>?, ShortArray?> {
-        val currentTime = System.currentTimeMillis()
-        val isFresh = (currentTime - lastUnpackTime) < CONTEXT_FRESHNESS_MS
-        val previousUnpack = if (isFresh) lastUnpack else null
-        val previousSample = if (isFresh) lastDecodedSamples else null
-        return previousUnpack to previousSample
-    }
-
-    private fun decodePcm(
-        unpack: List<Long>,
-        previousUnpack: List<Long>?,
-        previousSample: ShortArray?
-    ): ShortArray {
-        return wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, selectedModel)
-    }
-
-    private fun rememberContext(unpack: List<Long>, finalPcmData: ShortArray) {
+        // Save current unpack and timestamp for next iteration
         lastUnpack = unpack
         lastDecodedSamples = finalPcmData
-        lastUnpackTime = System.currentTimeMillis()
-    }
+        lastUnpackTime = currentTime
 
-    private suspend fun notifyPttCallbacks(decodedData: ByteArray) {
+        // Add buffering delay only if there was no previous unpack (first packet)
+        if (previousUnpack == null)
+            delay(BUFFERING_TIME_MS)
+
         val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         val data = dataPackage ?: return
         val pkg = StardustAPIPackage(senderId = data.senderId, groupId = data.groupId, receiverId = appId)
 
-        if (!isFileInit) {
-            startPttReception(pkg, data, appId)
+        if(!isFileInit) {
+            Log.d("PcmStreamPlayer", "Initializing PTT input file...")
+            val file = initPttInputFile(context, pkg) ?: return
+
+            DataManager.getAppRepo(context).saveMessage(
+                MessageEntity(
+                    chatId = data.chatId,
+                    senderID = data.senderId,
+                    receiverID = appId,
+                    state = MessageState.RECEIVING,
+                    extraData = MessageExtraData.PTT(
+                        path = file.absolutePath,
+                        encoderType = EncoderType.AI
+                    )
+                ),
+                data.groupId
+            )
+
+            DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
         } else {
             DataManager.getCallbacks()?.receivePTT(pkg, decodedData)
         }
+
+        AIPcmStreamPlayer.enqueue(finalPcmData, 24000)
     }
-
-    private suspend fun startPttReception(pkg: StardustAPIPackage, data: StardustPackage, appId: String) {
-        Log.d("PcmStreamPlayer", "Initializing PTT input file...")
-        val file = initPttInputFile(context, pkg) ?: return
-
-        persistIncomingPttMessage(file.absolutePath, data, appId)
-        DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
-    }
-
-    private suspend fun persistIncomingPttMessage(filePath: String, data: StardustPackage, appId: String) {
-        val message = buildIncomingPttMessage(filePath, data, appId)
-        DataManager.getAppRepo(context).saveMessage(message, data.groupId)
-    }
-
-    private fun buildIncomingPttMessage(filePath: String, data: StardustPackage, appId: String): MessageEntity =
-        MessageEntity(
-            chatId = data.chatId,
-            senderID = data.senderId,
-            receiverID = appId,
-            state = MessageState.RECEIVING,
-            extraData = MessageExtraData.PTT(
-                path = filePath,
-                encoderType = EncoderType.AI
-            )
-        )
 
     private fun ByteArray.toHexString(): String =
         joinToString("") { "%02x ".format(it) }
