@@ -93,29 +93,6 @@ class AudioRecorderAI(
         disableBluetoothSco()
     }
 
-//    fun start() {
-//        Log.d("AudioRecorder", "Starting audio recorder")
-//        if (running.getAndSet(true)) return
-//        job = scope.launch {
-//            onStateChanged?.invoke(true)
-//            try {
-//                recordLoop()
-//            } catch (t: Throwable) {
-//                onError?.invoke(t)
-//            } finally {
-//                running.set(false)
-//                onStateChanged?.invoke(false)
-//            }
-//        }
-//    }
-
-//    fun stop() {
-//        running.set(false)
-//        job?.cancel()
-//
-//        disableBluetoothSco()
-//    }
-
     fun release() {
         stop()
     }
@@ -213,106 +190,11 @@ class AudioRecorderAI(
         }
     }
 
-//    @SuppressLint("MissingPermission")
-//    private suspend fun recordLoop() {
-//        Log.d("AudioRecorder", "recordLoop")
-//
-//        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
-//        enableBluetoothSco()
-//
-//        val minBuffer = AudioRecord.getMinBufferSize(
-//            sampleRate,
-//            AudioFormat.CHANNEL_IN_MONO,
-//            AudioFormat.ENCODING_PCM_16BIT
-//        )
-//
-//        if (minBuffer == AudioRecord.ERROR || minBuffer == AudioRecord.ERROR_BAD_VALUE) {
-//            throw IllegalStateException("Unsupported sample rate or format")
-//        }
-//
-//        val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
-//        val audioRecord = AudioRecord(
-//            SharedPreferencesUtil.getAIAudioSource(context),
-//            sampleRate,
-//            AudioFormat.CHANNEL_IN_MONO,
-//            AudioFormat.ENCODING_PCM_16BIT,
-//            recordBufferSize
-//        )
-//
-////        try {
-////            val sessionId = audioRecord.audioSessionId
-////
-////            if (AutomaticGainControl.isAvailable()) {
-////                AutomaticGainControl.create(sessionId)?.enabled = false
-////            }
-////            if (NoiseSuppressor.isAvailable()) {
-////                NoiseSuppressor.create(sessionId)?.enabled = false
-////            }
-////            if (AcousticEchoCanceler.isAvailable()) {
-////                AcousticEchoCanceler.create(sessionId)?.enabled = false
-////            }
-////        }catch ( e : Exception) {
-////            e.printStackTrace()
-////        }
-//        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-//            audioRecord.release()
-//            throw IllegalStateException("AudioRecord initialization failed")
-//        }
-//
-//        val shortBuffer = ShortArray(sampleRate / 100)
-//        val chunkSamples = ShortArray(samplesPerChunk)
-//        var chunkSampleIndex = 0
-//        var chunkIndex = 1
-//        Log.d("AudioRecorder", "startRecording")
-//
-//        audioRecord.startRecording()
-//
-//        try {
-//
-//            while (coroutineContext.isActive && running.get()) {
-////                Log.d("AudioRecorder", "while recording")
-//                val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
-//                if (read <= 0) continue
-//
-//                var consumed = 0
-//                while (consumed < read) {
-//                    val remainingInChunk = samplesPerChunk - chunkSampleIndex
-//                    val toCopy = minOf(remainingInChunk, read - consumed)
-//                    System.arraycopy(shortBuffer, consumed, chunkSamples, chunkSampleIndex, toCopy)
-//                    chunkSampleIndex += toCopy
-//                    consumed += toCopy
-//
-//                    if (chunkSampleIndex == samplesPerChunk) {
-//                        Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
-//
-//                        val processedSamples: ShortArray = processSamples(chunkSamples, gain)
-//                        onChunkReady?.invoke(processedSamples, chunkIndex)
-//                        chunkIndex++
-//                        chunkSampleIndex = 0
-//                    }
-//                }
-//            }
-//        } finally {
-//            try {
-//                audioRecord.stop()
-//                // Optionally flush partial chunk
-//                if (chunkSampleIndex > 0) {
-//                    val samples = chunkSamples.copyOf(chunkSampleIndex)
-//                    val partial = processSamples(samples, gain)
-//                    onPartialFinalChunk?.invoke(partial, chunkIndex)
-//                }
-//                audioRecord.release()
-//            } catch (_: Exception) {}
-//            audioRecord.release()
-//        }
-//    }
-
     private fun processSamples(samples: ShortArray, gain: Float) = samples.map { sample ->
         (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
     }.toShortArray()
 
-    // In your BleManager or recording activity
-//    @SuppressLint("ServiceCast")
+
     @SuppressLint("NewApi")
     private fun enableBluetoothSco() {
         // Get an AudioManager instance
@@ -347,69 +229,4 @@ class AudioRecorderAI(
         audioManager.isBluetoothScoOn = false
     }
 
-//    private fun makeChunkFile(index: Int): File {
-//        val dir = filesDirProvider()
-//        if (!dir.exists()) dir.mkdirs()
-//        val name = "chunk_${index.toString().padStart(5, '0')}.wav"
-//        return File(dir, name)
-//    }
-//
-//    @Throws(IOException::class)
-//    private fun writeWav(target: File, samples: ShortArray, sampleCount: Int) {
-//        FileOutputStream(target).use { fos ->
-//            val dataSize = sampleCount * bytesPerSample * channels
-//            val header = createWavHeader(
-//                totalAudioBytes = dataSize,
-//                sampleRate = sampleRate,
-//                channels = channels,
-//                bitsPerSample = bitsPerSample
-//            )
-//            fos.write(header)
-//            val bb = ByteBuffer.allocate(sampleCount * 2).order(ByteOrder.LITTLE_ENDIAN)
-//            for (i in 0 until sampleCount) {
-//                bb.putShort(samples[i])
-//            }
-//            fos.write(bb.array())
-//        }
-//    }
-//
-//    private fun createWavHeader(
-//        totalAudioBytes: Int,
-//        sampleRate: Int,
-//        channels: Int,
-//        bitsPerSample: Int
-//    ): ByteArray {
-//        val byteRate = sampleRate * channels * bitsPerSample / 8
-//        val totalDataLen = 36 + totalAudioBytes
-//        val header = ByteArray(44)
-//        val bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-//
-//        // RIFF
-//        header[0] = 'R'.code.toByte()
-//        header[1] = 'I'.code.toByte()
-//        header[2] = 'F'.code.toByte()
-//        header[3] = 'F'.code.toByte()
-//        bb.putInt(4, totalDataLen)
-//        header[8] = 'W'.code.toByte()
-//        header[9] = 'A'.code.toByte()
-//        header[10] = 'V'.code.toByte()
-//        header[11] = 'E'.code.toByte()
-//        header[12] = 'f'.code.toByte()
-//        header[13] = 'm'.code.toByte()
-//        header[14] = 't'.code.toByte()
-//        header[15] = ' '.code.toByte()
-//        bb.putInt(16, 16) // Subchunk1Size
-//        bb.putShort(20, 1.toShort()) // PCM
-//        bb.putShort(22, channels.toShort())
-//        bb.putInt(24, sampleRate)
-//        bb.putInt(28, byteRate)
-//        bb.putShort(32, (channels * bitsPerSample / 8).toShort())
-//        bb.putShort(34, bitsPerSample.toShort())
-//        header[36] = 'd'.code.toByte()
-//        header[37] = 'a'.code.toByte()
-//        header[38] = 't'.code.toByte()
-//        header[39] = 'a'.code.toByte()
-//        bb.putInt(40, totalAudioBytes)
-//        return header
-//    }
 }

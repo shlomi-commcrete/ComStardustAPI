@@ -73,6 +73,7 @@ object PcmStreamPlayer : BleMediaConnector() {
             startRecored = 0L
         }
     }
+
     @Synchronized
     private fun ensureTrack(sampleRate: Int) {
         if (audioTrack != null && currentSampleRate == sampleRate) return
@@ -415,7 +416,7 @@ object PcmStreamPlayer : BleMediaConnector() {
         context: Context,
         ids: StardustAPIPackage
     ): File? {
-
+        setTs()
         val source = ids.groupId ?: ids.senderId
         val dir = File(context.filesDir, source)
 
@@ -430,7 +431,6 @@ object PcmStreamPlayer : BleMediaConnector() {
 
 
         if (!file.exists()) {
-            setTs()
             file.createNewFile()
             fileToWrite = file
             isFileInit = true
@@ -442,7 +442,7 @@ object PcmStreamPlayer : BleMediaConnector() {
     private fun setTs() {
         if(ts.isEmpty()) { ts = (System.currentTimeMillis()).toString() }
     }
-    private fun resetTimer(){
+    private fun resetTimer() {
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed(runnable, 2000)
