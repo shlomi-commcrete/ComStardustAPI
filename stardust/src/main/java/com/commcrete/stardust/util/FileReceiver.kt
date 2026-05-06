@@ -101,8 +101,8 @@ class FileReceiver(
                 lastReportedProgress = newProgress
                 // Handle completion
                 if (newProgress >= 100) {
-                    removeReceiveTimer()
                     checkData()
+                    removeReceiveTimer()
                 } else {
                     DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = newProgress)
                 }
@@ -270,6 +270,7 @@ class FileReceiver(
             val mFileName = trimUntilUnderscore(file.name)
             DataManager.getAppRepo(context).saveMessage(
                 message = MessageEntity(
+                    chatId = data.chatId,
                     senderID = data.senderId,
                     receiverID = appId,
                     state = MessageState.RECEIVED,
