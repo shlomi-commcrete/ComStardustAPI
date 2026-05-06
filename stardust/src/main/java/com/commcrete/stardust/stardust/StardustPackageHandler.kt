@@ -350,7 +350,9 @@ internal class StardustPackageHandler(private val context: Context ,
             }
             else -> {
                 StardustFileParser().parseFile(bittelPackage = mPackage)?.let { fileData ->
-                    val activeKey = activeTransferByTransport[transportKey]
+                    // ConcurrentHashMap.get() throws NPE on null key, so guard against missing
+                    // active transfer (data packet arrived before/after a file-start packet).
+                    val activeKey = activeTransferByTransport[transportKey] ?: return@let
                     fileReceivers[activeKey]?.addDataPackage(fileData)
                 }
             }

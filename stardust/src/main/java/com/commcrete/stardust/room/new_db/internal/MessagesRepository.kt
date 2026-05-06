@@ -186,9 +186,9 @@ internal class MessagesRepository(
                     if (com.commcrete.stardust.util.RegisteredUserUtils.isRegisteredUser(message.senderID)) message.receiverID
                     else message.senderID
                 val contactId = ensureSenderExists(senderId.trim().lowercase()) ?: return@withContext null
-                val chatId = if (groupId != null) resolveGroupChatId(groupId) else resolvePrivateChatId(contactId)
+                val chatId = message.chatId?.takeIf { it.isNotBlank() } ?: if (groupId != null) resolveGroupChatId(groupId) else resolvePrivateChatId(contactId)
                 val chatIdString = chatId ?: return@withContext null
-                messagesDao.addMessage(message.copy(chatId = chatIdString))
+                messagesDao.addMessage(message.copy(chatId = normalizeId(chatIdString)))
             }
         }
 
