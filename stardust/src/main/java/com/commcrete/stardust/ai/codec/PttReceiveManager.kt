@@ -7,11 +7,15 @@ import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PcmStreamPlayer.initPttInputFile
 import com.commcrete.stardust.ai.codec.PcmStreamPlayer.isFileInit
+import com.commcrete.stardust.room.new_db.message.EncoderType
+import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
-import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.RegisteredUserUtils
-import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.PlayerUtils.ParsedAiData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,8 +37,7 @@ object PttReceiveManager {
     private var lastUnpack: List<Long>? = null
     private var lastDecodedSamples: ShortArray? = null
     private var lastUnpackTime: Long = 0L
-    private var from = ""
-    private var source : String? = ""
+    private var dataPackage: StardustPackage? = null
     private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
     private var aiDecodeData: AIDecodeData? = null
 
@@ -50,12 +53,10 @@ object PttReceiveManager {
         val onPcmReady: ((ShortArray) -> Unit)? = null
     )
 
-    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null,
-                   onPcmReady: ((ShortArray) -> Unit)? = null) {
-        selectedModel = modelType ?: WavTokenizerDecoder.ModelType.General
-        this.from = from
-        this.source = source
-        toDecodeQueue.trySend(data)
+    fun addNewData(data: ParsedAiData, dataPackage: StardustPackage) {
+        selectedModel = data.selectedModule ?: WavTokenizerDecoder.ModelType.General
+        this.dataPackage = dataPackage
+        toDecodeQueue.trySend(data.decodedBytes)
 
     }
 
@@ -97,7 +98,6 @@ object PttReceiveManager {
     }
 
     private suspend fun handleTokenizerChunk(decodedData: ByteArray) {
-        val source = this.source ?: return
         val unpack = BitPacking12.unpack12(decodedData)
 
         // Check if last unpack was received within 800ms
@@ -125,22 +125,34 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-        val destination = from.trim().replace("[\"", "").replace("\"]", "")
         val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
-        val ids = GroupsUtils.resolveGroupAndContact(source, destination)
-        val pkg = StardustAPIPackage(senderId = ids.senderId, groupId = ids.groupId, receiverId = appId)
-        Log.d("PcmStreamPlayer", "initPttInputFile called with from: $from, source: $source")
+        val data = dataPackage ?: return
+        val pkg = StardustAPIPackage(senderId = data.senderId, groupId = data.groupId, receiverId = appId)
 
         if(!isFileInit){
             Log.d("PcmStreamPlayer", "Initializing PTT input file...")
             val file = initPttInputFile(context, pkg) ?: return
+
+            DataManager.getAppRepo(context).saveMessage(
+                MessageEntity(
+                    chatId = data.chatId,
+                    senderID = data.senderId,
+                    receiverID = appId,
+                    state = MessageState.RECEIVING,
+                    extraData = MessageExtraData.PTT(
+                        path = file.absolutePath,
+                        encoderType = EncoderType.AI
+                    )
+                ),
+                data.groupId
+            )
 
             DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
         } else {
             DataManager.getCallbacks()?.receivePTT(pkg, decodedData)
         }
 
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, destination)
+        PcmStreamPlayer.enqueue(finalPcmData, 24000)
     }
 
     private fun ByteArray.toHexString(): String =

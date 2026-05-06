@@ -14,10 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.room.new_db.message.EncoderType
-import com.commcrete.stardust.room.new_db.message.MessageEntity
-import com.commcrete.stardust.room.new_db.message.MessageExtraData
-import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.audio.BleMediaConnector
@@ -59,8 +55,6 @@ object PcmStreamPlayer : BleMediaConnector() {
     private const val PLAYBACK_TRACE_TAG = "PTTPlaybackTrace"
 
     var isFileInit = false
-    private var destination : String = ""
-    private var source : String = ""
     private var fileToWrite : File? = null
     private var ts = ""
     private val handler : Handler = Handler(Looper.getMainLooper())
@@ -74,7 +68,6 @@ object PcmStreamPlayer : BleMediaConnector() {
             isFileInit = false
             fileToWrite = null
             ts = ""
-            destination = ""
             isRecoded = false
             isFirst = true
             startRecored = 0L
@@ -339,12 +332,9 @@ object PcmStreamPlayer : BleMediaConnector() {
     }
 
     /** Enqueue a PCM16 mono frame. Recreates track if sample rate has changed. */
-    fun enqueue(frame: ShortArray, sampleRate: Int, destination : String) {
+    fun enqueue(frame: ShortArray, sampleRate: Int) {
 
         resetTimer()
-        this@PcmStreamPlayer.destination = destination
-
-
         ensureTrack(sampleRate)
         frameChannel.trySend(frame)
     }
@@ -421,11 +411,12 @@ object PcmStreamPlayer : BleMediaConnector() {
         }
     }
 
-    suspend fun initPttInputFile(
+    fun initPttInputFile(
         context: Context,
         ids: StardustAPIPackage
     ): File? {
 
+        val source = ids.groupId ?: ids.senderId
         val dir = File(context.filesDir, source)
 
         if (!dir.exists()) {
@@ -443,21 +434,6 @@ object PcmStreamPlayer : BleMediaConnector() {
             file.createNewFile()
             fileToWrite = file
             isFileInit = true
-
-            DataManager.getAppRepo(context).saveMessage(
-                MessageEntity(
-                    senderID = ids.senderId,
-                    receiverID = ids.receiverId,
-                    state = MessageState.RECEIVING,
-                    epochTimeMs = ts.toLong(),
-                    extraData = MessageExtraData.PTT(
-                        path = file.absolutePath,
-                        encoderType = EncoderType.AI
-                    )
-                ),
-                ids.groupId
-            )
-
         }
 
         return file

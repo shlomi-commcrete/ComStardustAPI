@@ -113,7 +113,7 @@ object PlayerUtils : BleMediaConnector() {
         return null
     }
 
-    private data class ParsedAiData(
+    data class ParsedAiData(
         val decodedBytes: ByteArray,
         val selectedModule: WavTokenizerDecoder.ModelType?
     )
@@ -329,7 +329,7 @@ object PlayerUtils : BleMediaConnector() {
         CoroutineScope(Dispatchers.IO).launch {
             val parsedData = parseAIPackageByFrames(dataPackage) ?: return@launch
 
-            PttReceiveManager.addNewData(parsedData.decodedBytes, dataPackage.senderId, source, parsedData.selectedModule)
+            PttReceiveManager.addNewData(parsedData, dataPackage)
 
         }
     }
