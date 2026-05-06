@@ -54,7 +54,7 @@ object PttSendManager {
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
-    fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, receiverId: String? = null, chatId: String? = null) {
+    fun addNewFrame(pcmArray: ShortArray, file: File, carrier: Carrier? = null, receiverId: String, chatId: String) {
         toEncodeQueue.trySend(pcmArray)
         fileToSave = file
         this.carrier = carrier

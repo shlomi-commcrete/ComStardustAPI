@@ -21,7 +21,7 @@ interface StardustAPI {
 
     // Send to the SDK
     fun sendMessage (context: Context,stardustAPIPackage: StardustAPIPackage, text : String)
-    fun startPTT (context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
+    fun startPTT (context: Context, chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
     fun stopPTT (context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
     fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
     fun sendImage (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>

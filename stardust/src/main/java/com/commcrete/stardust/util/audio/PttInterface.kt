@@ -4,6 +4,7 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 
 interface PttInterface {
 
+    fun getChatId(): String
     fun getSource(): String
 
     fun getDestination(): String

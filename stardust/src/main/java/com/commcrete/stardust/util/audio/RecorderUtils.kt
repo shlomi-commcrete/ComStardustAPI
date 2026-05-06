@@ -46,7 +46,8 @@ object RecorderUtils {
     // ----------------------------------------
     @RequiresPermission(RECORD_AUDIO)
     fun startRecording(
-        destination: String,
+        chatId: String,
+        receiverId: String,
         carrier: Carrier?,
         codeType: AudioEncoderType?
     ): File? {
@@ -55,9 +56,9 @@ object RecorderUtils {
         Scopes.getMainCoroutine().launch { canRecord.value = false }
 
         return if (codeType == AudioEncoderType.CODEC2) {
-            startCodec2Recording(destination, carrier)
+            startCodec2Recording(receiverId, carrier)
         } else {
-            startAIRecording(destination, carrier)
+            startAIRecording(chatId, receiverId, carrier)
         }
     }
 
@@ -80,7 +81,7 @@ object RecorderUtils {
         return file
     }
 
-    private fun startAIRecording(destination: String, carrier: Carrier?): File? {
+    private fun startAIRecording(chatId: String, receiverId: String, carrier: Carrier?): File? {
         Log.d("AudioRecorder", "NAE Recording Started")
         PttSendManager.init(DataManager.context, pttInterface)
 
@@ -89,22 +90,22 @@ object RecorderUtils {
             // Use temporary file
             FileUtils.withTempFile(
                 context = DataManager.context,
-                prefix = destination,
+                prefix = receiverId,
                 suffix = DataManager.getSource()
             ) { tempFile ->
-                setupAIRecorder(tempFile, destination, carrier)
+                setupAIRecorder(tempFile, receiverId, chatId, carrier)
             }
         } else {
             // Use persistent file
-            val persistentFile = createFile(DataManager.fileLocation, destination, DataManager.getSource())
-            persistentFile?.let { setupAIRecorder(it, destination, carrier) }
+            val persistentFile = createFile(DataManager.fileLocation, chatId, receiverId)
+            persistentFile?.let { setupAIRecorder(it, receiverId, chatId, carrier) }
             persistentFile
         }
 
         return file
     }
 
-    private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
+    private fun setupAIRecorder(file: File, receiverId: String, chatId: String, carrier: Carrier?) {
         PttSendManager.restart()
 
         aiRecorder = AudioRecorderAI(
@@ -113,10 +114,10 @@ object RecorderUtils {
             filesDirProvider = { file }
         ).apply {
             onChunkReady = { pcmArray, _ ->
-                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+                PttSendManager.addNewFrame(pcmArray, file, carrier, receiverId = receiverId, chatId = chatId)
             }
             onPartialFinalChunk = { pcmArray, _ ->
-                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+                PttSendManager.addNewFrame(pcmArray, file, carrier, receiverId = receiverId, chatId = chatId)
             }
             onError = { throwable ->
                 Log.d("AudioRecorder", "error $throwable")
@@ -160,7 +161,14 @@ object RecorderUtils {
 
     private fun stopCodec2Recording(receiverID: String, carrier: Carrier?, file: File) {
         wavRecorder?.run {
-            stopRecording(context = context, retry = 0, receiverId = receiverID, path = file.absolutePath, carrier = carrier)
+            stopRecording(
+                context = context,
+                retry = 0,
+                receiverId = receiverID,
+                path = file.absolutePath,
+                carrier = carrier,
+                chatId = TODO()
+            )
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
                 wavRecorder = null
@@ -183,11 +191,11 @@ object RecorderUtils {
         MODE1600(Codec2.CODEC2_MODE_1600 , 6000 , 8),
         MODE3200(Codec2.CODEC2_MODE_3200 , 8000 , 8)
     }
-    private fun createFile(fileDir: String, chatID: String, userId: String) : File?{
+    private fun createFile(fileDir: String, chatID: String, receiverId: String) : File?{
         try{
             ts = System.currentTimeMillis()
             val directory = File("$fileDir/$chatID")
-            val newFile = File("$fileDir/$chatID/$ts-$userId.pcm")
+            val newFile = File("$fileDir/$chatID/$ts-$receiverId.pcm")
             if(!directory.exists()){
                 directory.mkdir()
             }

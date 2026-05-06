@@ -10,13 +10,11 @@ import android.support.v4.media.session.MediaSessionCompat
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.startPTT
 import com.commcrete.stardust.util.DataManager.stopPTT
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,7 +76,7 @@ object ButtonListener {
 
             if (isClicked) {
                 // Start recording
-                currentFile = startPttRecord(context, pttPackage)
+                currentFile = startPttRecord(context, DataManager.getChatId(), pttPackage)
                 Timber.tag("isPlayPTT").d("startRecording")
             } else {
                 // Stop recording
@@ -97,8 +95,8 @@ object ButtonListener {
     }
 
     @SuppressLint("MissingPermission")
-    fun startPttRecord(context: Context, pttPackage : StardustAPIPackage): File? {
-        return startPTT(context, pttPackage, SharedPreferencesUtil.getCodecType(context))
+    fun startPttRecord(context: Context, chatId: String,  pttPackage : StardustAPIPackage): File? {
+        return startPTT(context, chatId, pttPackage, SharedPreferencesUtil.getCodecType(context))
     }
 
     fun setupMediaSession(context: Context) {

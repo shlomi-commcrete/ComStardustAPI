@@ -6,7 +6,6 @@ import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
-import com.commcrete.stardust.util.ContactsFileParserUtil
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
 import com.commcrete.bittell.util.text_utils.getIsAck
@@ -49,7 +48,6 @@ import timber.log.Timber
 import java.io.File
 import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
-import kotlin.random.Random
 
 @SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface{
@@ -63,6 +61,7 @@ object DataManager : StardustAPI, PttInterface{
 
     private var bleScanner : BleScanner? = null
     private var source : String? = null
+    private var chatId : String? = null
     private var destination : String? = null
     private var stardustAPICallbacks : StardustAPICallbacks? = null
     var pluginContext: Context? = null
@@ -176,12 +175,14 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     @SuppressLint("MissingPermission")
-    override fun startPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
+    override fun startPTT(context: Context, chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
         requireContext(context)
         this.source = stardustAPIPackage.senderId
         this.destination = stardustAPIPackage.receiverId
+        this.chatId = chatId
+
         RecorderUtils.init(this)
-        return RecorderUtils.startRecording(stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
+        return RecorderUtils.startRecording(chatId, stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
     override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
@@ -396,6 +397,10 @@ object DataManager : StardustAPI, PttInterface{
     override fun getCarriers(context: Context): List<Carrier>? {
         requireContext(context)
         return CarriersUtils.setLocalCarrierList ()
+    }
+
+    override fun getChatId(): String {
+        return this.chatId ?: ""
     }
 
     override fun getSource(): String {
