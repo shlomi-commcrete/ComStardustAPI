@@ -3,6 +3,7 @@ package com.commcrete.stardust.room.chats
 import androidx.lifecycle.LiveData
 import androidx.room.*
 import com.commcrete.stardust.room.chats.ChatItem
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ChatsDao {
@@ -70,6 +71,10 @@ interface ChatsDao {
 
     @Query("SELECT LOWER(chat_id) FROM chats_table WHERE is_group = 1 ")
     suspend fun getAllGroupIds() : List<String>
+
+    /** Live stream of group ids (lower-cased). Emits on every chats_table mutation. */
+    @Query("SELECT LOWER(chat_id) FROM chats_table WHERE is_group = 1 ")
+    fun observeAllGroupIds() : Flow<List<String>>
 
     @Query("""
       SELECT * 

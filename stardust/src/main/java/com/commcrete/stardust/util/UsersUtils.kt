@@ -310,7 +310,6 @@ object UsersUtils {
                 // BLE unpair first (side-effect, usually must complete)
                 unpairDeviceBLE(DataManager.context)
                 val databases = async {
-                    GroupsUtils.clearCacheData()
                     cleanAllDatabases(DataManager.context)
                 }
                 val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
