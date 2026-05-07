@@ -105,7 +105,7 @@ object PlayerUtils : BleMediaConnector() {
                 Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
 
                 return ParsedAiData(
-                    decodedBytes = withoutFirstByte,
+                    decodedBytes = byteArray,
                     selectedModule = selectedModule
                 )
             }
@@ -162,11 +162,11 @@ object PlayerUtils : BleMediaConnector() {
         type: EncoderType) : File? {
 
         val appId = mRegisterUser.value?.appId ?: return null
-
+        val dirSource = groupId ?: senderId
         this.destination = receiverId
 
-        val directory = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}")
-        val file = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${source}/$ts-$source.pcm")
+        val directory = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${dirSource}")
+        val file = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${dirSource}/$ts-$senderId.pcm")
 
         if(directory != null) {
             if(!directory.exists()) { directory.mkdir() }

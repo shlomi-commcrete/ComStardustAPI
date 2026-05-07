@@ -191,12 +191,13 @@ object AIPcmStreamPlayer {
 
         delay(1500)
         if (System.currentTimeMillis() - startRecored > 1500) {
-            Log.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
-            val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-            WavHelper.createWavFile(sampleArray, currentSampleRate, file)
-            frameBuffer.clear()
-            isRecoded = false
+
         }
+        Log.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
+        val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
+        WavHelper.createWavFile(sampleArray, currentSampleRate, file)
+        frameBuffer.clear()
+        isRecoded = false
     }
 
     fun initPttInputFile(context: Context, ids: StardustAPIPackage): File? {
@@ -209,7 +210,7 @@ object AIPcmStreamPlayer {
             return null
         }
 
-        val file = fileToWrite ?: File(dir, "$ts-$source.pcm")
+        val file = fileToWrite ?: File(dir, "$ts-${ids.senderId}.pcm")
 
         if (!file.exists()) {
             file.createNewFile()

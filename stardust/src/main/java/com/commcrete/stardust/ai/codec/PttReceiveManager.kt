@@ -39,30 +39,16 @@ object PttReceiveManager {
     private var lastUnpackTime: Long = 0L
     private var dataPackage: StardustPackage? = null
     private var selectedModel : WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
-    private var aiDecodeData: AIDecodeData? = null
 
     fun init() {
         startDecodingJob()
     }
 
-    data class AIDecodeData (
-        val data: ByteArray,
-        val from: String = "",
-        val source: String = "",
-        val modelType: WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General,
-        val onPcmReady: ((ShortArray) -> Unit)? = null
-    )
 
     fun addNewData(data: ParsedAiData, dataPackage: StardustPackage) {
         selectedModel = data.selectedModule ?: WavTokenizerDecoder.ModelType.General
         this.dataPackage = dataPackage
         toDecodeQueue.trySend(data.decodedBytes)
-
-    }
-
-    fun addNewData(aiDecodeData: AIDecodeData) {
-        this.aiDecodeData = aiDecodeData
-        toDecodeQueue.trySend(aiDecodeData.data)
 
     }
 
