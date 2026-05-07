@@ -38,7 +38,6 @@ import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.friends.FriendsDatabase
 import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -306,7 +305,7 @@ object DataManager : StardustAPI, PttInterface{
         requireContext(context)
         requireFileLocation(fileLocation)
         UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
-        GroupsUtils.resetGroupIds(context)
+        CoroutineScope(Dispatchers.IO).launch { GroupsUtils.resetLocalCacheGroupIds(context) }
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {

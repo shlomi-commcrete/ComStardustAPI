@@ -266,8 +266,8 @@ internal class StardustPackageHandler(private val context: Context ,
         bittelBatteryPackage.let {
             AppEvents.updateBattery(it)
         }
-        if(missingGroups && GroupsUtils.groupsIds.isNotEmpty()){
-            GroupsUtils.addAllGroups(context)
+        if(missingGroups) {
+            GroupsUtils.sendAddAllGroups(context, false)
         }
     }
 
@@ -282,7 +282,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleDeleteGroupsResponse(context: Context) {
-        GroupsUtils.addAllGroups(context)
+        GroupsUtils.sendAddAllGroups(context)
     }
 
     private fun handleAddGroupsResponse(context: Context) {
@@ -312,7 +312,7 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (context: Context, mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            GroupsUtils.deleteAllGroups(context)
+            GroupsUtils.sendDeleteAllGroups(context)
             DataManager.getClientConnection(context).removeConnectionTimer()
         }
     }

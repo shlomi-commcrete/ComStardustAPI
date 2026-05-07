@@ -1,8 +1,6 @@
 package com.commcrete.stardust.room.chats
 
 import androidx.lifecycle.LiveData
-import com.commcrete.stardust.room.chats.ChatItem
-import com.commcrete.stardust.room.chats.ChatsDao
 import com.commcrete.stardust.util.GroupsUtils
 
 class ChatsRepository (private val chatsDao: ChatsDao) {
@@ -53,7 +51,7 @@ class ChatsRepository (private val chatsDao: ChatsDao) {
     suspend fun updateNumOfUnseenMessages(chatId: String, numOfUnseenMessages: Int) = chatsDao.updateNumOfUnseenMessages(chatId, numOfUnseenMessages)
     suspend fun clearData () : Boolean {
         chatsDao.clearData()
-        GroupsUtils.clearData()
+        GroupsUtils.clearCacheData()
         return true
     }
 

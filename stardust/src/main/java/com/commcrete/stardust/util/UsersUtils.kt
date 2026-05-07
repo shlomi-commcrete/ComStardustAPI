@@ -19,8 +19,6 @@ import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustSOSPackage
@@ -312,7 +310,7 @@ object UsersUtils {
                 // BLE unpair first (side-effect, usually must complete)
                 unpairDeviceBLE(DataManager.context)
                 val databases = async {
-                    GroupsUtils.clearData()
+                    GroupsUtils.clearCacheData()
                     cleanAllDatabases(DataManager.context)
                 }
                 val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }

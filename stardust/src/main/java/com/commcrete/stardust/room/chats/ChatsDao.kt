@@ -68,7 +68,7 @@ interface ChatsDao {
 //    @Query("UPDATE chats_table SET pttEnabled=:isPTTEnable WHERE LOWER(chat_id) = LOWER(:chatId) ")
 //    suspend fun updateEnablePtt(chatId: String, isPTTEnable : Boolean)
 
-    @Query("SELECT chat_id FROM chats_table WHERE is_group = 1 ")
+    @Query("SELECT LOWER(chat_id) FROM chats_table WHERE is_group = 1 ")
     suspend fun getAllGroupIds() : List<String>
 
     @Query("""
