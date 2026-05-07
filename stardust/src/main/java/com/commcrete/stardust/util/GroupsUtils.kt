@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
+import android.util.Log
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
@@ -11,7 +12,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 object GroupsUtils {
 
@@ -42,12 +42,12 @@ object GroupsUtils {
                     DataManager.getChatsRepo(appContext).observeAllGroupIds()
                         // Restart on transient failures (e.g. DB closed / migration in-flight)
                         .retryWhen { cause, attempt ->
-                            Timber.tag(TAG).w(cause, "groups observer failed (attempt=$attempt); retrying")
+                            Log.w(TAG, "groups observer failed (attempt=$attempt); retrying", cause)
                             delay(1000L * (attempt + 1).coerceAtMost(10))
                             true
                         }
                         .catch { cause ->
-                            Timber.tag(TAG).e(cause, "groups observer giving up")
+                            Log.e(TAG, "groups observer giving up", cause)
                         }
                         .collect { groups ->
                             synchronized(groupsLock) {
@@ -55,7 +55,7 @@ object GroupsUtils {
                                 groupsIds.addAll(groups)
                             }
                             if (!ready.isCompleted) ready.complete(Unit)
-                            Timber.tag(TAG).i("Cache refreshed from DB (${groups.size} groups)")
+                            Log.i(TAG, "Cache refreshed from DB (${groups.size} groups)")
                         }
                 } finally {
                     // Allow a future start() to re-create the observer if this one ended.
@@ -143,7 +143,7 @@ object GroupsUtils {
         )
 
         clientConnection.addMessageToQueue(pkg)
-        Timber.tag("InitHandler").d("Sent ADD_GROUPS")
+        Log.d("InitHandler", "Sent ADD_GROUPS")
     }
 
 
