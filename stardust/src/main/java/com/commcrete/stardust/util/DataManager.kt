@@ -319,7 +319,6 @@ object DataManager : StardustAPI, PttInterface{
         requireContext(context)
         requireFileLocation(fileLocation)
         RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser(context))
-        GroupsUtils.resetLocalGroupIds(context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {

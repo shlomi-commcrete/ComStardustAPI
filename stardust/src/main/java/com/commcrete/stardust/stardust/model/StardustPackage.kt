@@ -330,5 +330,5 @@ fun String.getSrcDestMin4Bytes() : String {
     while (output.length < 8){
         output = "0$output"
     }
-    return output
+    return output.lowercase()
 }

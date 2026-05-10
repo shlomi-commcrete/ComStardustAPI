@@ -317,7 +317,7 @@ object StardustInitConnectionHandler {
 
     private fun afterUpdateAddressAck() {
         // Your existing local side-effects:
-        GroupsUtils.deleteAllDeviceGroups(ctx)
+        GroupsUtils.sendDeleteAllGroups(ctx)
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
@@ -338,18 +338,7 @@ object StardustInitConnectionHandler {
 
     // 4) Add groups
     private fun sendAddGroups(appContext: Context) {
-        val (src, dst) = requireSrcDst() ?: return
-        CoroutineScope(Dispatchers.IO).launch {
-            val payload = buildAddGroupsPayload(appContext)
-            val pkg = StardustPackageUtils.getStardustPackage(
-                context = ctx,
-                source = src, destination = dst,
-                stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-                data = payload
-            )
-            conn.addMessageToQueue(pkg)
-            Timber.tag("InitHandler").d("Sent ADD_GROUPS")
-        }
+        GroupsUtils.sendAddAllGroups(appContext)
     }
 
     // 5) Get configuration
@@ -433,21 +422,7 @@ object StardustInitConnectionHandler {
         intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         return intData.toIntArray().toTypedArray()
     }
-    private suspend fun buildAddGroupsPayload(appContext: Context): Array<Int> {
-        return withContext(Dispatchers.IO) {
-            val groupsList = DataManager.getAppRepo(appContext).getAllGroupIds()
 
-            val intData = arrayListOf<Int>()
-            if(groupsList.isNotEmpty()) {
-                for (group in groupsList) {
-                    intData.addAll(StardustPackageUtils.hexStringToByteArray(group).reversedArray())
-                }
-            } else { intData.addAll(listOf(0, 0, 0, 0)) }
-
-            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-            intData.toIntArray().toTypedArray().reversedArray()
-        }
-    }
 
     private fun onInitFailed(reason: String) {
         val resultState = state.takeIf { it == State.ENCRYPTION_KEY_ERROR } ?: State.CANCELED

@@ -1,8 +1,8 @@
 package com.commcrete.stardust.util
 
 import android.content.Context
-import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.StardustPackageUtils.StardustOpCode
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
 import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
@@ -10,100 +10,125 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import timber.log.Timber
 
 object GroupsUtils {
 
     private val groupsScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    private data class Endpoints(val src: String, val dst: String)
+
+    private fun endpoints(): Endpoints? {
+        val user = mRegisterUser.value ?: return null
+        val src = user.appId ?: return null
+        val dst = user.deviceId ?: return null
+        return Endpoints(src, dst)
+    }
+
+    /** Single-byte payload that carries only the SMARTPHONE address marker. */
+    private fun smartphoneMarker(): Array<Int> =
+        arrayOf(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
+
+    /**
+     * Encodes a list of group ids into the wire format expected by the device:
+     * each id reversed, followed by the SMARTPHONE marker, finally the whole
+     * payload reversed (big/little endian fix-up).
+     *
+     * @param padIfEmpty when true, an empty list is padded with `[0,0,0,0]`
+     *                   (used by the local `REQUEST_ADD_GROUPS` flow).
+     */
+    private fun encodeGroupsPayload(groupIds: List<String>, padIfEmpty: Boolean): Array<Int> {
+        val intData = arrayListOf<Int>()
+        if (groupIds.isNotEmpty()) {
+            for (group in groupIds) {
+                intData.addAll(hexStringToByteArray(group).reversedArray())
+            }
+        } else if (padIfEmpty) {
+            intData.addAll(listOf(0, 0, 0, 0))
+        }
+        intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
+        return intData.toIntArray().toTypedArray().reversedArray()
+    }
+
+    /** Builds and enqueues a Stardust package. No-op when no endpoints are available. */
+    private fun sendOp(
+        context: Context,
+        opCode: StardustOpCode,
+        data: Array<Int>? = null
+    ) {
+        val (src, dst) = endpoints() ?: return
+        val pkg = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = src,
+            destination = dst,
+            stardustOpCode = opCode,
+            data = data
+        )
+        DataManager.getClientConnection(context).addMessageToQueue(pkg)
+    }
+
+    // ---------------------------------------------------------------------
+    //  Public BLE API
+    // ---------------------------------------------------------------------
+
+    fun sendDeleteAllGroups(context: Context) = deleteAllDeviceGroups(context)
+
+    fun deleteAllDeviceGroups(context: Context) {
+        sendOp(context, StardustOpCode.REQUEST_DELETE_ALL_GROUPS, smartphoneMarker())
+    }
+
     fun getAllDeviceGroups(context: Context) {
-        val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val deletePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_GET_ALL_GROUPS)
-                clientConnection.addMessageToQueue(deletePackage)
-            }
-        }
+        sendOp(context, StardustOpCode.REQUEST_GET_ALL_GROUPS)
     }
 
-    fun addDeviceGroups(context: Context, groupId : List<String>) {
-        val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            val intData = arrayListOf<Int>()
-            for (group in groupId) {
-                intData.addAll(hexStringToByteArray(group).reversedArray())
-            }
-            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-
-
-            if(src != null && dst != null) {
-                val deletePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-                    data = intData.toIntArray().toTypedArray().reversedArray())
-                clientConnection.addMessageToQueue(deletePackage)
-            }
-        }
+    fun addDeviceGroups(context: Context, groupId: List<String>) {
+        sendOp(
+            context,
+            StardustOpCode.REQUEST_ADD_GROUPS,
+            encodeGroupsPayload(groupId, padIfEmpty = false)
+        )
     }
 
-    fun deleteAllDeviceGroups (context: Context) {
-        val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        mRegisterUser.value?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            val intData = arrayListOf<Int>()
-            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-            if(src != null && dst != null) {
-                val deletePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
-                    data = intData.toIntArray().toTypedArray())
-                clientConnection.addMessageToQueue(deletePackage)
-            }
-        }
+    fun deleteDeviceGroups(context: Context, groupId: List<String>) {
+        sendOp(
+            context,
+            StardustOpCode.REQUEST_REMOVE_GROUPS,
+            encodeGroupsPayload(groupId, padIfEmpty = false)
+        )
     }
 
-    fun deleteDeviceGroups(context: Context, groupId : List<String>) {
-        val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        mRegisterUser.value?.let {
-            val src = it.appId
-            val dst = it.deviceId
-
-            val intData = arrayListOf<Int>()
-            for (group in groupId) {
-                intData.addAll(hexStringToByteArray(group).reversedArray())
-            }
-            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-
-            if(src != null && dst != null) {
-                val deletePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_REMOVE_GROUPS,
-                    data = intData.toIntArray().toTypedArray().reversedArray())
-                clientConnection.addMessageToQueue(deletePackage)
-            }
-        }
-    }
-
-    fun addGroupsToLocal(context: Context) {
+    /**
+     * Loads all locally-stored group ids and sends them to the device using
+     * `REQUEST_ADD_GROUPS`. The two public flows below differ only in:
+     *   * `padIfEmpty` — local-init flow pads `[0,0,0,0]`; manual push does not.
+     *   * `sendIfEmpty` — manual push always sends; local-init can opt out.
+     */
+    private fun loadAndSendAddGroups(
+        context: Context,
+        padIfEmpty: Boolean,
+        sendIfEmpty: Boolean
+    ) {
         groupsScope.launch {
-            val groups = DataManager.getAppRepo(context).getAllGroupIds()
-            addDeviceGroups(context, groups)
+            val ids = DataManager.getAppRepo(context).getAllGroupIds()
+            if (!sendIfEmpty && ids.isEmpty()) return@launch
+            sendOp(
+                context,
+                StardustOpCode.REQUEST_ADD_GROUPS,
+                encodeGroupsPayload(ids, padIfEmpty)
+            )
+            Timber.tag("InitHandler").d("Sent ADD_GROUPS (${ids.size} ids)")
         }
     }
+
+    fun sendAddAllGroups(context: Context, sendIfEmpty: Boolean = true) =
+        loadAndSendAddGroups(context, padIfEmpty = true, sendIfEmpty = sendIfEmpty)
+
+    fun addGroupsToLocal(context: Context) =
+        loadAndSendAddGroups(context, padIfEmpty = false, sendIfEmpty = true)
+
+    // ---------------------------------------------------------------------
+    //  Group/contact resolution (sender vs group)
+    // ---------------------------------------------------------------------
 
     data class GroupContactResolution(
         val groupId: String?,
@@ -130,19 +155,17 @@ object GroupsUtils {
      * the real sender is the group itself.
      */
     suspend fun resolveGroupAndContact(sourceId: String, destinationId: String): GroupContactResolution {
-        val sourceIsGroup = DataManager.getAppRepo(DataManager.context).isGroupId(sourceId)
-        val destinationIsGroup = DataManager.getAppRepo(DataManager.context).isGroupId(destinationId)
+        val sourceIsGroup = isLocalGroupId(sourceId)
+        val destinationIsGroup = isLocalGroupId(destinationId)
 
         return when {
-            sourceIsGroup -> resolveWhenSourceIsGroup(sourceId, destinationId)
+            sourceIsGroup -> GroupContactResolution(
+                groupId = sourceId,
+                senderId = resolveSenderForSourceGroup(sourceId, destinationId)
+            )
             destinationIsGroup -> GroupContactResolution(groupId = destinationId, senderId = sourceId)
             else -> GroupContactResolution(groupId = null, senderId = sourceId)
         }
-    }
-
-    private fun resolveWhenSourceIsGroup(sourceId: String, destinationId: String): GroupContactResolution {
-        val senderId = resolveSenderForSourceGroup(sourceId, destinationId)
-        return GroupContactResolution(groupId = sourceId, senderId = senderId)
     }
 
     private fun resolveSenderForSourceGroup(sourceId: String, destinationId: String): String {
@@ -154,23 +177,18 @@ object GroupsUtils {
         }
     }
 
+    // ---------------------------------------------------------------------
+    //  Group-id queries
+    // ---------------------------------------------------------------------
 
-    suspend fun isLocalGroupId(id: String): Boolean {
-        return DataManager.getAppRepo(DataManager.context).isGroupId(id)
-    }
+    suspend fun isLocalGroupId(id: String): Boolean =
+        DataManager.getAppRepo(DataManager.context).isGroupId(id.lowercase())
 
-    suspend fun isLocalGroupId(ids: Collection<String?>): Boolean {
-        return DataManager.getAppRepo(DataManager.context).hasAnyGroupId(ids)
-    }
+    suspend fun isLocalGroupId(ids: Collection<String?>): Boolean =
+        DataManager.getAppRepo(DataManager.context).hasAnyGroupId(ids)
 
     fun hasLocalGroups(context: Context): Boolean = runBlocking(Dispatchers.IO) {
         DataManager.getAppRepo(context).getAllGroupIds().isNotEmpty()
     }
 
-    fun resetLocalGroupIds(context: Context) {
-        groupsScope.launch {
-            // Warm the repository cache from the DB-backed source of truth.
-            DataManager.getAppRepo(context).getAllGroupIds()
-        }
-    }
 }

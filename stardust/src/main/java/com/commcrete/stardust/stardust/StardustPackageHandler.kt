@@ -258,8 +258,8 @@ internal class StardustPackageHandler(private val context: Context ,
         val deviceBatteryPackage = StardustBatteryParser().parseBattery(mPackage)
         val missingGroups = StardustGroupStatusParser().parseGroupStatus(mPackage)
         AppEvents.updateBattery(deviceBatteryPackage)
-        if(missingGroups && GroupsUtils.hasLocalGroups(context)) {
-            GroupsUtils.addGroupsToLocal(context)
+        if(missingGroups) {
+            GroupsUtils.sendAddAllGroups(context)
         }
     }
 
