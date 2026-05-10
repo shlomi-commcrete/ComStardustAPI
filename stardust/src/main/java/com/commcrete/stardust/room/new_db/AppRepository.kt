@@ -321,14 +321,7 @@ class AppRepository(
         limit: Int = PAGE_SIZE,
     ): Flow<List<MessageEntity>> = messages.observeLatestForTarget(targetId, chatId, limit)
 
-    /**
-     * Resolves chat context then inserts [message]:
-     * 1. If sender id is unknown — auto-inserts a USER contact via [insertContactWithChat].
-     * 2. If [groupId] is not null — finds (or creates) the GROUP chat.
-     * 3. If [groupId] is null — finds the sender's private chat.
-     *
-     * @return inserted Room row ID, or null when message is filtered/not resolvable.
-     */
+    
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         messages.saveMessage(message, groupId)
 

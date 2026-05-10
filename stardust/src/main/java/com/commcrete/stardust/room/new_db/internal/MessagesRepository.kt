@@ -177,6 +177,11 @@ internal class MessagesRepository(
     /**
      * Resolves chat context then inserts [message]. See `AppRepository.saveMessage`.
      */
+    suspend fun saveMessage(message: MessageEntity): Long? = saveMessage(message, null)
+
+    /**
+     * Resolves chat context then inserts [message]. See `AppRepository.saveMessage`.
+     */
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         saveMutex.withLock {
             if (!canMessageBeSaved(message)) return@withLock null
@@ -186,7 +191,12 @@ internal class MessagesRepository(
                     if (com.commcrete.stardust.util.RegisteredUserUtils.isRegisteredUser(message.senderID)) message.receiverID
                     else message.senderID
                 val contactId = ensureSenderExists(senderId.trim().lowercase()) ?: return@withContext null
-                val chatId = message.chatId?.takeIf { it.isNotBlank() } ?: if (groupId != null) resolveGroupChatId(groupId) else resolvePrivateChatId(contactId)
+                val chatId = message.chatId?.takeIf { it.isNotBlank() }
+                    ?: if (groupId != null) {
+                        resolveGroupChatId(groupId)
+                    } else {
+                        resolveOrCreatePrivateChatId(contactId, senderId)
+                    }
                 val chatIdString = chatId ?: return@withContext null
                 messagesDao.addMessage(message.copy(chatId = normalizeId(chatIdString)))
             }
@@ -221,6 +231,25 @@ internal class MessagesRepository(
     /** Finds the private chat id for [contactId]. */
     private suspend fun resolvePrivateChatId(contactId: Int): String? =
         chatsDao.findPrivateChatIdByContactId(contactId)
+
+    /**
+     * Resolves the private chat for [contactId]; if it does not exist yet, creates it.
+     * This is used when [MessageEntity.chatId] is null and the caller did not provide a group id.
+     */
+    private suspend fun resolveOrCreatePrivateChatId(contactId: Int, fallbackName: String): String? {
+        resolvePrivateChatId(contactId)?.let { return it }
+
+        val contact = contactsDao.getContactById(contactId)
+        val chatName = contact?.name ?: fallbackName
+        val chatImage = contact?.image
+
+        chatsDao.insertChatWithParticipants(
+            ChatEntity(name = chatName, image = chatImage, type = ChatType.PRIVATE),
+            listOf(contactId),
+        )
+
+        return resolvePrivateChatId(contactId)
+    }
 
     private suspend fun resolveGroupChatId(groupId: String): String? {
         val normalizedGroupId = normalizeId(groupId)
