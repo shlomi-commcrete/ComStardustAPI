@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
@@ -70,6 +71,8 @@ object StardustInitConnectionHandler {
     private var state = State.DISCONNECTED
         set(value) {
             field = value
+
+            Log.d("StardustDataManager", "StardustInitConnectionHandler onDeviceInitialized -> $value")
             DataManager.getCallbacks()?.onDeviceInitialized(value)
         }
 
@@ -479,7 +482,7 @@ object StardustInitConnectionHandler {
     }
 
     fun updateConnectionState(newState: State) {
-        state = newState
+        if(state != newState) state = newState
     }
 
 }

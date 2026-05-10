@@ -74,24 +74,30 @@ object BleManager {
 
     fun updateStatus() {
         val newStatus = when {
-            isUsbEnabled() -> {
+            isUsbEnabled() ->  ConnectionType.USB
+            isBluetoothEnabled() -> ConnectionType.BLE
+            else -> null
+        }
+
+        if(connectionStatus == newStatus) return
+        connectionStatus = newStatus
+
+        when(newStatus) {
+            ConnectionType.USB -> {
                 if (!isBluetoothToggleEnabled && isBleConnected) {
                     DataManager.getClientConnection(DataManager.context).disconnectFromBLEDevice(true)
                 }
-                ConnectionType.USB
             }
 
-            isBluetoothEnabled() -> ConnectionType.BLE
+            ConnectionType.BLE -> {}
 
             else -> {
                 ConfigurationUtils.reset()
                 CarriersUtils.reset()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
-                null
             }
         }
-        if(connectionStatus == newStatus) return
-        connectionStatus = newStatus
+
         DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
     }
 

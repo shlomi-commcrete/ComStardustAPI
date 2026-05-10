@@ -82,7 +82,7 @@ internal class ClientConnection(
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
-        reconnectToDevice()
+        if(!StardustInitConnectionHandler.isConnected()) reconnectToDevice()
     }
 
     private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {
@@ -233,7 +233,7 @@ internal class ClientConnection(
                     Scopes.getDefaultCoroutine().launch {
                         setDevice()
 
-                        if(BleManager.isPaired.value == true){
+                        if(BleManager.isPaired.value == true) {
                             Scopes.getMainCoroutine().launch {
                                 Timber.tag(LOG_TAG).d("gattConnection")
                                 gattConnection = gatt
@@ -348,7 +348,7 @@ internal class ClientConnection(
                         // Handle the RSSI value
                         Scopes.getMainCoroutine().launch {
                             BleManager.rssi.value = rssi
-                            DataManager.getCallbacks()?.onRSSIChanged(rssi)
+                            if(StardustInitConnectionHandler.isConnected() || rssi >= 0) DataManager.getCallbacks()?.onRSSIChanged(rssi)
                         }
                     }
                 }
