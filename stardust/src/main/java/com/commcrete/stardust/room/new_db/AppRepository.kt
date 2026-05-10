@@ -348,6 +348,16 @@ class AppRepository(
 
     suspend fun updateMessageReceived(messageId: Long) = messages.updateMessageReceived(messageId)
 
+    /** Deletes all messages for [chatId]. */
+    suspend fun clearChatMessages(chatId: String) = messages.clearChatMessages(chatId)
+
+    /** Deletes messages for [chatId] whose epoch is within [startTimestamp]..[endTimestamp]. */
+    suspend fun clearChatMessagesInRange(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long,
+    ) = messages.clearChatMessagesInRange(chatId, startTimestamp, endTimestamp)
+
     // ── Unseen counters ──────────────────────────────────────────────────
 
     /** Live unseen-message count for [chatId]. */

@@ -340,6 +340,24 @@ internal class MessagesRepository(
             messagesDao.markMessagesAsSeenUntil(chatId, untilEpochMs)
         }
 
+    /** See `AppRepository.clearChatMessages`. */
+    suspend fun clearChatMessages(chatId: String) = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext
+        messagesDao.clearChatMessages(normalizedChatId)
+    }
+
+    /** See `AppRepository.clearChatMessagesInRange`. */
+    suspend fun clearChatMessagesInRange(
+        chatId: String,
+        startTimestamp: Long,
+        endTimestamp: Long,
+    ) = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext
+        val rangeStart = minOf(startTimestamp, endTimestamp)
+        val rangeEnd = maxOf(startTimestamp, endTimestamp)
+        messagesDao.clearChatInRange(normalizedChatId, rangeStart, rangeEnd)
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Archival
     // ─────────────────────────────────────────────────────────────────────

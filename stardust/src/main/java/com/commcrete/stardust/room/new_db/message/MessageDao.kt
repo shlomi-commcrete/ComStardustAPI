@@ -73,10 +73,10 @@ interface MessageDao {
     ): Flow<List<MessageEntity>>
 
     @Query("DELETE FROM messages WHERE chat_id = :chatId")
-    fun clearChatMessages(chatId: String)
+    suspend fun clearChatMessages(chatId: String)
 
     @Query("DELETE FROM messages WHERE sender_id = :senderId")
-    fun clearSenderMessages(senderId: String)
+    suspend fun clearSenderMessages(senderId: String)
 
     @Query("""
         DELETE FROM messages
