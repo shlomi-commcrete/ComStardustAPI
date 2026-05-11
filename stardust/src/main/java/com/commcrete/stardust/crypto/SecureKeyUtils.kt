@@ -1,6 +1,6 @@
 package com.commcrete.stardust.crypto
 
-import android.content.Context
+
 import com.commcrete.stardust.BuildConfig
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -10,7 +10,7 @@ object SecureKeyUtils {
     val Key = BuildConfig.Crypt
 
     fun getSecuredKey(): ByteArray {
-        val store = SecureKeyStore(DataManager.appContext)
+        val store = SecureKeyStore()
         val currentBytes: ByteArray = store.getKey()
 
         // Check if key is empty / still all zeros
@@ -36,7 +36,7 @@ object SecureKeyUtils {
     }
 
     fun setSecuredKey(key : String, name : String) {
-        val store = SecureKeyStore(DataManager.appContext)
+        val store = SecureKeyStore()
         store.clear()
         store.setKeyFromHex(key)
         SharedPreferencesUtil.setKeyNameCrypto(name)
@@ -44,7 +44,7 @@ object SecureKeyUtils {
 
 
     fun setSecuredKeyDefault() : Boolean{
-        val store = SecureKeyStore(DataManager.appContext)
+        val store = SecureKeyStore()
         store.clear()
         store.setKeyFromHex(Key)
         SharedPreferencesUtil.setKeyNameCrypto("Default")

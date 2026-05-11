@@ -1,7 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 import android.annotation.SuppressLint
-import android.content.Context
+import android.content.Context.MEDIA_ROUTER_SERVICE
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
@@ -43,7 +43,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
         try {
             if (track == null) {
                 track = buildTrack(bufferSizeInBytes, speedFactor)
-                syncBleDevice(DataManager.appContext)
+                syncBleDevice()
                 Log.d(TAG, "ensureTrack created track=${track?.hashCode()} buffer=$bufferSizeInBytes")
             }
             attachEnhancer(track)
@@ -179,7 +179,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
     }
 
     @SuppressLint("NewApi")
-    private fun syncBleDevice(context: Context) {
+    private fun syncBleDevice() {
         val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java) ?: return
         val bleDevice = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS) ?: return
 
@@ -188,15 +188,15 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
         audioManager.setBluetoothScoOn(true)
         if (bleDevice.type == AudioDeviceInfo.TYPE_REMOTE_SUBMIX) {
             try {
-                routeAudioToMediaRouter(context)
+                routeAudioToMediaRouter()
             } catch (e: Exception) {
                 Log.e(TAG, "syncBleDevice routeAudioToMediaRouter failed", e)
             }
         }
     }
 
-    private fun routeAudioToMediaRouter(context: Context) {
-        val mediaRouter = context.getSystemService(Context.MEDIA_ROUTER_SERVICE) as MediaRouter
+    private fun routeAudioToMediaRouter() {
+        val mediaRouter = DataManager.appContext.getSystemService(MEDIA_ROUTER_SERVICE) as MediaRouter
         mediaRouter.getSelectedRoute(MediaRouter.ROUTE_TYPE_LIVE_AUDIO)
     }
 }

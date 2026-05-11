@@ -1,6 +1,6 @@
 package com.commcrete.stardust.room.new_db
 
-import android.content.Context
+
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -416,16 +416,15 @@ class AppRepository(
      */
     suspend fun clearData(): Boolean = messages.withSaveLock {
         withContext(Dispatchers.IO) {
-            val appContext = appContext
 
             val newDbCleared = runCatching {
-                AppDatabase.getDatabase(appContext).clearAllTables()
+                AppDatabase.getDatabase().clearAllTables()
                 true
             }.getOrDefault(false)
 
             caches.resetAll()
 
-            val legacyCleared = legacyMigrator.clearLegacy(appContext)
+            val legacyCleared = legacyMigrator.clearLegacy()
 
             newDbCleared && legacyCleared
         }
@@ -443,8 +442,8 @@ class AppRepository(
      * Guarded by a SharedPreferences flag so it runs exactly once per
      * installation. Safe to call multiple times.
      */
-    suspend fun migrateFromLegacyDatabases(context: Context) {
-        legacyMigrator.migrate(context)
+    suspend fun migrateFromLegacyDatabases() {
+        legacyMigrator.migrate()
     }
 
     companion object {

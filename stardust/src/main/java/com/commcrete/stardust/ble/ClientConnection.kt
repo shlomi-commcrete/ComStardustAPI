@@ -5,8 +5,9 @@ import android.bluetooth.*
 import android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
 import android.bluetooth.BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
 import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Context.BLUETOOTH_SERVICE
+import android.content.Context.RECEIVER_EXPORTED
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
@@ -539,7 +540,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
             context.applicationContext.registerReceiver(
                 broadcastReceiver,
                 IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
-                Context.RECEIVER_EXPORTED
+                RECEIVER_EXPORTED
             )
         } else {
             context.applicationContext.registerReceiver(

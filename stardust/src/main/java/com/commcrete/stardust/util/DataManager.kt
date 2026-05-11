@@ -1,9 +1,9 @@
 package com.commcrete.stardust.util
 
+import android.content.Context
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
-import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.createDataByteArray
@@ -426,7 +426,7 @@ object DataManager : StardustAPI, PttInterface {
     fun getBleScanner(): BleScanner {
         checkInitialized()
         if(this.bleScanner == null) {
-            bleScanner = BleScanner(this.appContext)
+            bleScanner = BleScanner()
         }
         return bleScanner!!
     }
@@ -473,7 +473,7 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     fun getAppRepo(): AppRepository {
-        return RepositoryProvider.appRepository(appContext)
+        return RepositoryProvider.appRepository()
     }
 
 
@@ -507,7 +507,7 @@ object DataManager : StardustAPI, PttInterface {
 
     suspend fun deleteChatFiles(): CleanResult = withContext(Dispatchers.IO) {
 
-        withProcessFileLock(appContext, "clean_user_files") {
+        withProcessFileLock("clean_user_files") {
 
             val dirs = FileUtils.getAllChatFilesDirs()
             val failed = mutableListOf<File>()
@@ -532,11 +532,10 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     inline fun <T> withProcessFileLock(
-        context: Context,
         lockName: String,
         block: () -> T
     ): T {
-        val lockFile = File(context.filesDir, "$lockName.lock")
+        val lockFile = File(appContext.filesDir, "$lockName.lock")
         RandomAccessFile(lockFile, "rw").channel.use { channel ->
             channel.lock().use {
                 return block()

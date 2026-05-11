@@ -1,12 +1,12 @@
 package com.example.chunkrecorder
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.util.Log
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.*
 import java.io.File
@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  recorder.stop()
  */
 class AudioRecorderAI(
-    private val context: Context,
     private val chunkDurationMs: Long,
     private val filesDirProvider: () -> File,
     private val sampleRate: Int = 24_000,
@@ -198,8 +197,7 @@ class AudioRecorderAI(
     @SuppressLint("NewApi")
     private fun enableBluetoothSco() {
         // Get an AudioManager instance
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
+        val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java) ?: return
         var speakerDevice: AudioDeviceInfo? = null
         val devices = audioManager.availableCommunicationDevices
         for (device in devices) {
@@ -223,8 +221,7 @@ class AudioRecorderAI(
 
     @SuppressLint("NewApi")
     private fun disableBluetoothSco() {
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
+        val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java) ?: return
         audioManager.clearCommunicationDevice()
         audioManager.isBluetoothScoOn = false
     }

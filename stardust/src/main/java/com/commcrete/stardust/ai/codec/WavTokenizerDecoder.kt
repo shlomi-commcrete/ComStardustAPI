@@ -1,6 +1,6 @@
-package com.commcrete.aiaudio.codecs
+package com.commcrete.stardust.ai.codec
 
-import android.content.Context
+
 import android.util.Log
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -425,7 +425,7 @@ class WavTokenizerDecoder() {
     }
     fun getSelectedModule (modelTypeSelected: ModelType) : Module{
 
-        val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
+        val modelType = if(modelTypeSelected == ModelType.English) {
             moduleEnglish
         } else {
             module

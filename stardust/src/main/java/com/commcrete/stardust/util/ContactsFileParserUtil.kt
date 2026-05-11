@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
+
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.new_db.contact.ContactType

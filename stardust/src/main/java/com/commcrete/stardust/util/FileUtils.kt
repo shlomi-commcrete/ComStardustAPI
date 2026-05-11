@@ -2,7 +2,6 @@ package com.commcrete.stardust.util
 
 
 import android.content.Context
-import androidx.core.content.FileProvider
 import android.net.Uri
 import android.webkit.MimeTypeMap
 import kotlinx.coroutines.CoroutineScope
@@ -291,7 +290,7 @@ object FileUtils {
         exportFolderName: String = "databases_export"
     ): File {
         // TODO: export new db
-        val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(DataManager.appContext)
+        val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase()
         val appDbName = appDb.openHelper.databaseName ?: "app_database"
         val appSupportDb = appDb.openHelper.writableDatabase
 

@@ -2,7 +2,6 @@ package com.commcrete.stardust.ble
 
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
-import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import android.widget.Toast
@@ -57,7 +56,7 @@ object BleManager {
     }
 
     fun initBleConnectState() {
-        BluetoothStateManager.initialize(DataManager.appContext)
+        BluetoothStateManager.initialize()
     }
 
     fun isUsbEnabled () : Boolean {

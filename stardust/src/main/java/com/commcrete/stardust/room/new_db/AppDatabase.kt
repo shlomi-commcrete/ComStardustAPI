@@ -1,6 +1,6 @@
 package com.commcrete.stardust.room.new_db
 
-import android.content.Context
+
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -23,6 +23,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageDao
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
 
 /**
@@ -87,10 +88,10 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        fun getDatabase(context: Context): AppDatabase {
+        fun getDatabase(): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
-                    context.applicationContext,
+                    DataManager.appContext,
                     AppDatabase::class.java,
                     DATABASE_NAME
                 )

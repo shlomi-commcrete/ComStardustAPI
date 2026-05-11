@@ -1,12 +1,9 @@
 package com.commcrete.stardust.util.audio
 
-import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
-import androidx.annotation.RequiresApi
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import timber.log.Timber
 
 open class BleMediaConnector (){
 

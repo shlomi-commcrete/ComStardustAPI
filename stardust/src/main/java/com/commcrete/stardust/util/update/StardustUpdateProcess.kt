@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util.update
 
-import android.content.Context
+
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.R
@@ -10,10 +10,8 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustUpdateData
 import com.commcrete.stardust.stardust.model.StardustUpdateDataParser
-import com.commcrete.stardust.util.RegisteredUserUtils
 import java.nio.ByteBuffer
 import java.util.zip.CRC32
 

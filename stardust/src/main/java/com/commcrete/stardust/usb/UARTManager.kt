@@ -1,6 +1,7 @@
 package com.commcrete.stardust.usb
 
-import android.content.Context
+
+import android.content.Context.USB_SERVICE
 import android.hardware.usb.UsbManager
 import com.commcrete.stardust.util.DataManager
 import com.hoho.android.usbserial.driver.UsbSerialDriver
@@ -26,7 +27,7 @@ class UARTManager() {
     }
 
     fun connectDevice(callback : SerialInputOutputManager.Listener, mPort : Int, onCTSChange: CTSChange? = null) : Boolean{
-        val usbManager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        val usbManager = DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
         if (availableDrivers.isEmpty()) {
             Timber.tag("SerialInputOutputManager").d("availableDrivers.isEmpty()")

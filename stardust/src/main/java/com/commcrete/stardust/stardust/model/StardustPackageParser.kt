@@ -1,9 +1,8 @@
 package com.commcrete.stardust.stardust.model
 
-import android.content.Context
+
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import timber.log.Timber
 import java.nio.ByteBuffer
 
 class StardustPackageParser : StardustParser() {
@@ -25,7 +24,7 @@ class StardustPackageParser : StardustParser() {
         const val checkXorBytesLength = 1
     }
 
-    fun populateByteBuffer(context: Context, byteArray: ByteArray?) : PackageState {
+    fun populateByteBuffer(byteArray: ByteArray?) : PackageState {
         try{
             if(byteBuffer == null) {
                 byteBuffer = ByteBuffer.allocate(2048)
@@ -34,7 +33,7 @@ class StardustPackageParser : StardustParser() {
                 byteBuffer?.limit(byteBuffer?.position()?.plus(100) ?: 30000)
                 byteBuffer?.put(it)
             }
-            mPackage = getStardustPackageFromBuffer(context)
+            mPackage = getStardustPackageFromBuffer()
         }catch (e : Exception){
             e.printStackTrace()
         }
@@ -53,7 +52,7 @@ class StardustPackageParser : StardustParser() {
         return byteArray
     }
 
-    fun getStardustPackageFromBuffer(context: Context) : StardustPackage?{
+    fun getStardustPackageFromBuffer() : StardustPackage?{
         byteBuffer?.let { buffer ->
             val byteArray = readFromByteBuffer(buffer)
 //            logByteArray("getStardustPackageFromBuffer", byteArray)

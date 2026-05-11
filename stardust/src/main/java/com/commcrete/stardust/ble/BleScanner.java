@@ -1,6 +1,8 @@
 package com.commcrete.stardust.ble;
 
 
+import static android.content.Context.BLUETOOTH_SERVICE;
+
 import android.Manifest;
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothAdapter;
@@ -10,14 +12,12 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.os.Build;
-import android.util.Log;
-
 import androidx.core.app.ActivityCompat;
 import androidx.lifecycle.MutableLiveData;
 
+
+import com.commcrete.stardust.util.DataManager;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,8 +25,6 @@ import java.util.List;
 public class BleScanner {
     private BluetoothLeScanner bluetoothLeScanner = null;
     private BluetoothAdapter bluetoothAdapter;
-    private Context context;
-
     private List<ScanResult> scanResults = new ArrayList<>();
     public MutableLiveData<List<ScanResult>> scanResultsLiveData = new MutableLiveData<>();
 
@@ -59,9 +57,8 @@ public class BleScanner {
         }
     };
 
-    public BleScanner(Context context) {
-        this.context = context;
-        BluetoothManager bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+    public BleScanner() {
+        BluetoothManager bluetoothManager = (BluetoothManager) DataManager.appContext.getSystemService(BLUETOOTH_SERVICE);
         bluetoothAdapter = bluetoothManager.getAdapter();
     }
 
@@ -74,12 +71,8 @@ public class BleScanner {
     }
 
     private boolean checkBlePermissions() {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
-            // Request permission logic here
-            return false;
-        } else {
-            return true;
-        }
+        // Request permission logic here
+        return ActivityCompat.checkSelfPermission(DataManager.appContext, Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED;
     }
 
     @SuppressLint("MissingPermission")
@@ -93,9 +86,7 @@ public class BleScanner {
         ScanSettings.Builder scanSettingsBuilder = new ScanSettings.Builder()
                 .setReportDelay(1000)
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            scanSettingsBuilder.setLegacy(true);
-        }
+        scanSettingsBuilder.setLegacy(true);
 
         List<ScanFilter> scanFilters = new ArrayList<>();
         scanFilters.add(new ScanFilter.Builder().build());

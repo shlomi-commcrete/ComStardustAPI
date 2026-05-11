@@ -4,7 +4,6 @@ package com.commcrete.stardust.ai.codec
 import android.media.MediaCodec
 import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType

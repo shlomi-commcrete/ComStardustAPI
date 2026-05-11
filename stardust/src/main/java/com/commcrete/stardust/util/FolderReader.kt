@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
+
+import android.content.Context.MODE_PRIVATE
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -79,9 +80,9 @@ object FolderReader {
         return demoList
     }
 
-    fun readFileFromContentUri(context: Context, uri: Uri): ByteArray? {
+    fun readFileFromContentUri(uri: Uri): ByteArray? {
         return try {
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            DataManager.appContext.contentResolver.openInputStream(uri)?.use { inputStream ->
                 inputStream.readBytes()
             }
         } catch (e: Exception) {
@@ -90,9 +91,10 @@ object FolderReader {
         }
     }
 
-    private fun saveFileToInternalStorage(context: Context, fileName: String, data: ByteArray): String? {
+    private fun saveFileToInternalStorage(fileName: String, data: ByteArray): String? {
         return try {
-            context.openFileOutput(fileName, Context.MODE_PRIVATE).use { fos ->
+            val context = DataManager.appContext
+            context.openFileOutput(fileName, MODE_PRIVATE).use { fos ->
                 fos.write(data)
             }
             File(context.filesDir, fileName).absolutePath
@@ -111,9 +113,9 @@ object FolderReader {
 //        dao.insert(entity)
     }
 
-    private fun listFilesInFolder(context: Context, folderUri: Uri): List<FileInfo> {
+    private fun listFilesInFolder(folderUri: Uri): List<FileInfo> {
         val files = mutableListOf<FileInfo>()
-        val contentResolver = context.contentResolver
+        val contentResolver = DataManager.appContext.contentResolver
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
             folderUri, DocumentsContract.getTreeDocumentId(folderUri)
         )
@@ -139,7 +141,7 @@ object FolderReader {
     }
 
 
-    fun processFolder(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
+    fun processFolder(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
         var excel : Uri? = uri
 //        val fileList = listFilesInFolder(context, uri)
 //        for (tempFileData in fileList) {
@@ -165,13 +167,13 @@ object FolderReader {
         if(excel == null) {
             onExcelFilesSelected.onError()
         }
-        excel?.let { processExcelFile(it, context, onExcelFilesSelected) }
+        excel?.let { processExcelFile(it, onExcelFilesSelected) }
     }
 
-    private fun processExcelFile(uri: Uri, context: Context, onExcelFilesSelected: OnExcelFilesSelected) {
-        val fileData = readFileFromContentUri(context, uri)
+    private fun processExcelFile(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
+        val fileData = readFileFromContentUri(uri)
         if (fileData != null) {
-            val success = saveFileToInternalStorage(context, "myFile.xlsx", fileData)
+            val success = saveFileToInternalStorage("myFile.xlsx", fileData)
             if (success != null) {
                 // File saved successfully
                 val userList = readExcelFile(success)
@@ -203,8 +205,8 @@ object FolderReader {
         }?.toList() ?: emptyList()
     }
 
-    private fun savePngFilesToInternalStorage(context: Context, pngFiles: List<File>) {
-        val internalStorageDir = context.filesDir
+    private fun savePngFilesToInternalStorage(pngFiles: List<File>) {
+        val internalStorageDir = DataManager.appContext.filesDir
 
         pngFiles.forEach { pngFile ->
             try {
@@ -221,13 +223,13 @@ object FolderReader {
         }
     }
 
-    fun saveImageToInternalStorage(context: Context, uri: Uri, fileName: String): String? {
+    fun saveImageToInternalStorage(uri: Uri, fileName: String): String? {
         try {
-            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+            val inputStream: InputStream? = DataManager.appContext.contentResolver.openInputStream(uri)
             val bitmap = BitmapFactory.decodeStream(inputStream)
             inputStream?.close()
 
-            val file = File(context.filesDir, fileName)
+            val file = File(DataManager.appContext.filesDir, fileName)
             val outputStream = FileOutputStream(file)
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
             outputStream.flush()
@@ -240,10 +242,10 @@ object FolderReader {
         }
     }
 
-    fun processPngFiles(context: Context, folderPath: String) {
+    fun processPngFiles(folderPath: String) {
         val pngFiles = getPngFilesFromFolder(folderPath)
         if (pngFiles.isNotEmpty()) {
-            savePngFilesToInternalStorage(context, pngFiles)
+            savePngFilesToInternalStorage(pngFiles)
         } else {
             println("No PNG files found in the folder")
         }
@@ -279,18 +281,18 @@ object FolderReader {
         return getCell(index).toString()
     }
 
-    fun getMimeType(context: Context, uri: Uri): String? {
-        return context.contentResolver.getType(uri)
+    fun getMimeType(uri: Uri): String? {
+        return DataManager.appContext.contentResolver.getType(uri)
     }
 
-    fun isExcelFile(context: Context, uri: Uri): Boolean {
-        val mimeType = getMimeType(context, uri)
+    fun isExcelFile(uri: Uri): Boolean {
+        val mimeType = getMimeType(uri)
         return mimeType == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
                 mimeType == "application/vnd.ms-excel"
     }
 
-    fun isImageFile(context: Context, uri: Uri): Boolean {
-        val mimeType = getMimeType(context, uri)
+    fun isImageFile(uri: Uri): Boolean {
+        val mimeType = getMimeType(uri)
         return mimeType?.startsWith("image/") == true
     }
 

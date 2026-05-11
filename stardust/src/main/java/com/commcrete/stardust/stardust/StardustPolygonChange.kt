@@ -1,6 +1,6 @@
 package com.commcrete.stardust.stardust
 
-import android.content.Context
+
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.ble.ClientConnection
@@ -8,7 +8,7 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
-import com.commcrete.stardust.util.SharedPreferencesUtil
+
 
 object StardustPolygonChange {
 

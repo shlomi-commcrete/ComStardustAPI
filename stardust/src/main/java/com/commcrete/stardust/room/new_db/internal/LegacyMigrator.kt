@@ -1,6 +1,7 @@
 package com.commcrete.stardust.room.new_db.internal
 
-import android.content.Context
+
+import android.content.Context.MODE_PRIVATE
 import androidx.core.content.edit
 import com.commcrete.stardust.room.legacy_db.ChatsDatabase
 import com.commcrete.stardust.room.legacy_db.ContactsDatabase
@@ -55,13 +56,13 @@ internal class LegacyMigrator(
      */
     suspend fun migrate() = withContext(Dispatchers.IO) {
         val context = DataManager.appContext
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
         if (prefs.getBoolean(KEY_MIGRATION_DONE, false)) return@withContext
 
         try {
             // ── Contacts ──────────────────────────────────────────────────
-            val oldContactsDb = ContactsDatabase.getDatabase(context)
+            val oldContactsDb = ContactsDatabase.getDatabase()
             val contacts: List<ChatContact> = oldContactsDb.contactsDao().getAllContact()
             if (contacts.isNotEmpty()) {
                 val parsed: List<FullContactData> =
@@ -72,7 +73,7 @@ internal class LegacyMigrator(
             oldContactsDb.close()
 
             // ── Messages ──────────────────────────────────────────────────
-            val oldMessagesDb = MessagesDatabase.getDatabase(context)
+            val oldMessagesDb = MessagesDatabase.getDatabase()
             val messages: List<MessageItem> = oldMessagesDb.messagesDao().getAllMessages()
             if (messages.isNotEmpty()) {
                 messagesDao.addMessages(messages.map { it.toAppMessageEntity() })
@@ -98,40 +99,42 @@ internal class LegacyMigrator(
      * migration-done flag so the migrator will not run again. Returns true
      * iff *every* step succeeded; partial failures still attempt the rest.
      */
-    suspend fun clearLegacy(context: Context): Boolean = withContext(Dispatchers.IO) {
+    suspend fun clearLegacy(): Boolean = withContext(Dispatchers.IO) {
         var success = true
 
         runCatching {
-            ChatsDatabase.getDatabase(context).also { db ->
+            ChatsDatabase.getDatabase().also { db ->
                 db.chatsDao().clearData()
                 db.close()
             }
         }.onFailure { success = false }
 
         runCatching {
-            ContactsDatabase.getDatabase(context).also { db ->
+            ContactsDatabase.getDatabase().also { db ->
                 db.contactsDao().clearData()
                 db.close()
             }
         }.onFailure { success = false }
 
         runCatching {
-            MessagesDatabase.getDatabase(context).also { db ->
+            MessagesDatabase.getDatabase().also { db ->
                 db.messagesDao().clearData()
                 db.close()
             }
         }.onFailure { success = false }
 
+        val appContext = DataManager.appContext
+
         LEGACY_DATABASE_NAMES.forEach { dbName ->
             val deletedOrMissing = runCatching {
-                val path = context.getDatabasePath(dbName)
-                if (!path.exists()) true else context.deleteDatabase(dbName)
+                val path = appContext.getDatabasePath(dbName)
+                if (!path.exists()) true else appContext.deleteDatabase(dbName)
             }.getOrDefault(false)
             if (!deletedOrMissing) success = false
         }
 
         val flagUpdated = runCatching {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            appContext.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit { putBoolean(KEY_MIGRATION_DONE, true) }
             true
         }.getOrDefault(false)

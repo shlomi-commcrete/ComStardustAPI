@@ -5,7 +5,7 @@ import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
+import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.Codec2PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager

@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.request_objects.Details
@@ -53,34 +52,30 @@ object LogUtils {
         }
     }
 
-    fun uploadLogs (context: Context) {
-        SharedPreferencesUtil.getAppUser()?.appId?.let { appId ->
+    fun uploadLogs() {
+        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val logList : MutableList<LogEntry> = mutableListOf()
 
-            val logList : MutableList<LogEntry> = mutableListOf()
-            mutableLogList.value?.let {
-                for (log in it) {
-                    val ts = log.gpsTime
-                    val logEntry = LogEntry(
-                        from = "Bittel",
-                        user = User(bittelId = "", appId = appId),
-                        logLevel = log.type?.name ?: StardustLogParser.PARSE_DATA_TYPE.INFO.name,
-                        event = "default",
-                        message = "",
-                        details = Details(
-                            location = listOf(0.0, 0.0, 0.0),
-                            data = DetailsData(dstChannel = "", bytes = log.data.toHex())
-                        ),
-                        ts = 1709192258
-                    )
-                    logList.add(logEntry)
-                }
+        mutableLogList.value?.let {
+            for (log in it) {
+                val ts = log.gpsTime
+                val logEntry = LogEntry(
+                    from = "Bittel",
+                    user = User(bittelId = "", appId = appId),
+                    logLevel = log.type?.name ?: StardustLogParser.PARSE_DATA_TYPE.INFO.name,
+                    event = "default",
+                    message = "",
+                    details = Details(
+                        location = listOf(0.0, 0.0, 0.0),
+                        data = DetailsData(dstChannel = "", bytes = log.data.toHex())
+                    ),
+                    ts = 1709192258
+                )
+                logList.add(logEntry)
             }
-
-
-
-            val logs = Logs(logs = logList)
-
-            val json = logs.toJson()
         }
+
+        val logs = Logs(logs = logList)
+        val json = logs.toJson()
     }
 }

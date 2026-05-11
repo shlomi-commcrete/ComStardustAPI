@@ -1,6 +1,6 @@
 package com.commcrete.stardust.room.legacy_db
 
-import android.content.Context
+
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -10,6 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
 import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.legacy_db.chats.ChatsDao
+import com.commcrete.stardust.util.DataManager
 
 @Database(entities = [ChatItem::class], version = 32, exportSchema = false)
 @TypeConverters(Converters.StringArrayConverter::class, Converters.DoubleArrayConverter::class)
@@ -20,14 +21,14 @@ abstract class ChatsDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE : ChatsDatabase? = null
 
-        fun getDatabase(context: Context) : ChatsDatabase {
+        fun getDatabase() : ChatsDatabase {
             val tempInstance = INSTANCE
             if(tempInstance != null){
                 return tempInstance
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context,
+                    DataManager.appContext,
                     ChatsDatabase::class.java,
                     "chats_database"
                 ).fallbackToDestructiveMigration().build()

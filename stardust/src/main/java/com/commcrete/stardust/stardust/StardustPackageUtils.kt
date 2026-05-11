@@ -754,7 +754,7 @@ object StardustPackageUtils {
             }
         Log.d("handlePackageReceived $randomID", "add")
 
-        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(context, byteArray)
+        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
         Log.d("handlePackageReceived $randomID", "isFinished")
         val mPackage =  packagesList[packagesList.lastIndex]
         if(isFinished == StardustPackageParser.PackageState.VALID){

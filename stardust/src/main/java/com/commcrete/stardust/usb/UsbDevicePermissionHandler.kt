@@ -1,7 +1,7 @@
 package com.commcrete.stardust.usb
 
 import android.app.PendingIntent
-import android.content.Context
+import android.content.Context.RECEIVER_EXPORTED
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
@@ -16,7 +16,6 @@ import com.commcrete.stardust.usb.BittelUsbManager2.usbManager
 import com.commcrete.stardust.util.DataManager
 import timber.log.Timber
 import java.util.LinkedList
-import java.util.Locale
 import java.util.Queue
 
 object UsbDevicePermissionHandler {
@@ -111,7 +110,7 @@ object UsbDevicePermissionHandler {
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter, Context.RECEIVER_EXPORTED)
+                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter, RECEIVER_EXPORTED)
             } else {
                 DataManager.appContext.registerReceiver(usbPermissionReceiver, filter)
             }

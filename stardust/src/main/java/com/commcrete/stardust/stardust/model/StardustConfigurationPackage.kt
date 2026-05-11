@@ -1,6 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
-import android.content.Context
+
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustCarrier
@@ -109,7 +109,7 @@ data class StardustConfigurationPackage(
         return presetFunctionalities to requiredFunctionalities
     }
 
-    private fun getLocalFunctionalitiesByPreset(preset : StardustConfigurationParser.CurrentPreset, context: Context) : Set<FunctionalityType>? {
+    private fun getLocalFunctionalitiesByPreset(preset : StardustConfigurationParser.CurrentPreset) : Set<FunctionalityType>? {
         val localKey = when (preset) {
             StardustConfigurationParser.CurrentPreset.PRESET1 -> KEY_LAST_CARRIERS1
             StardustConfigurationParser.CurrentPreset.PRESET2 -> KEY_LAST_CARRIERS2
@@ -126,10 +126,10 @@ data class StardustConfigurationPackage(
     }
 
     data class Radios (
-        val xcvr1 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr2 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr3 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr4 : StardustConfigurationParser.StardustTypeFunctionality,
+        val xcvr1: StardustTypeFunctionality,
+        val xcvr2: StardustTypeFunctionality,
+        val xcvr3: StardustTypeFunctionality,
+        val xcvr4: StardustTypeFunctionality,
     )
 
     data class Frequency(val rx: Double, val tx: Double)

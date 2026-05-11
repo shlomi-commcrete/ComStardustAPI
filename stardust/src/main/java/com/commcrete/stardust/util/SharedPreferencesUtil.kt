@@ -1,10 +1,10 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
+
+import android.content.Context.MODE_PRIVATE
 import android.content.SharedPreferences
 import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
-import android.preference.PreferenceManager
 import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -16,8 +16,7 @@ import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import kotlinx.coroutines.launch
+import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import kotlin.collections.get
 import androidx.core.content.edit
 
@@ -142,11 +141,11 @@ object SharedPreferencesUtil {
 
 
     private fun getPrefs(): SharedPreferences {
-        return DataManager.appContext.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
+        return DataManager.appContext.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
     }
 
     private fun getPrefsPlugin(): SharedPreferences? {
-        return DataManager.pluginContext?.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
+        return DataManager.pluginContext?.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
 
     }
 

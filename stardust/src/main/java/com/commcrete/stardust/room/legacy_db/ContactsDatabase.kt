@@ -1,6 +1,6 @@
 package com.commcrete.stardust.room.legacy_db
 
-import android.content.Context
+
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.legacy_db.contacts.ContactsDao
+import com.commcrete.stardust.util.DataManager
 
 @Database(entities = [ChatContact::class], version = 21, exportSchema = false)
 abstract class ContactsDatabase : RoomDatabase() {
@@ -17,14 +18,14 @@ abstract class ContactsDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE : ContactsDatabase? = null
 
-        fun getDatabase(context: Context) : ContactsDatabase {
+        fun getDatabase() : ContactsDatabase {
             val tempInstance = INSTANCE
             if(tempInstance != null){
                 return tempInstance
             }
             synchronized(this){
                 val instance = Room.databaseBuilder(
-                    context,
+                    DataManager.appContext,
                     ContactsDatabase::class.java,
                     "contacts_database"
                 ).fallbackToDestructiveMigration().build()

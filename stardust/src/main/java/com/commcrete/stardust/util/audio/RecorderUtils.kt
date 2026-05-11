@@ -106,7 +106,6 @@ object RecorderUtils {
         PttSendManager.restart()
 
         aiRecorder = AudioRecorderAI(
-            context = DataManager.appContext,
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {

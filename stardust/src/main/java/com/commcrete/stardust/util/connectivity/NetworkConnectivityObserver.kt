@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util.connectivity
 
-import android.content.Context
+
+import android.content.Context.CONNECTIVITY_SERVICE
 import android.net.ConnectivityManager
 import android.net.Network
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
@@ -14,7 +15,7 @@ import kotlinx.coroutines.launch
 class NetworkConnectivityObserver(): ConnectivityObserver {
 
     private val connectivityManager =
-        DataManager.appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        DataManager.appContext.getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun observe(): Flow<ConnectivityObserver.Status> {
         return callbackFlow {

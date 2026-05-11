@@ -1,8 +1,8 @@
 package com.commcrete.stardust.usb
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Context.RECEIVER_EXPORTED
+import android.content.Context.USB_SERVICE
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
@@ -58,7 +58,7 @@ object BittelUsbManager2 : BittelProtocol {
     private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
 
     fun init() {
-        this.usbManager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        this.usbManager = DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager
     }
 
     fun connectToUnknownDevice (device: UsbDevice) {
@@ -84,7 +84,7 @@ object BittelUsbManager2 : BittelProtocol {
     fun getConnectedDevicesStartup () {
         disconnect()
         disconnectAudio()
-        val manager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
+        val manager = DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager
         val deviceList: HashMap<String, UsbDevice> = manager.deviceList
         usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
     }

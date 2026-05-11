@@ -1,8 +1,8 @@
 package com.commcrete.stardust.room
 
-import android.content.Context
 import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.room.new_db.AppRepository
+import com.commcrete.stardust.util.DataManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,10 +26,10 @@ object RepositoryProvider {
      * On first call the repository automatically migrates all data from the
      * legacy chats / contacts / messages databases and removes those files.
      */
-    fun appRepository(context: Context): AppRepository {
+    fun appRepository(): AppRepository {
         return appRepository ?: synchronized(this) {
             appRepository ?: run {
-                val db = AppDatabase.getDatabase(context)
+                val db = AppDatabase.getDatabase()
                 AppRepository(
                     chatsDao = db.appChatsDao(),
                     contactsDao = db.appContactsDao(),
@@ -39,7 +39,7 @@ object RepositoryProvider {
                     // Run the one-time migration in the background.
                     // The flag inside the function guarantees it executes only once.
                     AppScopes.applicationScope.launch {
-                        repo.migrateFromLegacyDatabases(context)
+                        repo.migrateFromLegacyDatabases()
                     }
                 }
             }
