@@ -59,7 +59,7 @@ object ButtonListener {
         }
     }
 
-    fun notifyData(context: Context, isClicked: Boolean) {
+    fun notifyData(isClicked: Boolean) {
         Timber.tag("SerialInOutputManager").d("onCTSChanged : $isClicked")
         Timber.tag("notifyData PTT").d("onCTSChanged : ${isClicked}")
         val pttPackage = StardustAPIPackage(
@@ -76,11 +76,11 @@ object ButtonListener {
 
             if (isClicked) {
                 // Start recording
-                currentFile = startPttRecord(context, DataManager.getChatId(), pttPackage)
+                currentFile = startPttRecord(DataManager.getChatId(), pttPackage)
                 Timber.tag("isPlayPTT").d("startRecording")
             } else {
                 // Stop recording
-                currentFile?.let { dismissPttRecording(context, pttPackage, it) }
+                currentFile?.let { dismissPttRecording(pttPackage, it) }
                 Timber.tag("isPlayPTT").d("finishRecording")
                 currentFile = null
             }
@@ -90,18 +90,18 @@ object ButtonListener {
     fun getCurrentFile(): File? = currentFile
 
     @SuppressLint("MissingPermission")
-    fun dismissPttRecording (context: Context, pttPackage: StardustAPIPackage, file: File) {
-        stopPTT(context = context, stardustAPIPackage = pttPackage, codeType = SharedPreferencesUtil.getCodecType(context), file = file)
+    fun dismissPttRecording (pttPackage: StardustAPIPackage, file: File) {
+        stopPTT(stardustAPIPackage = pttPackage, codeType = SharedPreferencesUtil.getCodecType(), file = file)
     }
 
     @SuppressLint("MissingPermission")
-    fun startPttRecord(context: Context, chatId: String,  pttPackage : StardustAPIPackage): File? {
-        return startPTT(context, chatId, pttPackage, SharedPreferencesUtil.getCodecType(context))
+    fun startPttRecord(chatId: String,  pttPackage : StardustAPIPackage): File? {
+        return startPTT(chatId, pttPackage, SharedPreferencesUtil.getCodecType())
     }
 
-    fun setupMediaSession(context: Context) {
+    fun setupMediaSession() {
         // Initialize MediaSessionCompat
-        mediaSession = MediaSessionCompat(context, "MediaButtonReceiver")
+        mediaSession = MediaSessionCompat(DataManager.appContext, "MediaButtonReceiver")
 
         mediaSession?.let {
             // Enable callbacks for media buttons
@@ -136,12 +136,12 @@ object ButtonListener {
 
             // Activate the session
             it.isActive = true
-            requestAudioFocus(context)
+            requestAudioFocus()
         }
     }
 
-    private fun requestAudioFocus(context: Context) {
-        val audioManager = context.getSystemService(AUDIO_SERVICE) as AudioManager
+    private fun requestAudioFocus() {
+        val audioManager = DataManager.appContext.getSystemService(AUDIO_SERVICE) as AudioManager
         val result = audioManager.requestAudioFocus(
             { focusChange -> /* Handle focus change */ },
             AudioManager.STREAM_MUSIC,

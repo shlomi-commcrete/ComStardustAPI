@@ -101,7 +101,7 @@ class AudioRecorderAI(
     private suspend fun recordLoop() = withContext(Dispatchers.IO) {
         Log.d("AudioRecorder", "recordLoop")
 
-        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
+        val gain = SharedPreferencesUtil.getAIGain() / 100f
         enableBluetoothSco()
 
         val minBuffer = AudioRecord.getMinBufferSize(
@@ -116,7 +116,7 @@ class AudioRecorderAI(
             (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
 
         val audioRecord = AudioRecord(
-            SharedPreferencesUtil.getAIAudioSource(context),
+            SharedPreferencesUtil.getAIAudioSource(),
             sampleRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,

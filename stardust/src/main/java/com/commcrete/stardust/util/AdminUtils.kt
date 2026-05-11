@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -9,43 +8,42 @@ import kotlinx.coroutines.launch
 object AdminUtils {
 
     val adminModeLiveData : MutableLiveData<StardustConfigurationParser.SnifferMode> = MutableLiveData()
-    fun setAdminMode (context: Context, snifferMode: StardustConfigurationParser.SnifferMode) {
-        SharedPreferencesUtil.setAdminMode(context, snifferMode)
+
+    fun setAdminMode(snifferMode: StardustConfigurationParser.SnifferMode) {
+        SharedPreferencesUtil.setAdminMode(snifferMode)
         Scopes.getMainCoroutine().launch {
             adminModeLiveData.value = snifferMode
         }
     }
 
-    private fun getAdminMode (context: Context) : StardustConfigurationParser.SnifferMode {
-        return SharedPreferencesUtil.getAdminMode(context)
+    private fun getAdminMode() : StardustConfigurationParser.SnifferMode {
+        return SharedPreferencesUtil.getAdminMode()
     }
 
-    fun getAdminLocalMode (context: Context) : AdminLocal {
-        return SharedPreferencesUtil.getAdminLocalMode(context)
+    fun getAdminLocalMode(): AdminLocal {
+        return SharedPreferencesUtil.getAdminLocalMode()
     }
 
     fun isHandleSuperUser (adminLocal: AdminLocal) : Boolean {
         return adminLocal == AdminLocal.SuperUser
     }
 
-    fun updateBittelAdminMode (context: Context) {
-        val adminMode = getAdminMode(DataManager.context)
-        val clientConnection = DataManager.getClientConnection(DataManager.context)
-        SharedPreferencesUtil.getAppUser(DataManager.context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            val intData = arrayListOf<Int>()
-            intData.add(adminMode.type)
-            if(src != null && dst != null) {
-                val deletePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE,
-                    data = intData.toIntArray().toTypedArray().reversedArray())
-                clientConnection.addMessageToQueue(deletePackage)
-            }
-        }
+    fun updateBittelAdminMode() {
+        val adminMode = getAdminMode()
+        val clientConnection = DataManager.getClientConnection()
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val src = user.appId ?: return
+        val dst = user.deviceId ?: return
+
+        val intData = arrayListOf<Int>()
+        intData.add(adminMode.type)
+
+        val deletePackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE,
+            data = intData.toIntArray().toTypedArray().reversedArray())
+        clientConnection.addMessageToQueue(deletePackage)
     }
 
     enum class AdminLocal (val type : Int){

@@ -13,6 +13,7 @@ import com.commcrete.stardust.usb.BittelUsbManager2.ACTION_USB_PERMISSION
 import com.commcrete.stardust.usb.BittelUsbManager2.connectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.disconnectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.usbManager
+import com.commcrete.stardust.util.DataManager
 import timber.log.Timber
 import java.util.LinkedList
 import java.util.Locale
@@ -23,7 +24,6 @@ object UsbDevicePermissionHandler {
     private val devicesQueue: Queue<UsbDevice> = LinkedList()
     private var isRequestingPermission: Boolean = false
     private var currentDevice: UsbDevice? = null
-    private var context: Context? = null
     val usbPermissionReceiver : UsbPermissionReceiver = UsbPermissionReceiver()
 
     private val handler = Handler(Looper.getMainLooper())
@@ -33,10 +33,9 @@ object UsbDevicePermissionHandler {
         requestNextPermission()
     }
 
-    fun requestPermissionsForDevices(devices: List<UsbDevice>, context: Context) {
-        this.context = context.applicationContext
+    fun requestPermissionsForDevices(devices: List<UsbDevice>) {
         devicesQueue.addAll(devices)
-        registerReceiverOnce(context)
+        registerReceiverOnce()
         if (!isRequestingPermission) {
             requestNextPermission()
         }
@@ -46,13 +45,14 @@ object UsbDevicePermissionHandler {
         if (devicesQueue.isNotEmpty()) {
             isRequestingPermission = true
             currentDevice = devicesQueue.poll()
-            if (currentDevice?.productName?.contains("FT231X USB UART") == true|| currentDevice?.productName?.toLowerCase()?.contains("stardust") == true
-                || currentDevice?.productName?.toLowerCase()?.contains("j-box") == true
-                || currentDevice?.productName?.toLowerCase()?.contains("jbox") == true) {
+            val productName = currentDevice?.productName?.lowercase()
+            if (currentDevice?.productName?.contains("FT231X USB UART") == true|| productName?.contains("stardust") == true
+                || productName?.contains("j-box") == true
+                || productName?.contains("jbox") == true) {
 
                 Timber.tag("SerialInputOutputManager").d("Requesting permission for device: ${currentDevice?.productName}")
                 val permissionIntent = PendingIntent.getBroadcast(
-                    context, 0,
+                    DataManager.appContext, 0,
                     Intent(ACTION_USB_PERMISSION),
                     PendingIntent.FLAG_IMMUTABLE
                 )
@@ -69,7 +69,7 @@ object UsbDevicePermissionHandler {
         }
     }
 
-    fun handlePermissionIntent(context: Context?, intent: Intent?) {
+    fun handlePermissionIntent(intent: Intent?) {
         when (intent?.action) {
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                 intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)?.let { device ->
@@ -84,7 +84,7 @@ object UsbDevicePermissionHandler {
             UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                 intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)?.let { device ->
                     Timber.tag("UsbPermission").d("Device detached: ${device.productName}")
-                    context?.let { disconnectToUnknownDevice(it, device) }
+                    disconnectToUnknownDevice(device)
                 }
             }
 
@@ -93,7 +93,7 @@ object UsbDevicePermissionHandler {
                     handler.removeCallbacks(permissionTimeoutRunnable)
                     currentDevice?.let { device ->
                         Timber.tag("UsbPermission").d("Permission granted for device: ${device.productName}")
-                        context?.let { connectToUnknownDevice(it, device) }
+                        connectToUnknownDevice(device)
                     }
                     isRequestingPermission = false
                     requestNextPermission()
@@ -103,7 +103,7 @@ object UsbDevicePermissionHandler {
     }
 
     private var receiverRegistered = false
-    private fun registerReceiverOnce(context: Context) {
+    private fun registerReceiverOnce() {
         if (!receiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction(ACTION_USB_PERMISSION)
@@ -111,9 +111,9 @@ object UsbDevicePermissionHandler {
                 addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(usbPermissionReceiver, filter, Context.RECEIVER_EXPORTED)
+                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
-                context.registerReceiver(usbPermissionReceiver, filter)
+                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter)
             }
             receiverRegistered = true
         }

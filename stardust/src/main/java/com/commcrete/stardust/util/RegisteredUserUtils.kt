@@ -31,18 +31,36 @@ object RegisteredUserUtils {
             id != null && (id == user.appId || id == user.deviceId)
         }
     }
+    
+    fun isUserLoggedIn(): Boolean {
+        val inMemoryUser = mRegisterUser.value
+        if (inMemoryUser != null) {
+            return !inMemoryUser.appId.isNullOrBlank() && !inMemoryUser.deviceId.isNullOrBlank()
+        }
+
+        // Cold start fallback: recover persisted user state when storage is available.
+        val persistedUser = runCatching { SharedPreferencesUtil.getAppUser() }.getOrNull()
+        if (persistedUser != null &&
+            !persistedUser.appId.isNullOrBlank() &&
+            !persistedUser.deviceId.isNullOrBlank()) {
+            updateRegisteredUser(persistedUser)
+            return true
+        }
+
+        return false
+    }
 
     suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
         coroutineScope {
             // BLE unpair first (side-effect, usually must complete)
-            unpairDeviceBLE(DataManager.context)
+            unpairDeviceBLE()
             val databases = async {
-                cleanAllDatabases(DataManager.context)
+                cleanAllDatabases()
             }
-            val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
-            val password = async { SharedPreferencesUtil.removePassword(DataManager.context) }
-            val appUser = async { SharedPreferencesUtil.removeAppUser(DataManager.context) }
-            val user = async { SharedPreferencesUtil.removeUser(DataManager.context) }
+            val phone = async { SharedPreferencesUtil.removePhone() }
+            val password = async { SharedPreferencesUtil.removePassword() }
+            val appUser = async { SharedPreferencesUtil.removeAppUser() }
+            val user = async { SharedPreferencesUtil.removeUser() }
 
             databases.await() &&
                     phone.await() &&

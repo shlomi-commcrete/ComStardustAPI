@@ -1,17 +1,17 @@
-package com.commcrete.bittell.util.bittel_package
+package com.commcrete.stardust.usb
 
 import android.content.Context
 import android.hardware.usb.UsbManager
+import com.commcrete.stardust.util.DataManager
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import timber.log.Timber
-import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
 
-class UARTManager(private val context: Context) {
+class UARTManager() {
     private var serialPort: UsbSerialPort? = null
     private val executor = Executors.newSingleThreadExecutor()
     private var ioManager: SerialInputOutputManager? = null
@@ -26,7 +26,7 @@ class UARTManager(private val context: Context) {
     }
 
     fun connectDevice(callback : SerialInputOutputManager.Listener, mPort : Int, onCTSChange: CTSChange? = null) : Boolean{
-        val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        val usbManager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
         if (availableDrivers.isEmpty()) {
             Timber.tag("SerialInputOutputManager").d("availableDrivers.isEmpty()")

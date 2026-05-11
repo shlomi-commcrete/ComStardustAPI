@@ -25,15 +25,15 @@ object EraseUtils {
         if(isArmed) {
             removeArmTimer()
             Timber.i("EraseUtils: Device is being WIPED NOW")
-            SecureKeyUtils.setSecuredKeyDefault(DataManager.context)
+            SecureKeyUtils.setSecuredKeyDefault()
             Timber.i("EraseUtils: Secure key reset to default")
-            SharedPreferencesUtil.setIsErased(DataManager.context, true)
+            SharedPreferencesUtil.setIsErased(true)
             Timber.i("EraseUtils: isErased flag set to true")
-            DataManager.logout(DataManager.context)
+            DataManager.logout()
             Timber.i("EraseUtils: User logged out")
-            val device = DataManager.getPairedDevices(DataManager.context)
-            DataManager.getClientConnection(DataManager.context).mDevice = device
-            DataManager.getClientConnection(DataManager.context).removeBittelBond()
+            val device = DataManager.getPairedDevices()
+            DataManager.getClientConnection().mDevice = device
+            DataManager.getClientConnection().removeBittelBond()
             Handler(Looper.getMainLooper()).postDelayed({
                 android.os.Process.killProcess(android.os.Process.myPid())
             }, 1000)

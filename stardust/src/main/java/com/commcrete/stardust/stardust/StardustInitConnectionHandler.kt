@@ -1,7 +1,6 @@
 package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
@@ -25,7 +24,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import kotlin.coroutines.cancellation.CancellationException
@@ -54,8 +52,7 @@ object StardustInitConnectionHandler {
     private const val MAX_ATTEMPTS = 3
     private const val STEP_TIMEOUT_MS = 15_000L
     private val attempts: MutableMap<State, Int> = mutableMapOf()
-    private val ctx: Context get() = DataManager.context
-    private val conn: ClientConnection get() = DataManager.getClientConnection(ctx)
+    private val conn: ClientConnection get() = DataManager.getClientConnection()
     private var timeoutJob: Job? = null
 
     interface InitConnectionListener {
@@ -83,6 +80,8 @@ object StardustInitConnectionHandler {
     // ───────────────────────── Lifecycle ─────────────────────────
 
     fun start() {
+
+        Log.d("StardustDataManager", "start")
         onInitRunning()
         attempts.clear()
         transitionTo(State.REQUESTING_ADDRESSES) { sendGetAddresses() }
@@ -112,7 +111,7 @@ object StardustInitConnectionHandler {
     /**
      * Try to consume package. Return true if consumed.
      */
-    fun onIncoming(context: Context, p: StardustPackage): Boolean {
+    fun onIncoming(p: StardustPackage): Boolean {
         Timber.tag("InitHandler").d("isRunning=$isRunning state=$state op=${p.stardustOpCode}")
         if (!isRunning) return false
 
@@ -127,7 +126,6 @@ object StardustInitConnectionHandler {
             // 2) Update address → expect UPDATE_ADDRESS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS_RESPONSE -> if (state == State.UPDATING_SMARTPHONE_ADDR) {
                 handleAckOrRetry(
-                    context,
                     p,
                     onAck = { afterUpdateAddressAck() },
                     onRetry = {
@@ -142,9 +140,8 @@ object StardustInitConnectionHandler {
             // 3) Delete groups → expect DELETE_GROUPS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE -> if (state == State.DELETING_GROUPS) {
                 handleAckOrRetry(
-                    context,
                     p,
-                    onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups(appContext = context) } },
+                    onAck = { transitionTo(State.ADDING_GROUPS) { sendAddGroups() } },
                     onRetry = { sendDeleteGroups() }
                 ); return true
             }
@@ -152,10 +149,9 @@ object StardustInitConnectionHandler {
             // 4) Add groups → expect ADD_GROUPS_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> if (state == State.ADDING_GROUPS) {
                 handleAckOrRetry(
-                    context,
                     p,
                     onAck = { transitionTo(State.READING_CONFIGURATION) { requestConfiguration() } },
-                    onRetry = { sendAddGroups(appContext = context) }
+                    onRetry = { sendAddGroups() }
                 ); return true
             }
 
@@ -171,7 +167,6 @@ object StardustInitConnectionHandler {
             // 6) Update admin mode → expect SET_ADMIN_MODE_RESPONSE (ACK)
             StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE -> if (state == State.UPDATING_ADMIN_MODE) {
                 handleAckOrRetry(
-                    context,
                     p,
                     onAck = { finishAdminModeUpdate() },
                     onRetry = { sendUpdateAdminMode() }
@@ -196,10 +191,10 @@ object StardustInitConnectionHandler {
         attempts[next] = n
         Timber.tag("InitHandler").d("Step $next - attempt $n/$MAX_ATTEMPTS")
         send()
-        startTimeoutFor(ctx, next)
+        startTimeoutFor(next)
     }
 
-    private fun retryOrFail(context: Context, send: () -> Unit) {
+    private fun retryOrFail(send: () -> Unit) {
         state.let { state ->
             val n = (attempts[state] ?: 0) + 1
             if (n > MAX_ATTEMPTS) {
@@ -209,11 +204,12 @@ object StardustInitConnectionHandler {
             attempts[state] = n
             Timber.tag("InitHandler").w("Retrying $state (attempt $n/$MAX_ATTEMPTS)")
             send()
-            startTimeoutFor(context, state)
+            startTimeoutFor( state)
         }
     }
 
-    private fun startTimeoutFor(context: Context, step: State) {
+    private fun startTimeoutFor(step: State) {
+        val context = DataManager.appContext
         timeoutJob?.cancel()
         timeoutJob = CoroutineScope(Dispatchers.IO).launch {
             try {
@@ -224,15 +220,15 @@ object StardustInitConnectionHandler {
                 if (state != step) return@launch
                 Timber.tag("InitHandler").w("$step timeout")
                 when (step) {
-                    State.REQUESTING_ADDRESSES -> retryOrFail(context) { sendGetAddresses() }
-                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail(context) {
+                    State.REQUESTING_ADDRESSES -> retryOrFail{ sendGetAddresses() }
+                    State.UPDATING_SMARTPHONE_ADDR -> retryOrFail {
                         lastAddresses?.let { sendUpdateSmartphoneAddress(it) }
                             ?: failAndStop("No addresses cached")
                     }
-                    State.DELETING_GROUPS -> retryOrFail(context) { sendDeleteGroups() }
-                    State.ADDING_GROUPS -> retryOrFail(context) { sendAddGroups(appContext = context) }
-                    State.READING_CONFIGURATION -> retryOrFail(context) { requestConfiguration() }
-                    State.UPDATING_ADMIN_MODE -> retryOrFail(context) { sendUpdateAdminMode() }
+                    State.DELETING_GROUPS -> retryOrFail{ sendDeleteGroups() }
+                    State.ADDING_GROUPS -> retryOrFail{ sendAddGroups() }
+                    State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
+                    State.UPDATING_ADMIN_MODE -> retryOrFail { sendUpdateAdminMode() }
                     else -> {}
                 }
             } catch (e: CancellationException) {
@@ -243,7 +239,6 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleAckOrRetry(
-        context: Context,
         p: StardustPackage,
         onAck: () -> Unit,
         onRetry: () -> Unit
@@ -254,7 +249,7 @@ object StardustInitConnectionHandler {
             onAck()
         } else {
             Timber.tag("InitHandler").w("$state NACK")
-            retryOrFail(context, onRetry)
+            retryOrFail(onRetry)
         }
     }
 
@@ -275,7 +270,6 @@ object StardustInitConnectionHandler {
         val (src, dst) = requireSrcDstOrNull() ?: (null to null)
         if (src != null && dst != null) {
             val pkg = StardustPackageUtils.getStardustPackage(
-                context = ctx,
                 source = src,
                 destination = dst,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS
@@ -289,7 +283,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleAddressesReceived(p: StardustPackage) {
-        DataManager.getClientConnection(ctx).removeConnectionTimer()
+        DataManager.getClientConnection().removeConnectionTimer()
 
         val addresses = StardustAddressesParser().parseAddresses(p)
             ?: return failAndStop("Failed to parse addresses")
@@ -300,7 +294,7 @@ object StardustInitConnectionHandler {
 
     // 2) Update address
     private fun sendUpdateSmartphoneAddress(addr: StardustAddressesPackage) {
-        val user = SharedPreferencesUtil.getAppUser(ctx) ?: return failAndStop("No app user")
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return failAndStop("No app user")
         val appId = user.appId ?: return failAndStop("No appId")
         val payload = arrayListOf<Int>().apply {
             addAll(StardustPackageUtils.hexStringToByteArray(appId))
@@ -308,7 +302,6 @@ object StardustInitConnectionHandler {
             add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         }
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = ctx,
             source = appId,
             destination = addr.stardustID,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
@@ -320,7 +313,7 @@ object StardustInitConnectionHandler {
 
     private fun afterUpdateAddressAck() {
         // Your existing local side-effects:
-        GroupsUtils.sendDeleteAllGroups(ctx)
+        GroupsUtils.sendDeleteAllGroups()
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
@@ -329,7 +322,6 @@ object StardustInitConnectionHandler {
         val (src, dst) = requireSrcDst() ?: return
         val payload = buildDeleteGroupsPayload() // TODO: replace with your real payload
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = ctx,
             source = src,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
@@ -340,15 +332,14 @@ object StardustInitConnectionHandler {
     }
 
     // 4) Add groups
-    private fun sendAddGroups(appContext: Context) {
-        GroupsUtils.sendAddAllGroups(appContext)
+    private fun sendAddGroups() {
+        GroupsUtils.sendAddAllGroups()
     }
 
     // 5) Get configuration
     private fun requestConfiguration() {
         val (src, dst) = requireSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = ctx,
             source = src,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.READ_STATUS
@@ -358,8 +349,8 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleConfiguration(p: StardustPackage) {
-        val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration(ctx, p)
-        if (!result.applied) return retryOrFail(ctx) { requestConfiguration() }
+        val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration( p)
+        if (!result.applied) return retryOrFail { requestConfiguration() }
         transitionTo(State.UPDATING_ADMIN_MODE) { sendUpdateAdminMode() }
     }
 
@@ -367,7 +358,6 @@ object StardustInitConnectionHandler {
     private fun sendUpdateAdminMode() {
         val (src, dst) = requireSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = ctx,
             source = src,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE
@@ -378,12 +368,12 @@ object StardustInitConnectionHandler {
     }
 
     private fun finishAdminModeUpdate() {
-        AdminUtils.updateBittelAdminMode(ctx)
+        AdminUtils.updateBittelAdminMode()
         if (BleManager.isUsbEnabled()) {
             BittelUsbManager2.updateBlePort()
             Timber.tag("startUpdatingPort").d("updateUsbPort (init)")
         } else if (BleManager.isBluetoothEnabled()) {
-            DataManager.getClientConnection(ctx).updateBlePort()
+            DataManager.getClientConnection().updateBlePort()
             Timber.tag("startUpdatingPort").d("updateBlePort (init)")
         }
         stop()
@@ -399,7 +389,7 @@ object StardustInitConnectionHandler {
             deviceId = bittelId,
             appId = savedUser.appId,
         )
-        savedUser.appId?.let { SharedPreferencesUtil.setAppUser(ctx, newUser) }
+        savedUser.appId?.let { SharedPreferencesUtil.setAppUser(newUser) }
     }
 
     private fun handleVersion(p: StardustPackage) {
@@ -408,14 +398,14 @@ object StardustInitConnectionHandler {
         }
     }
 
-    private fun requireSrcDst(): Pair<String, String>? {
-        val u = SharedPreferencesUtil.getAppUser(ctx) ?: return null.also { failAndStop("No app user") }
+    internal fun requireSrcDst(): Pair<String, String>? {
+        val u = RegisteredUserUtils.mRegisterUser.value ?: return null.also { failAndStop("No app user") }
         val src = u.appId ?: return null.also { failAndStop("No appId") }
         val dst = u.deviceId ?: return null.also { failAndStop("No bittelId") }
         return src to dst
     }
-    private fun requireSrcDstOrNull(): Pair<String?, String?>? {
-        val u = SharedPreferencesUtil.getAppUser(ctx) ?: return null
+    internal fun requireSrcDstOrNull(): Pair<String?, String?>? {
+        val u = RegisteredUserUtils.mRegisterUser.value ?: return null
         return u.appId to "1"
     }
 
@@ -438,7 +428,7 @@ object StardustInitConnectionHandler {
             onInitFailed("No configuration found")
             return
         }
-        val presetsWithoutDefaults = config.presetsWithoutConfig(context = DataManager.context)
+        val presetsWithoutDefaults = config.presetsWithoutConfig()
         val resultState = when {
             config.licenseType == LicenseType.UNDEFINED -> State.NO_LICENSE
             presetsWithoutDefaults.isNotEmpty() -> State.PRESET_ERROR

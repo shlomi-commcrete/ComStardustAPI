@@ -18,7 +18,7 @@ import com.commcrete.stardust.room.new_db.internal.LegacyMigrator
 import com.commcrete.stardust.room.new_db.internal.MessagesRepository
 import com.commcrete.stardust.room.new_db.internal.RepositoryCaches
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -101,7 +101,7 @@ class AppRepository(
         contactsDao = contactsDao,
         caches = caches,
         registeredUserIdsProvider = ::registeredUserIds,
-        savePttRequired = { DataManager.getSavePTTFilesRequired(context) },
+        savePttRequired = { DataManager.getSavePTTFilesRequired() },
         insertContactWithChat = contacts::insertContactWithChat,
     )
 
@@ -321,7 +321,7 @@ class AppRepository(
         limit: Int = PAGE_SIZE,
     ): Flow<List<MessageEntity>> = messages.observeLatestForTarget(targetId, chatId, limit)
 
-    
+
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         messages.saveMessage(message, groupId)
 
@@ -416,7 +416,7 @@ class AppRepository(
      */
     suspend fun clearData(): Boolean = messages.withSaveLock {
         withContext(Dispatchers.IO) {
-            val appContext = context
+            val appContext = appContext
 
             val newDbCleared = runCatching {
                 AppDatabase.getDatabase(appContext).clearAllTables()

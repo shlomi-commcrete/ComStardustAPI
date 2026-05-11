@@ -1,6 +1,5 @@
 package com.commcrete.aiaudio.codecs
 
-import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -9,7 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlin.time.measureTime
 
-class WavTokenizerEncoder(context: Context, pluginContext: Context) {
+class WavTokenizerEncoder() {
     private val TAG = "WavTokenizerEncoder"
     private val SAMPLE_RATE = 24000
     private val EXPECTED_SAMPLES = 12000 // 0.5 seconds at
@@ -19,13 +18,13 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerEncoder model")
         val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+        LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
 
     private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerEncoder model")
         val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+        LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
     init {
         // If your model is in assets: just put the asset name here.
@@ -36,7 +35,7 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
             throw IllegalArgumentException("Expected not more than 12,000 samples, got ${audioSamples.size}")
         }
         Log.d(TAG, "Encoding ${audioSamples.size} audio samples")
-        val selectedModule = getSelectedModule(DataManager.context)
+        val selectedModule = getSelectedModule()
 
         // Convert ShortArray to FloatArray in range [-1.0, 1.0]
         val floatSamples = shortArrayToFloatArray(audioSamples)
@@ -85,15 +84,15 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         }
     }
 
-    private fun assetFilePath(context: Context, pluginContext: Context, assetName: String): String {
-        val outFile = File(context.filesDir, assetName)
+    private fun assetFilePath(assetName: String): String {
+        val outFile = File(DataManager.appContext.filesDir, assetName)
         if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
         if(!outFile.exists()) {
             outFile.createNewFile()
         }
-        pluginContext.assets.open(assetName).use { input ->
+        DataManager.pluginContext?.assets?.open(assetName).use { input ->
             FileOutputStream(outFile).use { output ->
-                input.copyTo(output)
+                input?.copyTo(output)
             }
         }
         Log.d(TAG, "Model file path: ${outFile.absolutePath}")
@@ -101,8 +100,8 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     }
 
 
-    fun getSelectedModule (context: Context) : Module{
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
+    fun getSelectedModule () : Module{
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType()
 
         val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
             moduleEnglish

@@ -7,9 +7,9 @@ import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
-import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -19,8 +19,8 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.HandlerObject
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.ButtonListener
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +35,6 @@ object BittelUsbManager2 : BittelProtocol {
     var usbManager : UsbManager? = null
 
     const val ACTION_USB_PERMISSION = "com.commcrete.bittell.USB_PERMISSION"
-    private var context : Context? = null
     private var isConnected = false;
     private var isConnectedAudio = false;
     private var uartManager : UARTManager? = null
@@ -58,62 +57,56 @@ object BittelUsbManager2 : BittelProtocol {
 
     private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
 
-    fun init(context: Context) {
-        this.context = context
-        this.usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+    fun init() {
+        this.usbManager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
     }
 
-    fun connectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
+    fun connectToUnknownDevice (device: UsbDevice) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.lowercase()?.contains("j-box") == true
             || device.productName?.toLowerCase(Locale.ROOT)?.contains("jbox") == true) {
-            connectToAudioDevice(context, device)
-        } else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
-            connectToDevice(context, device)
+            connectToAudioDevice(device)
+        } else if (device.productName == "FT231X USB UART"|| device.productName?.lowercase()?.contains("stardust") == true ) {
+            connectToDevice(device)
         }
     }
 
-    fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
-
+    fun disconnectToUnknownDevice(device: UsbDevice) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.lowercase()?.contains("j-box") == true
+            || device.productName?.lowercase()?.contains("jbox") == true) {
             disconnect()
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        } else if (device.productName == "FT231X USB UART"|| device.productName?.lowercase()?.contains("stardust") == true ) {
             disconnectAudio()
         }
         disconnect()
         disconnectAudio()
     }
 
-    fun getConnectedDevicesStartup (context: Context) {
+    fun getConnectedDevicesStartup () {
         disconnect()
         disconnectAudio()
-        val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+        val manager = DataManager.appContext.getSystemService(Context.USB_SERVICE) as UsbManager
         val deviceList: HashMap<String, UsbDevice> = manager.deviceList
-        usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList(), context)
+        usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
     }
 
-    private fun initDataToUsb (context: Context) {
+    private fun initDataToUsb () {
+        RegisteredUserUtils.mRegisterUser.value ?: return
+        if(!BleManager.isUSBConnected || StardustInitConnectionHandler.hasUnsyncableError()) { return }
+
         CoroutineScope(Dispatchers.Default).launch {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-                if(!BleManager.isUSBConnected || StardustInitConnectionHandler.hasUnsyncableError()) {
-                    return@launch
-                }
-                StardustInitConnectionHandler.start()
-                StardustInitConnectionHandler.listener = object :
-                    StardustInitConnectionHandler.InitConnectionListener {}
+            StardustInitConnectionHandler.start()
+            StardustInitConnectionHandler.listener = object :
+                StardustInitConnectionHandler.InitConnectionListener {}
 
 //                val mPackage = StardustPackageUtils.getStardustPackage(
 //                    source = it , destenation = "1", stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS)
 //                mPackage.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
 //                Timber.tag("SerialInputOutputManager").d("uartManager.send")
 //                sendDataToUart(mPackage)
-            }
         }
     }
 
-    fun reconnectToDevice () {
-            initDataToUsb(DataManager.context)
-    }
+    fun reconnectToDevice() { initDataToUsb() }
 
     fun resetReconnect () {
 //        handlerObject?.removeTimer()
@@ -146,17 +139,14 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun sendDataToUart (bittelPackage: StardustPackage) {
-//        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
-        context?.let { context ->
-            uartManager?.send(bittelPackage.getStardustPackageToSend(context))
-        }
+        uartManager?.send(bittelPackage.getStardustPackageToSend())
     }
 
 
-    private fun connectToAudioDevice (context: Context, device: UsbDevice) {
+    private fun connectToAudioDevice (device: UsbDevice) {
         if(!isConnectedAudio) {
             Timber.tag("SerialInOutputManager").d("connectToAudioDevice : ${device.productName}")
-            uartManagerAudio = UARTManager(context)
+            uartManagerAudio = UARTManager()
             val connectionStatus = uartManagerAudio?.connectDevice(
                 object : SerialInputOutputManager.Listener {
                 override fun onNewData(data: ByteArray) {
@@ -183,16 +173,16 @@ object BittelUsbManager2 : BittelProtocol {
                 device.deviceId,
                 object : UARTManager.CTSChange {
                 override fun onCTSChanged(isActive: Boolean) {
-                    ButtonListener.notifyData(DataManager.context, isActive)
+                    ButtonListener.notifyData(isActive)
                 }
 
             })
         }
     }
 
-    private fun connectToDevice(context: Context, device: UsbDevice) {
+    private fun connectToDevice(device: UsbDevice) {
         Timber.tag("SerialInOutputManager").d("connectToDevice : ${device.productName}")
-        uartManager = UARTManager(context)
+        uartManager = UARTManager()
         val connectionStatus = uartManager?.connectDevice(object : SerialInputOutputManager.Listener {
             override fun onNewData(data: ByteArray) {
                 Timber.tag("SerialInOutputManager").d("onNewData : ${device.productName}")
@@ -200,7 +190,7 @@ object BittelUsbManager2 : BittelProtocol {
                 Timber.tag("SerialInOutputManager").d("onNewData uartManager")
 //                Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
-                processReceivedData(context, data)
+                processReceivedData(data)
                 Scopes.getMainCoroutine().launch {
                     BleManager.isUSBConnected = true
                     BleManager.usbConnectionStatus.value = true
@@ -220,7 +210,7 @@ object BittelUsbManager2 : BittelProtocol {
             Scopes.getMainCoroutine().launch {
                 BleManager.isUSBConnected = true
                 BleManager.usbConnectionStatus.value = true
-                initDataToUsb(context)
+                initDataToUsb()
                 BleManager.updateStatus ()
             }
         }else {
@@ -228,10 +218,10 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
-    fun processReceivedData(context: Context, data: ByteArray) {
+    fun processReceivedData(data: ByteArray) {
         try {
 //            Timber.tag("SerialInputOutputManager").d("Received data: %s", "")
-            StardustPackageUtils.handlePackageReceived(context, data, "USB")
+            StardustPackageUtils.handlePackageReceived(data, "USB")
         }catch (e : Exception) {
             e.printStackTrace()
         }
@@ -239,23 +229,23 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    fun registerReceiver(context: Context){
+    fun registerReceiver(){
         val filter = IntentFilter()
         filter.addAction(ACTION_USB_PERMISSION)
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter, RECEIVER_EXPORTED)
+            DataManager.appContext.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter, RECEIVER_EXPORTED)
         }else {
-            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter)
+            DataManager.appContext.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter)
 
         }
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
-    fun unregisterReceiver(context: Context){
+    fun unregisterReceiver(){
 //        context.unregisterReceiver(usbReceiver)
-        context.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
+        DataManager.appContext.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
     }
 
     private fun getUartPortType(): StardustConfigurationParser.PortType {
@@ -267,42 +257,29 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     override fun updateBlePort() {
-        context?.let {
-            context ->
-            SharedPreferencesUtil.getAppUser(context)?.let {
-                val src = it.appId
-                val dst = it.deviceId
-                if(src != null && dst != null) {
-                    val uartPort = getUartPortType().type.intToByteArray().reversedArray()
-                    val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
-                    val txPackage = StardustPackageUtils.getStardustPackage(
-                        context = context,
-                        source = src ,
-                        destination = dst,
-                        stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
-                        data = data)
-                    DataManager.getClientConnection(context).addMessageToQueue(txPackage)
-                }
-            }
-        }
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val src = user.appId ?: return
+        val dst = user.deviceId ?: return
+        val uartPort = getUartPortType().type.intToByteArray().reversedArray()
+        val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
+        val txPackage = StardustPackageUtils.getStardustPackage(
+            source = src ,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
+            data = data)
+
+        DataManager.getClientConnection().addMessageToQueue(txPackage)
     }
 
     override fun saveConfiguration() {
-        context?.let {
-            context ->
-            SharedPreferencesUtil.getAppUser(context)?.let {
-                val src = it.appId
-                val dst = it.deviceId
-                if(src != null && dst != null) {
-                    val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                        context = context,
-                        source = src ,
-                        destination = dst,
-                        stardustOpCode =StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
-                    DataManager.getClientConnection(context)?.addMessageToQueue(configurationSavePackage)
-                }
-            }
-        }
+        val (src, dst) = requireSrcDst() ?: return
+
+        val configurationSavePackage = StardustPackageUtils.getStardustPackage(
+            source = src ,
+            destination = dst,
+            stardustOpCode =StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+
+        DataManager.getClientConnection().addMessageToQueue(configurationSavePackage)
     }
 }
 fun Array<Int>.startsWith(subArray: Array<Int>): Boolean {

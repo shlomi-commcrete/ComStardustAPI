@@ -2,14 +2,15 @@ package com.commcrete.stardust.crypto
 
 import android.content.Context
 import com.commcrete.stardust.BuildConfig
+import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 
 object SecureKeyUtils {
 
     val Key = BuildConfig.Crypt
 
-    fun getSecuredKey(context: Context): ByteArray {
-        val store = SecureKeyStore(context)
+    fun getSecuredKey(): ByteArray {
+        val store = SecureKeyStore(DataManager.appContext)
         val currentBytes: ByteArray = store.getKey()
 
         // Check if key is empty / still all zeros
@@ -34,19 +35,19 @@ object SecureKeyUtils {
         return result
     }
 
-    fun setSecuredKey (context: Context, key : String, name : String) {
-        val store = SecureKeyStore(context)
+    fun setSecuredKey(key : String, name : String) {
+        val store = SecureKeyStore(DataManager.appContext)
         store.clear()
         store.setKeyFromHex(key)
-        SharedPreferencesUtil.setKeyNameCrypto(context, name)
+        SharedPreferencesUtil.setKeyNameCrypto(name)
     }
 
 
-    fun setSecuredKeyDefault (context: Context) : Boolean{
-        val store = SecureKeyStore(context)
+    fun setSecuredKeyDefault() : Boolean{
+        val store = SecureKeyStore(DataManager.appContext)
         store.clear()
         store.setKeyFromHex(Key)
-        SharedPreferencesUtil.setKeyNameCrypto(context, "Default")
+        SharedPreferencesUtil.setKeyNameCrypto("Default")
         return true
     }
 }

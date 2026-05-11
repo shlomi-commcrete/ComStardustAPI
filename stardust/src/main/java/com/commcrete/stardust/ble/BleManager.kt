@@ -37,8 +37,8 @@ object BleManager {
     val hasBattery : MutableLiveData<Boolean> = MutableLiveData(true)
     val rssi : MutableLiveData<Int> = MutableLiveData(0)
 
-    fun initServerConnectivityObserver(context : Context){
-        val connectivityObserver = NetworkConnectivityObserver(context)
+    fun initServerConnectivityObserver(){
+        val connectivityObserver = NetworkConnectivityObserver()
         Scopes.getMainCoroutine().launch {
             connectivityObserver.observe().collectLatest {
                 if(it == ConnectivityObserver.Status.Available){
@@ -56,8 +56,8 @@ object BleManager {
         }
     }
 
-    fun initBleConnectState (context: Context) {
-        BluetoothStateManager.initialize(context)
+    fun initBleConnectState() {
+        BluetoothStateManager.initialize(DataManager.appContext)
     }
 
     fun isUsbEnabled () : Boolean {
@@ -85,7 +85,7 @@ object BleManager {
         when(newStatus) {
             ConnectionType.USB -> {
                 if (!isBluetoothToggleEnabled && isBleConnected) {
-                    DataManager.getClientConnection(DataManager.context).disconnectFromBLEDevice(true)
+                    DataManager.getClientConnection().disconnectFromBLEDevice(true)
                 }
             }
 

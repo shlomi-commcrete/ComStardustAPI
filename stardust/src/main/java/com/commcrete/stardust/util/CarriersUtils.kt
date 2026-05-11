@@ -32,28 +32,20 @@ object CarriersUtils {
         var index = 0
         for (preset in bittelConfigurationPackage.presets) {
             val list = getCarrierLisByPreset(bittelConfigurationPackage, preset)
-            setLocalCarriersByPreset((preset.index), list, DataManager.context)
-            if(index == 0) {
-                carrierList1 = list
-            } else if (index == 1) {
-                carrierList2 = list
-            } else if (index == 2) {
-                carrierList3 = list
+            setLocalCarriersByPreset(preset.index, list)
+            when (index) {
+                0 -> { carrierList1 = list }
+                1 -> { carrierList2 = list }
+                2 -> { carrierList3 = list }
             }
             index ++
         }
     }
 
     fun setPresetsWithoutChange () {
-        getLocalCarriersByPreset(0,DataManager.context)?.let {
-            carrierList1 = it
-        }
-        getLocalCarriersByPreset(1,DataManager.context)?.let {
-            carrierList2 = it
-        }
-        getLocalCarriersByPreset(2,DataManager.context)?.let {
-            carrierList3 = it
-        }
+        getLocalCarriersByPreset(0)?.let { carrierList1 = it }
+        getLocalCarriersByPreset(1)?.let { carrierList2 = it }
+        getLocalCarriersByPreset(2)?.let { carrierList3 = it }
     }
 
     fun updateCurrentPresetList (preset: StardustConfigurationParser.CurrentPreset?) {
@@ -88,7 +80,7 @@ object CarriersUtils {
     }
 
     fun setLocalCarrierList () : List<Carrier>?{
-        val mutableList = getLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), DataManager.context)
+        val mutableList = getLocalCarriersByPreset(ConfigurationUtils.currentPreset.value?.value ?: 0)
         Scopes.getMainCoroutine().launch {
             mutableList?.let { carrierList.value = it }
         }
@@ -186,7 +178,7 @@ object CarriersUtils {
     }
 
     private fun updateCarrierList (mutableList : List<Carrier>) {
-        setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList, DataManager.context)
+        setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList)
         carrierList.value = mutableList
     }
 
@@ -220,21 +212,21 @@ object CarriersUtils {
         return carrier
     }
 
-    private fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {
+    private fun getLocalCarriersByPreset (preset : Int) : List<Carrier>? {
         val local = when (preset) {
-            0 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS1)}
-            1 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS2)}
-            2 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS3)}
+            0 -> {SharedPreferencesUtil.getCarriers(KEY_LAST_CARRIERS1)}
+            1 -> {SharedPreferencesUtil.getCarriers(KEY_LAST_CARRIERS2)}
+            2 -> {SharedPreferencesUtil.getCarriers(KEY_LAST_CARRIERS3)}
             else -> { null}
         }
         return local
     }
 
-    private fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>, context: Context) {
+    private fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>) {
         when (preset) {
-            0 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS1)}
-            1 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS2)}
-            2 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS3)}
+            0 -> {SharedPreferencesUtil.setCarriers(carriers, KEY_LAST_CARRIERS1)}
+            1 -> {SharedPreferencesUtil.setCarriers(carriers, KEY_LAST_CARRIERS2)}
+            2 -> {SharedPreferencesUtil.setCarriers( carriers, KEY_LAST_CARRIERS3)}
         }
     }
 

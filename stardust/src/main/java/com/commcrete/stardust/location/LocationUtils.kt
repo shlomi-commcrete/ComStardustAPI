@@ -1,7 +1,6 @@
 package com.commcrete.stardust.location
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.location.Location
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
@@ -29,7 +28,6 @@ object LocationUtils  {
     private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun saveLocationMessage(
-        appContext: Context,
         dataPackage: StardustAPIPackage,
         locationPackage: LocationPackage,
         state: MessageState,
@@ -47,11 +45,10 @@ object LocationUtils  {
                 isAckResponse = isAckResponse
             )
         )
-        return DataManager.getAppRepo(appContext).saveMessage(message, dataPackage.groupId)
+        return DataManager.getAppRepo().saveMessage(message, dataPackage.groupId)
     }
 
     internal fun respondToRequestedLocation(
-        appContext: Context,
         mPackage: StardustPackage,
         clientConnection: ClientConnection,
         isDemandAck : Boolean = false,
@@ -59,6 +56,7 @@ object LocationUtils  {
         opCode : StardustPackageUtils.StardustOpCode? = null,
         randomID: String = "") {
 
+        val appContext = DataManager.appContext
         val packageForResponse = mPackage.apply {
             val temp = sourceBytes
             sourceBytes = destinationBytes
@@ -69,10 +67,10 @@ object LocationUtils  {
         val location = location
         if(location == null) {
             Log.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
-            sendMissingLocation(appContext, packageForResponse, clientConnection, isDemandAck, isHR, opCode)
+            sendMissingLocation(packageForResponse, clientConnection, isDemandAck, isHR, opCode)
         } else {
             Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
-            sendLocation(appContext, packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
+            sendLocation(packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
 
@@ -81,7 +79,6 @@ object LocationUtils  {
     }
 
     private fun sendMissingLocation(
-        appContext: Context,
         mPackage: StardustPackage,
         clientConnection : ClientConnection,
         isDemandAck : Boolean = false,
@@ -92,7 +89,6 @@ object LocationUtils  {
         // TODO: change xor check
         locationScope.launch {
             val dataPackage = StardustPackageUtils.getStardustPackage(
-                context = appContext,
                 source = mPackage.getSourceAsString(),
                 destination = mPackage.getDestAsString(),
                 stardustOpCode = opCode ?: mPackage.stardustOpCode,
@@ -111,7 +107,6 @@ object LocationUtils  {
     }
 
     internal fun sendLocation(
-        appContext: Context,
         mPackage: StardustPackage,
         location: Location,
         clientConnection : ClientConnection,
@@ -125,14 +120,12 @@ object LocationUtils  {
 
         locationScope.launch {
             val dataPackage = StardustPackageUtils.getStardustPackage(
-                context = appContext,
                 source = mPackage.getSourceAsString(),
                 destination = mPackage.getDestAsString(),
                 stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
             val id = saveLocationMessage(
-                appContext,
                 StardustAPIPackage(
                     senderId = mPackage.getSourceAsString(),
                     receiverId = mPackage.getDestAsString(),

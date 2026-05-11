@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util.connectivity
 
-import android.content.Context
+
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
@@ -25,17 +25,17 @@ object PortUtils {
 //            BleManager.usbConnectionStatus.value = false
 //            BleManager.updateStatus ()
 //        }
-        DataManager.getUsbManager(DataManager.context).reconnectToDevice()
+        DataManager.getUsbManager().reconnectToDevice()
     }
 
-    fun startUpdatingPort(context: Context) {
+    fun startUpdatingPort() {
         job = Scopes.getMainCoroutine().launch {
             while (isActive) {
                 if(BleManager.isUsbEnabled()){
                     BittelUsbManager2.updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateUsbPort")
                 }else if (BleManager.isBluetoothEnabled()) {
-                    DataManager.getClientConnection(context).updateBlePort()
+                    DataManager.getClientConnection().updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateBlePort")
                 }
                 delay(20000)
@@ -44,7 +44,7 @@ object PortUtils {
 
         jobPing = Scopes.getDefaultCoroutine().launch {
             while (isActive) {
-                DataManager.getClientConnection(context).sendPing()
+                DataManager.getClientConnection().sendPing()
                 resetConnectionTimer()
                 delay(10000)
             }

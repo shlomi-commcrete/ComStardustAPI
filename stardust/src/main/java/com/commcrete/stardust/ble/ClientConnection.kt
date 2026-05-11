@@ -44,9 +44,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import no.nordicsemi.android.ble.BleManager as NordicBleManager
 
-internal class ClientConnection(
-    private val context: Context
-) : NordicBleManager(context), BittelProtocol {
+internal class ClientConnection(): NordicBleManager(DataManager.appContext), BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
@@ -101,7 +99,6 @@ internal class ClientConnection(
             val dst = it.deviceId
             if(src != null && dst != null) {
                 val versionPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
                     source = src,
                     destination = dst,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
@@ -126,12 +123,9 @@ internal class ClientConnection(
 
     val handlerRSSI = Handler(Looper.getMainLooper())
 
-    val readRssiRunnable = object : Runnable {
-        @SuppressLint("MissingPermission")
-        override fun run() {
-            gattConnection?.readRemoteRssi()
-            resetRSSITimer()
-        }
+    val readRssiRunnable = Runnable @androidx.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) {
+        gattConnection?.readRemoteRssi()
+        resetRSSITimer()
     }
 
 
@@ -195,90 +189,13 @@ internal class ClientConnection(
                 }
 
                 @SuppressLint("MissingPermission")
-                private fun setDevice() {
-                    mDevice?.name?.let {
-                        deviceLastDigit = it.takeLast(2)
-                        uuid = Characteristics.getWriteChar(deviceLastDigit)
-                    }
-                    deviceName?.let { it1 ->
-                        if(it1.isEmpty()){
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                mDevice?.alias?.let {
-                                    SharedPreferencesUtil.setBittelDeviceName(context, it)
-                                }
-                            } else {
-                                mDevice?.name?.let {
-                                    SharedPreferencesUtil.setBittelDeviceName(context, it)
-                                }
-                            }
-                        }else {
-                            SharedPreferencesUtil.setBittelDeviceName(context, it1)
-                        }
-                    }
-                    mDevice?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
-                }
-
-                @SuppressLint("MissingPermission")
                 override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                     super.onServicesDiscovered(gatt, status)
-                    if (status != BluetoothGatt.GATT_SUCCESS) {
-                        Timber.tag(LOG_TAG).w("onServicesDiscovered failed with status=$status")
-                        return
-                    }
-                    if (!servicesDiscoveredHandled.compareAndSet(false, true)) {
-                        Timber.tag(LOG_TAG).d("onServicesDiscovered ignored (already handled)")
-                        return
-                    }
+
+                    if (!isServicesDiscoveredHandleable(status)) return
 
                     Scopes.getDefaultCoroutine().launch {
-                        setDevice()
-
-                        if(BleManager.isPaired.value == true) {
-                            Scopes.getMainCoroutine().launch {
-                                Timber.tag(LOG_TAG).d("gattConnection")
-                                gattConnection = gatt
-                                BleManager.isBleConnected = true
-                                BleManager.bleConnectionStatus.value = true
-                                BleManager.updateStatus()
-                                resetRSSITimer()
-                            }
-                        }
-
-                        gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
-                        val id = deviceLastDigit
-                        val readUUID = Characteristics.getReadChar(id)
-
-                        val readChar = gatt?.getService(Characteristics.getConnectChar(id))
-                            ?.getCharacteristic(readUUID)
-
-                        if(readChar != null){
-                            Timber.tag(LOG_TAG).d("has Char")
-                            gatt.setCharacteristicNotification(readChar, true)
-                            val desc = readChar.descriptors?.get(0)
-                            desc?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            gatt.writeDescriptor(desc)
-                        }
-
-                        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-
-                        initStartJob?.cancel()
-                        initStartJob = launch {
-                            delay(500)
-                            RegisteredUserUtils.mRegisterUser.value?.let {
-                                if(it.appId != null
-                                    && getBlePairedStardustDevice() != null
-                                    && StardustInitConnectionHandler.isSearchingToConnect()
-                                    && initStartTriggered.compareAndSet(false, true)) {
-
-                                    StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
-
-                                    StardustInitConnectionHandler.start()
-
-                                    resetConnectionTimer()
-                                    resetPingTimer()
-                                }
-                            }
-                        }
+                        handleServicesDiscovered(gatt)
                     }
                 }
 
@@ -310,7 +227,7 @@ internal class ClientConnection(
 //                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged2")
                     characteristic.value?.let {
 //                        Timber.tag("onCharacteristicChanged").d("without Value")
-                        StardustPackageUtils.handlePackageReceived(context, it, randomID)
+                        StardustPackageUtils.handlePackageReceived(it, randomID)
                         clearTimer()
                     }
                 }
@@ -363,6 +280,119 @@ internal class ClientConnection(
         }
             return bluetoothGattCallback!!
     }
+
+    // ── onServicesDiscovered helpers ─────────────────────────────────────
+
+    /** Resolves device identity (last-digit, UUID, name, address) from [mDevice]. */
+    @SuppressLint("MissingPermission")
+    private fun setDevice() {
+        mDevice?.name?.let {
+            deviceLastDigit = it.takeLast(2)
+            uuid = Characteristics.getWriteChar(deviceLastDigit)
+        }
+        deviceName?.let { name ->
+            val resolvedName = name.ifEmpty {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) mDevice?.alias else mDevice?.name
+            }
+            resolvedName?.let { SharedPreferencesUtil.setBittelDeviceName(it) }
+        }
+        mDevice?.address?.let { SharedPreferencesUtil.setBittelDevice(it) }
+    }
+
+    /**
+     * Guards re-entrancy and GATT_SUCCESS before the real discovery work begins.
+     * Returns false if the event should be silently ignored.
+     */
+    private fun isServicesDiscoveredHandleable(status: Int): Boolean {
+        if (StardustInitConnectionHandler.isConnectedSuccessfully() || StardustInitConnectionHandler.isSyncing()) return false
+        if (status != BluetoothGatt.GATT_SUCCESS) {
+            Timber.tag(LOG_TAG).w("onServicesDiscovered failed with status=$status")
+            return false
+        }
+        if (!servicesDiscoveredHandled.compareAndSet(false, true)) {
+            Timber.tag(LOG_TAG).d("onServicesDiscovered ignored (already handled)")
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Main body of services-discovered handling, run on the IO coroutine.
+     * Broken into named steps so each concern is independently readable/testable.
+     */
+    @SuppressLint("MissingPermission")
+    private fun handleServicesDiscovered(gatt: BluetoothGatt?) {
+        setDevice()
+        updateConnectionState(gatt)
+        enableNotifications(gatt)
+        if(StardustInitConnectionHandler.isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()) triggerInitSequence(gatt)
+    }
+
+    /** Updates BLE connection state and RSSI polling when the device is paired. */
+    private fun updateConnectionState(gatt: BluetoothGatt?) {
+        if (BleManager.isPaired.value != true) return
+        Scopes.getMainCoroutine().launch {
+            Timber.tag(LOG_TAG).d("gattConnection")
+            gattConnection = gatt
+            BleManager.isBleConnected = true
+            BleManager.bleConnectionStatus.value = true
+            BleManager.updateStatus()
+            resetRSSITimer()
+        }
+    }
+
+    /** Requests high-priority connection and enables notifications on the read characteristic. */
+    @SuppressLint("MissingPermission")
+    private fun enableNotifications(gatt: BluetoothGatt?) {
+        gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+
+        val id = deviceLastDigit
+        val readChar = gatt
+            ?.getService(Characteristics.getConnectChar(id))
+            ?.getCharacteristic(Characteristics.getReadChar(id))
+            ?: return
+
+        Timber.tag(LOG_TAG).d("has Char")
+        gatt.setCharacteristicNotification(readChar, true)
+        val desc = readChar.descriptors?.get(0) ?: return
+        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        gatt.writeDescriptor(desc)
+    }
+
+    /**
+     * Transitions state to SEARCHING, then schedules the init-start job which
+     * starts [StardustInitConnectionHandler] once the device is confirmed paired.
+     */
+    @SuppressLint("MissingPermission")
+    private fun triggerInitSequence(gatt: BluetoothGatt?) {
+        Log.d("StardustDataManager", "onServicesDiscovered")
+        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+
+        initStartJob?.cancel()
+        initStartJob = Scopes.getDefaultCoroutine().launch {
+            Log.d("StardustDataManager", "initStartJob")
+            delay(500)
+
+            if (!canStartInit()) return@launch
+
+            Log.d("StardustDataManager", "canStartInit")
+            StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
+            StardustInitConnectionHandler.start()
+
+            Log.d("StardustDataManager", "after StardustInitConnectionHandler.start()")
+            resetConnectionTimer()
+            resetPingTimer()
+        }
+    }
+
+    /** Returns true only when all preconditions for starting the init flow are met. */
+    private fun canStartInit(): Boolean =
+        RegisteredUserUtils.mRegisterUser.value?.appId != null
+            && getBlePairedStardustDevice() != null
+            && StardustInitConnectionHandler.isSearchingToConnect()
+            && initStartTriggered.compareAndSet(false, true)
+
+    // ─────────────────────────────────────────────────────────────────────
 
     fun initBleStatus () {
         BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
@@ -585,7 +615,7 @@ internal class ClientConnection(
 
     fun removeBittelBond() {
         val deviceToUnbond = mDevice
-            ?: SharedPreferencesUtil.getBittelDevice(context)
+            ?: SharedPreferencesUtil.getBittelDevice()
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
                 ?.let { getBleConnectedStardustDeviceBySavedAddress(it) }
 
@@ -597,8 +627,8 @@ internal class ClientConnection(
         }
 
         Scopes.getDefaultCoroutine().launch {
-            SharedPreferencesUtil.removeBittelDevice(DataManager.context)
-            SharedPreferencesUtil.removeBittelDeviceName(DataManager.context)
+            SharedPreferencesUtil.removeBittelDevice()
+            SharedPreferencesUtil.removeBittelDeviceName()
         }
 
         mDevice = null
@@ -629,7 +659,7 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun getBleConnectedStardustDevice() : BluetoothDevice? {
-        val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
+        val savedAddress = SharedPreferencesUtil.getBittelDevice()
 
         for (device in getBondedDevices()) {
             if(savedAddress == device.address) {
@@ -654,11 +684,14 @@ internal class ClientConnection(
 
     @SuppressLint("MissingPermission")
     fun getBlePairedStardustDevice() : BluetoothDevice? {
-        val savedAddress = SharedPreferencesUtil.getBittelDevice(DataManager.context)
+        val savedAddress = SharedPreferencesUtil.getBittelDevice()
+        Log.d("StardustDataManager", "DataManager.context ${DataManager.appContext} savedAddress $savedAddress")
 
         if(savedAddress.isNullOrBlank()) { return null }
 
         for (device in getBondedDevices()) {
+
+            Log.d("StardustDataManager", "device.address ${device.address}")
             if(savedAddress == device.address) {
                 return device
             }
@@ -682,8 +715,8 @@ internal class ClientConnection(
                 return device
             }
         }
-        SharedPreferencesUtil.setBittelDevice(context, "empty")
-        SharedPreferencesUtil.setBittelDeviceName(context, "empty")
+        SharedPreferencesUtil.setBittelDevice("empty")
+        SharedPreferencesUtil.setBittelDeviceName("empty")
         return null
     }
 
@@ -735,7 +768,7 @@ internal class ClientConnection(
             Scopes.getDefaultCoroutine().launch {
                 resetTimer(bittelPackage)
             }
-            SharedPreferencesUtil.getAppUser(context)?.let {
+            SharedPreferencesUtil.getAppUser()?.let {
                 Timber.tag(LOG_TAG).d("getAppUser $randomID sendMessage")
 
                 val id = deviceLastDigit
@@ -826,7 +859,7 @@ internal class ClientConnection(
     ) {
         val writeResult = gattConnection?.writeCharacteristic(
             bluetoothGattCharacteristic,
-            bittelPackage.getStardustPackageToSend(context),
+            bittelPackage.getStardustPackageToSend(),
             WRITE_TYPE_DEFAULT
         )
 
@@ -860,7 +893,7 @@ internal class ClientConnection(
         count: Int,
         randomID: String
     ) {
-        bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend(context)
+        bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
         val writeSuccess = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic) ?: false
 
         when {
@@ -968,7 +1001,7 @@ internal class ClientConnection(
     fun syncMessageReceivedStatus(message: AckSystem) {
         val msgId = message.stardustPackage.idNumber ?: return
         CoroutineScope(Dispatchers.IO).launch {
-            DataManager.getAppRepo(context).updateMessageReceived(msgId)
+            DataManager.getAppRepo().updateMessageReceived(msgId)
         }
     }
 
@@ -1112,7 +1145,6 @@ internal class ClientConnection(
                 val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
                 val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
                 val txPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
                     source = src ,
                     destination = dst,
                     stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
@@ -1127,7 +1159,6 @@ internal class ClientConnection(
         val src = user.appId  ?: return
         val dst = user.deviceId  ?: return
         val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = src ,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)

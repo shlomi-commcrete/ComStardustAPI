@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
+
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
@@ -9,6 +9,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -24,7 +25,7 @@ import java.io.File
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
-class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send) {
+class FileSender(val data: FileUtils.FileTransferData.Send) {
 
     // Simple vars suffice — these are private and never observed externally
     private var isSendingInProgress = false
@@ -104,7 +105,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
      * written successfully, `false` if persistence threw.
      */
     private suspend fun saveLocalMessages(): Boolean {
-        val destDir = File("${context.filesDir}/${data.chatId}/files").also { it.mkdirs() }
+        val destDir = File("${DataManager.appContext.filesDir}/${data.chatId}/files").also { it.mkdirs() }
         val destFile = File(destDir, data.file.name)
 
         // Try to copy the source into the chat-local directory. We do this in a
@@ -114,7 +115,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         val copyOk = copySourceToLocal(destFile)
 
         return try {
-            DataManager.getAppRepo(context).saveMessage(
+            DataManager.getAppRepo().saveMessage(
                 MessageEntity(
                     chatId = data.chatId,
                     senderID = data.stardustAPIPackage.senderId,
@@ -189,7 +190,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         // path so this only helps when the path *is* a valid file but read
         // permissions are odd.
         return runCatching {
-            context.contentResolver.openInputStream(android.net.Uri.fromFile(src))
+            DataManager.appContext.contentResolver.openInputStream(android.net.Uri.fromFile(src))
         }.getOrNull()
     }
 
@@ -234,23 +235,23 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
 
         val radio = getRadioToSend(functionalityType = data.fileType.relatedFunctionalityType(), carrier = data.stardustAPIPackage.carrier)  ?: return
 
-        DataManager.getClientConnection(context).let {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { appId ->
-                val sosString = "STR"
-                val sosBytes = sosString.toByteArray()
-                var dataToSend : Array<Int> = arrayOf()
-                dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes).size + fileStart.toArrayInt().size)
-                dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
-                dataToSend = dataToSend.plus(fileStart.toArrayInt())
-                val fileStartMessage = StardustPackageUtils.getStardustPackage(
-                    context,
-                    source = appId,
-                    destination = data.stardustAPIPackage.receiverId,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
-                    data = dataToSend)
-                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
-                it.addMessageToQueue(fileStartMessage)
-            }
+        DataManager.getClientConnection().let {
+            val (appId, _) = requireSrcDst() ?: return
+
+            val sosString = "STR"
+            val sosBytes = sosString.toByteArray()
+            var dataToSend : Array<Int> = arrayOf()
+            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes).size + fileStart.toArrayInt().size)
+            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
+            dataToSend = dataToSend.plus(fileStart.toArrayInt())
+
+            val fileStartMessage = StardustPackageUtils.getStardustPackage(
+                source = appId,
+                destination = data.stardustAPIPackage.receiverId,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+                data = dataToSend)
+            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+            it.addMessageToQueue(fileStartMessage)
         }
     }
 
@@ -313,7 +314,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
     }
 
     private fun sendPackage(stardustFilePackage: StardustFilePackage) {
-        DataManager.getClientConnection(context).let {
+        DataManager.getClientConnection().let {
             val functionalityType = when (data.fileType) {
                 FileType.File -> FunctionalityType.FILE
                 else -> FunctionalityType.IMAGE
@@ -324,7 +325,6 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
             ) ?: return
             sendInterval = if (radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) 300L else 900L
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
-                context = context,
                 source = data.stardustAPIPackage.senderId,
                 destination = data.stardustAPIPackage.receiverId,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
@@ -406,7 +406,7 @@ class FileSender(val context: Context, val data: FileUtils.FileTransferData.Send
         }
 
         fun calculateAddedPackages (numOfPackages: Int) : Int{
-            val factor = SharedPreferencesUtil.getResilience(DataManager.context)
+            val factor = SharedPreferencesUtil.getResilience()
             return packageNumToAdd(numOfPackages, factor.value)
         }
 

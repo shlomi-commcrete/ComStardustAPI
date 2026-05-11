@@ -17,25 +17,25 @@ import kotlin.math.min
 import kotlin.time.measureTime
 
 
-class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
+class WavTokenizerDecoder() {
     private val TAG = "WavTokenizerDecoder"
 
     private var index = 0
     private var cutTokens = 0
 
     private var loop = 0
-    val outFile = File(context.cacheDir, "decoded_data.txt")
+    val outFile = File(DataManager.appContext.cacheDir, "decoded_data.txt")
     val listEnergy = mutableListOf<String>()
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerDecoder model")
         val modelAssetName = "codes_to_wav_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+        LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
 
     private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerEncoder model")
         val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+        LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
 
 
@@ -50,7 +50,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     fun decode(data: List<Long>, previousTokens: List<Long>? = null, previousSamples: ShortArray? = null, modelType: ModelType = ModelType.General) : ShortArray {
         // Combine previous data with current data if previous data exists
 
-        val decodeType = SharedPreferencesUtil.getAudioDecodeType(context)
+        val decodeType = SharedPreferencesUtil.getAudioDecodeType()
         val selectedModule = getSelectedModule(modelType)
 
         val combinedData = if (previousTokens != null) {
@@ -376,13 +376,13 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         return Tensor.fromBlob(arr, shape)
     }
 
-    private fun assetFilePath(context: Context, pluginContext: Context, assetName: String): String {
-        val outFile = File(context.filesDir, assetName)
+    private fun assetFilePath(assetName: String): String {
+        val outFile = File(DataManager.appContext.filesDir, assetName)
         if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
         if(!outFile.exists()) {
             outFile.createNewFile()
         }
-        pluginContext.assets.open(assetName).use { input ->
+        DataManager.pluginContext?.assets?.open(assetName)?.use { input ->
             FileOutputStream(outFile).use { output -> input.copyTo(output) }
         }
         return outFile.absolutePath

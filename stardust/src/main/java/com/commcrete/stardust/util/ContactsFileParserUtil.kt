@@ -10,12 +10,12 @@ import com.commcrete.stardust.stardust.model.getSrcDestMin4Bytes
 
 object ContactsFileParserUtil {
 
-    suspend fun saveContactsToDatabase(appContext: Context, rawData: List<FolderReader.ExcelUser>) {
+    suspend fun saveContactsToDatabase(rawData: List<FolderReader.ExcelUser>) {
         val contacts = parseContactsForDb(rawData)
-        DataManager.getAppRepo(appContext).insertContactsWithChats(contacts)
+        DataManager.getAppRepo().insertContactsWithChats(contacts)
     }
 
-    suspend fun registerSelectedUser(appContext: Context, selectedUser: FolderReader.ExcelUser): Boolean {
+    fun registerSelectedUser(selectedUser: FolderReader.ExcelUser): Boolean {
         val appId = selectedUser.id.trim()
         val deviceId = selectedUser.deviceId.getSrcDestMin4Bytes().trim()
 
@@ -26,7 +26,8 @@ object ContactsFileParserUtil {
             deviceId = deviceId,
             appId = appId
         )
-        SharedPreferencesUtil.setAppUser(appContext, newUser)
+        SharedPreferencesUtil.setAppUser(newUser)
+
         return true
 
     }

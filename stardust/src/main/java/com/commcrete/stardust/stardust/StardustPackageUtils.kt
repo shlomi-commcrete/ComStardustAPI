@@ -1,6 +1,5 @@
 package com.commcrete.stardust.stardust
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -32,7 +31,7 @@ object StardustPackageUtils {
 
     init {
         try {
-            bittelPackageHandler = DataManager.getStardustPackageHandler(DataManager.context)
+            bittelPackageHandler = DataManager.getStardustPackageHandler()
         }catch (e : Exception) {
             e.printStackTrace()
         }
@@ -616,9 +615,8 @@ object StardustPackageUtils {
     }
 
 
-    fun getStardustPackage (context: Context, source: String, destination: String, stardustOpCode: StardustOpCode, data: Array<Int>? = null) : StardustPackage {
+    fun getStardustPackage(source: String, destination: String, stardustOpCode: StardustOpCode, data: Array<Int>? = null) : StardustPackage {
         val dataPackage = StardustPackage(
-            context = context,
             syncBytes = SYNC_BYTES,
             stardustOpCode = stardustOpCode,
             stardustControlByte = stardustOpCode.stardustControlByte,
@@ -735,7 +733,8 @@ object StardustPackageUtils {
         return hexArray
     }
 
-    fun handlePackageReceived (context: Context, byteArray: ByteArray, randomID: String) {
+    fun handlePackageReceived (byteArray: ByteArray, randomID: String) {
+        val context = DataManager.appContext
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
         lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
@@ -763,11 +762,11 @@ object StardustPackageUtils {
             val bittelPackage = dataForStardustPackage.mPackage
             dataForStardustPackage.spareData?.let {
                 if(it.isNotEmpty()){
-                    handlePackageReceived(context, it, randomID)
+                    handlePackageReceived(it, randomID)
                 }
             }
             bittelPackage?.let {
-                bittelPackageHandler?.handleStardustPackage(context, it, randomID)
+                bittelPackageHandler?.handleStardustPackage( it, randomID)
                 packagesList.remove(mPackage)
             }
         } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {

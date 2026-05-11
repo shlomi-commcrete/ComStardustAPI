@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util.audio
 
-import android.content.Context
+
 import android.media.RingtoneManager
 import android.os.Handler
 import android.os.Looper
@@ -18,7 +18,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
@@ -155,7 +155,6 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     suspend fun initPttInputFile(
-        context: Context,
         senderId: String,
         groupId: String? = null,
         receiverId: String,
@@ -165,8 +164,8 @@ object PlayerUtils : BleMediaConnector() {
         val dirSource = groupId ?: senderId
         this.destination = receiverId
 
-        val directory = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${dirSource}")
-        val file = if(fileToWrite != null) fileToWrite else File("${context.filesDir}/${dirSource}/$ts-$senderId.pcm")
+        val directory = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}")
+        val file = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}/$ts-$senderId.pcm")
 
         if(directory != null) {
             if(!directory.exists()) { directory.mkdir() }
@@ -174,7 +173,7 @@ object PlayerUtils : BleMediaConnector() {
                 if(!file.exists()) {
                     file.createNewFile()
                     fileToWrite = file
-                    DataManager.getAppRepo(context).saveMessage(
+                    DataManager.getAppRepo().saveMessage(
                         MessageEntity(
                             senderID = senderId,
                             receiverID = appId,
@@ -195,14 +194,13 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     fun initPttSnifferFile(
-        context: Context,
         destinations: String,
         snifferContacts: List<ChatContact>?
     ) : File? {
         val appId = mRegisterUser.value?.appId ?: return null
-        var sniffed : MutableList<ChatContact> = mutableListOf()
-        val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations")
-        val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${context.filesDir}/$destinations/$ts.pcm")
+        var sniffed : MutableList<ChatContact>
+        val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${appContext.filesDir}/$destinations")
+        val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${appContext.filesDir}/$destinations/$ts.pcm")
 
         if(directory != null){
             if(!directory.exists()){
@@ -263,7 +261,6 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     private suspend fun saveReceivingPttMessage(
-        appContext: Context,
         dataPackage: StardustPackage,
         appId: String,
         encoderType: EncoderType,
@@ -271,9 +268,8 @@ object PlayerUtils : BleMediaConnector() {
     ): Long? {
         val senderId = dataPackage.senderId
         val groupId = dataPackage.groupId
-        val repo = DataManager.getAppRepo(appContext)
 
-        return repo.saveMessage(
+        return DataManager.getAppRepo().saveMessage(
             MessageEntity(
                 senderID = senderId,
                 receiverID = appId,
@@ -312,7 +308,7 @@ object PlayerUtils : BleMediaConnector() {
 
                 if (!isFileInit) {
                     setTs()
-                    val file = initPttInputFile(context = context, senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = EncoderType.CODEC2) ?: return@runCatching
+                    val file = initPttInputFile(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = EncoderType.CODEC2) ?: return@runCatching
                     DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
                 }
                 else {
@@ -444,15 +440,15 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     suspend fun updateAudioReceived(messageId: Long) {
-        DataManager.getAppRepo(context).updateMessageReceived(messageId)
+        DataManager.getAppRepo().updateMessageReceived(messageId)
     }
 
 
-    fun playNotificationSound(context: Context) {
+    fun playNotificationSound() {
         Handler(Looper.getMainLooper()).post {
             try {
                 val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+                val ringtone = RingtoneManager.getRingtone(appContext, notificationUri)
                 ringtone.play()
             } catch (e: Exception) {
                 e.printStackTrace()

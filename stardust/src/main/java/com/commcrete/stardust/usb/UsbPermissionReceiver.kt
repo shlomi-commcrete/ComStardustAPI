@@ -6,6 +6,6 @@ import android.content.Intent
 
 class UsbPermissionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
-        UsbDevicePermissionHandler.handlePermissionIntent(context, intent)
+        UsbDevicePermissionHandler.handlePermissionIntent(intent)
     }
 }

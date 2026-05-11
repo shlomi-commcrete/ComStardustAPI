@@ -10,15 +10,15 @@ import timber.log.Timber
 
 open class BleMediaConnector (){
 
-    fun getPreferredDevice(audioManager: AudioManager, type: Int, context: Context): AudioDeviceInfo? {
+    fun getPreferredDevice(audioManager: AudioManager, type: Int): AudioDeviceInfo? {
         // Retrieve the default device type from SharedPreferences
         val defaultType = if (type == AudioManager.GET_DEVICES_OUTPUTS) {
-            SharedPreferencesUtil.getOutputDevice(context)
+            SharedPreferencesUtil.getOutputDevice()
         } else {
             null
         }
         val defaultInputType = if (type == AudioManager.GET_DEVICES_INPUTS) {
-            SharedPreferencesUtil.getInputDevice(context)
+            SharedPreferencesUtil.getInputDevice()
         } else {
             null
         }

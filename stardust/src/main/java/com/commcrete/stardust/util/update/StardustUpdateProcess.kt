@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.R
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
@@ -12,12 +13,13 @@ import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustUpdateData
 import com.commcrete.stardust.stardust.model.StardustUpdateDataParser
+import com.commcrete.stardust.util.RegisteredUserUtils
 import java.nio.ByteBuffer
 import java.util.zip.CRC32
 
 object StardustUpdateProcess {
 
-    internal val clientConnection : ClientConnection = DataManager.getClientConnection(DataManager.context)
+    internal val clientConnection : ClientConnection = DataManager.getClientConnection()
 
     var isProcessRunning = false
 
@@ -25,7 +27,7 @@ object StardustUpdateProcess {
         isProcessRunning = false
     }
     private val handler : Handler = Handler(Looper.getMainLooper())
-    private val file = FileUtils.readRawResourceAsByteArray(DataManager.context, R.raw.bittel_firmware)
+    private val file = FileUtils.readRawResourceAsByteArray(DataManager.appContext, R.raw.bittel_firmware)
     private var bittelUpdateData : StardustUpdateData? = null
 
 
@@ -35,49 +37,41 @@ object StardustUpdateProcess {
         handler.postDelayed(runnable, 400000)
     }
 
-    fun startUpdateProcess (context: Context) {
+    fun startUpdateProcess () {
         isProcessRunning = true
         bittelUpdateData = StardustUpdateDataParser().parseUpdateData(file)
-        getCurrentBittelBootAddress(context)
+        getCurrentBittelBootAddress()
     }
 
-    fun sendInitUpdateProcess(bottAddress: Array<Int>?, context: Context) {
+    fun sendInitUpdateProcess(bottAddress: Array<Int>?) {
         bottAddress?.let {bootAddress ->
             bittelUpdateData?.let { bittelUpdateData ->
                 bittelUpdateData.bootAddress = bootAddress
             }
-            SharedPreferencesUtil.getAppUser(context)?.let {
-                val src = it.appId
-                val dst = it.deviceId
-                if(src != null && dst != null) {
-                    val versionPackage = StardustPackageUtils.getStardustPackage(
-                        context = context,
-                        source = src,
-                        destination = dst,
-                        stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION,
-                        data = getBittelUpdateFilePackage()
-                    )
-                    clientConnection.addMessageToQueue(versionPackage)
-                }
-            }
+
+            val (src, dst) = requireSrcDst() ?: return
+
+            val versionPackage = StardustPackageUtils.getStardustPackage(
+                source = src,
+                destination = dst,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION,
+                data = getBittelUpdateFilePackage()
+            )
+            clientConnection.addMessageToQueue(versionPackage)
+
         }
         resetTimer()
     }
 
-    private fun getCurrentBittelBootAddress (context: Context) {
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val versionPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS
-                )
-                clientConnection.addMessageToQueue(versionPackage)
-            }
-        }
+    private fun getCurrentBittelBootAddress () {
+        val (src, dst) = requireSrcDst() ?: return
+
+        val versionPackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_BOOT_ADDRESS
+        )
+        clientConnection.addMessageToQueue(versionPackage)
         resetTimer()
     }
 
@@ -103,21 +97,15 @@ object StardustUpdateProcess {
         return null
     }
 
-    fun startSendingUpdateData(context: Context) {
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val versionPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.BURN_BITTEL_VERSION,
-                    data = getBittelUpdateDataFile()
-                )
-                clientConnection.addMessageToQueue(versionPackage)
-            }
-        }
+    fun startSendingUpdateData() {
+        val (src, dst) = requireSrcDst() ?: return
+        val versionPackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.BURN_BITTEL_VERSION,
+            data = getBittelUpdateDataFile()
+        )
+        clientConnection.addMessageToQueue(versionPackage)
         resetTimer()
     }
 

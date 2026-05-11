@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -21,7 +20,6 @@ import java.io.File
 import java.io.FileOutputStream
 
 class FileReceiver(
-    val context: Context,
     val firstPackage: StardustFileStartPackage,
     val stardustPackage: StardustPackage,
     val onLastPackageReceived: (receiver: FileReceiver) -> Unit) {
@@ -162,7 +160,7 @@ class FileReceiver(
 
     private fun saveFile () {
         removeReceiveTimer()
-        val destDir = File("${context.filesDir}/${data.chatId}/files")
+        val destDir = File("${DataManager.appContext.filesDir}/${data.chatId}/files")
         if (!destDir.exists()) {
             destDir.mkdirs()
         }
@@ -194,7 +192,7 @@ class FileReceiver(
             }
             Log.d("FileReceiver", "File saved successfully: ${targetFile.absolutePath}")
             saveToMessages(targetFile)
-            PlayerUtils.playNotificationSound(context)
+            PlayerUtils.playNotificationSound()
             when (data.fileType) {
                 FileUtils.FileType.File -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
                 FileUtils.FileType.Image -> DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
@@ -268,7 +266,7 @@ class FileReceiver(
         val appId = mRegisterUser.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
-            DataManager.getAppRepo(context).saveMessage(
+            DataManager.getAppRepo().saveMessage(
                 message = MessageEntity(
                     chatId = data.chatId,
                     senderID = data.senderId,

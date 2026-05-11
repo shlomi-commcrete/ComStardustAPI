@@ -50,13 +50,14 @@ import java.io.RandomAccessFile
 import java.util.concurrent.ConcurrentHashMap
 
 @SuppressLint("StaticFieldLeak")
-object DataManager : StardustAPI, PttInterface{
+object DataManager : StardustAPI, PttInterface {
 
     private var clientConnection : ClientConnection?  = null
     private var bittelusbManager : BittelUsbManager2?  = null
     private var bittelPackageHandler : StardustPackageHandler? = null
     private var pollingUtils : PollingUtils? = null
-    lateinit var context : Context
+    lateinit var appContext : Context
+
     lateinit var fileLocation : String
 
     private var bleScanner : BleScanner? = null
@@ -72,69 +73,80 @@ object DataManager : StardustAPI, PttInterface{
 
     private val fileSenders = ConcurrentHashMap<String, FileSender>() // <uuid, FileSender>
 
-    fun requireContext (context: Context) {
-        this.context = context
-        SharedPreferencesUtil.getIsErased(context).let {
-            if(it) {
-                throw IllegalStateException("Device is erased, please reset the device")
-            }
+    /** Must be called once via [init] before any other DataManager function is used. */
+    private fun initAppContext(appContext: Context) {
+        val normalized = appContext.applicationContext
+        if (!this::appContext.isInitialized) {
+            this.appContext = normalized
+        } else if (this.appContext !== normalized) {
+            Timber.w("DataManager already has a context. Keeping the original app context.")
         }
     }
 
-    internal fun getClientConnection (context: Context) : ClientConnection {
-        requireContext(context)
-        BleManager.initBleConnectState(context)
-        if(clientConnection == null) {
-            clientConnection = ClientConnection(context = context)
+    /** Call at the start of every public function to ensure [init] was called first. */
+    private fun checkInitialized() {
+        check(this::appContext.isInitialized) {
+            "DataManager is not initialized. Call DataManager.init(context, fileLocation) first."
         }
+    }
 
-        getStardustPackageHandler(context)
+    @Deprecated("Use init() to set the context. This is kept for legacy call-sites only.")
+    fun requireContext(appContext: Context) {
+        initAppContext(appContext)
+        SharedPreferencesUtil.getIsErased().let {
+            if (it) throw IllegalStateException("Device is erased, please reset the device")
+        }
+    }
+
+    internal fun getClientConnection() : ClientConnection {
+        checkInitialized()
+        BleManager.initBleConnectState()
+        if(clientConnection == null) {
+            clientConnection = ClientConnection()
+        }
+        getStardustPackageHandler()
         return clientConnection!!
     }
 
-    internal fun getUsbManager (context: Context) : BittelUsbManager2 {
-        requireContext(context)
+    internal fun getUsbManager() : BittelUsbManager2 {
+        checkInitialized()
         if(bittelusbManager == null) {
-            bittelusbManager =
-                BittelUsbManager2
-            bittelusbManager?.init(context)
+            bittelusbManager = BittelUsbManager2
+            bittelusbManager?.init()
         }
-
-
         return bittelusbManager!!
     }
 
-    internal fun getStardustPackageHandler(context: Context): StardustPackageHandler {
-        requireContext(context)
+    internal fun getStardustPackageHandler(): StardustPackageHandler {
+        checkInitialized()
         if(bittelPackageHandler == null) {
-            bittelPackageHandler = StardustPackageHandler(context, clientConnection)
+            bittelPackageHandler = StardustPackageHandler(clientConnection)
         }
         return bittelPackageHandler!!
     }
 
-    internal fun getPollingUtils(context: Context) : PollingUtils{
-        requireContext(context)
+    internal fun getPollingUtils(): PollingUtils{
+        checkInitialized()
         if(pollingUtils == null){
-            pollingUtils = PollingUtils(context)
+            pollingUtils = PollingUtils()
         }
         return pollingUtils!!
     }
 
-    override fun sendMessage(context: Context, stardustAPIPackage: StardustAPIPackage, text: String) {
-        requireContext(context)
+    override fun sendMessage(stardustAPIPackage: StardustAPIPackage, text: String) {
+        checkInitialized()
         CoroutineScope(Dispatchers.IO).launch {
             val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
                 getAsciiValue(text) ))
             val splitData = splitMessage(data)
 
             val messageNum = 1
-            val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT)  ?: return@launch
+            val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
 
-            val id = saveSentMessage(context, text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
+            val id = saveSentMessage(text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
 
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
                     source = stardustAPIPackage.senderId,
                     destination = stardustAPIPackage.receiverId,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
@@ -151,8 +163,8 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
 
-    private suspend fun saveSentMessage(context: Context, text: String, receiver: String, sender: String, groupId: String? = null): Long? {
-        return getAppRepo(context).saveMessage(
+    private suspend fun saveSentMessage(text: String, receiver: String, sender: String, groupId: String? = null): Long? {
+        return getAppRepo().saveMessage(
             message = MessageEntity(
                 senderID = sender,
                 receiverID = receiver,
@@ -163,67 +175,52 @@ object DataManager : StardustAPI, PttInterface{
         )
     }
 
-    fun setMPluginContext (context: Context) {
-        this.pluginContext = context
-//        PttSendManager.init(DataManager.context, DataManager.pluginContext ?: DataManager.context)
-
+    fun setMPluginContext(pluginContext: Context) {
+        this.pluginContext = pluginContext.applicationContext
     }
 
-    fun initModules (context: Context, pluginContext: Context) {
-        requireContext(context)
-        AIModuleInitializer.initModules(context, pluginContext)
+    fun initModules(pluginContext: Context) {
+        checkInitialized()
+        setMPluginContext(pluginContext)
+        AIModuleInitializer.initModules()
     }
 
     @SuppressLint("MissingPermission")
-    override fun startPTT(context: Context, chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
-        requireContext(context)
+    override fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
+        checkInitialized()
         this.source = stardustAPIPackage.senderId
         this.destination = stardustAPIPackage.receiverId
         this.chatId = chatId
-
         RecorderUtils.init(this)
         return RecorderUtils.startRecording(chatId, stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
     @SuppressLint("MissingPermission")
-    override fun stopPTT(context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
-        requireContext(context)
+    override fun stopPTT(stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
+        checkInitialized()
         RecorderUtils.stopRecording(receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
     }
 
-    override fun sendLocation(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location) {
-        requireContext(context)
+    override fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location) {
+        checkInitialized()
         val stardustPackage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
-        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(context, stardustPackage, location, getClientConnection(context), isHR = radio.second)
+        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType = FunctionalityType.LOCATION) ?: return
+        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(), isHR = radio.second)
     }
 
-    override fun sendImage(
-        context: Context,
-        data: FileUtils.FileTransferData.Send,
-        onFileStatusChange: OnFileStatusChange
-    ): Deferred<Boolean> {
-        return onSendFile(context, data, onFileStatusChange)
+    override fun sendImage(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
+        return onSendFile(data, onFileStatusChange)
     }
 
-    override fun sendFile(
-        context: Context,
-        data: FileUtils.FileTransferData.Send,
-        onFileStatusChange: OnFileStatusChange
-    ): Deferred<Boolean> {
-        return onSendFile(context, data, onFileStatusChange)
+    override fun sendFile(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
+        return onSendFile(data, onFileStatusChange)
     }
 
-    private fun onSendFile(
-        context: Context,
-        data: FileUtils.FileTransferData.Send,
-        onFileStatusChange: OnFileStatusChange
-    ): Deferred<Boolean> {
-        requireContext(context)
-        val sender = FileSender(context, data)
+    private fun onSendFile(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
+        checkInitialized()
+        val sender = FileSender(data)
         fileSenders.put(data.id, sender)
         return sender.sendFile(object : OnFileStatusChange {
             override fun finishSending(data: FileUtils.FileTransferData.Send) {
@@ -250,16 +247,15 @@ object DataManager : StardustAPI, PttInterface{
         })
     }
 
-    override fun stopSendFile(context: Context, data: FileUtils.FileTransferData.Send) {
-        requireContext(context)
+    override fun stopSendFile(data: FileUtils.FileTransferData.Send) {
+        checkInitialized()
         fileSenders[data.id]?.stopSendingPackages()
     }
 
-    override fun requestLocation(context: Context, stardustAPIPackage: StardustAPIPackage) {
-        requireContext(context)
-        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
+    override fun requestLocation(stardustAPIPackage: StardustAPIPackage) {
+        checkInitialized()
+        val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType = FunctionalityType.LOCATION) ?: return
         val stardustPackage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
@@ -269,75 +265,78 @@ object DataManager : StardustAPI, PttInterface{
         }
     }
 
-    override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?) {
-        requireContext(context)
+    override fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?) {
+        checkInitialized()
         CoroutineScope(Dispatchers.IO).launch {
-            SOSUtils.sendAlert(context = context, location = location, sosType = type, stardustAPIPackage = stardustAPIPackage)
+            SOSUtils.sendAlert(location = location, sosType = type, stardustAPIPackage = stardustAPIPackage)
         }
     }
 
-    override fun sendRealSOS(context: Context, location: Location) {
-        requireContext(context)
+    override fun sendRealSOS(location: Location) {
+        checkInitialized()
         CoroutineScope(Dispatchers.IO).launch {
-            SOSUtils.sendSos(context = context, location = location)
+            SOSUtils.sendSos(location = location)
         }
     }
 
-    override fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage) {
-        requireContext(context)
+    override fun AckSOS(stardustAPIPackage: StardustAPIPackage) {
+        checkInitialized()
         Scopes.getDefaultCoroutine().launch {
-            SOSUtils.ackSOS(context = context, stardustAPIPackage = stardustAPIPackage)
+            SOSUtils.ackSOS(stardustAPIPackage = stardustAPIPackage)
         }
     }
 
-    override fun setSecurityKey(context: Context, key: String, name : String) {
-        requireContext(context)
-        SecureKeyUtils.setSecuredKey(context, key, name)
+    override fun setSecurityKey(key: String, name: String) {
+        checkInitialized()
+        SecureKeyUtils.setSecuredKey(key, name)
     }
 
-    override fun setSecurityKeyDefault(context: Context) {
-        requireContext(context)
-        SecureKeyUtils.setSecuredKeyDefault(context)
+    override fun setSecurityKeyDefault() {
+        checkInitialized()
+        SecureKeyUtils.setSecuredKeyDefault()
     }
 
-    override fun getSecurityKey(context: Context): ByteArray {
-        requireContext(context)
-        return SecureKeyUtils.getSecuredKey(context)
+    override fun getSecurityKey(): ByteArray {
+        checkInitialized()
+        return SecureKeyUtils.getSecuredKey()
     }
 
-    override fun reconnectToCurrentDevice(context: Context) {
-        requireContext(context)
-        getClientConnection(context).reconnectToDeviceFast()
+    override fun reconnectToCurrentDevice() {
+        checkInitialized()
+        getClientConnection().reconnectToDeviceFast()
     }
 
-    override fun canRecord(context: Context): MutableLiveData<Boolean> {
+    override fun canRecord(): MutableLiveData<Boolean> {
         return RecorderUtils.canRecord
     }
 
 
-    override fun init(context: Context, fileLocation : String) {
-        requireContext(context)
+    override fun init(fileLocation: String) {
+        checkInitialized()
+        SharedPreferencesUtil.getIsErased().let {
+            if (it) throw IllegalStateException("Device is erased, please reset the device")
+        }
         requireFileLocation(fileLocation)
-        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser(context))
+        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser())
     }
 
-    override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {
-        requireContext(context)
-        val bleScanner = getBleScanner(this.context)
+    override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
+        checkInitialized()
+        val bleScanner = getBleScanner()
         bleScanner.startScan()
         return bleScanner.getScanResultsLiveData()
     }
 
-    fun getStartupBleData (context: Context) : BluetoothDevice? {
-        requireContext(context)
-        val savedAddress = SharedPreferencesUtil.getBittelDevice(context)
+    fun getStartupBleData() : BluetoothDevice? {
+        checkInitialized()
+        val savedAddress = SharedPreferencesUtil.getBittelDevice()
         if(savedAddress.isNullOrEmpty()) {
-            val device =  getPairedDevices(context)
+            val device =  getPairedDevices()
             device?.let {
                 return it
             }
         } else {
-            val device = getClientConnection(context).getBleConnectedStardustDeviceBySavedAddress(savedAddress)
+            val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(savedAddress)
             device?.let {
                 return it
             }
@@ -345,45 +344,46 @@ object DataManager : StardustAPI, PttInterface{
         return null
     }
 
-     fun getPairedDevices (context: Context) : BluetoothDevice?{
-        requireContext(context)
-        return getClientConnection(context).getBleConnectedStardustDevice()
+     fun getPairedDevices() : BluetoothDevice?{
+        checkInitialized()
+        return getClientConnection().getBleConnectedStardustDevice()
     }
 
-    fun getConnectedDevices (context: Context) : BluetoothDevice? {
-        requireContext(context)
-        val connection = getClientConnection(context)
+    fun getConnectedDevices() : BluetoothDevice? {
+        checkInitialized()
+        val connection = getClientConnection()
         return connection.mDevice ?: connection.getBlePairedStardustDevice()
     }
 
-    fun bondOnStartup (context: Context) {
-        requireContext(context)
+    fun bondOnStartup() {
+        checkInitialized()
 
-        val bondedDevice = getPairedDevices(context)
+        val bondedDevice = getPairedDevices()
+        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         if(bondedDevice != null) {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-            getClientConnection(context).bondToBleDeviceStartup(bondedDevice)
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
+            getClientConnection().bondToBleDeviceStartup(bondedDevice)
         } else {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         }
     }
 
-    override fun connectToDevice(context: Context, device: ScanResult) {
-        requireContext(context)
-        getClientConnection(context).bondToBleDevice(device.device,device.scanRecord?.deviceName )
-        val bleScanner = getBleScanner(this.context)
+    override fun connectToDevice(device: ScanResult) {
+        checkInitialized()
+        getClientConnection().bondToBleDevice(device.device,device.scanRecord?.deviceName )
+        val bleScanner = getBleScanner()
         bleScanner.stopScan()
         this.bleScanner = null
     }
 
-    override fun disconnectFromDevice(context: Context) {
-        requireContext(context)
+    override fun disconnectFromDevice() {
+        checkInitialized()
         cleanupPackageHandlerOnDisconnect()
-        getClientConnection(context).disconnectFromBLEDevice()
+        getClientConnection().disconnectFromBLEDevice()
     }
 
-    override fun logout(context: Context) {
-        requireContext(context)
+    override fun logout() {
+        checkInitialized()
         Scopes.getDefaultCoroutine().launch {
             RegisteredUserUtils.logout()
         }
@@ -393,8 +393,8 @@ object DataManager : StardustAPI, PttInterface{
         this.stardustAPICallbacks = stardustAPICallbacks
     }
 
-    override fun getCarriers(context: Context): List<Carrier>? {
-        requireContext(context)
+    override fun getCarriers(): List<Carrier>? {
+        checkInitialized()
         return CarriersUtils.setLocalCarrierList ()
     }
 
@@ -410,36 +410,36 @@ object DataManager : StardustAPI, PttInterface{
         return this.destination ?: ""
     }
 
-    fun getUserUtils (context: Context) : RegisteredUserUtils {
-        requireContext(context)
+    fun getUserUtils() : RegisteredUserUtils {
+        checkInitialized()
         return RegisteredUserUtils
     }
 
     override fun sendDataToBle(pkg: StardustPackage) {
-        getClientConnection(context).addMessageToQueue(pkg)
+        getClientConnection().addMessageToQueue(pkg)
     }
 
     fun requireFileLocation (location : String) {
         this.fileLocation = location
     }
 
-    fun getBleScanner (context: Context): BleScanner {
-        requireContext(context)
+    fun getBleScanner(): BleScanner {
+        checkInitialized()
         if(this.bleScanner == null) {
-            bleScanner = BleScanner(context)
+            bleScanner = BleScanner(this.appContext)
         }
         return bleScanner!!
     }
 
-    fun getBleManager (context: Context): BleManager {
-        requireContext(context)
+    fun getBleManager(): BleManager {
+        checkInitialized()
         return BleManager
     }
 
-    fun unpairDeviceBLE (context: Context) {
-        requireContext(context)
+    fun unpairDeviceBLE() {
+        checkInitialized()
         cleanupPackageHandlerOnDisconnect()
-        val clientConnection = getClientConnection(context)
+        val clientConnection = getClientConnection()
         clientConnection.removeBittelBond()
     }
 
@@ -447,34 +447,33 @@ object DataManager : StardustAPI, PttInterface{
         bittelPackageHandler?.cleanupOnDisconnect()
     }
 
-    fun getPortUtils (context: Context): PortUtils {
-        requireContext(context)
+    fun getPortUtils(): PortUtils {
+        checkInitialized()
         return PortUtils
     }
 
-    fun getSharedPreferences (context: Context): SharedPreferencesUtil {
-        requireContext(context)
+    fun getSharedPreferences(): SharedPreferencesUtil {
+        checkInitialized()
         return SharedPreferencesUtil
     }
 
-    fun getFolderReader (context: Context): FolderReader {
-        requireContext(context)
+    fun getFolderReader(): FolderReader {
+        checkInitialized()
         return FolderReader
     }
 
-    fun getDataUtil (context: Context): ContactsFileParserUtil {
-        requireContext(context)
+    fun getDataUtil(): ContactsFileParserUtil {
+        checkInitialized()
         return ContactsFileParserUtil
     }
 
-    fun getPlayerUtils (context: Context): PlayerUtils {
-        requireContext(context)
+    fun getPlayerUtils(): PlayerUtils {
+        checkInitialized()
         return PlayerUtils
     }
 
-    fun getAppRepo(context: Context): AppRepository {
-        requireContext(context)
-        return RepositoryProvider.appRepository(context)
+    fun getAppRepo(): AppRepository {
+        return RepositoryProvider.appRepository(appContext)
     }
 
 
@@ -482,32 +481,35 @@ object DataManager : StardustAPI, PttInterface{
         return stardustAPICallbacks
     }
 
-    fun getSavePTTFilesRequired(context: Context): Boolean {
-        if(savePTTFiles == null) {
-            savePTTFiles = SharedPreferencesUtil.getSavePTTFiles(context)
+    fun getSavePTTFilesRequired(): Boolean {
+        checkInitialized()
+        if (savePTTFiles == null) {
+            savePTTFiles = SharedPreferencesUtil.getSavePTTFiles()
         }
         return savePTTFiles != false
     }
 
-    fun updateSavePTTFilesRequired(context: Context, isRequired: Boolean) {
+    fun updateSavePTTFilesRequired(isRequired: Boolean) {
+        checkInitialized()
         savePTTFiles = isRequired
-        SharedPreferencesUtil.setSavePTTFiles(context, isRequired)
+        SharedPreferencesUtil.setSavePTTFiles(isRequired)
     }
 
-    fun initRemoteConfig(context: Context) {
-        requireContext(context)
-        RemoteConfigUtils.initLocalDefaults(context)
+    fun initRemoteConfig() {
+        checkInitialized()
+        RemoteConfigUtils.initLocalDefaults()
     }
 
-    suspend fun cleanAllDatabases(context: Context): Boolean = getAppRepo(context).clearData()
+    suspend fun cleanAllDatabases(): Boolean {
+        checkInitialized()
+        return getAppRepo().clearData()
+    }
 
-    suspend fun deleteChatFiles(
-        context: Context
-    ): CleanResult = withContext(Dispatchers.IO) {
+    suspend fun deleteChatFiles(): CleanResult = withContext(Dispatchers.IO) {
 
-        withProcessFileLock(context, "clean_user_files") {
+        withProcessFileLock(appContext, "clean_user_files") {
 
-            val dirs = FileUtils.getAllChatFilesDirs(context)
+            val dirs = FileUtils.getAllChatFilesDirs()
             val failed = mutableListOf<File>()
 
             dirs.forEachIndexed { index, dir ->
@@ -547,3 +549,12 @@ object DataManager : StardustAPI, PttInterface{
         val failedDirs: List<File>
     )
 }
+
+
+
+
+
+
+
+
+

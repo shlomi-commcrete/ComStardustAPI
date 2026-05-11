@@ -9,6 +9,7 @@ import com.commcrete.stardust.request_objects.LogEntry
 import com.commcrete.stardust.request_objects.Logs
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.toJson
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
@@ -24,29 +25,21 @@ object LogUtils {
     var index = 0
 
 
-    private fun shareLogsFile () {
-
-    }
-
-    fun pullBittelLogs (numOfLogs : Int = 4096, context: Context) {
+    fun pullBittelLogs (numOfLogs : Int = 4096) {
         mutableLogList.value = mutableListOf()
         index = 0
-        val clientConnection: ClientConnection = DataManager.getClientConnection(context)
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val logToBytes = numOfLogs.intToByteArray().reversedArray()
-                val logSizeData = StardustPackageUtils.byteArrayToIntArray(logToBytes)
-                val logPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS,
-                    data = logSizeData)
-                clientConnection.addMessageToQueue(logPackage)
-            }
-        }
+        val clientConnection: ClientConnection = DataManager.getClientConnection()
+
+        val (src, dst) = requireSrcDst() ?: return
+
+        val logToBytes = numOfLogs.intToByteArray().reversedArray()
+        val logSizeData = StardustPackageUtils.byteArrayToIntArray(logToBytes)
+        val logPackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.GET_BITTEL_LOGS,
+            data = logSizeData)
+        clientConnection.addMessageToQueue(logPackage)
     }
 
     fun appendToList (bittelLogPackage: StardustLogPackage) {
@@ -61,7 +54,8 @@ object LogUtils {
     }
 
     fun uploadLogs (context: Context) {
-        SharedPreferencesUtil.getAppUser(context)?.appId?.let {appId ->
+        SharedPreferencesUtil.getAppUser()?.appId?.let { appId ->
+
             val logList : MutableList<LogEntry> = mutableListOf()
             mutableLogList.value?.let {
                 for (log in it) {

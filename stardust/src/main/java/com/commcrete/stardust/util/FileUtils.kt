@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util
 
+
 import android.content.Context
 import androidx.core.content.FileProvider
 import android.net.Uri
@@ -29,8 +30,10 @@ import java.util.zip.ZipOutputStream
 import com.commcrete.stardust.room.new_db.message.AttachmentType
 
 object FileUtils {
-    fun createFile(context : Context, folderName : String = "logs"
+    fun createFile(folderName : String = "logs"
                            , fileName : String, fileType : String = ".txt") : File {
+        val context = DataManager.appContext
+
         val directory = File("${context.filesDir}/$folderName")
         val newFile = File("${context.filesDir}/$folderName/$fileName$fileType")
         if(!directory.exists()){
@@ -100,17 +103,15 @@ object FileUtils {
         }
     }
 
-    fun clearFile(context : Context, folderName : String = "logs"
-                  , fileName : String, fileType : String = ".txt"){
-        val file = File("${context.filesDir}/$folderName/$fileName$fileType")
+    fun clearFile(folderName : String = "logs", fileName : String, fileType : String = ".txt"){
+        val file = File("${DataManager.appContext.filesDir}/$folderName/$fileName$fileType")
         if(file.exists()){
             file.delete()
         }
     }
 
-    fun readFile (context : Context, folderName : String = "logs"
-                  , fileName : String, fileType : String = ".txt"): String {
-        val file = File("${context.filesDir}/$folderName/$fileName$fileType")
+    fun readFile(folderName : String = "logs", fileName : String, fileType : String = ".txt"): String {
+        val file = File("${DataManager.appContext.filesDir}/$folderName/$fileName$fileType")
         val stringBuilder = StringBuilder()
 
         try {
@@ -145,19 +146,9 @@ object FileUtils {
         }
     }
 
-    fun getMimeType(context: Context, file: File): String {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            file
-        )
-
-        return context.contentResolver.getType(uri) ?: "application/octet-stream"
-    }
-
-    suspend fun getAllChatFilesDirs(context: Context): List<File> {
-        val rootDir = context.filesDir
-        val chatIDs: List<String> = DataManager.getAppRepo(context).getChatIds().map { it.toString() }
+    suspend fun getAllChatFilesDirs(): List<File> {
+        val rootDir = DataManager.appContext.filesDir
+        val chatIDs: List<String> = DataManager.getAppRepo().getChatIds().map { it }
         return rootDir.listFiles()
             ?.filter { it.isDirectory && chatIDs.contains(it.name)}
             ?.sortedBy { it.name }
@@ -180,11 +171,10 @@ object FileUtils {
     }
 
     fun exportAppLogcat(
-        context: Context,
         fileName: String = "app_logs_${System.currentTimeMillis()}.logcat"
     ): File {
 
-        val outputDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val outputDir = DataManager.appContext.getExternalFilesDir(null) ?: DataManager.appContext.filesDir
         val logFile = File(outputDir, fileName)
 
         val pid = android.os.Process.myPid()
@@ -298,15 +288,14 @@ object FileUtils {
     }
 
     fun exportAllDatabasesToCsv(
-        context: Context,
         exportFolderName: String = "databases_export"
     ): File {
-        val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(context)
+        // TODO: export new db
+        val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase(DataManager.appContext)
         val appDbName = appDb.openHelper.databaseName ?: "app_database"
         val appSupportDb = appDb.openHelper.writableDatabase
 
         return exportMultipleDatabasesToCsv(
-            context = context,
             databases = mapOf(appDbName to appSupportDb),
             exportFolderName = exportFolderName
         )
@@ -321,11 +310,10 @@ object FileUtils {
      * @return The root export directory
      */
     fun exportMultipleDatabasesToCsv(
-        context: Context,
         databases: Map<String, SupportSQLiteDatabase>,
         exportFolderName: String = "databases"
     ): File {
-        val exportRoot = File(context.getExternalFilesDir(null), exportFolderName)
+        val exportRoot = File(DataManager.appContext.getExternalFilesDir(null), exportFolderName)
         if (!exportRoot.exists()) exportRoot.mkdirs()
 
         databases.forEach { (dbName, db) ->
@@ -342,8 +330,8 @@ object FileUtils {
      * Get (or create) a temporary directory for your app.
      * This directory is inside the cache folder and can be cleared anytime.
      */
-    fun getTempDir(context: Context): File {
-        val tempDir = File(context.cacheDir, "temp_files")
+    fun getTempDir(): File {
+        val tempDir = File(DataManager.appContext.cacheDir, "temp_files")
         if (!tempDir.exists()) {
             tempDir.mkdirs()
         }
@@ -361,12 +349,11 @@ object FileUtils {
      * ```
      */
     fun <T> withTempFile(
-        context: Context,
         prefix: String = "temp_",
         suffix: String? = null,
         block: (File) -> T
     ): File {
-        val tempFile = File.createTempFile(prefix, suffix, getTempDir(context))
+        val tempFile = File.createTempFile(prefix, suffix, getTempDir())
         try {
             block(tempFile)
         } finally {
@@ -379,15 +366,15 @@ object FileUtils {
      * Create a temporary file inside the temp directory.
      * The file will have a unique name and optional extension.
      */
-    fun createTempFile(context: Context, prefix: String = "temp_", suffix: String? = null): File {
-        return File.createTempFile(prefix, suffix, getTempDir(context))
+    fun createTempFile(prefix: String = "temp_", suffix: String? = null): File {
+        return File.createTempFile(prefix, suffix, getTempDir())
     }
 
     /**
      * Delete all temp files in the temp directory.
      */
-    fun clearTempDir(context: Context) {
-        val tempDir = getTempDir(context)
+    fun clearTempDir() {
+        val tempDir = getTempDir()
         tempDir.listFiles()?.forEach { it.delete() }
     }
 

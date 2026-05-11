@@ -73,7 +73,7 @@ data class StardustConfigurationPackage(
         }
     }
 
-    fun presetsWithoutConfig(context: Context): List<StardustConfigurationParser.Preset> {
+    fun presetsWithoutConfig(): List<StardustConfigurationParser.Preset> {
         return presets.filter { preset ->
 
             val (defaultFunctionalities, requiredFunctionalities) = preset.collectFunctionalities()
@@ -115,7 +115,7 @@ data class StardustConfigurationPackage(
             StardustConfigurationParser.CurrentPreset.PRESET2 -> KEY_LAST_CARRIERS2
             StardustConfigurationParser.CurrentPreset.PRESET3 -> KEY_LAST_CARRIERS3
         }
-        return SharedPreferencesUtil.getCarrier(context, localKey)?.activeFunctionalities
+        return SharedPreferencesUtil.getCarrier(localKey)?.activeFunctionalities
     }
 
     private fun hasMissingRequiredFunctionalities(

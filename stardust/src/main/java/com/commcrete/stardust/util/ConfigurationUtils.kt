@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.FunctionalityType
@@ -46,22 +45,22 @@ object ConfigurationUtils {
         stardustAppEventPackage.carrier = selectedPreset?.xcvrList?.getOrNull(stardustAppEventPackage.xcvr)?.carrier
     }
 
-    private fun getLastPresets (context: Context) : List<StardustConfigurationParser.Preset>?{
-        return SharedPreferencesUtil.getPresets(context)
+    private fun getLastPresets () : List<StardustConfigurationParser.Preset>?{
+        return SharedPreferencesUtil.getPresets()
     }
 
-    private fun setLastPresets (presets : List<StardustConfigurationParser.Preset>, context: Context){
-        return SharedPreferencesUtil.setPresets(context, presets)
+    private fun setLastPresets (presets : List<StardustConfigurationParser.Preset>){
+        return SharedPreferencesUtil.setPresets(presets)
     }
 
-    fun isPresetsChanged (presets : List<StardustConfigurationParser.Preset>, context: Context): Boolean {
-        val lastPresets = getLastPresets(context)
-        setLastPresets(presets, context)
+    fun isPresetsChanged (presets : List<StardustConfigurationParser.Preset>): Boolean {
+        val lastPresets = getLastPresets()
+        setLastPresets(presets)
         return lastPresets != presets
     }
-    fun setDefaults (context: Context) {
+    fun setDefaults() {
         currentConfig?.let {config ->
-            if(isPresetsChanged(config.presets, context)) {
+            if(isPresetsChanged(config.presets)) {
                 CarriersUtils.setPresetsAfterChange(config)
             } else {
                 CarriersUtils.setPresetsWithoutChange()

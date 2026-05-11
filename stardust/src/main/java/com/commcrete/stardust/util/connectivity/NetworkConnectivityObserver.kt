@@ -4,18 +4,17 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
+import com.commcrete.stardust.util.DataManager
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-class NetworkConnectivityObserver(
-    context: Context
-): ConnectivityObserver {
+class NetworkConnectivityObserver(): ConnectivityObserver {
 
     private val connectivityManager =
-        context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        DataManager.appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     override fun observe(): Flow<ConnectivityObserver.Status> {
         return callbackFlow {

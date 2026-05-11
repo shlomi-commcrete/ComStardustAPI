@@ -27,40 +27,40 @@ object AIModuleInitializer {
      * Fire-and-forget initialization entry point.
      * Safe to call multiple times — subsequent calls are no-ops.
      */
-    fun initModules(context: Context, pluginContext: Context) {
+    fun initModules() {
         Scopes.getDefaultCoroutine().launch {
-            initModulesSuspending(context, pluginContext)
+            initModulesSuspending()
         }
     }
 
     /** Suspend variant for callers that already run in a coroutine and want to await completion. */
-    suspend fun initModulesSuspending(context: Context, pluginContext: Context) = initLock.withLock {
+    suspend fun initModulesSuspending() = initLock.withLock {
         if (initialized) return@withLock
 
-        if (!resolveAiEnabled(context)) return@withLock
+        if (!resolveAiEnabled()) return@withLock
 
-        createCodecs(context, pluginContext)
+        createCodecs()
         warmUpCodecs()
-        initPttManagers(context)
+        initPttManagers()
 
         initialized = true
         Log.d(TAG, "AI modules initialized.")
     }
 
-    private fun resolveAiEnabled(context: Context): Boolean {
-        aiEnabled = PyTorchInitGate.isPrimaryInitializer(context)
+    private fun resolveAiEnabled(): Boolean {
+        aiEnabled = PyTorchInitGate.isPrimaryInitializer()
         if (!aiEnabled) {
             Log.d(TAG, "AI Codec not enabled for this process.")
         }
         return aiEnabled
     }
 
-    private fun createCodecs(context: Context, pluginContext: Context) {
+    private fun createCodecs() {
         if (!::wavTokenizerEncoder.isInitialized) {
-            wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
+            wavTokenizerEncoder = WavTokenizerEncoder()
         }
         if (!::wavTokenizerDecoder.isInitialized) {
-            wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
+            wavTokenizerDecoder = WavTokenizerDecoder()
         }
     }
 
@@ -69,8 +69,8 @@ object AIModuleInitializer {
         if (::wavTokenizerDecoder.isInitialized) wavTokenizerDecoder.initModule()
     }
 
-    private fun initPttManagers(context: Context) {
-        PttSendManager.init(context)
+    private fun initPttManagers() {
+        PttSendManager.init()
         PttReceiveManager.init()
     }
 }

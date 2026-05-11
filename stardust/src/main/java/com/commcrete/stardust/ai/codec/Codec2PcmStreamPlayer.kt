@@ -43,7 +43,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
         try {
             if (track == null) {
                 track = buildTrack(bufferSizeInBytes, speedFactor)
-                syncBleDevice(DataManager.context)
+                syncBleDevice(DataManager.appContext)
                 Log.d(TAG, "ensureTrack created track=${track?.hashCode()} buffer=$bufferSizeInBytes")
             }
             attachEnhancer(track)
@@ -180,8 +180,8 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
 
     @SuppressLint("NewApi")
     private fun syncBleDevice(context: Context) {
-        val audioManager = DataManager.context.getSystemService(AudioManager::class.java) ?: return
-        val bleDevice = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS, context) ?: return
+        val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java) ?: return
+        val bleDevice = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_OUTPUTS) ?: return
 
         track?.setPreferredDevice(bleDevice)
         audioManager.setCommunicationDevice(bleDevice)

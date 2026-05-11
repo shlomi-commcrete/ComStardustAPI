@@ -1,6 +1,5 @@
 package com.commcrete.stardust.stardust.model
 
-import android.content.Context
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
@@ -11,7 +10,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
 data class StardustPackage(
-    val context: Context,
     val syncBytes: Array<Int>,
     var destinationBytes: Array<Int>,
     var sourceBytes: Array<Int>,
@@ -46,7 +44,7 @@ data class StardustPackage(
         senderId = ids.senderId
         groupId = ids.groupId
         chatId = runBlocking(Dispatchers.IO) {
-            DataManager.getAppRepo(context).getChatIdForReceivedPackage(senderId, groupId)
+            DataManager.getAppRepo().getChatIdForReceivedPackage(senderId, groupId)
         }
     }
 
@@ -64,9 +62,9 @@ data class StardustPackage(
         }
     }
 
-    private fun encryptData(context: Context) {
+    private fun encryptData() {
         val byteArray = getDataForEncryption()
-        val encrypted = CryptoUtils.encryptData(context, byteArray)
+        val encrypted = CryptoUtils.encryptData(byteArray)
         lengthForCrypt = byteArray.size
         cryptData = byteArrayToIntArray(encrypted)
     }
@@ -125,7 +123,7 @@ data class StardustPackage(
         return packageToReturn
     }
 
-    fun getStardustPackageToSend(context: Context): ByteArray {
+    fun getStardustPackageToSend(): ByteArray {
         val packageToSend = mutableListOf<Int>()
         for (data in syncBytes) {
             appendToIntArray(data, packageToSend)
@@ -133,7 +131,7 @@ data class StardustPackage(
         appendToIntArray(openControlByte.getControlByteValue(), packageToSend)
         appendToIntArray(lengthForCrypt, packageToSend)
         if(openControlByte.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
-            encryptData(context)
+            encryptData()
             for (data in cryptData) {
                 appendToIntArray(data, packageToSend)
             }
@@ -224,7 +222,7 @@ data class StardustPackage(
 
     fun toHex (): String {
         try {
-            return getStardustPackageToSend(context).joinToString(" ") { "%02X".format(it.toLong() and 0xFF) }
+            return getStardustPackageToSend().joinToString(" ") { "%02X".format(it.toLong() and 0xFF) }
         }catch (e : Exception) {
             e.printStackTrace()
             return ""

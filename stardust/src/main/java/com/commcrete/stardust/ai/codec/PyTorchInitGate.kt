@@ -5,15 +5,16 @@ import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import android.content.Context
+import com.commcrete.stardust.util.DataManager
 
 object PyTorchInitGate {
     private const val LOCK_NAME = "pytorch_once.lock"
     @Volatile private var holder: Holder? = null
 
-    fun isPrimaryInitializer(ctx: Context): Boolean {
+    fun isPrimaryInitializer(): Boolean {
         if (holder != null) return true
         return try {
-            val f = File(ctx.filesDir, LOCK_NAME)
+            val f = File(DataManager.appContext.filesDir, LOCK_NAME)
             val raf = RandomAccessFile(f, "rw")
             val ch: FileChannel = raf.channel
             val lk: FileLock? = ch.tryLock()  // null if already locked by another classloader

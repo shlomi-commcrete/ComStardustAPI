@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
+
 import android.location.Location
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -19,7 +19,6 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 object SOSUtils {
 
     suspend fun sendAlert(
-        context: Context,
         sosType: SOS_REPORT_TYPES?,
         text: String ? = null,
         location: Location,
@@ -38,7 +37,6 @@ object SOSUtils {
         val radio = CarriersUtils.getRadioToSend(functionalityType = FunctionalityType.REPORTS) ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
@@ -46,32 +44,30 @@ object SOSUtils {
 
         sosMessage.stardustControlByte.stardustDeliveryType = radio.second
         sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
-        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
-        saveSOSMessage(context, sosType, stardustAPIPackage, location)
+        DataManager.getClientConnection().addMessageToQueue(sosMessage)
+        saveSOSMessage(sosType, stardustAPIPackage, location)
     }
 
-    fun ackSOS (context: Context, stardustAPIPackage: StardustAPIPackage) {
+    fun ackSOS(stardustAPIPackage: StardustAPIPackage) {
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = stardustAPIPackage.receiverId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
-        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+        DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
 
-    fun updateSosDestinations(context: Context, destinationId: String) {
+    fun updateSosDestinations(destinationId: String) {
         val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         val deviceId = RegisteredUserUtils.mRegisterUser.value?.deviceId ?: return
         val sosXCVR = ConfigurationUtils.bittelConfiguration.value?.sosXCVR ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            context = context,
             data = buildUpdateSosDestinationPayload(sosXCVR, destinationId),
             source = appId,
             destination = deviceId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION)
-        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
-        DataManager.getClientConnection(context).saveConfiguration()
+        DataManager.getClientConnection().addMessageToQueue(sosMessage)
+        DataManager.getClientConnection().saveConfiguration()
     }
 
     private fun buildUpdateSosDestinationPayload(sosXCVR: Int, id: String): Array<Int> {
@@ -82,23 +78,22 @@ object SOSUtils {
         }.toIntArray().toTypedArray()
     }
 
-    suspend fun sendSos (context: Context, location: Location) {
+    suspend fun sendSos(location: Location) {
         var data : Array<Int> = arrayOf()
 
         data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
 
-        val user = RegisteredUserUtils.mRegisterUser ?: return
-        val appId = user.value?.appId ?: return
-        val deviceId = user.value?.deviceId ?: return
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val appId = user.appId ?: return
+        val deviceId = user.deviceId ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = appId,
             destination = deviceId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
             data = data)
 
-        DataManager.getClientConnection(context).addMessageToQueue(sosMessage)
+        DataManager.getClientConnection().addMessageToQueue(sosMessage)
 
         val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
         val sosPackage = StardustAPIPackage(
@@ -107,18 +102,17 @@ object SOSUtils {
             requireAck = true
         )
 
-        saveSOSMessage(context, null , sosPackage, location)
+        saveSOSMessage(null , sosPackage, location)
     }
 
     suspend fun saveSOSMessage (
-        context: Context,
         type: SOS_REPORT_TYPES?,
         stardustAPIPackage: StardustAPIPackage,
         location: Location,
         state: MessageState = MessageState.SENT
     ) {
 
-        DataManager.getAppRepo(context).saveMessage(
+        DataManager.getAppRepo().saveMessage(
             MessageEntity(
                 senderID = stardustAPIPackage.senderId,
                 receiverID = stardustAPIPackage.receiverId,

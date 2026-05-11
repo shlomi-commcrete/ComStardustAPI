@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.util.DataManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -200,10 +201,10 @@ object AIPcmStreamPlayer {
         isRecoded = false
     }
 
-    fun initPttInputFile(context: Context, ids: StardustAPIPackage): File? {
+    fun initPttInputFile(ids: StardustAPIPackage): File? {
         setTs()
         val source = ids.groupId ?: ids.senderId
-        val dir = File(context.filesDir, source)
+        val dir = File(DataManager.appContext.filesDir, source)
 
         if (!dir.exists() && !dir.mkdirs()) {
             Log.e("PcmStreamPlayer", "Failed to create directory: ${dir.absolutePath}")

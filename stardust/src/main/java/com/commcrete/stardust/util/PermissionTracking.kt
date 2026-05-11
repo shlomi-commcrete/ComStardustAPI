@@ -7,17 +7,17 @@ import pub.devrel.easypermissions.EasyPermissions
 
 object PermissionTracking {
 
-    fun hasCOntactPermissions(context: Context):Boolean =
+    fun hasCOntactPermissions():Boolean =
         EasyPermissions.hasPermissions(
-            context,
+            DataManager.appContext,
             android.Manifest.permission.READ_CONTACTS,
             android.Manifest.permission.WRITE_CONTACTS,
         )
 
-    fun hasBlePermissions(context: Context):Boolean =
+    fun hasBlePermissions():Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             EasyPermissions.hasPermissions(
-                context,
+                DataManager.appContext,
                 android.Manifest.permission.BLUETOOTH_CONNECT,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -25,50 +25,50 @@ object PermissionTracking {
             )
         } else {
             EasyPermissions.hasPermissions(
-                context,
+                DataManager.appContext,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
             )
         }
 
 
-    fun hasMicrophonePermission(context: Context):Boolean =
+    fun hasMicrophonePermission():Boolean =
         EasyPermissions.hasPermissions(
-            context,
+            DataManager.appContext,
             android.Manifest.permission.RECORD_AUDIO
         )
 
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    fun hasNotificationPermission(context: Context):Boolean =
+    fun hasNotificationPermission():Boolean =
         EasyPermissions.hasPermissions(
-            context,
+            DataManager.appContext,
             android.Manifest.permission.POST_NOTIFICATIONS
         )
-    fun hasLocationPermission(context: Context):Boolean =
+    fun hasLocationPermission():Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             EasyPermissions.hasPermissions(
-                context,
+                DataManager.appContext,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
                 android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
             )
         } else {
             EasyPermissions.hasPermissions(
-                context,
+                DataManager.appContext,
                 android.Manifest.permission.ACCESS_FINE_LOCATION,
                 android.Manifest.permission.ACCESS_COARSE_LOCATION,
             )
         }
 
-    fun hasLocationPermissionNoBackground(context: Context):Boolean = EasyPermissions.hasPermissions(
-        context,
+    fun hasLocationPermissionNoBackground():Boolean = EasyPermissions.hasPermissions(
+        DataManager.appContext,
         android.Manifest.permission.ACCESS_FINE_LOCATION,
         android.Manifest.permission.ACCESS_COARSE_LOCATION,
     )
 
-    fun hasLocationPermissionForeground(context: Context):Boolean =
+    fun hasLocationPermissionForeground():Boolean =
         EasyPermissions.hasPermissions(
-            context,
+            DataManager.appContext,
             android.Manifest.permission.ACCESS_FINE_LOCATION,
             android.Manifest.permission.ACCESS_COARSE_LOCATION,
         )

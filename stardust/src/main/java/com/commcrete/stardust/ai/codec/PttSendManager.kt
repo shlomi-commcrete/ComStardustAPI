@@ -1,6 +1,6 @@
 package com.commcrete.stardust.ai.codec
 
-import android.content.Context
+
 import android.media.MediaCodec
 import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
@@ -46,10 +46,10 @@ object PttSendManager {
     private var viewModel : PttInterface? = null
     var aiEnabled = false
 
-    fun init(context: Context, viewModel : PttInterface? = null) {
-        cacheDir = context.cacheDir
+    fun init(viewModel : PttInterface? = null) {
+        cacheDir = DataManager.appContext.cacheDir
         this.viewModel = viewModel
-        startEncodingJob(context)
+        startEncodingJob()
         aiEnabled = true
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
@@ -62,8 +62,8 @@ object PttSendManager {
         this.chatId = chatId
     }
 
-    fun finish(context: Context) {
-        saveToFile(context, byteArrayOf()) // Need to delete
+    fun finish() {
+        saveToFile(byteArrayOf()) // Need to delete
         Log.d(TAG, "3 seconds elapsed, saving to file.")
         needToRun = false
         val file = fileToSave ?: return
@@ -76,7 +76,7 @@ object PttSendManager {
                 WavHelper.createWavFile(sampleArray, 24000, file)
                 Log.d(TAG, "WAV file created: ${file.absolutePath}")
 
-                DataManager.getAppRepo(context).saveMessage(
+                DataManager.getAppRepo().saveMessage(
                     MessageEntity(
                         chatId = chatId,
                         senderID = appId,
@@ -96,7 +96,7 @@ object PttSendManager {
         }
     }
 
-    private fun startEncodingJob(context: Context) {
+    private fun startEncodingJob() {
         if (!aiEnabled) return  // hard guard everywhere you might touch PyTorch
         encodingJob = coroutineScope.launch {
             while (isActive) { // Keep the decoding loop active
@@ -106,7 +106,7 @@ object PttSendManager {
                     val pcmArray = toEncodeQueue.tryReceive().getOrNull() // Attempt to receive without suspending
 
                     if (pcmArray != null) {
-                        handleTokenizerChunk(context, pcmArray)
+                        handleTokenizerChunk(pcmArray)
                         Log.d(TAG, "Codec decoding loop iteration completed.")
                     }
 
@@ -125,7 +125,7 @@ object PttSendManager {
         }
     }
 
-    private fun handleTokenizerChunk(context: Context, pcmArray: ShortArray) {
+    private fun handleTokenizerChunk(pcmArray: ShortArray) {
         CoroutineScope(Dispatchers.IO).launch {
             Log.d(TAG_ENCODE, "Encoding PCM chunk of size")
             val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
@@ -134,15 +134,15 @@ object PttSendManager {
 
             val packedData = BitPacking12.pack12(chunkCodes.toList())
 
-            sendData(context, packedData)
+            sendData(packedData)
 
-            saveToFile(context, packedData)
+            saveToFile(packedData)
 
         }
     }
 
     // Equivalent to private void SendData(byte[] data)
-    private fun sendData(context: Context, data: ByteArray) {
+    private fun sendData(data: ByteArray) {
         Log.d(TAG, "Send msg: ${data.size} data: ${data.toHexString()}")
         val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
 
@@ -152,7 +152,6 @@ object PttSendManager {
             System.arraycopy(data, 0, fullData, 1, data.size)
             val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
             StardustPackageUtils.getStardustPackage(
-                context = context,
                 source = it.getSource(),
                 destination = it.getDestination(),
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
@@ -188,10 +187,10 @@ object PttSendManager {
     private var lastTokens  : List<Long>? = null
 
 
-    private fun saveToFile(context: Context, packData: ByteArray) {
+    private fun saveToFile(packData: ByteArray) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
 
-        if (!needToRun || !DataManager.getSavePTTFilesRequired(context)) return
+        if (!needToRun || !DataManager.getSavePTTFilesRequired()) return
 
         if (isFirst) {
             isFirst = false
@@ -199,7 +198,7 @@ object PttSendManager {
         }
         Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
         val unpack = BitPacking12.unpack12(packData)
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType()
         val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM, modelTypeSelected)
         Log.d(TAG_DECODE, "Decoded PCM data size")
         frameBuffer.add(finalPcmData)

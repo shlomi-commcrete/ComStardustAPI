@@ -7,11 +7,12 @@ import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
 
 object StardustPolygonChange {
 
-    internal val clientConnection : ClientConnection = DataManager.getClientConnection(DataManager.context)
+    internal val clientConnection : ClientConnection = DataManager.getClientConnection()
     var isProcessRunning = false
 
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
@@ -25,12 +26,12 @@ object StardustPolygonChange {
         handler.postDelayed(runnable, 40000)
     }
 
-    fun startProcess (beamNum : String, context: Context) {
+    fun startProcess (beamNum : String) {
         isProcessRunning = true
-        requestNewFreq(beamNum, context)
+        requestNewFreq(beamNum)
     }
 
-    private fun requestNewFreq (beamNum : String, context: Context) {
+    private fun requestNewFreq (beamNum : String) {
 //        SharedPreferencesUtil.getAppUser(context)?.let {
 //            Scopes.getDefaultCoroutine().launch {
 //                val bittel = it.bittelId
@@ -44,30 +45,27 @@ object StardustPolygonChange {
         resetTimer()
 
     }
-    private fun sendNewFreq (context: Context) {
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                // TODO: add number of polygon
-                val frequencyHRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val frequencyHRRadioTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val frequencyLRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val frequencyHRSatelliteRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val frequencyHRRadioRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val frequencyLRSatelliteRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
-                val data = StardustPackageUtils.byteArrayToIntArray(frequencyHRSatelliteTXBytes +
-                        frequencyHRRadioTXBytes + frequencyLRSatelliteTXBytes + frequencyHRSatelliteRXBytes +
-                        frequencyHRRadioRXBytes +  frequencyLRSatelliteRXBytes)
-                val txPackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ,
-                    data = data)
-                clientConnection.addMessageToQueue(txPackage)
-            }
-        }
+    private fun sendNewFreq() {
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val src = user.appId ?: return
+        val dst = user.deviceId ?: return
+
+        val frequencyHRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val frequencyHRRadioTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val frequencyLRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val frequencyHRSatelliteRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val frequencyHRRadioRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val frequencyLRSatelliteRXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
+        val data = StardustPackageUtils.byteArrayToIntArray(frequencyHRSatelliteTXBytes +
+                frequencyHRRadioTXBytes + frequencyLRSatelliteTXBytes + frequencyHRSatelliteRXBytes +
+                frequencyHRRadioRXBytes +  frequencyLRSatelliteRXBytes)
+        val txPackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_FREQ,
+            data = data)
+        clientConnection.addMessageToQueue(txPackage)
+
         resetTimer()
     }
 
@@ -75,19 +73,17 @@ object StardustPolygonChange {
         // TODO: Notify server of successful update then save config
         resetTimer()
     }
-    fun sendSaveConfig (context: Context) {
-        SharedPreferencesUtil.getAppUser(context)?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-                    context = context,
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
-                clientConnection.addMessageToQueue(configurationSavePackage)
-            }
-        }
+    fun sendSaveConfig() {
+        val user = RegisteredUserUtils.mRegisterUser.value ?: return
+        val src = user.appId ?: return
+        val dst = user.deviceId ?: return
+
+        val configurationSavePackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
+        clientConnection.addMessageToQueue(configurationSavePackage)
+
         resetTimer()
     }
 

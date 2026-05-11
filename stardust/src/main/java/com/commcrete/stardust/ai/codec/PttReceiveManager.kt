@@ -13,7 +13,7 @@ import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.DataManager.context
+import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.audio.PlayerUtils.ParsedAiData
 import kotlinx.coroutines.CoroutineScope
@@ -117,9 +117,9 @@ object PttReceiveManager {
 
         if(!isFileInit) {
             Log.d("PcmStreamPlayer", "Initializing PTT input file...")
-            val file = initPttInputFile(context, pkg) ?: return
+            val file = initPttInputFile(pkg) ?: return
 
-            DataManager.getAppRepo(context).saveMessage(
+            DataManager.getAppRepo().saveMessage(
                 MessageEntity(
                     chatId = data.chatId,
                     senderID = data.senderId,

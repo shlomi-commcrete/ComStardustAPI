@@ -1,7 +1,6 @@
 package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
-import android.content.Context
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
@@ -25,7 +24,7 @@ object RecorderUtils {
     private val LOG_TAG = "AudioRecordTest"
 
     private var pttInterface : PttInterface? = null
-    private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
+    private var wavRecorder : WavRecorder? = WavRecorder()
     private var aiRecorder : AudioRecorderAI? = null
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
@@ -35,9 +34,9 @@ object RecorderUtils {
         RecorderUtils.pttInterface = pttInterface
     }
 
-    fun onPTTTest(){
-        wavRecorder = WavRecorder(DataManager.context, null)
-        wavRecorder?.sendAudioTest(DataManager.context)
+    fun onPTTTest() {
+        wavRecorder = WavRecorder()
+        wavRecorder?.sendAudioTest()
     }
 
 
@@ -63,11 +62,10 @@ object RecorderUtils {
     }
 
     private fun startCodec2Recording(destination: String, carrier: Carrier?): File? {
-        wavRecorder = WavRecorder(DataManager.context, pttInterface)
+        wavRecorder = WavRecorder(pttInterface)
         wavRecorder ?: return null
-        val file: File? = if (!DataManager.getSavePTTFilesRequired(DataManager.context)) {
+        val file: File? = if (!DataManager.getSavePTTFilesRequired()) {
             FileUtils.withTempFile(
-                context = DataManager.context,
                 prefix = destination,
                 suffix = DataManager.getSource()
             ) { tempFile ->
@@ -83,13 +81,12 @@ object RecorderUtils {
 
     private fun startAIRecording(chatId: String, receiverId: String, carrier: Carrier?): File? {
         Log.d("AudioRecorder", "NAE Recording Started")
-        PttSendManager.init(DataManager.context, pttInterface)
+        PttSendManager.init(pttInterface)
 
         // Determine which file to use
-        val file: File? = if (!DataManager.getSavePTTFilesRequired(DataManager.context)) {
+        val file: File? = if (!DataManager.getSavePTTFilesRequired()) {
             // Use temporary file
             FileUtils.withTempFile(
-                context = DataManager.context,
                 prefix = receiverId,
                 suffix = DataManager.getSource()
             ) { tempFile ->
@@ -109,7 +106,7 @@ object RecorderUtils {
         PttSendManager.restart()
 
         aiRecorder = AudioRecorderAI(
-            context = DataManager.context,
+            context = DataManager.appContext,
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {
@@ -125,17 +122,17 @@ object RecorderUtils {
             }
             onStateChanged = { recording ->
                 Log.d(LOG_TAG, "Recording state changed: $recording")
-                if (!recording) finishAIRecording(DataManager.context)
+                if (!recording) finishAIRecording()
             }
             start()
         }
 
         Log.d("AudioRecorder", "AudioRecorderAI started")
     }
-    private fun finishAIRecording(context: Context) {
+    private fun finishAIRecording() {
         Scopes.getDefaultCoroutine().launch {
             delay(3000)
-            PttSendManager.finish(context)
+            PttSendManager.finish()
         }
     }
 
@@ -162,7 +159,6 @@ object RecorderUtils {
     private fun stopCodec2Recording(receiverID: String, carrier: Carrier?, file: File) {
         wavRecorder?.run {
             stopRecording(
-                context = context,
                 retry = 0,
                 receiverId = receiverID,
                 path = file.absolutePath,
@@ -210,8 +206,9 @@ object RecorderUtils {
         }
     }
 
-    private fun createFileWav(context: Context, chatID: String, userId: String) : File{
+    private fun createFileWav(chatID: String, userId: String) : File{
         ts = System.currentTimeMillis()
+        val context = DataManager.appContext
         val directory = File("${context.filesDir}/$chatID")
         val newFile = File("${context.filesDir}/$chatID/$ts-$userId.wav")
         if(!directory.exists()){

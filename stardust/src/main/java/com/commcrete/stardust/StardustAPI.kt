@@ -1,7 +1,6 @@
 package com.commcrete.stardust
 
 import android.bluetooth.le.ScanResult
-import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
@@ -20,57 +19,56 @@ import java.io.File
 interface StardustAPI {
 
     // Send to the SDK
-    fun sendMessage (context: Context,stardustAPIPackage: StardustAPIPackage, text : String)
-    fun startPTT (context: Context, chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
-    fun stopPTT (context: Context, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
-    fun sendLocation (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun sendImage (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
-    fun sendFile (context: Context, data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
-    fun stopSendFile (context: Context, data: FileTransferData.Send)
-    fun requestLocation (context: Context,stardustAPIPackage: StardustAPIPackage)
-    fun sendSOS (context: Context,stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?)
-    fun init(context: Context, fileLocation : String)
-    fun scanForDevice(context: Context,) : MutableLiveData<List<ScanResult>>
-    fun connectToDevice(context: Context,device: ScanResult)
-    fun disconnectFromDevice(context: Context,)
-    fun logout(context: Context)
+    fun sendMessage(stardustAPIPackage: StardustAPIPackage, text : String)
+    fun startPTT( chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
+    fun stopPTT( stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
+    fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun sendImage(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
+    fun sendFile(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
+    fun stopSendFile(data: FileTransferData.Send)
+    fun requestLocation(stardustAPIPackage: StardustAPIPackage)
+    fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?)
+    fun init(fileLocation : String)
+    fun scanForDevice(): MutableLiveData<List<ScanResult>>
+    fun connectToDevice(device: ScanResult)
+    fun disconnectFromDevice()
+    fun logout()
     fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
-    fun getCarriers (context: Context) : List<Carrier>?
-    fun sendRealSOS(context: Context, location: Location)
-    fun AckSOS(context: Context, stardustAPIPackage: StardustAPIPackage)
-    fun setSecurityKey(context: Context, key: String, name : String)
-    fun setSecurityKeyDefault(context: Context)
-    fun getSecurityKey(context: Context) : ByteArray
-    fun reconnectToCurrentDevice (context: Context)
-    fun canRecord (context: Context) : MutableLiveData<Boolean>
+    fun getCarriers (): List<Carrier>?
+    fun sendRealSOS(location: Location)
+    fun AckSOS(stardustAPIPackage: StardustAPIPackage)
+    fun setSecurityKey(key: String, name : String)
+    fun setSecurityKeyDefault()
+    fun getSecurityKey(): ByteArray
+    fun reconnectToCurrentDevice()
+    fun canRecord(): MutableLiveData<Boolean>
 }
 
 // Receive from the SDK
 interface StardustAPICallbacks {
     fun pttMaxTimeoutReached ()
-    fun receiveMessage (stardustAPIPackage: StardustAPIPackage, text : String)
-    fun receiveLocation (stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun receiveSOS (stardustAPIPackage: StardustAPIPackage, sosPackage: SOSPackage)
-    fun receiveRealSOS (stardustAPIPackage: StardustAPIPackage, location: Location)
-    fun handleSOSAck (stardustAPIPackage: StardustAPIPackage)
-    fun receivePTT (stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
-    fun startedReceivingPTT (stardustAPIPackage: StardustAPIPackage, file: File)
-    fun stopReceivingPTT (stardustAPIPackage: StardustAPIPackage)
-    fun receiveImage (data: FileTransferData.Receive, file: File)
+    fun receiveMessage(stardustAPIPackage: StardustAPIPackage, text : String)
+    fun receiveLocation(stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun receiveSOS(stardustAPIPackage: StardustAPIPackage, sosPackage: SOSPackage)
+    fun receiveRealSOS(stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun handleSOSAck(stardustAPIPackage: StardustAPIPackage)
+    fun receivePTT(stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
+    fun startedReceivingPTT(stardustAPIPackage: StardustAPIPackage, file: File)
+    fun stopReceivingPTT(stardustAPIPackage: StardustAPIPackage)
+    fun receiveImage(data: FileTransferData.Receive, file: File)
     fun receiveFile(data: FileTransferData.Receive, file: File)
     fun receiveFileStatus(
         data: FileTransferData.Receive,
         percentage: Int,
     )
-    fun receiveFailure (
+    fun receiveFailure(
         data: FileTransferData.Receive,
         failure: FileReceiver.FileFailure
     )
-    fun connectionStatusChanged (connectionType: ConnectionType?)
-    fun onRSSIChanged (rssi : Int)
-    fun onBatteryChanged (battery : Int)
-    fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
-    fun onPermissionDenied (deviceName : String)
-
+    fun connectionStatusChanged(connectionType: ConnectionType?)
+    fun onRSSIChanged(rssi : Int)
+    fun onBatteryChanged(battery : Int)
+    fun onAppEvent(stardustAppEventPackage: StardustAppEventPackage)
+    fun onPermissionDenied(deviceName : String)
     fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
 }

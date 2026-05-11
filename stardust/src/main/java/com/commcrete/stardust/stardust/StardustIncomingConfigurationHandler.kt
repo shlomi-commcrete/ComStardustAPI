@@ -1,6 +1,6 @@
 package com.commcrete.stardust.stardust
 
-import android.content.Context
+
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.ConfigurationUtils
@@ -16,21 +16,21 @@ internal object StardustIncomingConfigurationHandler {
         val hasPresetsWithoutConfig: Boolean
     )
 
-    fun parseAndApplyConfiguration(context: Context, packet: StardustPackage): ApplyResult {
+    fun parseAndApplyConfiguration(packet: StardustPackage): ApplyResult {
         val cfg = StardustConfigurationParser().parseConfiguration(packet)
             ?: return ApplyResult(applied = false, hasPresetsWithoutConfig = false)
-        SharedPreferencesUtil.saveLastSosDestinations(context, cfg.sosDestinations)
+        SharedPreferencesUtil.saveLastSosDestinations(cfg.sosDestinations)
         Scopes.getMainCoroutine().launch {
             ConfigurationUtils.bittelConfiguration.value = cfg
         }
         ConfigurationUtils.licensedFunctionalities =
             LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
         ConfigurationUtils.setConfigFile(cfg)
-        ConfigurationUtils.setDefaults(context)
+        ConfigurationUtils.setDefaults()
 
         return ApplyResult(
             applied = true,
-            hasPresetsWithoutConfig = cfg.presetsWithoutConfig(context).isNotEmpty()
+            hasPresetsWithoutConfig = cfg.presetsWithoutConfig().isNotEmpty()
         )
     }
 }

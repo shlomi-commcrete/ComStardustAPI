@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.content.Context
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.StardustOpCode
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
@@ -52,46 +51,42 @@ object GroupsUtils {
 
     /** Builds and enqueues a Stardust package. No-op when no endpoints are available. */
     private fun sendOp(
-        context: Context,
         opCode: StardustOpCode,
         data: Array<Int>? = null
     ) {
         val (src, dst) = endpoints() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = src,
             destination = dst,
             stardustOpCode = opCode,
             data = data
         )
-        DataManager.getClientConnection(context).addMessageToQueue(pkg)
+        DataManager.getClientConnection().addMessageToQueue(pkg)
     }
 
     // ---------------------------------------------------------------------
     //  Public BLE API
     // ---------------------------------------------------------------------
 
-    fun sendDeleteAllGroups(context: Context) = deleteAllDeviceGroups(context)
+    fun sendDeleteAllGroups() = deleteAllDeviceGroups()
 
-    fun deleteAllDeviceGroups(context: Context) {
-        sendOp(context, StardustOpCode.REQUEST_DELETE_ALL_GROUPS, smartphoneMarker())
+    fun deleteAllDeviceGroups() {
+        sendOp(StardustOpCode.REQUEST_DELETE_ALL_GROUPS, smartphoneMarker())
     }
 
-    fun getAllDeviceGroups(context: Context) {
-        sendOp(context, StardustOpCode.REQUEST_GET_ALL_GROUPS)
+    fun getAllDeviceGroups() {
+        sendOp(StardustOpCode.REQUEST_GET_ALL_GROUPS)
     }
 
-    fun addDeviceGroups(context: Context, groupId: List<String>) {
+    fun addDeviceGroups(groupId: List<String>) {
         sendOp(
-            context,
             StardustOpCode.REQUEST_ADD_GROUPS,
             encodeGroupsPayload(groupId, padIfEmpty = false)
         )
     }
 
-    fun deleteDeviceGroups(context: Context, groupId: List<String>) {
+    fun deleteDeviceGroups(groupId: List<String>) {
         sendOp(
-            context,
             StardustOpCode.REQUEST_REMOVE_GROUPS,
             encodeGroupsPayload(groupId, padIfEmpty = false)
         )
@@ -104,15 +99,13 @@ object GroupsUtils {
      *   * `sendIfEmpty` — manual push always sends; local-init can opt out.
      */
     private fun loadAndSendAddGroups(
-        context: Context,
         padIfEmpty: Boolean,
         sendIfEmpty: Boolean
     ) {
         groupsScope.launch {
-            val ids = DataManager.getAppRepo(context).getAllGroupIds()
+            val ids = DataManager.getAppRepo().getAllGroupIds()
             if (!sendIfEmpty && ids.isEmpty()) return@launch
             sendOp(
-                context,
                 StardustOpCode.REQUEST_ADD_GROUPS,
                 encodeGroupsPayload(ids, padIfEmpty)
             )
@@ -120,11 +113,11 @@ object GroupsUtils {
         }
     }
 
-    fun sendAddAllGroups(context: Context, sendIfEmpty: Boolean = true) =
-        loadAndSendAddGroups(context, padIfEmpty = true, sendIfEmpty = sendIfEmpty)
+    fun sendAddAllGroups(sendIfEmpty: Boolean = true) =
+        loadAndSendAddGroups(padIfEmpty = true, sendIfEmpty = sendIfEmpty)
 
-    fun addGroupsToLocal(context: Context) =
-        loadAndSendAddGroups(context, padIfEmpty = false, sendIfEmpty = true)
+    fun addGroupsToLocal() =
+        loadAndSendAddGroups(padIfEmpty = false, sendIfEmpty = true)
 
     // ---------------------------------------------------------------------
     //  Group/contact resolution (sender vs group)
@@ -182,13 +175,13 @@ object GroupsUtils {
     // ---------------------------------------------------------------------
 
     suspend fun isLocalGroupId(id: String): Boolean =
-        DataManager.getAppRepo(DataManager.context).isGroupId(id.lowercase())
+        DataManager.getAppRepo().isGroupId(id.lowercase())
 
     suspend fun isLocalGroupId(ids: Collection<String?>): Boolean =
-        DataManager.getAppRepo(DataManager.context).hasAnyGroupId(ids)
+        DataManager.getAppRepo().hasAnyGroupId(ids)
 
-    fun hasLocalGroups(context: Context): Boolean = runBlocking(Dispatchers.IO) {
-        DataManager.getAppRepo(context).getAllGroupIds().isNotEmpty()
+    fun hasLocalGroups(): Boolean = runBlocking(Dispatchers.IO) {
+        DataManager.getAppRepo().getAllGroupIds().isNotEmpty()
     }
 
 }

@@ -9,6 +9,7 @@ import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.legacy_db.messages.MessageItem
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
+import com.commcrete.stardust.util.DataManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -52,8 +53,10 @@ internal class LegacyMigrator(
      * once per installation. On failure the flag is **not** set — the next
      * cold start will retry. Safe to call repeatedly.
      */
-    suspend fun migrate(context: Context) = withContext(Dispatchers.IO) {
+    suspend fun migrate() = withContext(Dispatchers.IO) {
+        val context = DataManager.appContext
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
         if (prefs.getBoolean(KEY_MIGRATION_DONE, false)) return@withContext
 
         try {

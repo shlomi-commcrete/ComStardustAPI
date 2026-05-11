@@ -83,7 +83,7 @@ class StardustPackageParser : StardustParser() {
             var decryptData = byteArrayOf()
             if(openControl.stardustCryptType == OpenStardustControlByte.StardustCryptType.ENCRYPTED) {
                 val encryptedBytes = byteArray.copyOfRange(offset, cryptLength+offset)
-                decryptData = CryptoUtils.decryptData(context,encryptedBytes)
+                decryptData = CryptoUtils.decryptData(encryptedBytes)
             } else {
                 decryptData = byteArray.copyOfRange(offset, cryptLength+offset)
             }
@@ -145,8 +145,7 @@ class StardustPackageParser : StardustParser() {
             if(packageState != PackageState.VALID) {
                 return null
             }
-            val StardustPackage = StardustPackage(
-                context = context,
+            val pkg = StardustPackage(
                 syncBytes = StardustPackageUtils.byteArrayToIntArray(syncBytes),
                 destinationBytes = StardustPackageUtils.byteArrayToIntArray(destinationBytes),
                 sourceBytes = StardustPackageUtils.byteArrayToIntArray(sourceBytes),
@@ -157,7 +156,7 @@ class StardustPackageParser : StardustParser() {
                 checkXor = if(checkXorBytes.isEmpty()) -2000 else checkXorBytes[0].toInt()
 
             )
-            return StardustPackage
+            return pkg
         }
         return null
     }

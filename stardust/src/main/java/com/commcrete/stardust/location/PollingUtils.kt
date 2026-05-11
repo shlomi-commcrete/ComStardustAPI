@@ -1,17 +1,17 @@
 package com.commcrete.stardust.location
 
-import android.content.Context
+
 import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.launch
 
-internal class PollingUtils (private val context: Context){
+internal class PollingUtils() {
 
     var interval : Int = 0
     var isRunning = false
@@ -32,7 +32,7 @@ internal class PollingUtils (private val context: Context){
         }else {
             responseResults[nextUser] = PollingResponse.FAILURE
             resetFailTimer()
-            pullUserLocation(context)
+            pullUserLocation()
             clearTimerLoopTimer()
         }
         syncDataToPublish()
@@ -54,7 +54,7 @@ internal class PollingUtils (private val context: Context){
     private val loopRunnable : Runnable = kotlinx.coroutines.Runnable {
 
         resetUserList()
-        pullUserLocation(context)
+        pullUserLocation()
         resetFailTimer()
         Scopes.getMainCoroutine().launch {
             timeToPullSeconds.value = interval
@@ -62,7 +62,7 @@ internal class PollingUtils (private val context: Context){
     }
 
 
-    fun startPolling(interval :Int, userIds : List<String>, context: Context) {
+    fun startPolling(interval :Int, userIds : List<String>) {
 
         this.interval = interval
         Scopes.getMainCoroutine().launch {
@@ -72,7 +72,7 @@ internal class PollingUtils (private val context: Context){
         for (id in userIds) {
             responseResults[id] = null
         }
-        pullUserLocation(context)
+        pullUserLocation()
         resetFailTimer()
     }
 
@@ -93,14 +93,15 @@ internal class PollingUtils (private val context: Context){
         resetFailTimer()
     }
 
-    private fun pullUserLocation (context: Context) {
+    private fun pullUserLocation() {
         val nextUser = getNexUserId()
-        DataManager.getClientConnection(context)?.let {client ->
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let { myId ->
+        DataManager.getClientConnection().let {client ->
+
+            RegisteredUserUtils.mRegisterUser.value?.appId?.let { myId ->
+
                 nextUser?.let { nextUser ->
                     client.sendMessage(
                         StardustPackageUtils.getStardustPackage(
-                            context = context,
                             source = myId,
                             destination = nextUser,
                             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)

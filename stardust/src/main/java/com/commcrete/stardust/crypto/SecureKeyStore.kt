@@ -1,12 +1,12 @@
 package com.commcrete.stardust.crypto
 
-import android.content.Context
+
 import android.util.Base64
-import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import com.commcrete.stardust.util.DataManager
 
-class SecureKeyStore(val context: Context) {
+class SecureKeyStore() {
 
 
     // 1.0.0 API: MasterKeys
@@ -19,7 +19,7 @@ class SecureKeyStore(val context: Context) {
         EncryptedSharedPreferences.create(
             PREFS_NAME,                                // fileName
             masterKeyAlias,                            // masterKeyAlias
-            context,                                // <-- must be a real Android context
+            DataManager.appContext,                                // <-- must be a real Android context
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )

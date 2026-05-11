@@ -1,7 +1,6 @@
 package com.commcrete.stardust.util.audio
 
 import android.annotation.SuppressLint
-import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -47,7 +46,6 @@ import kotlin.random.Random
 
 
 class WavRecorder(
-    val context: Context,
     private val viewModel : PttInterface? = null
 ) : BleMediaConnector() {
 
@@ -86,29 +84,29 @@ class WavRecorder(
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
-        val audioSource = SharedPreferencesUtil.getCodecAudioSource(DataManager.context)
+        val audioSource = SharedPreferencesUtil.getCodecAudioSource()
         recorder = AudioRecord(
             audioSource,
             RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
             RECORDER_AUDIO_ENCODING, BufferElements2Rec)
 
-        recorder?.audioSessionId?.let { setRecordingParams(it, DataManager.context) }
-        syncBleDevice(context)
+        recorder?.audioSessionId?.let { setRecordingParams(it) }
+        syncBleDevice()
         recorder?.startRecording()
         isRecording = true
 
         recordingThread = thread(true) { writeAudioDataToFile(file, carrier) }
     }
 
-    private fun syncBleDevice (context: Context) {
+    private fun syncBleDevice() {
         Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice")
-
+        val context = DataManager.appContext
         val audioManager = context.getSystemService(AudioManager::class.java)
-        val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
+        val wantedInputDevice = SharedPreferencesUtil.getInputDevice()
 
         if (wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
             val bleDevice =
-                getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
+                getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS)
             bleDevice?.let {
                 Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice has device")
                 recorder?.setPreferredDevice(it)
@@ -122,13 +120,14 @@ class WavRecorder(
         }
     }
 
-    private fun removeSyncBleDevices (context: Context) {
+    private fun removeSyncBleDevices() {
         Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
-        val audioManager = context.getSystemService(AudioManager::class.java)
-        val wantedInputDevice = SharedPreferencesUtil.getInputDevice(context)
+
+        val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java)
+        val wantedInputDevice = SharedPreferencesUtil.getInputDevice()
         if(wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
             Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices has device")
-            val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS, context)
+            val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS)
             bleDevice?.let {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     audioManager.clearCommunicationDevice()
@@ -151,7 +150,7 @@ class WavRecorder(
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
-                    removeSyncBleDevices(context)
+                    removeSyncBleDevices()
                     recordingThread = null
                     recorder = null
                 }
@@ -162,7 +161,6 @@ class WavRecorder(
     }
 
     fun stopRecordingNow(
-        context: Context,
         retry : Int = 0,
         chatId: String,
         receiverId: String,
@@ -185,9 +183,9 @@ class WavRecorder(
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
-                    stopRecording(context, retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
+                    stopRecording(retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
                 } finally {
-                    removeSyncBleDevices(context)
+                    removeSyncBleDevices()
                     recordingThread = null
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
@@ -196,11 +194,11 @@ class WavRecorder(
                 }
             }
             // ✅ Save PTT regardless of whether recorder was null
-            saveOrRemovePttFile(context, chatId, receiverId, path)
+            saveOrRemovePttFile(chatId, receiverId, path)
         } catch (e: Exception) {
             Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
 
-            stopRecording(context, retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
+            stopRecording(retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
         } finally {
             // ✅ Always notify
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
@@ -211,7 +209,6 @@ class WavRecorder(
     }
 
     fun stopRecording(
-        context: Context,
         retry : Int = 0,
         chatId: String,
         receiverId: String,
@@ -219,12 +216,12 @@ class WavRecorder(
         carrier: Carrier?) {
         CoroutineScope(Dispatchers.IO).launch {
             delay(200)
-            stopRecordingNow(context, retry, chatId, receiverId, path,  carrier)
+            stopRecordingNow(retry, chatId, receiverId, path,  carrier)
         }
     }
 
     private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
-        val targetGain = (SharedPreferencesUtil.getCodecGain(DataManager.context) / 100f)
+        val targetGain = SharedPreferencesUtil.getCodecGain() / 100f
         val sData = ShortArray(BufferElements2Rec)
         var os: FileOutputStream? = null
         try {
@@ -262,13 +259,13 @@ class WavRecorder(
                 codec2Encoder.encode(sData, charArray)
                 val byteaArray = charsToBytes(charArray)
                 byteaArray?.let {
-                    logByteArray("logByteArrayInputRecorder", it)
+                    logByteArray(it)
                     for (byte in byteaArray)
                         dataPrint.add(byte)
                 }
                 val byteBuffer = codec2Decoder.readFrame(byteaArray)
                 val bDataCodec = byteBuffer.array()
-                logByteArray("logByteArrayOutputRecorder", bDataCodec)
+                logByteArray(bDataCodec)
                 for (byte in bDataCodec)
                     data.add(byte)
 
@@ -290,12 +287,12 @@ class WavRecorder(
         } catch (e: IOException) {
             e.printStackTrace()
         }
-        logByteArray("totalRecording", dataPrint.toByteArray())
+        logByteArray(dataPrint.toByteArray())
     }
 
-    fun sendAudioTest(context: Context) {
-        FileUtils.clearFile(context, fileName = "pttTestsSend")
-        val file = FileUtils.createFile(context, fileName = "pttTestsSend")
+    fun sendAudioTest() {
+        FileUtils.clearFile(fileName = "pttTestsSend")
+        val file = FileUtils.createFile(fileName = "pttTestsSend")
         val mutableByteListToSend = mutableListOf<Byte>()
         while (mutableByteListToSend.size < 78){
             mutableByteListToSend.add(0)
@@ -395,14 +392,14 @@ class WavRecorder(
         data[43] = (contentSize shr 24 and 0xff).toByte()
     }
 
-    private fun saveOrRemovePttFile(context: Context, chatId: String, receiverId: String, path: String) {
+    private fun saveOrRemovePttFile(chatId: String, receiverId: String, path: String) {
         val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
-            if(!DataManager.getSavePTTFilesRequired(context)) {
+            if(!DataManager.getSavePTTFilesRequired()) {
                 File(path).takeIf { it.exists() }?.delete()
                 return@launch
             } else {
-                DataManager.getAppRepo(context).saveMessage(
+                DataManager.getAppRepo().saveMessage(
                     MessageEntity(
                         chatId = chatId,
                         senderID = appId,
@@ -444,7 +441,6 @@ class WavRecorder(
                     audioIntArray[audioIntArray.size - 2] = num
                 }
                 StardustPackageUtils.getStardustPackage(
-                    context = context,
                     source = it.getSource(),
                     destination = it.getDestination(),
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
@@ -452,7 +448,7 @@ class WavRecorder(
             }
 
             pkg ?: return@launch
-            pkg.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+            pkg.stardustControlByte.stardustPartType = if(isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
             pkg.stardustControlByte.stardustDeliveryType = radio.second
             pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
             DataManager.sendDataToBle(pkg)
@@ -465,12 +461,11 @@ class WavRecorder(
     }
 
     private fun appendToArray(byteArray: ByteArray?, carrier: Carrier?, file: File) {
-        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
-        if(numOfPackage.times(880) > maxSecondsPTT){
+        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout()
+        if(numOfPackage.times(880) > maxSecondsPTT) {
             DataManager.getCallbacks()?.pttMaxTimeoutReached()
             viewModel?.let {
                 stopRecording(
-                    context = context,
                     retry = 0,
                     chatId = it.getChatId(),
                     receiverId = it.getDestination(),
@@ -481,7 +476,7 @@ class WavRecorder(
             }
         } else {
             byteArray?.toList()?.let {
-                for(byte in it){
+                for(byte in it) {
                     mutableByteListToSend.add(byte)
                     if(mutableByteListToSend.size == 77) {
                         sendData(mutableByteListToSend.toByteArray().copyOf(), carrier = carrier)
@@ -521,14 +516,14 @@ class WavRecorder(
     }
 
     private fun handleBlePackage (byteArray: ByteArray?, carrier: Carrier?, file: File) {
-        byteArray?.let { logByteArray("handleBlePackage", it) }
+        byteArray?.let { logByteArray(it) }
         if(savedByteArray == null){
             savedByteArray = byteArray
         }else {
             savedByteArray?.let { mArray ->
                 byteArray?.let {
                     val concatenatedByteArray = concatenateByteArraysWithIgnoring(mArray, it)
-                    logByteArray("handleBlePackageconcate", concatenatedByteArray)
+                    logByteArray(concatenatedByteArray)
                     appendToArray(concatenatedByteArray, carrier, file)
                 }
             }
@@ -566,19 +561,19 @@ class WavRecorder(
         }
     }
 
-    private fun logByteArray(tagTitle: String, bDataCodec: ByteArray) {
+    private fun logByteArray(bDataCodec: ByteArray) {
         val stringBuilder = StringBuilder()
         for (element in bDataCodec) {
             stringBuilder.append("${element},")
         }
     }
 
-    private fun setRecordingParams(audioSessionID : Int, context: Context) {
+    private fun setRecordingParams(audioSessionID : Int) {
         try {
-            val audioManager = context.getSystemService(AudioManager::class.java)
-            val isNoise = SharedPreferencesUtil.getNoiseSuppressor(context)
-            val isAGC = SharedPreferencesUtil.getAutoGainControl(context)
-            val isAcoustic = SharedPreferencesUtil.getAcousticEchoControl(context)
+            val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java)
+            val isNoise = SharedPreferencesUtil.getNoiseSuppressor()
+            val isAGC = SharedPreferencesUtil.getAutoGainControl()
+            val isAcoustic = SharedPreferencesUtil.getAcousticEchoControl()
             audioManager?.setParameters("noise_suppression=${if(isNoise) "on" else "off"}")
             if (NoiseSuppressor.isAvailable() && NoiseSuppressor.create(audioSessionID) == null) {
                 var noiseSuppressor : NoiseSuppressor? = null
