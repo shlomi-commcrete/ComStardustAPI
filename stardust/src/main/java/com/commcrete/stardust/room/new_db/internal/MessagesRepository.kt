@@ -187,10 +187,8 @@ internal class MessagesRepository(
             if (!canMessageBeSaved(message)) return@withLock null
 
             withContext(Dispatchers.IO) {
-                val senderId =
-                    if (com.commcrete.stardust.util.RegisteredUserUtils.isRegisteredUser(message.senderID)) message.receiverID
-                    else message.senderID
-                val contactId = ensureSenderExists(senderId.trim().lowercase()) ?: return@withContext null
+                val senderId = message.senderID.trim().lowercase()
+                val contactId = ensureSenderExists(senderId) ?: return@withContext null
                 val chatId = message.chatId?.takeIf { it.isNotBlank() }
                     ?: if (groupId != null) {
                         resolveGroupChatId(groupId)
@@ -214,8 +212,9 @@ internal class MessagesRepository(
         // Fast path for hot message-insert loop — check cache first.
         caches.getContactId(normalizedSenderId)?.let { return it }
 
-        // Single-shot DB lookup across user_ids + device_ids.
-        contactsDao.findContactIdByUserOrDeviceId(normalizedSenderId)?.let { return it }
+        // Single-shot DB lookup across user_ids + device_ids + group_ids.
+        // Uses the universal lookup that checks all three identity tables.
+        contactsDao.findContactIdByMainCommunicationId(normalizedSenderId)?.let { return it }
 
         // Not found — auto-create USER contact (this also populates the cache).
         FullContactData.createUserContact(
@@ -225,7 +224,7 @@ internal class MessagesRepository(
         )?.let { insertContactWithChat(it) }
 
         return caches.getContactId(normalizedSenderId)
-            ?: contactsDao.findContactIdByUserOrDeviceId(normalizedSenderId)
+            ?: contactsDao.findContactIdByMainCommunicationId(normalizedSenderId)
     }
 
     /** Finds the private chat id for [contactId]. */
