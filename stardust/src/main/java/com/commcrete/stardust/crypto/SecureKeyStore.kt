@@ -1,6 +1,8 @@
 package com.commcrete.stardust.crypto
 
 
+import android.content.Context
+import android.os.Build
 import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
@@ -15,7 +17,7 @@ class SecureKeyStore() {
     }
 
     // 1.0.0 API: create(fileName, masterKeyAlias, context, keyScheme, valueScheme)
-    private val prefs by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private fun createPrefs() =
         EncryptedSharedPreferences.create(
             PREFS_NAME,                                // fileName
             masterKeyAlias,                            // masterKeyAlias
@@ -23,11 +25,20 @@ class SecureKeyStore() {
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
-    }
+
+    private val prefs by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { createPrefs() }
 
     @Synchronized
     fun getKey(): ByteArray {
-        val b64 = prefs.getString(KEY_NAME, null)
+        val b64 = runCatching { prefs.getString(KEY_NAME, null) }
+            .getOrElse {
+                if (it is SecurityException) {
+                    // Existing encrypted value/keyset is corrupted or not decryptable on this install.
+                    resetEncryptedPrefsStorage()
+                    return@getOrElse null
+                }
+                throw it
+            }
         if (b64.isNullOrEmpty()) {
             saveBytes(DEFAULT_KEY)
             return DEFAULT_KEY.copyOf()
@@ -56,13 +67,50 @@ class SecureKeyStore() {
 
     @Synchronized
     fun clear() {
-        prefs.edit().remove(KEY_NAME).apply()
+        runCatching { prefs.edit().remove(KEY_NAME).apply() }
+            .onFailure {
+                if (it is SecurityException) {
+                    resetEncryptedPrefsStorage()
+                } else {
+                    throw it
+                }
+            }
     }
 
     @Synchronized
     private fun saveBytes(bytes: ByteArray) {
         val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
-        prefs.edit().putString(KEY_NAME, b64).apply()
+        val writeOk = runCatching {
+            prefs.edit().putString(KEY_NAME, b64).commit()
+        }.getOrElse {
+            if (it is SecurityException) {
+                resetEncryptedPrefsStorage()
+                false
+            } else {
+                throw it
+            }
+        }
+
+        if (!writeOk) {
+            // Retry once with freshly-created encrypted storage.
+            createPrefs().edit().putString(KEY_NAME, b64).commit()
+        }
+    }
+
+    private fun resetEncryptedPrefsStorage() {
+        safeDeleteSharedPrefs(PREFS_NAME)
+        safeDeleteSharedPrefs("${PREFS_NAME}$KEY_KEYSET_SUFFIX")
+        safeDeleteSharedPrefs("${PREFS_NAME}$VALUE_KEYSET_SUFFIX")
+    }
+
+    private fun safeDeleteSharedPrefs(name: String) {
+        val context = DataManager.appContext
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            context.deleteSharedPreferences(name)
+            return
+        }
+        // API < 24 fallback.
+        context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit()
     }
 
     private fun bytesToHex(bytes: ByteArray): String {
@@ -95,6 +143,8 @@ class SecureKeyStore() {
     companion object {
         private const val PREFS_NAME = "secure_prefs"
         private const val KEY_NAME = "app_secret_key"
+        private const val KEY_KEYSET_SUFFIX = "__androidx_security_crypto_encrypted_prefs_key_keyset__"
+        private const val VALUE_KEYSET_SUFFIX = "__androidx_security_crypto_encrypted_prefs_value_keyset__"
         private val DEFAULT_KEY = ByteArray(32) { 0x00.toByte() }
     }
 }

@@ -20,10 +20,10 @@ import java.io.File
 interface StardustAPI {
 
     // Send to the SDK
-    fun sendMessage(stardustAPIPackage: StardustAPIPackage, text : String)
-    fun startPTT( chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
-    fun stopPTT( stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
-    fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location)
+    fun sendMessage(chatId: String, stardustAPIPackage: StardustAPIPackage, text : String)
+    fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File?
+    fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File)
+    fun sendLocation(chatId: String, stardustAPIPackage: StardustAPIPackage, location: Location)
     fun sendImage(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
     fun sendFile(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
     fun stopSendFile(data: FileTransferData.Send)
@@ -34,7 +34,7 @@ interface StardustAPI {
     fun connectToDevice(device: ScanResult)
     fun disconnectFromDevice()
     fun logout()
-    fun setCallback (stardustAPICallbacks: StardustAPICallbacks)
+    fun setCallback(stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (): List<Carrier>?
     fun sendRealSOS(location: Location)
     fun AckSOS(stardustAPIPackage: StardustAPIPackage)

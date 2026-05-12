@@ -12,6 +12,7 @@ import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -188,12 +189,13 @@ internal class MessagesRepository(
 
             withContext(Dispatchers.IO) {
                 val senderId = message.senderID.trim().lowercase()
-                val contactId = ensureSenderExists(senderId) ?: return@withContext null
+                val id = if(RegisteredUserUtils.isRegisteredUser(senderId)) message.receiverID else senderId
+                val contactId = ensureContactExistsByUserId(id) ?: return@withContext null
                 val chatId = message.chatId?.takeIf { it.isNotBlank() }
                     ?: if (groupId != null) {
                         resolveGroupChatId(groupId)
                     } else {
-                        resolveOrCreatePrivateChatId(contactId, senderId)
+                        resolveOrCreatePrivateChatId(contactId, id)
                     }
                 val chatIdString = chatId ?: return@withContext null
                 messagesDao.addMessage(message.copy(chatId = normalizeId(chatIdString)))
@@ -206,8 +208,8 @@ internal class MessagesRepository(
     }
 
     /** Ensures sender exists in DB, auto-creating a USER contact if not. Returns the contact id. */
-    private suspend fun ensureSenderExists(senderId: String): Int? {
-        val normalizedSenderId = normalizeId(senderId)
+    private suspend fun ensureContactExistsByUserId(id: String): Int? {
+        val normalizedSenderId = normalizeId(id)
 
         // Fast path for hot message-insert loop — check cache first.
         caches.getContactId(normalizedSenderId)?.let { return it }
@@ -218,7 +220,7 @@ internal class MessagesRepository(
 
         // Not found — auto-create USER contact (this also populates the cache).
         FullContactData.createUserContact(
-            name = senderId,
+            name = id,
             image = null,
             userId = normalizedSenderId,
         )?.let { insertContactWithChat(it) }

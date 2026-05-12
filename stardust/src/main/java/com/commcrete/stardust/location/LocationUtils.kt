@@ -28,6 +28,7 @@ object LocationUtils  {
     private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     suspend fun saveLocationMessage(
+        chatId: String? = null,
         dataPackage: StardustAPIPackage,
         locationPackage: LocationPackage,
         state: MessageState,
@@ -35,6 +36,7 @@ object LocationUtils  {
     ): Long? {
 
         val message = MessageEntity(
+            chatId = chatId,
             senderID = dataPackage.senderId,
             receiverID = dataPackage.receiverId,
             state = state,
@@ -56,7 +58,6 @@ object LocationUtils  {
         opCode : StardustPackageUtils.StardustOpCode? = null,
         randomID: String = "") {
 
-        val appContext = DataManager.appContext
         val packageForResponse = mPackage.apply {
             val temp = sourceBytes
             sourceBytes = destinationBytes
@@ -70,7 +71,7 @@ object LocationUtils  {
             sendMissingLocation(packageForResponse, clientConnection, isDemandAck, isHR, opCode)
         } else {
             Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
-            sendLocation(packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
+            sendLocation(mPackage.chatId,packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
 
@@ -107,6 +108,7 @@ object LocationUtils  {
     }
 
     internal fun sendLocation(
+        chatId: String,
         mPackage: StardustPackage,
         location: Location,
         clientConnection : ClientConnection,
@@ -126,6 +128,7 @@ object LocationUtils  {
                 data = CoordinatesUtil().packLocation(location)
             )
             val id = saveLocationMessage(
+                chatId = chatId,
                 StardustAPIPackage(
                     senderId = mPackage.getSourceAsString(),
                     receiverId = mPackage.getDestAsString(),

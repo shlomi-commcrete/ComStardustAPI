@@ -58,6 +58,7 @@ data class MessageEntity(
     init {
         senderID = senderID.lowercase(Locale.ROOT)
         chatId = chatId?.lowercase(Locale.ROOT)
+        receiverID = receiverID.lowercase(Locale.ROOT)
     }
 
 

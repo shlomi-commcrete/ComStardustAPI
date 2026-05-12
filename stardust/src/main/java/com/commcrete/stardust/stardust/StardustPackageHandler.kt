@@ -493,7 +493,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 receiverId = appId,
                 carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
             )
-            LocationUtils.saveLocationMessage(pkg, locationPackage, MessageState.RECEIVED)
+            LocationUtils.saveLocationMessage(mPackage.chatId, pkg, locationPackage, MessageState.RECEIVED)
             val pollingUtils = DataManager.getPollingUtils()
             if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
 

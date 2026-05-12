@@ -80,7 +80,7 @@ object ButtonListener {
                 Timber.tag("isPlayPTT").d("startRecording")
             } else {
                 // Stop recording
-                currentFile?.let { dismissPttRecording(pttPackage, it) }
+                currentFile?.let { dismissPttRecording(DataManager.getChatId(), pttPackage, it) }
                 Timber.tag("isPlayPTT").d("finishRecording")
                 currentFile = null
             }
@@ -90,8 +90,8 @@ object ButtonListener {
     fun getCurrentFile(): File? = currentFile
 
     @SuppressLint("MissingPermission")
-    fun dismissPttRecording (pttPackage: StardustAPIPackage, file: File) {
-        stopPTT(stardustAPIPackage = pttPackage, codeType = SharedPreferencesUtil.getCodecType(), file = file)
+    fun dismissPttRecording(chatId: String, pttPackage: StardustAPIPackage, file: File) {
+        stopPTT(chatId = chatId, stardustAPIPackage = pttPackage, codeType = SharedPreferencesUtil.getCodecType(), file = file)
     }
 
     @SuppressLint("MissingPermission")

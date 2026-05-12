@@ -144,7 +144,7 @@ object DataManager : StardustAPI, PttInterface {
         return pollingUtils!!
     }
 
-    override fun sendMessage(stardustAPIPackage: StardustAPIPackage, text: String) {
+    override fun sendMessage(chatId: String, stardustAPIPackage: StardustAPIPackage, text: String) {
         checkInitialized()
         CoroutineScope(Dispatchers.IO).launch {
             val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
@@ -154,8 +154,16 @@ object DataManager : StardustAPI, PttInterface {
             val messageNum = 1
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
 
-            val id = saveSentMessage(text, receiver = stardustAPIPackage.receiverId, sender = stardustAPIPackage.senderId, groupId = stardustAPIPackage.groupId)
-
+            val id = getAppRepo().saveMessage(
+                message = MessageEntity(
+                    chatId = chatId,
+                    senderID = stardustAPIPackage.senderId,
+                    receiverID = stardustAPIPackage.receiverId,
+                    state = MessageState.SENT,
+                    extraData = MessageExtraData.Text(text = text)
+                ),
+                groupId = stardustAPIPackage.groupId
+            )
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     source = stardustAPIPackage.senderId,
@@ -174,17 +182,6 @@ object DataManager : StardustAPI, PttInterface {
         }
     }
 
-    private suspend fun saveSentMessage(text: String, receiver: String, sender: String, groupId: String? = null): Long? {
-        return getAppRepo().saveMessage(
-            message = MessageEntity(
-                senderID = sender,
-                receiverID = receiver,
-                state = MessageState.SENT,
-                extraData = MessageExtraData.Text(text = text)
-            ),
-            groupId = groupId
-        )
-    }
 
     @SuppressLint("MissingPermission")
     override fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
@@ -195,20 +192,22 @@ object DataManager : StardustAPI, PttInterface {
         RecorderUtils.init(this)
         return RecorderUtils.startRecording(chatId, stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
+
     @SuppressLint("MissingPermission")
-    override fun stopPTT(stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
+    override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
         checkInitialized()
-        RecorderUtils.stopRecording(receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
+        RecorderUtils.stopRecording(chatId = chatId, receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
     }
 
-    override fun sendLocation(stardustAPIPackage: StardustAPIPackage, location: Location) {
+    override fun sendLocation(chatId: String, stardustAPIPackage: StardustAPIPackage, location: Location) {
         checkInitialized()
         val stardustPackage = StardustPackageUtils.getStardustPackage(
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
+
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType = FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(), isHR = radio.second)
+        LocationUtils.sendLocation(chatId,stardustPackage, location, getClientConnection(), isHR = radio.second)
     }
 
     override fun sendImage(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
@@ -352,10 +351,8 @@ object DataManager : StardustAPI, PttInterface {
         val bondedDevice = getPairedDevices()
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         if(bondedDevice != null) {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
             getClientConnection().bondToBleDeviceStartup(bondedDevice)
-        } else {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
         }
     }
 

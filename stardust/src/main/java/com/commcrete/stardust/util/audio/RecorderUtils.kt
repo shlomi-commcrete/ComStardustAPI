@@ -139,6 +139,7 @@ object RecorderUtils {
     // Stop Recording
     // ----------------------------------------
     fun stopRecording(
+        chatId: String,
         receiverId: String,
         carrier: Carrier?,
         codeType: AudioEncoderType,
@@ -146,8 +147,8 @@ object RecorderUtils {
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
-        if (codeType == AudioEncoderType.CODEC2) stopCodec2Recording(receiverId, carrier, file)
-        else stopAIRecording()
+        if (codeType == AudioEncoderType.CODEC2) stopCodec2Recording(chatId, receiverId, carrier, file)
+        else stopAIRecording(chatId)
 
         Scopes.getMainCoroutine().launch {
             delay(300)
@@ -155,14 +156,14 @@ object RecorderUtils {
         }
     }
 
-    private fun stopCodec2Recording(receiverID: String, carrier: Carrier?, file: File) {
+    private fun stopCodec2Recording(chatId: String, receiverID: String, carrier: Carrier?, file: File) {
         wavRecorder?.run {
             stopRecording(
+                chatId = chatId,
                 retry = 0,
                 receiverId = receiverID,
                 path = file.absolutePath,
-                carrier = carrier,
-                chatId = TODO()
+                carrier = carrier
             )
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
@@ -171,7 +172,7 @@ object RecorderUtils {
         }
     }
 
-    private fun stopAIRecording() {
+    private fun stopAIRecording(chatId: String) {
         Log.d("AudioRecorder", "Stop AI Recording")
         aiRecorder?.stop()
         Scopes.getDefaultCoroutine().launch {

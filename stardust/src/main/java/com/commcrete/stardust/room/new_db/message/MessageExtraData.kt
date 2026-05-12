@@ -4,6 +4,7 @@ package com.commcrete.stardust.room.new_db.message
 
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
 
 /**
  * Type-specific metadata serialized into MessageEntity.extraData.
@@ -13,11 +14,13 @@ import kotlinx.serialization.Serializable
 sealed class MessageExtraData {
 
     @Serializable
+    @SerialName("Text")
     data class Text(
         val text: String,
     ) : MessageExtraData()
 
     @Serializable
+    @SerialName("Attachment")
     data class Attachment(
         val title: String,
         val path: String,
@@ -25,6 +28,7 @@ sealed class MessageExtraData {
     ) : MessageExtraData()
 
     @Serializable
+    @SerialName("PTT")
     data class PTT(
         val path: String,
         val encoderType: EncoderType = EncoderType.CODEC2,
@@ -42,6 +46,7 @@ sealed class MessageExtraData {
     }
 
     @Serializable
+    @SerialName("Location")
     data class Location(
         override val latitude: Double,
         override val longitude: Double,
@@ -50,6 +55,7 @@ sealed class MessageExtraData {
     ) : GeoData()
 
     @Serializable
+    @SerialName("Sos")
     data class Sos(
         override val latitude: Double,
         override val longitude: Double,
