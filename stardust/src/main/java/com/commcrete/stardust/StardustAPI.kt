@@ -1,6 +1,7 @@
 package com.commcrete.stardust
 
 import android.bluetooth.le.ScanResult
+import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
@@ -28,7 +29,7 @@ interface StardustAPI {
     fun stopSendFile(data: FileTransferData.Send)
     fun requestLocation(stardustAPIPackage: StardustAPIPackage)
     fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?)
-    fun init(fileLocation : String)
+    fun init(appContext: Context, pluginContext: Context, fileLocation : String)
     fun scanForDevice(): MutableLiveData<List<ScanResult>>
     fun connectToDevice(device: ScanResult)
     fun disconnectFromDevice()

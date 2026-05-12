@@ -56,8 +56,9 @@ object DataManager : StardustAPI, PttInterface {
     private var bittelusbManager : BittelUsbManager2?  = null
     private var bittelPackageHandler : StardustPackageHandler? = null
     private var pollingUtils : PollingUtils? = null
-    lateinit var appContext : Context
 
+    lateinit var appContext : Context
+    lateinit var pluginContext: Context
     lateinit var fileLocation : String
 
     private var bleScanner : BleScanner? = null
@@ -65,7 +66,6 @@ object DataManager : StardustAPI, PttInterface {
     private var chatId : String? = null
     private var destination : String? = null
     private var stardustAPICallbacks : StardustAPICallbacks? = null
-    var pluginContext: Context? = null
 
     private var savePTTFiles: Boolean? = null
 
@@ -83,20 +83,31 @@ object DataManager : StardustAPI, PttInterface {
         }
     }
 
+    private fun initPluginContext(pluginContext: Context) {
+        this.pluginContext = pluginContext
+    }
+
     /** Call at the start of every public function to ensure [init] was called first. */
     private fun checkInitialized() {
         check(this::appContext.isInitialized) {
-            "DataManager is not initialized. Call DataManager.init(context, fileLocation) first."
+            "DataManager is not initialized. Call DataManager.init(appContext, pluginContext) first."
         }
     }
 
-    @Deprecated("Use init() to set the context. This is kept for legacy call-sites only.")
-    fun requireContext(appContext: Context) {
+    override fun init(appContext: Context, pluginContext: Context, fileLocation: String) {
         initAppContext(appContext)
+        initPluginContext(pluginContext)
+
         SharedPreferencesUtil.getIsErased().let {
             if (it) throw IllegalStateException("Device is erased, please reset the device")
         }
+
+        requireFileLocation(fileLocation)
+        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser())
+
+        AIModuleInitializer.initModules()
     }
+
 
     internal fun getClientConnection() : ClientConnection {
         checkInitialized()
@@ -173,16 +184,6 @@ object DataManager : StardustAPI, PttInterface {
             ),
             groupId = groupId
         )
-    }
-
-    fun setMPluginContext(pluginContext: Context) {
-        this.pluginContext = pluginContext.applicationContext
-    }
-
-    fun initModules(pluginContext: Context) {
-        checkInitialized()
-        setMPluginContext(pluginContext)
-        AIModuleInitializer.initModules()
     }
 
     @SuppressLint("MissingPermission")
@@ -308,16 +309,6 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun canRecord(): MutableLiveData<Boolean> {
         return RecorderUtils.canRecord
-    }
-
-
-    override fun init(fileLocation: String) {
-        checkInitialized()
-        SharedPreferencesUtil.getIsErased().let {
-            if (it) throw IllegalStateException("Device is erased, please reset the device")
-        }
-        requireFileLocation(fileLocation)
-        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser())
     }
 
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {

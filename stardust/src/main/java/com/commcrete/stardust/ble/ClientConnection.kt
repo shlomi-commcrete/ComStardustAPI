@@ -396,18 +396,20 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     // ─────────────────────────────────────────────────────────────────────
 
     fun initBleStatus () {
-        BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
-            override fun onChanged(isConnected: Boolean) {
-                if(!isConnected) {
-                    disconnectFromBLEDevice(true)
-                } else if(
-                    !BleManager.isBleConnected
-                    && BleManager.isBluetoothToggleEnabled){
-                        mDevice?.let { connectDevice(it) }
+        Scopes.getMainCoroutine().launch {
+            BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
+                override fun onChanged(isConnected: Boolean) {
+                    if(!isConnected) {
+                        disconnectFromBLEDevice(true)
+                    } else if(
+                        !BleManager.isBleConnected
+                        && BleManager.isBluetoothToggleEnabled){
+                            mDevice?.let { connectDevice(it) }
+                    }
                 }
-            }
 
-        })
+            })
+        }
     }
 
     override fun log(priority: Int, message: String) {
