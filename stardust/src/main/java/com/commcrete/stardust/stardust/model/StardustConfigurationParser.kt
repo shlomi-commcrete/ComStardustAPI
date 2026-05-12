@@ -287,7 +287,7 @@ class StardustConfigurationParser : StardustParser() {
                     snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
                     appId = appIdBytes.reversedArray().toHex().substring(0,8),
                     stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
-                    sosXCVR = SOSDataBytes.last().toInt(),
+                    sosXCVR = SOSDataBytes.copyOfRange(0, 1).toHex().take(1).toInt(),
                     sosDestinations = parseSosDestinations(SOSDataBytes),
                     deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
                     deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
