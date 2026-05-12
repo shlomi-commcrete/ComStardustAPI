@@ -6,12 +6,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.commcrete.stardust.room.Converters
-import com.commcrete.stardust.room.legacy_db.chats.ChatItem
-import com.commcrete.stardust.room.legacy_db.chats.ChatsDao
-import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
-import com.commcrete.stardust.room.legacy_db.contacts.ContactsDao as LegacyContactsDao
-import com.commcrete.stardust.room.legacy_db.messages.MessageItem
-import com.commcrete.stardust.room.legacy_db.messages.MessagesDao
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -42,15 +36,11 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
  *  - new_messages_table
  *
  * New views:
- *  - new_contacts_table (transitional compatibility projection)
+ *  - new_contacts_ (transitional compatibility projection)
  *  - chat_summary
  */
 @Database(
     entities = [
-        // Legacy entities kept for temporary compatibility paths.
-        ChatItem::class,
-        ChatContact::class,
-        MessageItem::class,
         // New entities used by AppRepository.
         ChatEntity::class,
         ContactEntity::class,
@@ -72,10 +62,6 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
 )
 abstract class AppDatabase : RoomDatabase() {
 
-    // Legacy accessors (temporary compatibility)
-    abstract fun chatsDao(): ChatsDao
-    abstract fun contactsDao(): LegacyContactsDao
-    abstract fun messagesDao(): MessagesDao
 
     // New accessors for future use
     abstract fun appChatsDao(): ChatDao

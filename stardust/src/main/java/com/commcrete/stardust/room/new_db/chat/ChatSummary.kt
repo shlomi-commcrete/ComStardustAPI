@@ -53,7 +53,7 @@ import com.commcrete.stardust.room.new_db.message.MessageType
             ON u.user_id = lm.sender_id
         LEFT JOIN app_contact_devices d
             ON d.device_id = lm.sender_id
-        LEFT JOIN contacts_table ct
+        LEFT JOIN contacts ct
             ON ct.id = COALESCE(u.contact_id, d.contact_id)
         LEFT JOIN (
             SELECT chat_id, COUNT(*) AS unseen_count

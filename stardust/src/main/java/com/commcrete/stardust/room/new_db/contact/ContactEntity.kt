@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "contacts_table",
+    tableName = "contacts",
     indices = [Index(value = ["id"], unique = true)]
 )
 data class ContactEntity(

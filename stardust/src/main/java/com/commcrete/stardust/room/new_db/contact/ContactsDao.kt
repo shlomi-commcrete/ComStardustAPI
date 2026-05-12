@@ -59,7 +59,7 @@ interface ContactsDao {
         @ColumnInfo(name = "contact_id") val contactId: Int,
     )
 
-    @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM contacts WHERE id = :id LIMIT 1")
     suspend fun getContactEntity(id: Int): ContactEntity?
 
     @Query(
@@ -178,19 +178,19 @@ interface ContactsDao {
         """
         SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_user_ids u ON u.contact_id = c.id
         WHERE c.type = 'USER'
         UNION ALL
         SELECT cp.chat_id, cd.device_id, 'DEVICE'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_devices cd ON cd.contact_id = c.id
         WHERE c.type IN ('USER','DEVICE')
         UNION ALL
         SELECT cp.chat_id, g.group_id, 'GROUP'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_group_ids g ON g.contact_id = c.id
         WHERE c.type = 'GROUP'
         """
@@ -202,19 +202,19 @@ interface ContactsDao {
         """
         SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_user_ids u ON u.contact_id = c.id
         WHERE c.type = 'USER'
         UNION ALL
         SELECT cp.chat_id, cd.device_id, 'DEVICE'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_devices cd ON cd.contact_id = c.id
         WHERE c.type IN ('USER','DEVICE')
         UNION ALL
         SELECT cp.chat_id, g.group_id, 'GROUP'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_group_ids g ON g.contact_id = c.id
         WHERE c.type = 'GROUP'
         """
@@ -226,19 +226,19 @@ interface ContactsDao {
         """
         SELECT cp.chat_id AS chat_id, u.user_id AS participant_id, 'USER' AS kind
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_user_ids u ON u.contact_id = c.id
         WHERE c.type = 'USER' AND cp.chat_id = :chatId
         UNION ALL
         SELECT cp.chat_id, cd.device_id, 'DEVICE'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_devices cd ON cd.contact_id = c.id
         WHERE c.type IN ('USER','DEVICE') AND cp.chat_id = :chatId
         UNION ALL
         SELECT cp.chat_id, g.group_id, 'GROUP'
         FROM chat_participants cp
-        JOIN contacts_table c ON c.id = cp.contact_id
+        JOIN contacts c ON c.id = cp.contact_id
         JOIN app_contact_group_ids g ON g.contact_id = c.id
         WHERE c.type = 'GROUP' AND cp.chat_id = :chatId
         """
@@ -253,7 +253,7 @@ interface ContactsDao {
     @Query(
         """
         SELECT c.name
-        FROM contacts_table c
+        FROM contacts c
         INNER JOIN (
             SELECT contact_id FROM app_contact_user_ids WHERE user_id = :id
             UNION
@@ -273,7 +273,7 @@ interface ContactsDao {
     @Query(
         """
         SELECT DISTINCT c.*
-        FROM contacts_table c
+        FROM contacts c
         INNER JOIN (
             SELECT contact_id FROM app_contact_user_ids
             UNION
@@ -286,7 +286,7 @@ interface ContactsDao {
     @Query(
         """
         SELECT DISTINCT c.*
-        FROM contacts_table c
+        FROM contacts c
         INNER JOIN (
             SELECT contact_id FROM app_contact_user_ids WHERE user_id != :excludedUserId
             UNION
@@ -299,7 +299,7 @@ interface ContactsDao {
     @Query(
         """
         SELECT c.name
-        FROM contacts_table c
+        FROM contacts c
         JOIN app_contact_group_ids gid ON gid.contact_id = c.id
         WHERE gid.group_id = :id
         LIMIT 1
@@ -309,10 +309,10 @@ interface ContactsDao {
     
 
     /** Returns IDs of all contacts that are not of type GROUP. */
-    @Query("SELECT id FROM contacts_table WHERE type != 'GROUP'")
+    @Query("SELECT id FROM contacts WHERE type != 'GROUP'")
     suspend fun getAllMemberContactIds(): List<Int>
 
-    @Query("SELECT * FROM contacts_table WHERE id = :id LIMIT 1")
+    @Query("SELECT * FROM contacts WHERE id = :id LIMIT 1")
     suspend fun getContactById(id: Int): ContactEntity?
 
     @Query(
@@ -320,7 +320,7 @@ interface ContactsDao {
         SELECT
             c.*,
             u.user_id AS user_id
-        FROM contacts_table c
+        FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
         WHERE c.type = 'USER'
         ORDER BY c.name ASC
@@ -333,7 +333,7 @@ interface ContactsDao {
         SELECT
             c.*,
             u.user_id AS user_id
-        FROM contacts_table c
+        FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
         WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
         ORDER BY c.name ASC
@@ -356,7 +356,7 @@ interface ContactsDao {
             d.model      AS device_model,
             d.serial     AS device_serial,
             cd.slot      AS device_slot
-        FROM contacts_table c
+        FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
         LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
         LEFT JOIN devices              d  ON d.id         = cd.device_id
@@ -376,7 +376,7 @@ interface ContactsDao {
             d.model      AS device_model,
             d.serial     AS device_serial,
             cd.slot      AS device_slot
-        FROM contacts_table c
+        FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
         LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
         LEFT JOIN devices              d  ON d.id         = cd.device_id
@@ -394,7 +394,7 @@ interface ContactsDao {
         SELECT
             c.*,
             g.group_id AS group_id
-        FROM contacts_table c
+        FROM contacts c
         INNER JOIN app_contact_group_ids g ON g.contact_id = c.id
         WHERE c.type = 'GROUP'
         ORDER BY c.name ASC

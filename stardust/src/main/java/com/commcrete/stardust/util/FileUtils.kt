@@ -315,10 +315,9 @@ object FileUtils {
         val exportRoot = File(DataManager.appContext.getExternalFilesDir(null), exportFolderName)
         if (!exportRoot.exists()) exportRoot.mkdirs()
 
+        val isSingle = databases.size == 1
         databases.forEach { (dbName, db) ->
-            val dbExportDir = File(exportRoot, dbName)
-            if (!dbExportDir.exists()) dbExportDir.mkdirs()
-
+            val dbExportDir = if (isSingle) exportRoot else File(exportRoot, dbName).also { if (!it.exists()) it.mkdirs() }
             exportDatabaseToCsv(db, dbExportDir)
         }
 
