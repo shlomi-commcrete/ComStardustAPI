@@ -8,6 +8,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils

@@ -16,6 +16,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
+import com.commcrete.stardust.ble.BleManager.isUSBConnected
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -401,9 +402,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                 override fun onChanged(isConnected: Boolean) {
                     if(!isConnected) {
                         disconnectFromBLEDevice(true)
-                    } else if(
-                        !BleManager.isBleConnected
-                        && BleManager.isBluetoothToggleEnabled){
+                    } else if(!isUSBConnected && !BleManager.isBleConnected && BleManager.isBluetoothToggleEnabled){
                             mDevice?.let { connectDevice(it) }
                     }
                 }
