@@ -6,7 +6,6 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
-import com.commcrete.stardust.stardust.model.getSrcDestMin4Bytes
 
 object ContactsFileParserUtil {
 
@@ -16,15 +15,13 @@ object ContactsFileParserUtil {
     }
 
     fun registerSelectedUser(selectedUser: FolderReader.ExcelUser): Boolean {
-        val appId = selectedUser.id.trim()
-        val deviceId = selectedUser.deviceId.getSrcDestMin4Bytes().trim()
 
-        if(appId.isEmpty()) { return false }
+        if(selectedUser.id.isEmpty()) { return false }
 
         val newUser = RegisterUser(
             displayName = selectedUser.name,
-            deviceId = deviceId,
-            appId = appId
+            deviceId = selectedUser.deviceId,
+            appId = selectedUser.id
         )
         SharedPreferencesUtil.setAppUser(newUser)
 
@@ -36,8 +33,8 @@ object ContactsFileParserUtil {
         val result = mutableListOf<FullContactData>()
 
         for (contact in contacts) {
-            val appId = contact.id.trim()
-            val deviceId = contact.deviceId.getSrcDestMin4Bytes().trim()
+            val appId = contact.id
+            val deviceId = contact.deviceId
             val name = contact.name
             val image = contact.image
 

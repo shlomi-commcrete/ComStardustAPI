@@ -27,6 +27,7 @@ import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
+import com.commcrete.stardust.stardust.mapper.toStardustAPIPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -222,14 +223,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleSOSAck(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
-        DataManager.getCallbacks()?.handleSOSAck(
-            StardustAPIPackage(
-                senderId = mPackage.senderId,
-                groupId = mPackage.groupId,
-                receiverId = appId
-            )
-        )
+        val pkg = mPackage.toStardustAPIPackage() ?: return
+        DataManager.getCallbacks()?.handleSOSAck(pkg)
     }
 
     private fun handleDeviceUpdateResponse(mPackage: StardustPackage) {
@@ -378,17 +373,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleSOS(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val pkg = mPackage.toStardustAPIPackage() ?: return
 
         handlerScope.launch {
             try {
-                val sosPackage = StardustLocationParser().parseSOS(mPackage)
-                sosPackage ?: return@launch
-                val pkg = StardustAPIPackage(
-                    senderId = mPackage.senderId,
-                    groupId = mPackage.groupId,
-                    receiverId = appId
-                )
+                val sosPackage = StardustLocationParser().parseSOS(mPackage) ?: return@launch
+
                 SOSUtils.saveSOSMessage(
                     type = sosPackage.sosType,
                     location = sosPackage.location,
@@ -476,7 +466,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleLocationReceived(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val pkg = mPackage.toStardustAPIPackage() ?: return
         handlerScope.launch {
             if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
                 handleAck(
@@ -487,12 +477,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             }
 
             val locationPackage = StardustLocationParser().parseLocation(mPackage) ?: return@launch
-            val pkg = StardustAPIPackage(
-                senderId = mPackage.senderId,
-                groupId = mPackage.groupId,
-                receiverId = appId,
-                carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
-            )
+
             LocationUtils.saveLocationMessage(mPackage.chatId, pkg, locationPackage, MessageState.RECEIVED)
             val pollingUtils = DataManager.getPollingUtils()
             if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
@@ -528,7 +513,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleText(mPackage: StardustPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val pkg = mPackage.toStardustAPIPackage() ?: return
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {
@@ -542,24 +527,9 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 }
                 val text = getCharValue(mPackage.getDataAsString())
                 try {
-                    DataManager.getAppRepo().saveMessage(
-                        message = MessageEntity(
-                            senderID = mPackage.senderId,
-                            receiverID = appId,
-                            state = MessageState.RECEIVED,
-                            extraData = MessageExtraData.Text(text)
-                        ),
-                        groupId = mPackage.groupId
-                    )
-
+                    DataManager.getAppRepo().saveMessage(pkg, MessageExtraData.Text(text), MessageState.RECEIVED)
                     PlayerUtils.playNotificationSound()
-                    DataManager.getCallbacks()?.receiveMessage(
-                        StardustAPIPackage(
-                            senderId = mPackage.senderId,
-                            groupId = mPackage.groupId,
-                            receiverId = appId,
-                        ),
-                        text)
+                    DataManager.getCallbacks()?.receiveMessage(pkg, text)
                 } catch (e: Exception) {
                     Timber.tag("StardustPackageHandler").e(e, "Failed to save text message")
                 }

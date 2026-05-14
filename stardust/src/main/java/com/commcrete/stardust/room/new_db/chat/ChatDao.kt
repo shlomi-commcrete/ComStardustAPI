@@ -117,7 +117,7 @@ interface ChatDao {
             AND cp.contact_id IN (
                 SELECT cg.contact_id
                 FROM app_contact_group_ids cg
-                WHERE TRIM(LOWER(cg.group_id)) = TRIM(LOWER(:previousChatId))
+                WHERE cg.group_id = :previousChatId
             )
         )
         OR (
@@ -125,7 +125,7 @@ interface ChatDao {
             AND cp.contact_id IN (
                 SELECT cu.contact_id
                 FROM app_contact_user_ids cu
-                WHERE TRIM(LOWER(cu.user_id)) = TRIM(LOWER(:previousChatId))
+                WHERE cu.user_id = :previousChatId
             )
         )
         OR (
@@ -133,7 +133,7 @@ interface ChatDao {
             AND cp.contact_id IN (
                 SELECT cd.contact_id
                 FROM app_contact_devices cd
-                WHERE TRIM(LOWER(cd.device_id)) = TRIM(LOWER(:previousChatId))
+                WHERE cd.device_id = :previousChatId
             )
         )
         ORDER BY c.last_updated_ms DESC
@@ -149,17 +149,17 @@ interface ChatDao {
     @Query("""
         SELECT prev.previous_id AS previous_id, prev.chat_id AS chat_id
         FROM (
-            SELECT TRIM(LOWER(cg.group_id)) AS previous_id, cp.chat_id AS chat_id, c.last_updated_ms AS lu
+            SELECT cg.group_id AS previous_id, cp.chat_id AS chat_id, c.last_updated_ms AS lu
             FROM app_contact_group_ids cg
             JOIN chat_participants cp ON cp.contact_id = cg.contact_id
             JOIN chats c ON c.id = cp.chat_id AND c.type = 'GROUP'
             UNION ALL
-            SELECT TRIM(LOWER(cu.user_id)), cp.chat_id, c.last_updated_ms
+            SELECT cu.user_id, cp.chat_id, c.last_updated_ms
             FROM app_contact_user_ids cu
             JOIN chat_participants cp ON cp.contact_id = cu.contact_id
             JOIN chats c ON c.id = cp.chat_id AND c.type = 'PRIVATE'
             UNION ALL
-            SELECT TRIM(LOWER(cd.device_id)), cp.chat_id, c.last_updated_ms
+            SELECT cd.device_id, cp.chat_id, c.last_updated_ms
             FROM app_contact_devices cd
             JOIN chat_participants cp ON cp.contact_id = cd.contact_id
             JOIN chats c ON c.id = cp.chat_id AND c.type = 'PRIVATE'

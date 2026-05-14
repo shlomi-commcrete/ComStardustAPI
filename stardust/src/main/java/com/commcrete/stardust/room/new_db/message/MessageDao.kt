@@ -348,9 +348,9 @@ interface MessageDao {
         SELECT COALESCE(u.contact_id, d.contact_id) AS contactId
         FROM messages m
         LEFT JOIN app_contact_user_ids u
-               ON TRIM(LOWER(u.user_id)) = TRIM(LOWER(m.sender_id))
+               ON u.user_id = m.sender_id
         LEFT JOIN app_contact_devices d
-               ON TRIM(LOWER(d.device_id)) = TRIM(LOWER(m.sender_id))
+               ON d.device_id = m.sender_id
         WHERE m.id = :messageId
           AND (u.contact_id IS NOT NULL OR d.contact_id IS NOT NULL)
         LIMIT 1

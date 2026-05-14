@@ -8,6 +8,7 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlin.Boolean
 
 data class StardustPackage(
     val syncBytes: Array<Int>,
@@ -208,12 +209,12 @@ data class StardustPackage(
     }
 
     fun getSourceAsString() : String {
-        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().lowercase()
+        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().trim().lowercase()
     }
 
     fun getDestAsString() : String {
         return try {
-            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().lowercase()
+            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().trim().lowercase()
         } catch (e : Exception) {
             "null"
         }
@@ -321,12 +322,12 @@ data class StardustPackage(
                 this.stardustControlByte.stardustMessageType == pkg.stardustControlByte.stardustMessageType &&
                 this.data.contentEquals(pkg.data))
     }
-}
 
-fun String.getSrcDestMin4Bytes() : String {
-    var output = this
-    while (output.length < 8){
-        output = "0$output"
+    fun String.getSrcDestMin4Bytes() : String {
+        var output = this
+        while (output.length < 8){
+            output = "0$output"
+        }
+        return output.lowercase()
     }
-    return output.lowercase()
 }

@@ -129,10 +129,13 @@ object LocationUtils  {
             )
             val id = saveLocationMessage(
                 chatId = chatId,
+
                 StardustAPIPackage(
+                    chatId = chatId,
                     senderId = mPackage.getSourceAsString(),
                     receiverId = mPackage.getDestAsString(),
-                    groupId = mPackage.groupId
+                    groupId = mPackage.groupId,
+                    isLast = true
                 ),
                 LocationPackage(location, Date()),
                 MessageState.SENT,

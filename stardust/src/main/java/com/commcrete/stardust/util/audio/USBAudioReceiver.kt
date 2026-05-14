@@ -64,7 +64,8 @@ object ButtonListener {
         Timber.tag("notifyData PTT").d("onCTSChanged : ${isClicked}")
         val pttPackage = StardustAPIPackage(
             senderId = DataManager.getSource(),
-            receiverId = DataManager.getDestination()
+            receiverId = DataManager.getDestination(),
+            isLast = !isClicked
         )
         // Update LiveData on main thread
         Scopes.getMainCoroutine().launch {

@@ -15,6 +15,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.mapper.toStardustAPIPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
@@ -155,17 +156,14 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     suspend fun initPttInputFile(
-        senderId: String,
-        groupId: String? = null,
-        receiverId: String,
+        dataPackage: StardustAPIPackage,
         type: EncoderType) : File? {
 
-        val appId = mRegisterUser.value?.appId ?: return null
-        val dirSource = groupId ?: senderId
-        this.destination = receiverId
+        val dirSource = dataPackage.chatId
+        this.destination = dataPackage.receiverId
 
         val directory = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}")
-        val file = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}/$ts-$senderId.pcm")
+        val file = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}/$ts-${dataPackage.senderId}.pcm")
 
         if(directory != null) {
             if(!directory.exists()) { directory.mkdir() }
@@ -173,76 +171,19 @@ object PlayerUtils : BleMediaConnector() {
                 if(!file.exists()) {
                     file.createNewFile()
                     fileToWrite = file
+
                     DataManager.getAppRepo().saveMessage(
-                        MessageEntity(
-                            senderID = senderId,
-                            receiverID = appId,
-                            state = MessageState.RECEIVING,
-                            epochTimeMs = ts.toLong(),
-                            extraData = MessageExtraData.PTT(
-                                encoderType = type,
-                                path = file.absolutePath
-                            )
-                        ), groupId
+                        pkg = dataPackage,
+                        state = MessageState.RECEIVING,
+                        extraData = MessageExtraData.PTT(
+                            encoderType = type,
+                            path = file.absolutePath
+                        ),
+                        epochTimeMs = ts.toLong()
                     )
 
                 }
                 isFileInit = true
-            }
-        }
-        return file
-    }
-
-    fun initPttSnifferFile(
-        destinations: String,
-        snifferContacts: List<ChatContact>?
-    ) : File? {
-        val appId = mRegisterUser.value?.appId ?: return null
-        var sniffed : MutableList<ChatContact>
-        val directory = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${appContext.filesDir}/$destinations")
-        val file = if(fileToWriteSniffer !=null) fileToWriteSniffer else File("${appContext.filesDir}/$destinations/$ts.pcm")
-
-        if(directory != null){
-            if(!directory.exists()){
-                directory.mkdir()
-            }
-            if (file != null) {
-                if(!file.exists()){
-                    file.createNewFile()
-                    fileToWriteSniffer = file
-                    CoroutineScope(Dispatchers.IO).launch {
-                        // TODO: Change to sniffer message
-                        try {
-                            Timber.tag("savePTT").d("ts : ${ts.toLong()}")
-                        } catch (e :Exception){
-                            e.printStackTrace()
-                        }
-
-                        sniffed = mutableListOf()
-                        snifferContacts?.get(0)?.let {
-                            sniffed.add(it)
-                        }
-                        snifferContacts?.get(1)?.let {
-                            sniffed.add(it)
-                        }
-                        if(snifferContacts != null && snifferContacts[0].isGroup) {
-                            val tempSender = snifferContacts[0]
-                            val tempReceiver = snifferContacts[1]
-                            sniffed = mutableListOf()
-                            sniffed.add(tempReceiver)
-                            sniffed.add(tempSender)
-                        }
-
-                        val ids = GroupsUtils.resolveGroupAndContact(sniffed[0].chatUserId ?: "", sniffed[1].chatUserId ?: "")
-
-                        DataManager.getCallbacks()?.startedReceivingPTT(
-                            StardustAPIPackage(
-                                senderId = ids.senderId,
-                                groupId = ids.groupId,
-                                receiverId = appId),
-                            file)
-                    }
-                }
             }
         }
         return file
@@ -262,53 +203,45 @@ object PlayerUtils : BleMediaConnector() {
 
     private suspend fun saveReceivingPttMessage(
         dataPackage: StardustPackage,
-        appId: String,
         encoderType: EncoderType,
         file: File
     ): Long? {
-        val senderId = dataPackage.senderId
-        val groupId = dataPackage.groupId
+
+        val pkg = dataPackage.toStardustAPIPackage() ?: return null
 
         return DataManager.getAppRepo().saveMessage(
-            MessageEntity(
-                senderID = senderId,
-                receiverID = appId,
-                state = MessageState.RECEIVING,
-                extraData = MessageExtraData.PTT(
-                    path = file.absolutePath,
-                    encoderType = encoderType
-                ),
-                epochTimeMs = System.currentTimeMillis()
+            pkg = pkg,
+            state = MessageState.RECEIVING,
+            extraData = MessageExtraData.PTT(
+                path = file.absolutePath,
+                encoderType = encoderType
             ),
-            groupId
         )
     }
 
     fun onPTTCodecReceived(dataPackage: StardustPackage) {
-        val destinationId = mRegisterUser.value?.appId ?: return
         val parsedData = parseCodecPackageByFrames(dataPackage) ?: return
 
         source = dataPackage.getSourceAsString()
         resetTimer()
 
-        updateReceivingPtt(dataPackage, destinationId, parsedData)
+        updateReceivingPtt(dataPackage, parsedData)
 
         playPTT(parsedData)
     }
 
     private fun updateReceivingPtt(
         dataPackage: StardustPackage,
-        destinationId: String,
         parsedData: ByteArray
     ) {
         pttScope.launch {
 
             runCatching {
-                val pkg = StardustAPIPackage(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId)
+                val pkg = dataPackage.toStardustAPIPackage() ?: return@runCatching
 
                 if (!isFileInit) {
                     setTs()
-                    val file = initPttInputFile(senderId = dataPackage.senderId, groupId = dataPackage.groupId, receiverId = destinationId, type = EncoderType.CODEC2) ?: return@runCatching
+                    val file = initPttInputFile(pkg, type = EncoderType.CODEC2) ?: return@runCatching
                     DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
                 }
                 else {

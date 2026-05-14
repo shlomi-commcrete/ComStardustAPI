@@ -1,6 +1,7 @@
 package com.commcrete.stardust.room.new_db
 
 
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -17,6 +18,9 @@ import com.commcrete.stardust.room.new_db.internal.ContactsRepository
 import com.commcrete.stardust.room.new_db.internal.LegacyMigrator
 import com.commcrete.stardust.room.new_db.internal.MessagesRepository
 import com.commcrete.stardust.room.new_db.internal.RepositoryCaches
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
+import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -324,6 +328,19 @@ class AppRepository(
 
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         messages.saveMessage(message, groupId)
+
+    suspend fun saveMessage(pkg: StardustAPIPackage, extraData: MessageExtraData, state: MessageState, epochTimeMs: Long = System.currentTimeMillis()): Long? {
+        val message = MessageEntity(
+            chatId = pkg.chatId,
+            senderID = pkg.senderId,
+            receiverID = pkg.receiverId,
+            extraData = extraData,
+            state = state,
+            epochTimeMs = epochTimeMs
+        )
+        return messages.saveMessage(message, pkg.groupId)
+    }
+
 
     /**
      * Resolves chatId for an incoming package using participantId + optional groupId.

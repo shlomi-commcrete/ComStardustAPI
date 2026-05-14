@@ -10,6 +10,7 @@ import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.stardust.mapper.toStardustAPIPackage
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -82,6 +83,8 @@ object PttReceiveManager {
     }
 
     private suspend fun handleTokenizerChunk(decodedData: ByteArray) {
+        val pkg = dataPackage?.toStardustAPIPackage() ?: return
+
         val unpack = BitPacking12.unpack12(decodedData)
 
         // Check if last unpack was received within 800ms
@@ -109,26 +112,19 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
-        val data = dataPackage ?: return
-        val pkg = StardustAPIPackage(senderId = data.senderId, groupId = data.groupId, receiverId = appId)
+
 
         if(!isFileInit) {
             Log.d("PcmStreamPlayer", "Initializing PTT input file...")
             val file = initPttInputFile(pkg) ?: return
 
             DataManager.getAppRepo().saveMessage(
-                MessageEntity(
-                    chatId = data.chatId,
-                    senderID = data.senderId,
-                    receiverID = appId,
-                    state = MessageState.RECEIVING,
-                    extraData = MessageExtraData.PTT(
-                        path = file.absolutePath,
-                        encoderType = EncoderType.AI
-                    )
-                ),
-                data.groupId
+                pkg = pkg,
+                state = MessageState.RECEIVING,
+                extraData = MessageExtraData.PTT(
+                    path = file.absolutePath,
+                    encoderType = EncoderType.AI
+                )
             )
 
             DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)

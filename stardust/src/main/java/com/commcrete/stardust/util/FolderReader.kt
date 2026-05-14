@@ -6,6 +6,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.commcrete.stardust.room.new_db.internal.normalizeId
+import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import timber.log.Timber
@@ -50,8 +52,8 @@ object FolderReader {
                 val row = sheet.getRow(rowIndex) ?: continue
 
                 val excelUser = ExcelUser(
-                    id       = row.get("id"),
-                    deviceId = row.get("device_id"),
+                    _id       = row.get("id"),
+                    _deviceId = row.get("device_id"),
                     name     = row.get("name"),
                     type     = row.get("type"),
                     image    = row.get("image")
@@ -254,14 +256,21 @@ object FolderReader {
     data class FileInfo(val uri: Uri, val name: String)
 
     data class ExcelUser (
-        var id : String = "",
-        var deviceId : String = "",
+        private val _id : String = "",
+        private val _deviceId : String = "",
         var name : String = "",
         var type : String = "",
         var image : String = "",
         var model : String = "",
         var serial : String = "",
-    )
+    ) {
+        var id: String = normalizeId(_id)
+            set(value) { field = normalizeId(value) }
+
+        var deviceId: String = normalizeId(_deviceId)
+            set(value) { field = normalizeId(value) }
+    }
+
 
     val HEADER_ALIASES = mapOf(
         "id" to listOf("id"),

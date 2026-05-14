@@ -99,7 +99,8 @@ object SOSUtils {
         val sosPackage = StardustAPIPackage(
             senderId = appId,
             receiverId = realSOSDest ?: deviceId,
-            requireAck = true
+            requireAck = true,
+            isLast = true
         )
 
         saveSOSMessage(null , sosPackage, location)
@@ -113,17 +114,14 @@ object SOSUtils {
     ) {
 
         DataManager.getAppRepo().saveMessage(
-            MessageEntity(
-                senderID = stardustAPIPackage.senderId,
-                receiverID = stardustAPIPackage.receiverId,
-                state = state,
-                extraData = MessageExtraData.Sos(
-                    latitude = location.latitude,
-                    longitude = location.longitude,
-                    altitude = location.altitude,
-                    subtype = type?.toSosType()
-                )
-            ), stardustAPIPackage.groupId
+            pkg = stardustAPIPackage,
+            state = state,
+            extraData = MessageExtraData.Sos(
+                latitude = location.latitude,
+                longitude = location.longitude,
+                altitude = location.altitude,
+                subtype = type?.toSosType()
+            )
         )
     }
 
