@@ -393,7 +393,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     // ─────────────────────────────────────────────────────────────────────
 
-    fun initBleStatus () {
+    fun initBleStatus() {
         Scopes.getMainCoroutine().launch {
             BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
                 override fun onChanged(isConnected: Boolean) {
@@ -463,7 +463,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     }
 
     @SuppressLint("MissingPermission")
-    fun disconnectFromBLEDevice (disconnectByForce: Boolean = false) {
+    fun disconnectFromBLEDevice(disconnectByForce: Boolean = false, withStateUpdate: Boolean = true) {
         if(!disconnectByForce && !StardustInitConnectionHandler.isConnected()) return
         reconnectJob?.cancel()
         reconnectJob = null
@@ -475,6 +475,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         hasCallback = false
         ConfigurationUtils.reset()
         CarriersUtils.reset()
+
         Scopes.getMainCoroutine().launch {
             Timber.tag("Bittel Disconnected").d("Called Function")
             Timber.tag(LOG_TAG).d("Bittel Disconnected")
@@ -484,6 +485,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
             removeRSSITimer()
             removePingTimer()
         }
+        if(withStateUpdate) StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
     }
 
 
@@ -582,12 +584,12 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                             }
                         }
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
-                        disconnectFromBLEDevice()
+                        disconnectFromBLEDevice(withStateUpdate = false)
                     } else{
                         device?.let {
                             requestUnbond(it)
                         }
-                        disconnectFromBLEDevice()
+                        disconnectFromBLEDevice(withStateUpdate = false)
                     }
                 }
             }

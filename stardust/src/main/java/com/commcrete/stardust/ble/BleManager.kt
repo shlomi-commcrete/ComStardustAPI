@@ -84,7 +84,7 @@ object BleManager {
         when(newStatus) {
             ConnectionType.USB -> {
                 if (!isBluetoothToggleEnabled && isBleConnected) {
-                    DataManager.getClientConnection().disconnectFromBLEDevice(true)
+                    DataManager.getClientConnection().disconnectFromBLEDevice(disconnectByForce = true)
                 }
             }
 
