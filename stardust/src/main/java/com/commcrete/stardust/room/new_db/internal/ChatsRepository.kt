@@ -50,6 +50,8 @@ internal class ChatsRepository(
     // ─────────────────────────────────────────────────────────────────────
     // Reads
     // ─────────────────────────────────────────────────────────────────────
+    suspend fun getChatByChatId(chatId: String): ChatEntity? =
+        chatsDao.getChatByChatId(chatId)
 
     /** See `AppRepository.getChatSummaries`. */
     fun getChatSummaries(): Flow<List<ChatSummary>> = chatsDao.getAllChatsSummaries()
@@ -62,10 +64,10 @@ internal class ChatsRepository(
     /** See `AppRepository.getShortChatDataByChatId`. */
     suspend fun getShortChatDataByChatId(chatId: String): ChatEntity? = withContext(Dispatchers.IO) {
         val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
-        chatsDao.getChatById(normalizedChatId)
+        chatsDao.getChatByChatId(normalizedChatId)
     }
 
-    /** See `AppRepository.getChatWithParticipantsByChatId`. */
+
     suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? =
         withContext(Dispatchers.IO) {
             val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
@@ -77,7 +79,7 @@ internal class ChatsRepository(
         chatId: String,
     ): ChatWithParticipantsAsShortParticipantInfo? = withContext(Dispatchers.IO) {
         val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
-        val chat = chatsDao.getChatById(normalizedChatId) ?: return@withContext null
+        val chat = chatsDao.getChatByChatId(normalizedChatId) ?: return@withContext null
         val participantRows = contactsDao.getChatParticipantIdRows(normalizedChatId)
         val participants = mapParticipantIdRows(participantRows)[normalizedChatId].orEmpty()
         ChatWithParticipantsAsShortParticipantInfo(

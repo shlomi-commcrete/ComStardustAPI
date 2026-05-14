@@ -330,7 +330,7 @@ internal class MessagesRepository(
         val chatId = getChatIdForReceivedPackage(participantId, groupId)
         if (chatId.isBlank()) return null
         return withContext(Dispatchers.IO) {
-            chatsDao.getChatById(chatId)
+            chatsDao.getChatByChatId(chatId)
         }
     }
 

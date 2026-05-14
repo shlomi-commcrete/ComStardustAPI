@@ -173,7 +173,7 @@ interface ChatDao {
     suspend fun getAllChatIds(): List<String>
 
     @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")
-    suspend fun getChatById(chatId: String): ChatEntity?
+    suspend fun getChatByChatId(chatId: String): ChatEntity?
 
     @Transaction
     @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")

@@ -226,6 +226,10 @@ class AppRepository(
     suspend fun getShortChatDataByChatId(chatId: String): ChatEntity? =
         chats.getShortChatDataByChatId(chatId)
 
+    /** Returns chat by chat ID, or null when chat is missing/invalid. */
+    suspend fun getChatByChatId(chatId: String): ChatEntity? =
+        chats.getChatByChatId(chatId)
+
     /** Fetches a single chat by its ID with participants. Returns null if not found. */
     suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? =
         chats.getChatWithParticipantsByChatId(chatId)
