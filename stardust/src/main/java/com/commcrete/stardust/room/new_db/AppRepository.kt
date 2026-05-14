@@ -221,9 +221,6 @@ class AppRepository(
     /** Returns all chat IDs currently stored in the database. */
     suspend fun getChatIds(): List<String> = chats.getChatIds()
 
-    /** Fetches just the ChatEntity by ID (lightweight, no participants). Returns null if not found. */
-    suspend fun getShortChatDataByChatId(chatId: String): ChatEntity? =
-        chats.getShortChatDataByChatId(chatId)
 
     /** Returns chat by chat ID, or null when chat is missing/invalid. */
     suspend fun getChatByChatId(chatId: String): ChatEntity? =

@@ -61,12 +61,6 @@ internal class ChatsRepository(
         chatsDao.getAllChatIds()
     }
 
-    /** See `AppRepository.getShortChatDataByChatId`. */
-    suspend fun getShortChatDataByChatId(chatId: String): ChatEntity? = withContext(Dispatchers.IO) {
-        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
-        chatsDao.getChatByChatId(normalizedChatId)
-    }
-
 
     suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? =
         withContext(Dispatchers.IO) {
