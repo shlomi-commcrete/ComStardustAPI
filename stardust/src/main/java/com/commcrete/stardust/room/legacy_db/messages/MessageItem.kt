@@ -116,7 +116,7 @@ data class MessageItem (
                 attachmentSubType = attachmentSubType,
                 text = text,
                 legacySosType = sosType),
-            receiverID = RegisteredUserUtils.mRegisterUser.value?.appId ?: "unknown_receiver"
+            receiverID = RegisteredUserUtils.currentUserFlow.value?.appId ?: "unknown_receiver"
         )
     }
 
@@ -179,4 +179,3 @@ data class MessageItem (
         return MessageExtraData.Location(latitude = lat, longitude = lon, altitude = alt)
     }
 }
-

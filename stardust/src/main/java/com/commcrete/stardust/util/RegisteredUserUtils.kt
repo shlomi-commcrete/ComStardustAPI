@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 
 import com.commcrete.stardust.request_objects.RegisterUser
+import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
 import com.commcrete.stardust.util.DataManager.cleanAllDatabases
 import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
 import kotlinx.coroutines.*
@@ -11,44 +12,31 @@ import kotlinx.coroutines.flow.asStateFlow
 
 object RegisteredUserUtils {
 
-    private val _mRegisterUser = MutableStateFlow<RegisterUser?>(null)
-    val mRegisterUser: StateFlow<RegisterUser?> = _mRegisterUser.asStateFlow()
+    private val _currentUserFlow = MutableStateFlow<RegisterUser?>(null)
+    val currentUserFlow: StateFlow<RegisterUser?>
+        get() {
+            ensureUserLoadedFromPrefs()
+            return _currentUserFlow.asStateFlow()
+        }
 
+    private fun ensureUserLoadedFromPrefs() {
+        if (_currentUserFlow.value != null) return
+        val persisted = runCatching { SharedPreferencesUtil.getAppUser() }.getOrNull()
+        updateRegisteredUser(persisted)
+    }
 
     internal fun updateRegisteredUser(user: RegisterUser?) {
-        CoroutineScope(Dispatchers.Main.immediate).launch {
-            _mRegisterUser.value = user
-        }
+        _currentUserFlow.value = user
     }
 
-    fun isRegisteredUser(id: String): Boolean {
-        return isRegisteredUser(listOf(id))
-    }
+    fun isRegisteredUser(id: String): Boolean = isRegisteredUser(listOf(id))
 
     fun isRegisteredUser(ids: Collection<String?>): Boolean {
-        val user = _mRegisterUser.value ?: return false
-        return ids.any { id ->
-            id != null && (id == user.appId || id == user.deviceId)
-        }
+        val user = currentUserFlow.value ?: return false
+        return ids.mapNotNull { normalizeIdOrNull(it) }.any { id -> id == user.appId || id == user.deviceId }
     }
-    
-    fun isUserLoggedIn(): Boolean {
-        val inMemoryUser = mRegisterUser.value
-        if (inMemoryUser != null) {
-            return !inMemoryUser.appId.isNullOrBlank() && !inMemoryUser.deviceId.isNullOrBlank()
-        }
 
-        // Cold start fallback: recover persisted user state when storage is available.
-        val persistedUser = runCatching { SharedPreferencesUtil.getAppUser() }.getOrNull()
-        if (persistedUser != null &&
-            !persistedUser.appId.isNullOrBlank() &&
-            !persistedUser.deviceId.isNullOrBlank()) {
-            updateRegisteredUser(persistedUser)
-            return true
-        }
-
-        return false
-    }
+    fun isUserLoggedIn(): Boolean = currentUserFlow.value?.appId?.isNotBlank() == true
 
     suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
         coroutineScope {

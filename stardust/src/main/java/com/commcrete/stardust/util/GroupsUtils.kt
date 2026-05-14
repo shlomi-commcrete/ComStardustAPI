@@ -1,9 +1,9 @@
 package com.commcrete.stardust.util
 
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.StardustOpCode
 import com.commcrete.stardust.stardust.StardustPackageUtils.hexStringToByteArray
-import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,9 +18,7 @@ object GroupsUtils {
     private data class Endpoints(val src: String, val dst: String)
 
     private fun endpoints(): Endpoints? {
-        val user = mRegisterUser.value ?: return null
-        val src = user.appId ?: return null
-        val dst = user.deviceId ?: return null
+        val (src, dst) = requireLocalSrcDst() ?: return null
         return Endpoints(src, dst)
     }
 
@@ -162,7 +160,7 @@ object GroupsUtils {
     }
 
     private fun resolveSenderForSourceGroup(sourceId: String, destinationId: String): String {
-        val appId = mRegisterUser.value?.appId
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId
         return if (appId != null && destinationId.equals(appId, ignoreCase = true)) {
             sourceId
         } else {

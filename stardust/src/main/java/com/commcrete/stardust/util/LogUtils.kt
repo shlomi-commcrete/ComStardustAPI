@@ -8,7 +8,7 @@ import com.commcrete.stardust.request_objects.LogEntry
 import com.commcrete.stardust.request_objects.Logs
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.toJson
-import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
@@ -29,7 +29,7 @@ object LogUtils {
         index = 0
         val clientConnection: ClientConnection = DataManager.getClientConnection()
 
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val logToBytes = numOfLogs.intToByteArray().reversedArray()
         val logSizeData = StardustPackageUtils.byteArrayToIntArray(logToBytes)
@@ -53,7 +53,7 @@ object LogUtils {
     }
 
     fun uploadLogs() {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         val logList : MutableList<LogEntry> = mutableListOf()
 
         mutableLogList.value?.let {

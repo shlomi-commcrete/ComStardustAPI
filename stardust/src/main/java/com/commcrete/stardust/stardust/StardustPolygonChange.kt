@@ -4,10 +4,10 @@ package com.commcrete.stardust.stardust
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.RegisteredUserUtils
 
 
 object StardustPolygonChange {
@@ -46,9 +46,7 @@ object StardustPolygonChange {
 
     }
     private fun sendNewFreq() {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId ?: return
-        val dst = user.deviceId ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val frequencyHRSatelliteTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
         val frequencyHRRadioTXBytes = (1.0 * StardustConfigurationParser.MHz).toInt().intToByteArray().reversedArray()
@@ -74,9 +72,7 @@ object StardustPolygonChange {
         resetTimer()
     }
     fun sendSaveConfig() {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId ?: return
-        val dst = user.deviceId ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val configurationSavePackage = StardustPackageUtils.getStardustPackage(
             source = src,

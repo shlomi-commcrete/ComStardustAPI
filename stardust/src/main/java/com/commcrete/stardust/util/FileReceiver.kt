@@ -11,7 +11,6 @@ import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
-import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -263,7 +262,7 @@ class FileReceiver(
     }
 
     private fun saveToMessages (file: File) {
-        val appId = mRegisterUser.value?.appId ?: return
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
             DataManager.getAppRepo().saveMessage(

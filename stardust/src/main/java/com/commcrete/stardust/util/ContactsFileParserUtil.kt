@@ -20,8 +20,8 @@ object ContactsFileParserUtil {
 
         val newUser = RegisterUser(
             displayName = selectedUser.name,
-            deviceId = selectedUser.deviceId,
-            appId = selectedUser.id
+            _deviceId = selectedUser.deviceId,
+            _appId = selectedUser.id
         )
         SharedPreferencesUtil.setAppUser(newUser)
 

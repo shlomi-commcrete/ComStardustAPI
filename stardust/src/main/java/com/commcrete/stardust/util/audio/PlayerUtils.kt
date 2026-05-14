@@ -15,14 +15,12 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.mapper.toStardustAPIPackage
+import com.commcrete.stardust.stardust.mapper.StardustPackageApiMapper
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.appContext
-import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.RegisteredUserUtils.mRegisterUser
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
 import timber.log.Timber
@@ -207,7 +205,7 @@ object PlayerUtils : BleMediaConnector() {
         file: File
     ): Long? {
 
-        val pkg = dataPackage.toStardustAPIPackage() ?: return null
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(dataPackage) ?: return null
 
         return DataManager.getAppRepo().saveMessage(
             pkg = pkg,
@@ -237,7 +235,7 @@ object PlayerUtils : BleMediaConnector() {
         pttScope.launch {
 
             runCatching {
-                val pkg = dataPackage.toStardustAPIPackage() ?: return@runCatching
+                val pkg = StardustPackageApiMapper.toStardustAPIPackage(dataPackage) ?: return@runCatching
 
                 if (!isFileInit) {
                     setTs()

@@ -88,8 +88,7 @@ class AppRepository(
         caches = caches,
         chats = chats,
         registeredAppIdProvider = {
-            RegisteredUserUtils.mRegisterUser.value?.appId
-                ?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+            RegisteredUserUtils.currentUserFlow.value?.appId?.takeIf { it.isNotEmpty() }
         },
     )
 
@@ -423,10 +422,10 @@ class AppRepository(
      * empty when absent. Wired into [MessagesRepository] for [loadPageForChat].
      */
     private fun registeredUserIds(): List<String> {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return emptyList()
+        val user = RegisteredUserUtils.currentUserFlow.value ?: return emptyList()
         return listOfNotNull(
-            user.appId?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
-            user.deviceId?.trim()?.lowercase()?.takeIf { it.isNotEmpty() },
+            user.appId.takeIf { it.isNotEmpty() },
+            user.deviceId?.takeIf { it.isNotEmpty() },
         ).distinct()
     }
 

@@ -9,10 +9,10 @@ import com.commcrete.stardust.R
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
-import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.SosType
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 
@@ -57,14 +57,14 @@ object SOSUtils {
     }
 
     fun updateSosDestinations(destinationId: String) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
-        val deviceId = RegisteredUserUtils.mRegisterUser.value?.deviceId ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
+
         val sosXCVR = ConfigurationUtils.bittelConfiguration.value?.sosXCVR ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
             data = buildUpdateSosDestinationPayload(sosXCVR, destinationId),
-            source = appId,
-            destination = deviceId,
+            source = src,
+            destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION)
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
         DataManager.getClientConnection().saveConfiguration()
@@ -79,17 +79,16 @@ object SOSUtils {
     }
 
     suspend fun sendSos(location: Location) {
+        val (src, dst) = requireLocalSrcDst() ?: return
+
         var data : Array<Int> = arrayOf()
 
         data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
 
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val appId = user.appId ?: return
-        val deviceId = user.deviceId ?: return
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            source = appId,
-            destination = deviceId,
+            source = src,
+            destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
             data = data)
 
@@ -97,8 +96,8 @@ object SOSUtils {
 
         val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
         val sosPackage = StardustAPIPackage(
-            senderId = appId,
-            receiverId = realSOSDest ?: deviceId,
+            senderId = src,
+            receiverId = realSOSDest ?: dst,
             requireAck = true,
             isLast = true
         )

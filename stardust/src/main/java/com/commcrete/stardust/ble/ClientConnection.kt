@@ -20,6 +20,7 @@ import com.commcrete.stardust.ble.BleManager.isUSBConnected
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -96,17 +97,13 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     }
 
     fun sendPing () {
-        RegisteredUserUtils.mRegisterUser.value?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val versionPackage = StardustPackageUtils.getStardustPackage(
-                    source = src,
-                    destination = dst,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
-                addMessageToQueue(versionPackage)
-            }
-        }
+        val (src, dst) = requireLocalSrcDst() ?: return
+
+        val versionPackage = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
+        addMessageToQueue(versionPackage)
     }
 
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
@@ -389,7 +386,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     /** Returns true only when all preconditions for starting the init flow are met. */
     private fun canStartInit(): Boolean =
-        RegisteredUserUtils.mRegisterUser.value?.appId != null
+        RegisteredUserUtils.currentUserFlow.value?.appId != null
             && getBlePairedStardustDevice() != null
             && StardustInitConnectionHandler.isSearchingToConnect()
             && initStartTriggered.compareAndSet(false, true)
@@ -1140,33 +1137,30 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     }
 
     override fun updateBlePort() {
-        RegisteredUserUtils.mRegisterUser.value?.let {
-            val src = it.appId
-            val dst = it.deviceId
-            if(src != null && dst != null) {
-                val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
-                val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
-                val txPackage = StardustPackageUtils.getStardustPackage(
-                    source = src ,
-                    destination = dst,
-                    stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
-                    data = data)
-                addMessageToQueue(txPackage)
-            }
-        }
+        val (src, dst) = requireLocalSrcDst() ?: return
+
+        val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
+        val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
+        val txPackage = StardustPackageUtils.getStardustPackage(
+            source = src ,
+            destination = dst,
+            stardustOpCode =StardustPackageUtils.StardustOpCode.UPDATE_UART_PORT,
+            data = data)
+        addMessageToQueue(txPackage)
     }
 
     override fun saveConfiguration() {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId  ?: return
-        val dst = user.deviceId  ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
+
         val configurationSavePackage = StardustPackageUtils.getStardustPackage(
-            source = src ,
+            source = src,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SAVE_CONFIGURATION)
         addMessageToQueue(configurationSavePackage)
     }
 }
+
+
 
 
 

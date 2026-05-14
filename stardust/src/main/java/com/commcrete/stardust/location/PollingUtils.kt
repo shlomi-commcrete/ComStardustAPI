@@ -95,18 +95,17 @@ internal class PollingUtils() {
 
     private fun pullUserLocation() {
         val nextUser = getNexUserId()
-        DataManager.getClientConnection().let {client ->
+        DataManager.getClientConnection().let { client ->
 
-            RegisteredUserUtils.mRegisterUser.value?.appId?.let { myId ->
+            val userId = RegisteredUserUtils.currentUserFlow.value?.appId?.takeUnless { it.isBlank() } ?: return
 
-                nextUser?.let { nextUser ->
-                    client.sendMessage(
-                        StardustPackageUtils.getStardustPackage(
-                            source = myId,
-                            destination = nextUser,
-                            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
-                    )
-                }
+            nextUser?.let { nextUser ->
+                client.sendMessage(
+                    StardustPackageUtils.getStardustPackage(
+                        source = userId,
+                        destination = nextUser,
+                        stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
+                )
             }
         }
     }

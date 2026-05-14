@@ -5,7 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.R
 import com.commcrete.stardust.ble.ClientConnection
-import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.util.DataManager
@@ -47,7 +47,7 @@ object StardustUpdateProcess {
                 bittelUpdateData.bootAddress = bootAddress
             }
 
-            val (src, dst) = requireSrcDst() ?: return
+            val (src, dst) = requireLocalSrcDst() ?: return
 
             val versionPackage = StardustPackageUtils.getStardustPackage(
                 source = src,
@@ -62,7 +62,7 @@ object StardustUpdateProcess {
     }
 
     private fun getCurrentBittelBootAddress () {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val versionPackage = StardustPackageUtils.getStardustPackage(
             source = src,
@@ -96,7 +96,7 @@ object StardustUpdateProcess {
     }
 
     fun startSendingUpdateData() {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
         val versionPackage = StardustPackageUtils.getStardustPackage(
             source = src,
             destination = dst,

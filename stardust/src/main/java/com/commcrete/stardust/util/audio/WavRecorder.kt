@@ -393,7 +393,7 @@ class WavRecorder(
     }
 
     private fun saveOrRemovePttFile(chatId: String, receiverId: String, path: String) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             if(!DataManager.getSavePTTFilesRequired()) {
                 File(path).takeIf { it.exists() }?.delete()

@@ -97,14 +97,13 @@ object DataManager : StardustAPI, PttInterface {
     override fun init(appContext: Context, pluginContext: Context, fileLocation: String) {
         initAppContext(appContext)
         initPluginContext(pluginContext)
+        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser())
 
         SharedPreferencesUtil.getIsErased().let {
             if (it) throw IllegalStateException("Device is erased, please reset the device")
         }
 
         requireFileLocation(fileLocation)
-        RegisteredUserUtils.updateRegisteredUser(SharedPreferencesUtil.getAppUser())
-
         AIModuleInitializer.initModules()
     }
 

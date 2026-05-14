@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util
 
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import kotlinx.coroutines.launch
@@ -29,11 +30,9 @@ object AdminUtils {
     }
 
     fun updateBittelAdminMode() {
+        val (src, dst) = requireLocalSrcDst() ?: return
         val adminMode = getAdminMode()
         val clientConnection = DataManager.getClientConnection()
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId ?: return
-        val dst = user.deviceId ?: return
 
         val intData = arrayListOf<Int>()
         intData.add(adminMode.type)

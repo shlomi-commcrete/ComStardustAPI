@@ -9,7 +9,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -236,7 +236,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         val radio = getRadioToSend(functionalityType = data.fileType.relatedFunctionalityType(), carrier = data.stardustAPIPackage.carrier)  ?: return
 
         DataManager.getClientConnection().let {
-            val (appId, _) = requireSrcDst() ?: return
+            val (appId, _) = requireLocalSrcDst() ?: return
 
             val sosString = "STR"
             val sosBytes = sosString.toByteArray()

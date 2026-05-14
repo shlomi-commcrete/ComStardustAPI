@@ -9,7 +9,7 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 
 object StardustPackageApiMapper {
     fun toStardustAPIPackage(pkg: StardustPackage): StardustAPIPackage? {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId ?: return null
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return null
         return StardustAPIPackage(
             senderId = pkg.senderId,
             groupId = pkg.groupId,
@@ -21,8 +21,3 @@ object StardustPackageApiMapper {
         )
     }
 }
-
-fun StardustPackage.toStardustAPIPackage(): StardustAPIPackage? {
-    return StardustPackageApiMapper.toStardustAPIPackage(this)
-}
-

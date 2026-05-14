@@ -267,7 +267,7 @@ object StardustInitConnectionHandler {
     // 1) Request address
     private fun sendGetAddresses() {
         // If you can actively request addresses, SEND it here:
-        val (src, dst) = requireSrcDstOrNull() ?: (null to null)
+        val (src, dst) = requireLocalSrcDstOrNull() ?: (null to null)
         if (src != null && dst != null) {
             val pkg = StardustPackageUtils.getStardustPackage(
                 source = src,
@@ -294,8 +294,8 @@ object StardustInitConnectionHandler {
 
     // 2) Update address
     private fun sendUpdateSmartphoneAddress(addr: StardustAddressesPackage) {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return failAndStop("No app user")
-        val appId = user.appId ?: return failAndStop("No appId")
+        val user = RegisteredUserUtils.currentUserFlow.value ?: return failAndStop("No app user")
+        val appId = user.appId
         val payload = arrayListOf<Int>().apply {
             addAll(StardustPackageUtils.hexStringToByteArray(appId))
             add(0); add(0); add(0); add(0)
@@ -319,7 +319,7 @@ object StardustInitConnectionHandler {
 
     // 3) Delete groups
     private fun sendDeleteGroups() {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
         val payload = buildDeleteGroupsPayload() // TODO: replace with your real payload
         val pkg = StardustPackageUtils.getStardustPackage(
             source = src,
@@ -338,7 +338,7 @@ object StardustInitConnectionHandler {
 
     // 5) Get configuration
     private fun requestConfiguration() {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
             source = src,
             destination = dst,
@@ -356,7 +356,7 @@ object StardustInitConnectionHandler {
 
     // 6) Update admin mode
     private fun sendUpdateAdminMode() {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
             source = src,
             destination = dst,
@@ -382,14 +382,14 @@ object StardustInitConnectionHandler {
     // ───────────────────────── Utilities ─────────────────────────
 
     private fun registerBittel(bittelId: String) {
-        val savedUser = RegisteredUserUtils.mRegisterUser.value ?: return
+        val savedUser = RegisteredUserUtils.currentUserFlow.value ?: return
 
         val newUser = RegisterUser(
             displayName = savedUser.displayName,
-            deviceId = bittelId,
-            appId = savedUser.appId,
+            _deviceId = bittelId,
+            _appId = savedUser.appId,
         )
-        savedUser.appId?.let { SharedPreferencesUtil.setAppUser(newUser) }
+        savedUser.appId.let { SharedPreferencesUtil.setAppUser(newUser) }
     }
 
     private fun handleVersion(p: StardustPackage) {
@@ -398,15 +398,14 @@ object StardustInitConnectionHandler {
         }
     }
 
-    internal fun requireSrcDst(): Pair<String, String>? {
-        val u = RegisteredUserUtils.mRegisterUser.value ?: return null.also { failAndStop("No app user") }
-        val src = u.appId ?: return null.also { failAndStop("No appId") }
+    fun requireLocalSrcDst(): Pair<String, String>? {
+        val u = RegisteredUserUtils.currentUserFlow.value ?: return null.also { failAndStop("No app user") }
         val dst = u.deviceId ?: return null.also { failAndStop("No bittelId") }
-        return src to dst
+        return u.appId to dst
     }
-    internal fun requireSrcDstOrNull(): Pair<String?, String?>? {
-        val u = RegisteredUserUtils.mRegisterUser.value ?: return null
-        return u.appId to "1"
+    fun requireLocalSrcDstOrNull(): Pair<String?, String?>? {
+        val u = RegisteredUserUtils.currentUserFlow.value ?: return null
+        return u.appId to u.deviceId
     }
 
     // Stub payload builders — replace with real content

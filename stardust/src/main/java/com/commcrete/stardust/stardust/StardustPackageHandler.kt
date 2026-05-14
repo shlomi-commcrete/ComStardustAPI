@@ -6,14 +6,12 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.bittell.util.text_utils.getCharValue
-import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
@@ -27,7 +25,8 @@ import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
-import com.commcrete.stardust.stardust.mapper.toStardustAPIPackage
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
+import com.commcrete.stardust.stardust.mapper.StardustPackageApiMapper
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -36,7 +35,6 @@ import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
-import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
@@ -223,7 +221,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleSOSAck(mPackage: StardustPackage) {
-        val pkg = mPackage.toStardustAPIPackage() ?: return
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
         DataManager.getCallbacks()?.handleSOSAck(pkg)
     }
 
@@ -275,9 +273,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun getConfiguration() {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId ?: return
-        val dst = user.deviceId ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val configurationPackage = StardustPackageUtils.getStardustPackage(
             source = src,
@@ -373,7 +369,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleSOS(mPackage: StardustPackage) {
-        val pkg = mPackage.toStardustAPIPackage() ?: return
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
 
         handlerScope.launch {
             try {
@@ -401,7 +397,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         }
     }
 
-    private fun registerDevice(deviceId: String){
+    private fun registerDevice(deviceId: String) {
         val savedUser = SharedPreferencesUtil.getAppUser()
         val deviceName = SharedPreferencesUtil.getBittelDeviceName()
 
@@ -411,12 +407,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 savedUser?.let { user ->
                     val newUser = RegisterUser(
                         displayName = user.displayName,
-                        deviceId = deviceId,
-                        appId = user.appId,
+                        _deviceId = deviceId,
+                        _appId = user.appId,
                     )
-                    if (user.appId != null) {
-                        SharedPreferencesUtil.setAppUser(newUser)
-                    }
+                    SharedPreferencesUtil.setAppUser(newUser)
                 }
             }
         }
@@ -427,7 +421,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * Packet structure: [appId_4bytes][padding_4bytes][device_type_1byte]
      */
     private fun updateDeviceSmartphoneAddress(addressesPackage: StardustAddressesPackage) {
-        val appId = RegisteredUserUtils.mRegisterUser.value?.appId
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId
         if (appId.isNullOrBlank()) {
             Timber.tag("UpdateAddress").w("Cannot send UPDATE_ADDRESS: appId not registered")
             return
@@ -466,7 +460,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleLocationReceived(mPackage: StardustPackage) {
-        val pkg = mPackage.toStardustAPIPackage() ?: return
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
         handlerScope.launch {
             if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
                 handleAck(
@@ -513,7 +507,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleText(mPackage: StardustPackage) {
-        val pkg = mPackage.toStardustAPIPackage() ?: return
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {

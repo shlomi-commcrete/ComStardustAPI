@@ -8,9 +8,8 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
-import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireSrcDst
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -91,7 +90,7 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     private fun initDataToUsb () {
-        RegisteredUserUtils.mRegisterUser.value ?: return
+        RegisteredUserUtils.currentUserFlow.value ?: return
         if(!BleManager.isUSBConnected || StardustInitConnectionHandler.hasUnsyncableError()) { return }
 
         CoroutineScope(Dispatchers.Default).launch {
@@ -258,9 +257,8 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     override fun updateBlePort() {
-        val user = RegisteredUserUtils.mRegisterUser.value ?: return
-        val src = user.appId ?: return
-        val dst = user.deviceId ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
+
         val uartPort = getUartPortType().type.intToByteArray().reversedArray()
         val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
         val txPackage = StardustPackageUtils.getStardustPackage(
@@ -273,7 +271,7 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     override fun saveConfiguration() {
-        val (src, dst) = requireSrcDst() ?: return
+        val (src, dst) = requireLocalSrcDst() ?: return
 
         val configurationSavePackage = StardustPackageUtils.getStardustPackage(
             source = src ,
