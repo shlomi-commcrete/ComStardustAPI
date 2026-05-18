@@ -346,13 +346,19 @@ object DataManager : StardustAPI, PttInterface {
 
     fun bondOnStartup() {
         checkInitialized()
+        getClientConnection().initBleStatus()
+        // Check if Bluetooth is enabled; if not, user will see a dialog
+        if (!getClientConnection().isBluetoothEnabled()) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
+            return
+        }
 
         val bondedDevice = getPairedDevices()
         if(bondedDevice != null) {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
             getClientConnection().bondToBleDeviceStartup(bondedDevice)
         } else {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.IDLE)
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
         }
     }
 

@@ -20,6 +20,7 @@ import com.commcrete.stardust.ble.BleManager.isUSBConnected
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.isDisconnected
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -64,6 +65,15 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     var gattConnection : BluetoothGatt? = null
     var mDevice : BluetoothDevice? = null
+        get() {
+            if(field == null) {
+                val savedAddress = SharedPreferencesUtil.getBittelDevice()
+                if(savedAddress != null && savedAddress.isNotBlank() && !savedAddress.equals("empty", ignoreCase = true)) {
+                    field = getBleConnectedStardustDeviceBySavedAddress(savedAddress)
+                }
+            }
+            return field
+        }
     var deviceLastDigit = ""
     var counter  : Int = 0
 
@@ -91,10 +101,6 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         resetPingTimer()
     }
     private val pingHandler : Handler = Handler(Looper.getMainLooper())
-
-    init {
-        initBleStatus ()
-    }
 
     fun sendPing () {
         val (src, dst) = requireLocalSrcDst() ?: return
@@ -136,13 +142,23 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     var deviceName : String?  = ""
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
+    private var bluetoothStateObserver: Observer<Boolean>? = null
+    private val bluetoothStateObserverLock = Any()
+    private val bleStatusHandler = Handler(Looper.getMainLooper())
+    private val bleStatusRegistrationScheduled = AtomicBoolean(false)
     private var initStartJob: Job? = null
     private var discoverServicesJob: Job? = null
     private var reconnectJob: Job? = null
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
+    init {
+        initBleStatus()
+    }
+
     private fun gettCallback () : BluetoothGattCallback{
+        Log.d("StardustDataManager", " gettCallback")
+
         if (bluetoothGattCallback == null) {
             bluetoothGattCallback = object : BluetoothGattCallback(){
 
@@ -166,6 +182,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     newState: Int
                 ) {
                     super.onConnectionStateChange(gatt, status, newState)
+
+                    Log.d("StardustDataManager", " onConnectionStateChange")
                     Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
                     val mtu = gatt?.requestMtu(200)
                     Timber.tag("SetMtu").d("$mtu")
@@ -180,6 +198,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
+
+                            Log.d("StardustDataManager", "BleManager.isBleConnected = false")
                             BleManager.isBleConnected = false
                             BleManager.bleConnectionStatus.value = false
                             BleManager.updateStatus()
@@ -190,9 +210,10 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                 @SuppressLint("MissingPermission")
                 override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                     super.onServicesDiscovered(gatt, status)
-
+                    Log.d("StardustDataManager", " onServicesDiscovered")
                     if (!isServicesDiscoveredHandleable(status)) return
 
+                    Log.d("StardustDataManager", " isServicesDiscoveredHandleable")
                     Scopes.getDefaultCoroutine().launch {
                         handleServicesDiscovered(gatt)
                     }
@@ -324,11 +345,14 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         setDevice()
         updateConnectionState(gatt)
         enableNotifications(gatt)
-        if(StardustInitConnectionHandler.isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()) triggerInitSequence(gatt)
+        if(bluetoothStateObserver == null) initBleStatus()
+        Log.d("StardustDataManager", "isDisconnected() ${isDisconnected() }")
+        if(isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()) triggerInitSequence(gatt)
     }
 
     /** Updates BLE connection state and RSSI polling when the device is paired. */
     private fun updateConnectionState(gatt: BluetoothGatt?) {
+        Log.d("StardustDataManager", "BleManager.isPaired.value ${BleManager.isPaired.value}")
         if (BleManager.isPaired.value != true) return
         Scopes.getMainCoroutine().launch {
             Timber.tag(LOG_TAG).d("gattConnection")
@@ -394,17 +418,53 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     // ─────────────────────────────────────────────────────────────────────
 
     fun initBleStatus() {
-        Scopes.getMainCoroutine().launch {
-            BluetoothStateManager.bluetoothState.observeForever(object : Observer<Boolean> {
-                override fun onChanged(isConnected: Boolean) {
-                    if(!isConnected) {
-                        disconnectFromBLEDevice(true)
-                    } else if(!isUSBConnected && !BleManager.isBleConnected && BleManager.isBluetoothToggleEnabled){
-                            mDevice?.let { connectDevice(it) }
+        if (!bleStatusRegistrationScheduled.compareAndSet(false, true)) return
+        bleStatusHandler.post {
+            try {
+                registerBluetoothStateObserverIfNeeded()
+            } finally {
+                bleStatusRegistrationScheduled.set(false)
+            }
+        }
+    }
+
+    private fun registerBluetoothStateObserverIfNeeded() {
+        synchronized(bluetoothStateObserverLock) {
+            if (bluetoothStateObserver != null) return
+
+            val observer = object : Observer<Boolean> {
+                override fun onChanged(value: Boolean) {
+                    Log.d("StardustDataManager", "Bluetooth state changed: $value, isUSBConnected: $isUSBConnected")
+                    if (isUSBConnected) {
+                        removeBluetoothStateObserver()
+                        return
+                    }
+
+                    if(!value) {
+                        if(isDisconnected()) return
+                        disconnectFromBLEDevice(disconnectByForce = true, false)
+                        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
+                    } else if(!isUSBConnected && !BleManager.isBleConnected) {
+                        mDevice?.let {
+                            Log.d("StardustDataManager", "hasCallback $hasCallback, isUSBConnected: $isUSBConnected")
+
+                            if (hasCallback) { return@let }
+                            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+                            bondToBleDeviceStartup(it)
+                        }
                     }
                 }
+            }
 
-            })
+            bluetoothStateObserver = observer
+            BluetoothStateManager.bluetoothState.observeForever(observer)
+        }
+    }
+
+    private fun removeBluetoothStateObserver() {
+        synchronized(bluetoothStateObserverLock) {
+            bluetoothStateObserver?.let { BluetoothStateManager.bluetoothState.removeObserver(it) }
+            bluetoothStateObserver = null
         }
     }
 
@@ -456,6 +516,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice) {
+        Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback")
         if(!hasCallback) {
             resetDiscoveryState()
             device.connectGatt(context, true, getBleGattCallback(device))
@@ -504,7 +565,27 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         initStartJob = null
     }
 
+    /**
+     * Checks if Bluetooth is enabled. If not, shows a dialog prompting the user to enable it.
+     * The dialog offers two options:
+     * 1. Enable Bluetooth - redirects to system Bluetooth enable request
+     * 2. Go to Settings - redirects to Bluetooth settings
+     * 
+     * @return true if Bluetooth is already enabled, false if user needs to enable it
+     */
+    fun isBluetoothEnabled(): Boolean {
+        val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
+        
+        if (bluetoothAdapter == null) {
+            Timber.tag(LOG_TAG).e("Bluetooth is not supported on this device")
+            return false
+        }
+
+        return bluetoothAdapter.isEnabled
+    }
+
     fun release() {
+        removeBluetoothStateObserver()
         cancelQueue()
         disconnect().enqueue()
     }
@@ -552,6 +633,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     @SuppressLint("MissingPermission")
     fun bondToBleDeviceStartup(connectedDevice: BluetoothDevice) {
+        Log.d("StardustDataManager", "bondToBleDeviceStartup")
+
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = true
         }
@@ -620,12 +703,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
                 ?.let { getBleConnectedStardustDeviceBySavedAddress(it) }
 
-        disconnectFromBLEDevice(true)
-
         deviceToUnbond?.let {
             val started = requestUnbond(it)
             Timber.tag(LOG_TAG).d("Unbond requested for ${it.address}: started=$started")
         }
+        disconnectFromBLEDevice(true)
 
         Scopes.getDefaultCoroutine().launch {
             SharedPreferencesUtil.removeBittelDevice()
@@ -760,7 +842,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
         Timber.tag(LOG_TAG).d("checkXorfini $randomID sendMessage")
         if(bittelPackage.isAbleToSendAgain()){
-            if(!BleManager.isBluetoothEnabled() && !BleManager.isUSBConnected){
+            if(!BleManager.isBluetoothConnected() && !BleManager.isUSBConnected){
                 Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
             }
             Timber.tag(LOG_TAG).d("isAbleToSendAgain $randomID sendMessage")
@@ -1121,7 +1203,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
 
     fun reconnectToDevice () {
-        disconnectFromBLEDevice (true)
+        disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             delay(2000)
@@ -1129,8 +1211,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }
     }
 
-    fun reconnectToDeviceFast () {
-        disconnectFromBLEDevice ()
+    fun reconnectToDeviceFast() {
+        disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             delay(100)

@@ -5,18 +5,21 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
 
 object BluetoothStateManager {
 
     private val _bluetoothState = MutableLiveData<Boolean>()
     val bluetoothState: MutableLiveData<Boolean> get() = _bluetoothState
+    private val isInitialized = AtomicBoolean(false)
 
     fun initialize() {
+        if (!isInitialized.compareAndSet(false, true)) return
+
         Scopes.getMainCoroutine().launch {
             _bluetoothState.value = getBluetoothState()
         }

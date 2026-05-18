@@ -20,11 +20,6 @@ object PortUtils {
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val connectionTimeout = 10000L
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-//        Scopes.getMainCoroutine().launch {
-//            BleManager.isUSBConnected = false
-//            BleManager.usbConnectionStatus.value = false
-//            BleManager.updateStatus ()
-//        }
         DataManager.getUsbManager().reconnectToDevice()
     }
 
@@ -34,7 +29,7 @@ object PortUtils {
                 if(BleManager.isUsbEnabled()){
                     BittelUsbManager2.updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateUsbPort")
-                }else if (BleManager.isBluetoothEnabled()) {
+                }else if (BleManager.isBluetoothConnected()) {
                     DataManager.getClientConnection().updateBlePort()
                     Timber.tag("startUpdatingPort").d("updateBlePort")
                 }
@@ -66,7 +61,7 @@ object PortUtils {
         try {
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
-        }catch (e : Exception) {
+        } catch (e : Exception) {
             e.printStackTrace()
         }
     }

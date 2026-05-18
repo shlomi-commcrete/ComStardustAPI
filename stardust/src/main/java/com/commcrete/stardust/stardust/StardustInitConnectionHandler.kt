@@ -46,7 +46,8 @@ object StardustInitConnectionHandler {
         NO_LICENSE,
         ENCRYPTION_KEY_ERROR,
         PRESET_ERROR,
-        DISCONNECTED
+        DISCONNECTED,
+        BLUETOOTH_OFF
     }
 
     private const val MAX_ATTEMPTS = 3
@@ -267,11 +268,11 @@ object StardustInitConnectionHandler {
     // 1) Request address
     private fun sendGetAddresses() {
         // If you can actively request addresses, SEND it here:
-        val (src, dst) = requireLocalSrcDstOrNull() ?: (null to null)
-        if (src != null && dst != null) {
+        val src = RegisteredUserUtils.currentUserFlow.value?.appId
+        if (src != null) {
             val pkg = StardustPackageUtils.getStardustPackage(
                 source = src,
-                destination = dst,
+                destination = "1",
                 stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADDRESS
             )
             pkg.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
@@ -372,7 +373,7 @@ object StardustInitConnectionHandler {
         if (BleManager.isUsbEnabled()) {
             BittelUsbManager2.updateBlePort()
             Timber.tag("startUpdatingPort").d("updateUsbPort (init)")
-        } else if (BleManager.isBluetoothEnabled()) {
+        } else if (BleManager.isBluetoothConnected()) {
             DataManager.getClientConnection().updateBlePort()
             Timber.tag("startUpdatingPort").d("updateBlePort (init)")
         }
@@ -402,10 +403,6 @@ object StardustInitConnectionHandler {
         val u = RegisteredUserUtils.currentUserFlow.value ?: return null.also { failAndStop("No app user") }
         val dst = u.deviceId ?: return null.also { failAndStop("No bittelId") }
         return u.appId to dst
-    }
-    fun requireLocalSrcDstOrNull(): Pair<String?, String?>? {
-        val u = RegisteredUserUtils.currentUserFlow.value ?: return null
-        return u.appId to u.deviceId
     }
 
     // Stub payload builders — replace with real content
@@ -447,7 +444,7 @@ object StardustInitConnectionHandler {
     }
 
     fun hasConnectionError(): Boolean {
-        return state == State.CANCELED || hasUnsyncableError()
+        return state == State.CANCELED || state == State.BLUETOOTH_OFF || hasUnsyncableError()
     }
 
     fun hasUnsyncableError(): Boolean {
@@ -463,7 +460,7 @@ object StardustInitConnectionHandler {
     }
 
     fun isDisconnected(): Boolean {
-        return state == State.DISCONNECTED || state == State.IDLE
+        return state == State.DISCONNECTED || state == State.IDLE || state == State.BLUETOOTH_OFF
     }
 
     fun isConnectedSuccessfully(): Boolean {

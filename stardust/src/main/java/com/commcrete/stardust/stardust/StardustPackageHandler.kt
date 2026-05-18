@@ -258,7 +258,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         if(BleManager.isUsbEnabled()){
             BittelUsbManager2.updateBlePort()
             Timber.tag("startUpdatingPort").d("updateUsbPort")
-        }else if (BleManager.isBluetoothEnabled()) {
+        }else if (BleManager.isBluetoothConnected()) {
             DataManager.getClientConnection().updateBlePort()
             Timber.tag("startUpdatingPort").d("updateBlePort")
         }
@@ -402,7 +402,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         val deviceName = SharedPreferencesUtil.getBittelDeviceName()
 
         //Temp
-        if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
+        if (BleManager.isBluetoothConnected() || BleManager.isUsbEnabled()) {
             deviceName.let { name ->
                 savedUser?.let { user ->
                     val newUser = RegisterUser(

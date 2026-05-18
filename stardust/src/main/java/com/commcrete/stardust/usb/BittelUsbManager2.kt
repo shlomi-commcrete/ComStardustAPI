@@ -89,7 +89,7 @@ object BittelUsbManager2 : BittelProtocol {
         usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
     }
 
-    private fun initDataToUsb () {
+    private fun  initDataToUsb () {
         RegisteredUserUtils.currentUserFlow.value ?: return
         if(!BleManager.isUSBConnected || StardustInitConnectionHandler.hasUnsyncableError()) { return }
 

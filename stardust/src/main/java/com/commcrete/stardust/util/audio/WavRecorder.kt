@@ -273,7 +273,7 @@ class WavRecorder(
                 if(BleManager.isNetworkEnabled()){
                     handleBlePackage(byteaArray, null, file)
                 }
-                else if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
+                else if (BleManager.isBluetoothConnected() || BleManager.isUsbEnabled()) {
 //                    send to BLE
                     handleBlePackage(byteaArray, carrier, file)
                 }
@@ -424,7 +424,7 @@ class WavRecorder(
     }
 
     private fun sendData(byteArray: ByteArray, isLast : Boolean = false, carrier: Carrier? = null) {
-        if (BleManager.isBluetoothEnabled()|| BleManager.isUsbEnabled()) {
+        if (BleManager.isBluetoothConnected()|| BleManager.isUsbEnabled()) {
             sendToBle(byteArray, isLast, carrier)
         }
     }

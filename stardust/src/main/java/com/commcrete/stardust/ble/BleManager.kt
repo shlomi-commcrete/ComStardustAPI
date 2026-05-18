@@ -4,6 +4,7 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
@@ -13,6 +14,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.getClientConnection
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -25,9 +27,14 @@ object BleManager {
 
     var isBleConnected = false
     var isUSBConnected = false
+        internal set(value) {
+            if(value) {
+                isBleConnected = false
+            }
+            field = value
+        }
     var isNetworkConnected = false
     var isNetworkToggleEnabled = true
-    var isBluetoothToggleEnabled = true
 
     private var connectionStatus: ConnectionType? = null
     val bleConnectionStatus : MutableLiveData<Boolean> = MutableLiveData(isBleConnected)
@@ -45,11 +52,7 @@ object BleManager {
 //                    bleConnectionStatus.value = false
                 } else {
                     isNetworkConnected = false
-                    if(isBleConnected){
-                        bleConnectionStatus.value = true
-                    }else {
-                        bleConnectionStatus.value = false
-                    }
+                    bleConnectionStatus.value = isBleConnected
                 }
             }
         }
@@ -59,32 +62,35 @@ object BleManager {
         BluetoothStateManager.initialize()
     }
 
-    fun isUsbEnabled () : Boolean {
+    fun isUsbEnabled() : Boolean {
         return isUSBConnected
     }
 
-    fun isNetworkEnabled () : Boolean{
+    fun isNetworkEnabled() : Boolean{
         return isNetworkConnected && isNetworkToggleEnabled
     }
 
-    fun isBluetoothEnabled () : Boolean{
-        return isBleConnected && isBluetoothToggleEnabled
+    fun isBluetoothConnected() : Boolean{
+        return isBleConnected && getClientConnection().isBluetoothEnabled()
     }
 
     fun updateStatus() {
+        val lastConnectionStatus = connectionStatus
         val newStatus = when {
             isUsbEnabled() ->  ConnectionType.USB
-            isBluetoothEnabled() -> ConnectionType.BLE
+            isBluetoothConnected() -> ConnectionType.BLE
             else -> null
         }
 
-        if(connectionStatus == newStatus) return
+        Log.d("StardustDataManager", "updateStatus: newStatus -> $newStatus")
+
+        if(lastConnectionStatus == newStatus) return
         connectionStatus = newStatus
 
         when(newStatus) {
             ConnectionType.USB -> {
-                if (!isBluetoothToggleEnabled && isBleConnected) {
-                    DataManager.getClientConnection().disconnectFromBLEDevice(disconnectByForce = true)
+                if (lastConnectionStatus == ConnectionType.BLE) {
+                    getClientConnection().disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
                 }
             }
 

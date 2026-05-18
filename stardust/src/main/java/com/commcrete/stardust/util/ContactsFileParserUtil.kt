@@ -74,7 +74,7 @@ object ContactsFileParserUtil {
 
 
     private fun onFinishLoadData() {
-        if(!BleManager.isBluetoothEnabled() && !BleManager.isUSBConnected) { return }
+        if(!BleManager.isBluetoothConnected() && !BleManager.isUSBConnected) { return }
         StardustInitConnectionHandler.start()
     }
 
