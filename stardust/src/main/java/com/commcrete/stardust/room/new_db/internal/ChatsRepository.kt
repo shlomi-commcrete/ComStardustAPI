@@ -6,11 +6,14 @@ import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
 import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
+import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsFullParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ShortParticipantInfo
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
+import com.commcrete.stardust.room.new_db.contact.DeviceEntity
+import com.commcrete.stardust.room.new_db.contact.FullContactData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -23,6 +26,7 @@ import kotlinx.coroutines.withContext
  *  - **Reads** — chat lists and summaries
  *    ([getChatSummaries], [getChatIds], [getShortChatDataByChatId],
  *    [getChatWithParticipantsByChatId], [getChatWithParticipantsShortParticipantInfo],
+ *    [getChatWithParticipantsFullParticipantInfo],
  *    [observeAllChatsWithShortParticipantInfo]).
  *  - **Writes** — chat creation helpers shared with contacts-insertion paths
  *    ([createPrivateChat], [createGroupChat], [addToExistingGroupChats]) and
@@ -82,6 +86,25 @@ internal class ChatsRepository(
         )
     }
 
+    /** See `AppRepository.getChatWithParticipantsFullParticipantInfo`. */
+    suspend fun getChatWithParticipantsFullParticipantInfo(
+        chatId: String,
+    ): ChatWithParticipantsAsFullParticipantInfo? = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
+        val chat = chatsDao.getChatByChatId(normalizedChatId) ?: return@withContext null
+        val groupRows = contactsDao.getChatGroupContactRows(normalizedChatId)
+        val appRows = if (chat.type == ChatType.GROUP) {
+            emptyList()
+        } else {
+            contactsDao.getChatUserAndDeviceContactRows(normalizedChatId)
+        }
+        ChatWithParticipantsAsFullParticipantInfo(
+            chat = chat,
+            participants = mapGroupContactRowsToFullContactData(groupRows) +
+                    mapAppContactRowsToFullContactData(appRows),
+        )
+    }
+
     /** See `AppRepository.observeAllChatsWithShortParticipantInfo`. */
     fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
         combine(
@@ -122,6 +145,56 @@ internal class ChatsRepository(
         }
         return result
     }
+
+    private fun mapAppContactRowsToFullContactData(
+        rows: List<ContactsDao.AppContactRow>,
+    ): List<FullContactData> {
+        if (rows.isEmpty()) return emptyList()
+        return rows.groupBy { it.contact.id }.values.mapNotNull { groupedRows ->
+            val contact = groupedRows.first().contact
+            when (contact.type) {
+                ContactType.USER -> {
+                    val userId = groupedRows.firstNotNullOfOrNull { normalizeIdOrNull(it.userId) }
+                        ?: return@mapNotNull null
+                    val devices = groupedRows
+                        .mapNotNull { row ->
+                            val deviceId = normalizeIdOrNull(row.deviceId) ?: return@mapNotNull null
+                            DeviceEntity(id = deviceId, model = row.deviceModel, serial = row.deviceSerial) to
+                                    (row.deviceSlot ?: Int.MAX_VALUE)
+                        }
+                        .sortedBy { it.second }
+                        .map { it.first }
+                        .distinctBy { it.id }
+                    FullContactData.User(contact = contact, userId = userId, devices = devices)
+                }
+
+                ContactType.DEVICE -> {
+                    val best = groupedRows
+                        .asSequence()
+                        .mapNotNull { row ->
+                            val deviceId = normalizeIdOrNull(row.deviceId) ?: return@mapNotNull null
+                            Triple(deviceId, row.deviceModel, row.deviceSerial) to (row.deviceSlot ?: Int.MAX_VALUE)
+                        }
+                        .minByOrNull { it.second }?.first ?: return@mapNotNull null
+                    FullContactData.Device(
+                        contact = contact,
+                        deviceId = best.first,
+                        deviceData = DeviceEntity(id = best.first, model = best.second, serial = best.third),
+                    )
+                }
+
+                ContactType.GROUP -> null
+            }
+        }
+    }
+
+    private fun mapGroupContactRowsToFullContactData(
+        rows: List<ContactsDao.GroupContactRow>,
+    ): List<FullContactData> =
+        rows.mapNotNull { row ->
+            val groupId = normalizeIdOrNull(row.groupId) ?: return@mapNotNull null
+            FullContactData.Group(contact = row.contact, groupId = groupId)
+        }
 
     // ─────────────────────────────────────────────────────────────────────
     // Writes — creation helpers (shared with contacts-insertion paths)

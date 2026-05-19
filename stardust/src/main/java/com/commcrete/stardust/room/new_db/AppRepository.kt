@@ -6,6 +6,7 @@ import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
+import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsFullParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ShortParticipantInfo
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
@@ -237,6 +238,13 @@ class AppRepository(
      */
     suspend fun getChatWithParticipantsShortParticipantInfo(chatId: String): ChatWithParticipantsAsShortParticipantInfo? =
         chats.getChatWithParticipantsShortParticipantInfo(chatId)
+
+    /**
+     * Retrieves a chat with participants as full [FullContactData], including
+     * linked device metadata for USER/DEVICE contacts.
+     */
+    suspend fun getChatWithParticipantsFullParticipantInfo(chatId: String): ChatWithParticipantsAsFullParticipantInfo? =
+        chats.getChatWithParticipantsFullParticipantInfo(chatId)
 
     /**
      * Observes all chats with their participants as lightweight

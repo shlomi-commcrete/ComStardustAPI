@@ -389,6 +389,31 @@ interface ContactsDao {
     )
     suspend fun getAllUserAndDeviceContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
 
+    /**
+     * Returns USER and DEVICE participants for a single chat, with device joins,
+     * suitable for reconstructing [FullContactData.User] and [FullContactData.Device].
+     */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
+        FROM chat_participants cp
+        JOIN contacts c ON c.id = cp.contact_id
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
+        WHERE cp.chat_id = :chatId
+          AND c.type IN ('USER', 'DEVICE')
+        ORDER BY c.name ASC, cd.slot ASC
+        """
+    )
+    suspend fun getChatUserAndDeviceContactRows(chatId: String): List<AppContactRow>
+
     @Query(
         """
         SELECT
@@ -401,6 +426,24 @@ interface ContactsDao {
         """
     )
     suspend fun getAllGroupContactRows(): List<GroupContactRow>
+
+    /**
+     * Returns GROUP participants for a single chat with their group IDs.
+     */
+    @Query(
+        """
+        SELECT
+            c.*,
+            g.group_id AS group_id
+        FROM chat_participants cp
+        JOIN contacts c ON c.id = cp.contact_id
+        JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE cp.chat_id = :chatId
+          AND c.type = 'GROUP'
+        ORDER BY c.name ASC
+        """
+    )
+    suspend fun getChatGroupContactRows(chatId: String): List<GroupContactRow>
 
     /**
      * Live stream of group IDs (group_id) that are fully resolved:
