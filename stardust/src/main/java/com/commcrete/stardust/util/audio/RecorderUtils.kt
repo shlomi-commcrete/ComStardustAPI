@@ -32,6 +32,9 @@ object RecorderUtils {
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
+    /** True when the active AI recorder is configured to persist debug raw audio. */
+    fun isAiDebugRawAudioEnabled(): Boolean = aiRecorder?.saveRawAudioToDownloads == true
+
 
     fun init(pttInterface : PttInterface){
         RecorderUtils.pttInterface = pttInterface
@@ -157,7 +160,15 @@ object RecorderUtils {
             agcTargetRms = agcTargetRms,
             agcMaxGain = agcMaxGain,
             agcNoiseFloorRms = agcNoiseFloorRms,
+            agcMinGain = 0.25f,
+            agcAttackSec = 0.010f,
+            agcReleaseSec = 0.350f,
             noiseGateRms = noiseGateRms,
+            expanderRatio = expanderRatio,
+            expanderOpenSnr = expanderOpenSnr,
+            expanderMinGain = expanderMinGain,
+            expanderAttackSec = expanderAttackSec,
+            expanderReleaseSec = expanderReleaseSec,
         )
     }
 

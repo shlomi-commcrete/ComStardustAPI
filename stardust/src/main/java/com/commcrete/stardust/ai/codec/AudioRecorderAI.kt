@@ -89,13 +89,7 @@ class AudioRecorderAI(
      */
     private val debugCleanedWriter = DebugRawWavWriter()
 
-    /**
-     * Additional debug writer for post-AI-parsing audio (captured AFTER the
-     * [onChunkReady] callback has returned, so it reflects any in-place
-     * mutations performed by the AI parsing stage). Saved with `ai_parsed`
-     * in file name.
-     */
-    private val debugAiParsedWriter = DebugRawWavWriter()
+
 
     // --- Audio cleaning configuration ---
     /** Enable Android platform NoiseSuppressor / AGC / AEC (only effective with VOICE_* sources). */
@@ -746,15 +740,9 @@ class AudioRecorderAI(
                 sampleRate = sampleRate,
                 channels = channels,
                 bitsPerSample = bitsPerSample,
-                fileNamePrefix = "stardust_cleaned"
+                fileNamePrefix = "cleaned"
             )
-            debugAiParsedWriter.start(
-                context = context,
-                sampleRate = sampleRate,
-                channels = channels,
-                bitsPerSample = bitsPerSample,
-                fileNamePrefix = "stardust_ai_parsed"
-            )
+
         }
 
         audioRecord.startRecording()
@@ -792,11 +780,7 @@ class AudioRecorderAI(
                             debugCleanedWriter.append(processed, processed.size)
                         }
                         onChunkReady?.invoke(processed, chunkIndex++)
-                        // 🟣 Capture post-AI-parsing samples (after the callback
-                        // returns; reflects any in-place AI mutations).
-                        if (saveRawAudioToDownloads) {
-                            debugAiParsedWriter.append(processed, processed.size)
-                        }
+
                         chunkSampleIndex = 0
                     }
                 }
@@ -816,9 +800,6 @@ class AudioRecorderAI(
                         debugCleanedWriter.append(partial, partial.size)
                     }
                     onPartialFinalChunk?.invoke(partial, chunkIndex)
-                    if (saveRawAudioToDownloads) {
-                        debugAiParsedWriter.append(partial, partial.size)
-                    }
                 }
             } catch (_: Exception) {}
 
@@ -829,7 +810,6 @@ class AudioRecorderAI(
             // Close & finalize the debug WAV (patches header sizes).
             try { debugRawWriter.stop() } catch (_: Throwable) {}
             try { debugCleanedWriter.stop() } catch (_: Throwable) {}
-            try { debugAiParsedWriter.stop() } catch (_: Throwable) {}
 
             releasePlatformEffects()
             try { noiseProcessor?.release() } catch (_: Throwable) {}
@@ -946,8 +926,11 @@ class AudioRecorderAI(
 //    }
 
     private fun processSamples(samples: ShortArray, gain: Float): ShortArray {
-        return if(SharedPreferencesUtil.isVoiceCancellationEnabled(context))  processSamplesWithNoNoiseCancellation(samples, gain)
-        else processSamplesWithNoiseCancellation(samples, gain)
+        return if (SharedPreferencesUtil.isVoiceCancellationEnabled(context)) {
+            processSamplesWithNoiseCancellation(samples, gain)
+        } else {
+            processSamplesWithNoNoiseCancellation(samples, gain)
+        }
     }
 
     private fun processSamplesWithNoNoiseCancellation(samples: ShortArray, gain: Float) = samples.map { sample ->

@@ -24,6 +24,7 @@ import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.audio.WavRecorder
 import com.commcrete.stardust.util.audio.endsWith
+import com.example.chunkrecorder.DebugRawWavWriter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,6 +35,13 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 object PttSendManager {
+    /**
+     * Additional debug writer for post-AI-parsing audio (captured AFTER the
+     * [onChunkReady] callback has returned, so it reflects any in-place
+     * mutations performed by the AI parsing stage). Saved with `ai_parsed`
+     * in file name.
+     */
+    private val debugAiParsedWriter = DebugRawWavWriter()
     private val TAG = "PttManager"
     private val TAG_DECODE = "PttManager_Decode"
     private val TAG_ENCODE = "PttManager_Encode"
@@ -209,6 +217,26 @@ object PttSendManager {
                 file?.let {
                     val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
                     WavHelper.createWavFile(sampleArray, 24000, file)
+
+                    if (RecorderUtils.isAiDebugRawAudioEnabled()) {
+                        try {
+                            debugAiParsedWriter.start(
+                                context = context,
+                                sampleRate = 24000,
+                                channels = 1,
+                                bitsPerSample = 16,
+                                fileNamePrefix = "ai_parsed"
+                            )
+                            debugAiParsedWriter.append(sampleArray, sampleArray.size)
+                        } finally {
+                            try {
+                                debugAiParsedWriter.stop()
+                            } catch (_: Throwable) {
+                            }
+                        }
+                    }
+
+
                     Log.d(TAG, "WAV file created: ${file.absolutePath}")
                     savePtt(context = DataManager.context, chatID = chatID ?:"", path = fileToSave?.absolutePath?:"")
                 }

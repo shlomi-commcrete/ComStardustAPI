@@ -57,7 +57,7 @@ class DebugRawWavWriter {
         sampleRate: Int,
         channels: Int = 1,
         bitsPerSample: Int = 16,
-        fileNamePrefix: String = "stardust_raw"
+        fileNamePrefix: String = "raw"
     ) {
         stop() // close any prior session
 
@@ -66,7 +66,7 @@ class DebugRawWavWriter {
         this.bitsPerSample = bitsPerSample
         this.bytesWritten = 0
 
-        val displayName = "${fileNamePrefix}_${System.currentTimeMillis()}.wav"
+        val displayName = "${System.currentTimeMillis()}_${fileNamePrefix}.wav"
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 openViaMediaStore(context, displayName)
