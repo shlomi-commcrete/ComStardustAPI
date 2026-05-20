@@ -86,6 +86,14 @@ data class AiSourceProfileSettings(
     val profiles: Map<AiAudioSource, AiSourceProfile>,
 )
 
+/** Grouped settings for notch-based suppression of tonal whine ("piiiiii"). */
+data class AiTonalWhineSuppressionSettings(
+    val enabled: Boolean,
+    val centerHz: Float,
+    val q: Float,
+    val attenuationDb: Float,
+)
+
 object AiSourceProfileDefaults {
     val profiles: Map<AiAudioSource, AiSourceProfile> = mapOf(
         AiAudioSource.MIC to AiSourceProfile(

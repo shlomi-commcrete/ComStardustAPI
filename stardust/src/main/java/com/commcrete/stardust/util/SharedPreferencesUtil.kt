@@ -10,6 +10,7 @@ import com.commcrete.stardust.R
 import com.commcrete.stardust.AiSourceProfile
 import com.commcrete.stardust.AiSourceProfileDefaults
 import com.commcrete.stardust.AiSourceProfileSettings
+import com.commcrete.stardust.AiTonalWhineSuppressionSettings
 import com.commcrete.stardust.AiAudioSource
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
@@ -142,6 +143,10 @@ object SharedPreferencesUtil {
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
     private const val KEY_AI_SOURCE_PROFILE_SETTINGS = "ai_source_profile_settings"
     private const val KEY_VOICE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
+    private const val KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED = "ai_tonal_whine_suppression_enabled"
+    private const val KEY_AI_TONAL_WHINE_CENTER_HZ = "ai_tonal_whine_center_hz"
+    private const val KEY_AI_TONAL_WHINE_Q = "ai_tonal_whine_q"
+    private const val KEY_AI_TONAL_WHINE_ATTENUATION_DB = "ai_tonal_whine_attenuation_db"
 
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -218,6 +223,61 @@ object SharedPreferencesUtil {
     /** Persists the voice cancellation toggle. */
     fun setVoiceCancellationEnabled(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_VOICE_CANCELLATION_ENABLED, enabled).apply()
+    }
+
+    /** Returns whether tonal-whine suppression (notch stage) is enabled. */
+    fun isAiTonalWhineSuppressionEnabled(context: Context): Boolean {
+        return getPrefs(context).getBoolean(KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED, false)
+    }
+
+    fun setAiTonalWhineSuppressionEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED, enabled).apply()
+    }
+
+    /** Notch center frequency in Hz. */
+    fun getAiTonalWhineCenterHz(context: Context): Float {
+        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_CENTER_HZ, 1000f)
+    }
+
+    fun setAiTonalWhineCenterHz(context: Context, centerHz: Float) {
+        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_CENTER_HZ, centerHz).apply()
+    }
+
+    /** Notch quality factor. */
+    fun getAiTonalWhineQ(context: Context): Float {
+        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_Q, 30f)
+    }
+
+    fun setAiTonalWhineQ(context: Context, q: Float) {
+        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_Q, q).apply()
+    }
+
+    /** Notch attenuation depth in dB. */
+    fun getAiTonalWhineAttenuationDb(context: Context): Float {
+        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_ATTENUATION_DB, 28f)
+    }
+
+    fun setAiTonalWhineAttenuationDb(context: Context, attenuationDb: Float) {
+        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_ATTENUATION_DB, attenuationDb).apply()
+    }
+
+    fun getAiTonalWhineSuppressionSettings(context: Context): AiTonalWhineSuppressionSettings {
+        return AiTonalWhineSuppressionSettings(
+            enabled = isAiTonalWhineSuppressionEnabled(context),
+            centerHz = getAiTonalWhineCenterHz(context),
+            q = getAiTonalWhineQ(context),
+            attenuationDb = getAiTonalWhineAttenuationDb(context),
+        )
+    }
+
+    fun setAiTonalWhineSuppressionSettings(
+        context: Context,
+        settings: AiTonalWhineSuppressionSettings,
+    ) {
+        setAiTonalWhineSuppressionEnabled(context, settings.enabled)
+        setAiTonalWhineCenterHz(context, settings.centerHz)
+        setAiTonalWhineQ(context, settings.q)
+        setAiTonalWhineAttenuationDb(context, settings.attenuationDb)
     }
 
     fun getAiSourceProfile(context: Context, source: AiAudioSource): AiSourceProfile {
