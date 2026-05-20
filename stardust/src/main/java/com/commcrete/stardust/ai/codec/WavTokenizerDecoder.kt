@@ -88,7 +88,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
         var unalignedAudio: ShortArray
         if(decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
-            val alignedAudioData = if (previousSamples != null) {
+            val alignedAudioData = if (previousSamples != null && previousSamples.isNotEmpty()) {
                 fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
             } else {
                 audioData
@@ -159,7 +159,16 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         previousSamples: FloatArray,
         currentChunk: FloatArray
     ): FloatArray {
-        val numSamples = 400
+        // Guard: alignment needs samples on both sides. If either side is
+        // empty/short, return the chunk unchanged instead of crashing
+        // with ArrayIndexOutOfBoundsException (length=0; index=-1).
+        if (previousSamples.isEmpty() || currentChunk.isEmpty()) return currentChunk
+
+        val requested = 400
+        // Clamp the fade window to what both buffers can actually provide.
+        val numSamples = minOf(requested, previousSamples.size, currentChunk.size)
+        if (numSamples <= 0) return currentChunk
+
         val lastIndex = previousSamples.size - 1
 
         for (i in 0 until numSamples) {
