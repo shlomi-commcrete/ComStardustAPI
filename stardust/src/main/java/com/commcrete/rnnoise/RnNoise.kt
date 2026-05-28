@@ -5,7 +5,7 @@ import android.util.Log
 /**
  * Thin Kotlin wrapper around xiph/rnnoise via a JNI shim (`librnnoise_jni.so`).
  *
- * Auto-discovered by `com.example.chunkrecorder.RnNoiseProcessor` through
+ * Auto-discovered by `com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor` through
  * reflection — no direct dependency between the two classes.
  *
  * Lifecycle:
@@ -19,7 +19,7 @@ import android.util.Log
  * The native library is loaded lazily on first [initialize]. If the .so is
  * missing (e.g. RNNoise sources weren't fetched / CMake didn't build), the
  * load failure is captured and re-thrown from [initialize], which causes the
- * upstream [com.example.chunkrecorder.RnNoiseProcessor] to gracefully fall
+ * upstream [com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor] to gracefully fall
  * back to pass-through.
  *
  * Build: see `stardust/src/main/cpp/CMakeLists.txt` and

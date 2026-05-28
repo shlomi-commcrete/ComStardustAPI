@@ -1,6 +1,8 @@
-package com.example.chunkrecorder
+package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
+import com.commcrete.stardust.ai.codec.filter.NoiseProcessor
+import java.lang.reflect.Method
 
 /**
  * RNNoise-based [NoiseProcessor] adapter.
@@ -73,8 +75,8 @@ class RnNoiseProcessor : NoiseProcessor {
 
     // Reflected native handles
     private var nativeInstance: Any? = null
-    private var processMethod: java.lang.reflect.Method? = null
-    private var releaseMethod: java.lang.reflect.Method? = null
+    private var processMethod: Method? = null
+    private var releaseMethod: Method? = null
 
     override fun init(sampleRate: Int) {
         this.sampleRate = sampleRate

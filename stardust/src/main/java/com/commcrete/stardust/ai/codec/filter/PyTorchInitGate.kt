@@ -1,10 +1,10 @@
-package com.commcrete.stardust.ai.codec
+package com.commcrete.stardust.ai.codec.filter
 
+import android.content.Context
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
-import android.content.Context
 
 object PyTorchInitGate {
     private const val LOCK_NAME = "pytorch_once.lock"

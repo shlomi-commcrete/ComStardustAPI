@@ -1,4 +1,4 @@
-package com.example.chunkrecorder
+package com.commcrete.stardust.ai.codec.filter
 
 /**
  * Pluggable in-place noise suppression stage for [com.commcrete.stardust.ai.codec.AudioRecorderAI].
@@ -26,4 +26,3 @@ interface NoiseProcessor {
 
     fun release()
 }
-

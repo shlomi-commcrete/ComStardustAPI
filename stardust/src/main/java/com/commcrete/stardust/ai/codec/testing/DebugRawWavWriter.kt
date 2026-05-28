@@ -1,11 +1,17 @@
-package com.example.chunkrecorder
+package com.commcrete.stardust.ai.codec.testing
 
+import android.annotation.SuppressLint
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
+import androidx.annotation.RequiresApi
+import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.nio.ByteBuffer
@@ -40,9 +46,9 @@ class DebugRawWavWriter {
     private var fos: FileOutputStream? = null
     private var raf: RandomAccessFile? = null
     private var channel: FileChannel? = null
-    private var pfd: android.os.ParcelFileDescriptor? = null
-    private var mediaStoreUri: android.net.Uri? = null
-    private var contentResolver: android.content.ContentResolver? = null
+    private var pfd: ParcelFileDescriptor? = null
+    private var mediaStoreUri: Uri? = null
+    private var contentResolver: ContentResolver? = null
 
     private var bytesWritten: Long = 0
     private var sampleRate: Int = 0
@@ -145,8 +151,8 @@ class DebugRawWavWriter {
 
     // ─── internals ───────────────────────────────────────────────────────────
 
-    @android.annotation.SuppressLint("NewApi", "InlinedApi")
-    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    @SuppressLint("NewApi", "InlinedApi")
+    @RequiresApi(Build.VERSION_CODES.Q)
     private fun openViaMediaStore(context: Context, displayName: String) {
         val cr = context.contentResolver
         val values = ContentValues().apply {
@@ -155,7 +161,7 @@ class DebugRawWavWriter {
             put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$SUBDIR")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        @android.annotation.SuppressLint("NewApi")
+        @SuppressLint("NewApi")
         val downloadsUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val uri = cr.insert(downloadsUri, values)
             ?: error("MediaStore insert returned null")
@@ -176,8 +182,8 @@ class DebugRawWavWriter {
     @Suppress("DEPRECATION")
     private fun openLegacy(displayName: String) {
         val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        val dir = java.io.File(downloads, SUBDIR).also { it.mkdirs() }
-        val file = java.io.File(dir, displayName)
+        val dir = File(downloads, SUBDIR).also { it.mkdirs() }
+        val file = File(dir, displayName)
         val raf = RandomAccessFile(file, "rw")
         this.raf = raf
         this.channel = raf.channel
@@ -218,4 +224,3 @@ class DebugRawWavWriter {
         pfd = null
     }
 }
-

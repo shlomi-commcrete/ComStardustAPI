@@ -13,7 +13,7 @@ import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.ai.codec.AudioRecorderAI
-import com.example.chunkrecorder.RnNoiseProcessor
+import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

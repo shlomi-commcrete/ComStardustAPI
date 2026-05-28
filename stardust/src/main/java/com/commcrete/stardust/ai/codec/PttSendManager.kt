@@ -20,7 +20,7 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.example.chunkrecorder.DebugRawWavWriter
+import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

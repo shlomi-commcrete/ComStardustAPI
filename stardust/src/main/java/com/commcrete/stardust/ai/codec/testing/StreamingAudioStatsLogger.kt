@@ -1,11 +1,14 @@
-package com.commcrete.stardust.ai.codec
+package com.commcrete.stardust.ai.codec.testing
 
+import android.media.AudioDeviceInfo
 import timber.log.Timber
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.max
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -115,12 +118,12 @@ class StreamingAudioStatsLogger(
         this.deviceRates = deviceRates
         startTimeMs = System.currentTimeMillis()
 
-        Timber.tag(TAG).i(
+        Timber.Forest.tag(TAG).i(
             "▶ Stream started → device='%s' (type=%s), configured=%d Hz mono(%d) %d-bit",
             this.deviceName, deviceTypeName(deviceType), sampleRate, channels, bitsPerSample
         )
         if (deviceRates.isNotEmpty()) {
-            Timber.tag(TAG).i(
+            Timber.Forest.tag(TAG).i(
                 "  device native rates=%s, configured rate=%d Hz%s",
                 deviceRates, sampleRate,
                 if (deviceRates.isNotEmpty() && sampleRate !in deviceRates)
@@ -205,7 +208,7 @@ class StreamingAudioStatsLogger(
         val silentPct = chunkSilent * 100.0 / chunkSamples
         val elapsedSec = totalSamples.toDouble() / sampleRate
 
-        Timber.tag(TAG).i(
+        Timber.Forest.tag(TAG).i(
             "chunk=%-3d t=%6.1fs peak=%+6.1fdBFS rms=%+6.1fdBFS clip=%5.2f%% silent=%5.1f%%%s",
             chunkIndex, elapsedSec, peakDb, rmsDb, clipPct, silentPct,
             chunkWarnings(peakDb, rmsDb, clipPct, silentPct)
@@ -257,24 +260,24 @@ class StreamingAudioStatsLogger(
         sb.append("─ spectral snapshot @ chunk=").append(chunkIndex).append(": ")
         for (i in BAND_LABELS.indices) {
             sb.append(BAND_LABELS[i]).append('=')
-                .append(String.format(java.util.Locale.US, "%.1f%%", a.bands[i]))
+                .append(String.format(Locale.US, "%.1f%%", a.bands[i]))
             if (i < BAND_LABELS.size - 1) sb.append("  ")
         }
         sb.append("  | peak=")
-            .append(String.format(java.util.Locale.US, "%.0fHz", a.dominantFreqHz))
+            .append(String.format(Locale.US, "%.0fHz", a.dominantFreqHz))
             .append(" (")
-            .append(String.format(java.util.Locale.US, "%.1f%%", a.dominantPct))
+            .append(String.format(Locale.US, "%.1f%%", a.dominantPct))
             .append(", flatness=")
-            .append(String.format(java.util.Locale.US, "%.2f", a.flatness))
+            .append(String.format(Locale.US, "%.2f", a.flatness))
             .append(')')
         if (a.toneAlert != null) sb.append("  ⚠ ").append(a.toneAlert)
-        Timber.tag(TAG).i(sb.toString())
+        Timber.Forest.tag(TAG).i(sb.toString())
     }
 
     private fun logFinalSummary() {
         val durationMs = System.currentTimeMillis() - startTimeMs
         if (totalSamples == 0L) {
-            Timber.tag(TAG).w("⏹ Stream stopped: no samples captured (duration=%d ms)", durationMs)
+            Timber.Forest.tag(TAG).w("⏹ Stream stopped: no samples captured (duration=%d ms)", durationMs)
             return
         }
         val rms = sqrt(sumSq / totalSamples)
@@ -306,21 +309,21 @@ class StreamingAudioStatsLogger(
                 .append(if (sampleRate !in deviceRates) "  (Android HAL resampled)" else "  ✓ no internal resample").append('\n')
         sb.append("│ duration          : ").append(durationMs).append(" ms ")
             .append("(").append(totalSamples).append(" samples = ")
-            .append(String.format(java.util.Locale.US, "%.2f s", totalSamples / sampleRate.toDouble())).append(")\n")
+            .append(String.format(Locale.US, "%.2f s", totalSamples / sampleRate.toDouble())).append(")\n")
         sb.append("│ buffer reads      : ").append(bufferReads)
             .append(" (avg ").append(avgSamplesPerRead).append(" samples/read, ")
-            .append(String.format(java.util.Locale.US, "avg gap %.2f ms, max %.2f ms", avgGapMs, maxGapMs))
+            .append(String.format(Locale.US, "avg gap %.2f ms, max %.2f ms", avgGapMs, maxGapMs))
             .append(")\n")
         sb.append("│ peak amplitude    : ").append(peakAbs)
-            .append(String.format(java.util.Locale.US, "  (%+.2f dBFS)", peakDb)).append('\n')
-        sb.append("│ RMS               : ").append(String.format(java.util.Locale.US, "%.1f", rms))
-            .append(String.format(java.util.Locale.US, "  (%+.2f dBFS)", rmsDb)).append('\n')
-        sb.append("│ DC offset         : ").append(String.format(java.util.Locale.US, "%.2f", dc))
+            .append(String.format(Locale.US, "  (%+.2f dBFS)", peakDb)).append('\n')
+        sb.append("│ RMS               : ").append(String.format(Locale.US, "%.1f", rms))
+            .append(String.format(Locale.US, "  (%+.2f dBFS)", rmsDb)).append('\n')
+        sb.append("│ DC offset         : ").append(String.format(Locale.US, "%.2f", dc))
             .append(if (abs(dc) > 50) "  ⚠ noticeable DC bias" else "").append('\n')
-        sb.append("│ zero-crossing     : ").append(String.format(java.util.Locale.US, "%.4f / sample", zcr)).append('\n')
-        sb.append("│ silence ratio     : ").append(String.format(java.util.Locale.US, "%.2f %%", silentPct))
+        sb.append("│ zero-crossing     : ").append(String.format(Locale.US, "%.4f / sample", zcr)).append('\n')
+        sb.append("│ silence ratio     : ").append(String.format(Locale.US, "%.2f %%", silentPct))
             .append("  (|x| < ").append(SILENCE_THRESHOLD).append(")\n")
-        sb.append("│ clipped ratio     : ").append(String.format(java.util.Locale.US, "%.4f %%", clipPct))
+        sb.append("│ clipped ratio     : ").append(String.format(Locale.US, "%.4f %%", clipPct))
             .append("  (|x| ≥ ").append(CLIP_THRESHOLD).append(")\n")
         sb.append("│ effective bits    : ").append(effectiveBits).append(" / 16")
             .append(if (effectiveBits < 12) "  ⚠ looks like padded/truncated source" else "").append('\n')
@@ -334,16 +337,17 @@ class StreamingAudioStatsLogger(
             for (i in BAND_LABELS.indices) {
                 val pct = spec.bands[i]
                 sb.append("│ ")
-                    .append(String.format(java.util.Locale.US, "%-10s", BAND_LABELS[i]))
-                    .append(String.format(java.util.Locale.US, " %5.1f%%  ", pct))
+                    .append(String.format(Locale.US, "%-10s", BAND_LABELS[i]))
+                    .append(String.format(Locale.US, " %5.1f%%  ", pct))
                     .append(bar(pct)).append('\n')
             }
             sb.append("│ dominant peak     : ")
-                .append(String.format(java.util.Locale.US, "%.0f Hz", spec.dominantFreqHz))
-                .append(String.format(java.util.Locale.US, "  (%.1f%% energy, peak/median = +%.1f dB)",
+                .append(String.format(Locale.US, "%.0f Hz", spec.dominantFreqHz))
+                .append(String.format(
+                    Locale.US, "  (%.1f%% energy, peak/median = +%.1f dB)",
                     spec.dominantPct, spec.peakToMedianDb)).append('\n')
             sb.append("│ spectral flatness : ")
-                .append(String.format(java.util.Locale.US, "%.3f", spec.flatness))
+                .append(String.format(Locale.US, "%.3f", spec.flatness))
                 .append(if (spec.flatness < 0.05) "  ⚠ very tonal" else "").append('\n')
             if (spec.toneAlert != null)
                 sb.append("│ tone alert        : ⚠ ").append(spec.toneAlert).append('\n')
@@ -351,7 +355,7 @@ class StreamingAudioStatsLogger(
 
         sb.append("│ WavTokenizer      : ").append(verdict).append('\n')
         sb.append("╰─────────────────────────────────────────────────")
-        Timber.tag(TAG).i(sb.toString())
+        Timber.Forest.tag(TAG).i(sb.toString())
     }
 
     private fun bar(pct: Double, width: Int = 20): String {
@@ -461,7 +465,7 @@ class StreamingAudioStatsLogger(
 
         val tonal = flatness < 0.05 && dominantPct > 8.0 && p2m > 25.0
         val alert = if (tonal) "sustained tone at ${dominantFreq.toInt()} Hz (flatness=%.2f, peak/median=+%.0f dB)"
-            .format(java.util.Locale.US, flatness, p2m) else null
+            .format(Locale.US, flatness, p2m) else null
         return SpectralResult(bandsPct, flatness, dominantFreq, dominantPct, p2m, alert)
     }
 
@@ -474,19 +478,19 @@ class StreamingAudioStatsLogger(
 
         when {
             rmsDb.isInfinite() -> issues += "no signal (RMS = −∞)"
-            rmsDb < -32.0     -> issues += "RMS %.1f dBFS too quiet".format(java.util.Locale.US, rmsDb)
-            rmsDb > -6.0      -> issues += "RMS %.1f dBFS too hot".format(java.util.Locale.US, rmsDb)
+            rmsDb < -32.0     -> issues += "RMS %.1f dBFS too quiet".format(Locale.US, rmsDb)
+            rmsDb > -6.0      -> issues += "RMS %.1f dBFS too hot".format(Locale.US, rmsDb)
             rmsDb < -24.0 || rmsDb > -12.0 ->
-                warns += "RMS %.1f dBFS outside ideal −24…−12 dBFS".format(java.util.Locale.US, rmsDb)
+                warns += "RMS %.1f dBFS outside ideal −24…−12 dBFS".format(Locale.US, rmsDb)
         }
-        if (peakDb > -0.5) warns += "peak %+.2f dBFS — near clip line".format(java.util.Locale.US, peakDb)
-        if (clipPct > 0.1) issues += "clipped %.2f%% of samples".format(java.util.Locale.US, clipPct)
+        if (peakDb > -0.5) warns += "peak %+.2f dBFS — near clip line".format(Locale.US, peakDb)
+        if (clipPct > 0.1) issues += "clipped %.2f%% of samples".format(Locale.US, clipPct)
         if (effectiveBits in 1 until 12)
-            warns += "%d effective bits — looks padded/truncated".format(java.util.Locale.US, effectiveBits)
+            warns += "%d effective bits — looks padded/truncated".format(Locale.US, effectiveBits)
         if (longestRepeatMs > 60)
-            issues += "%d ms repeat-run → PLC / stuck-ADC".format(java.util.Locale.US, longestRepeatMs)
+            issues += "%d ms repeat-run → PLC / stuck-ADC".format(Locale.US, longestRepeatMs)
         if (silentPct > 80.0)
-            warns += "%.0f%% silent — most tokens will be silence".format(java.util.Locale.US, silentPct)
+            warns += "%.0f%% silent — most tokens will be silence".format(Locale.US, silentPct)
 
         if (spec != null) {
             val b3 = spec.bands.getOrNull(3) ?: 0.0
@@ -494,10 +498,10 @@ class StreamingAudioStatsLogger(
             when {
                 b3 < 1.0 && b4 < 0.5 ->
                     issues += "narrowband (3.4–8k=%.1f%% 8–12k=%.2f%%) → true SCO/CVSD — decoder will hallucinate highs"
-                        .format(java.util.Locale.US, b3, b4)
+                        .format(Locale.US, b3, b4)
                 b4 < 0.5 ->
                     warns += "natively ≤8 kHz (3.4–8k=%.1f%% 8–12k=%.2f%%) — looks like 16 kHz mic; fine but no fullband"
-                        .format(java.util.Locale.US, b3, b4)
+                        .format(Locale.US, b3, b4)
             }
             if (spec.toneAlert != null)
                 issues += "tonal contamination: ${spec.toneAlert} → codebook collapse + speech masking"
@@ -544,7 +548,7 @@ class StreamingAudioStatsLogger(
         var len = 2
         while (len <= n) {
             val ang = -2.0 * Math.PI / len
-            val wRe = kotlin.math.cos(ang); val wIm = kotlin.math.sin(ang)
+            val wRe = cos(ang); val wIm = sin(ang)
             var i = 0
             while (i < n) {
                 var curRe = 1.0; var curIm = 0.0
@@ -566,16 +570,15 @@ class StreamingAudioStatsLogger(
     }
 
     private fun deviceTypeName(type: Int): String = when (type) {
-        android.media.AudioDeviceInfo.TYPE_USB_DEVICE     -> "USB_DEVICE"
-        android.media.AudioDeviceInfo.TYPE_USB_HEADSET    -> "USB_HEADSET"
-        android.media.AudioDeviceInfo.TYPE_USB_ACCESSORY  -> "USB_ACCESSORY"
-        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO  -> "BT_SCO"
-        android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BT_A2DP"
-        android.media.AudioDeviceInfo.TYPE_BUILTIN_MIC    -> "BUILTIN_MIC"
-        android.media.AudioDeviceInfo.TYPE_WIRED_HEADSET  -> "WIRED_HEADSET"
-        android.media.AudioDeviceInfo.TYPE_UNKNOWN        -> "UNKNOWN"
+        AudioDeviceInfo.TYPE_USB_DEVICE     -> "USB_DEVICE"
+        AudioDeviceInfo.TYPE_USB_HEADSET    -> "USB_HEADSET"
+        AudioDeviceInfo.TYPE_USB_ACCESSORY  -> "USB_ACCESSORY"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO  -> "BT_SCO"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "BT_A2DP"
+        AudioDeviceInfo.TYPE_BUILTIN_MIC    -> "BUILTIN_MIC"
+        AudioDeviceInfo.TYPE_WIRED_HEADSET  -> "WIRED_HEADSET"
+        AudioDeviceInfo.TYPE_UNKNOWN        -> "UNKNOWN"
         -1                                                -> "n/a"
         else                                              -> "type=$type"
     }
 }
-
