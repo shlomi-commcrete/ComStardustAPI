@@ -32,9 +32,6 @@ object RecorderUtils {
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
-    /** True when the active AI recorder is configured to persist debug raw audio. */
-    fun isAiDebugRawAudioEnabled(): Boolean = aiRecorder?.saveRawAudioToDownloads == true
-
 
     fun init(pttInterface : PttInterface){
         RecorderUtils.pttInterface = pttInterface
@@ -118,21 +115,21 @@ object RecorderUtils {
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {
-            // Cleaning pipeline: hardware NS off (RNNoise replaces it),
-            // DC removal + HPF + RNNoise + noise gate.
-            useHardwareEffects = false
-            useDcRemoval = true
-            useHighPass = true
-            highPassCutoffHz = 80f
-            useSoftClip = true
-            useNoiseGate = true
-            noiseGateThresholdRms = 300
-            noiseProcessor = RnNoiseProcessor()
-
-            useSourceProfile = sourceProfileSettings.useSourceProfile
-            preferProcessedSource = sourceProfileSettings.preferProcessedSource
-            sourceProfileOverrides = sourceProfileSettings.profiles.mapKeys { it.key.androidSource }
-                .mapValues { (_, profile) -> profile.toRecorderSourceProfile() }
+//            // Cleaning pipeline: hardware NS off (RNNoise replaces it),
+//            // DC removal + HPF + RNNoise + noise gate.
+//            useHardwareEffects = false
+//            useDcRemoval = true
+//            useHighPass = true
+//            highPassCutoffHz = 80f
+//            useSoftClip = true
+//            useNoiseGate = true
+//            noiseGateThresholdRms = 300
+//            noiseProcessor = RnNoiseProcessor()
+//
+//            useSourceProfile = sourceProfileSettings.useSourceProfile
+//            preferProcessedSource = sourceProfileSettings.preferProcessedSource
+//            sourceProfileOverrides = sourceProfileSettings.profiles.mapKeys { it.key.androidSource }
+//                .mapValues { (_, profile) -> profile.toRecorderSourceProfile() }
 
             onChunkReady = { pcmArray, _ ->
                 PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
@@ -154,23 +151,23 @@ object RecorderUtils {
         Log.d("AudioRecorder", "AudioRecorderAI started")
     }
 
-    private fun AiSourceProfile.toRecorderSourceProfile(): AudioRecorderAI.SourceProfile {
-        return AudioRecorderAI.SourceProfile(
-            makeupGain = makeupGain,
-            agcTargetRms = agcTargetRms,
-            agcMaxGain = agcMaxGain,
-            agcNoiseFloorRms = agcNoiseFloorRms,
-            agcMinGain = 0.25f,
-            agcAttackSec = 0.010f,
-            agcReleaseSec = 0.350f,
-            noiseGateRms = noiseGateRms,
-            expanderRatio = expanderRatio,
-            expanderOpenSnr = expanderOpenSnr,
-            expanderMinGain = expanderMinGain,
-            expanderAttackSec = expanderAttackSec,
-            expanderReleaseSec = expanderReleaseSec,
-        )
-    }
+//    private fun AiSourceProfile.toRecorderSourceProfile(): AudioRecorderAI.SourceProfile {
+//        return AudioRecorderAI.SourceProfile(
+//            makeupGain = makeupGain,
+//            agcTargetRms = agcTargetRms,
+//            agcMaxGain = agcMaxGain,
+//            agcNoiseFloorRms = agcNoiseFloorRms,
+//            agcMinGain = 0.25f,
+//            agcAttackSec = 0.010f,
+//            agcReleaseSec = 0.350f,
+//            noiseGateRms = noiseGateRms,
+//            expanderRatio = expanderRatio,
+//            expanderOpenSnr = expanderOpenSnr,
+//            expanderMinGain = expanderMinGain,
+//            expanderAttackSec = expanderAttackSec,
+//            expanderReleaseSec = expanderReleaseSec,
+//        )
+//    }
 
     private fun finishAIRecording(context: Context) {
         Scopes.getDefaultCoroutine().launch {
