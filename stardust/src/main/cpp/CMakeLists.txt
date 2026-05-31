@@ -55,6 +55,10 @@ add_library(rnnoise_jni SHARED
 # RNNoise expects these defines for stand-alone (non-autotools) builds.
 target_compile_definitions(rnnoise_jni PRIVATE
     COMPILE_OPUS=0
+    # Required because we build with -ffast-math: arch.h refuses to compile
+    # otherwise (NaN/Inf checks would be miscompiled). FLOAT_APPROX swaps in a
+    # bit-pattern based celt_isnan() that survives -ffast-math.
+    FLOAT_APPROX
 )
 
 target_compile_options(rnnoise_jni PRIVATE

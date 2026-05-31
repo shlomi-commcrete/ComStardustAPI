@@ -5,6 +5,7 @@ import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -90,6 +91,169 @@ object AudioTestFeeder {
         val rawSampleRate: Int = TARGET_SAMPLE_RATE,
         val rawChannels: Int = TARGET_CHANNELS,
     )
+
+    /**
+     * Optional [LowPassFilter] stage applied to every emitted chunk **after**
+     * the [NotchConfig], [RnNoiseConfig] and [AGCConfig] stages and
+     * **immediately before** the chunk is handed to the AI encoder via
+     * [PttSendManager.addNewFrame]. It is the LAST DSP stage in the chain,
+     * so it band-limits whatever the AGC produced (including any
+     * high-frequency artefacts it may have boosted) before encoding.
+     *
+     * When [enabled] is true the feeder will, per source:
+     *  - create one [LowPassFilter] instance (state carried across chunks),
+     *  - filter each chunk in place,
+     *  - accumulate the filtered samples and write a `<label>-lowpass.wav`
+     *    file next to the other round-trip artifacts so the post-filter
+     *    signal can be inspected offline.
+     *
+     * Cutoff is the -3 dB corner frequency in Hz; roll-off is the desired
+     * stop-band slope in dB / octave (6 dB → 1st-order, 12 → 2nd, etc.).
+     */
+    data class LowPassConfig(
+        val enabled: Boolean = true,
+        val cutoffHz: Float = 2_000f,
+        val rollOffDbPerOctave: Float = 12f,
+    )
+
+    /**
+     * Optional [NotchFilter] stage applied to every emitted chunk **first**
+     * in the DSP chain (before [RnNoiseConfig], [AGCConfig], [LowPassConfig]
+     * and the AI encoder). Useful for removing tonal contaminants such as
+     * the jbox "piiii" whine, mains hum (50/60 Hz) and their harmonics
+     * ("symphonies") before they reach RNNoise / AGC and bias their
+     * estimates.
+     *
+     * The caller chooses **exactly one** of two configuration modes:
+     *
+     *  1. **Uniform harmonics** – set [fundamentalHz], [q] and [numHarmonics]
+     *     (and leave [harmonics] = null). The feeder will notch
+     *     `fundamentalHz · h` for `h ∈ 1..numHarmonics`, all sharing the same Q.
+     *
+     *  2. **Per-harmonic control** – set [harmonics] to a non-empty list of
+     *     [Harmonic] specs (and leave [numHarmonics] = null). Each entry has
+     *     its own frequency and its own Q, so you can e.g. use a very narrow
+     *     notch on the fundamental and wider notches on the higher harmonics.
+     *
+     * Trying to set both, or neither, throws [IllegalArgumentException] when
+     * the feeder is started.
+     *
+     * @param enabled        master toggle for the stage.
+     * @param fundamentalHz  used only in uniform-harmonics mode (mode 1).
+     * @param q              shared Q for mode 1.
+     * @param numHarmonics   number of integer harmonics to remove in mode 1
+     *                       (must be `null` in mode 2).
+     * @param harmonics      explicit per-band specs for mode 2
+     *                       (must be `null` in mode 1).
+     */
+    data class NotchConfig(
+        val enabled: Boolean = true,
+        val fundamentalHz: Float = 1_000f,
+        val q: Float = 30f,
+        val numHarmonics: Int? = 1,
+        val harmonics: List<Harmonic>? = null,
+    ) {
+        /** One explicit notch band: a target frequency and its Q. */
+        data class Harmonic(val frequencyHz: Float, val q: Float)
+
+        /**
+         * Validate the mutually-exclusive configuration and return the
+         * resolved band list that should actually be fed to [NotchFilter].
+         */
+        internal fun resolveBands(): List<NotchFilter.Band> {
+            val hasUniform = numHarmonics != null
+            val hasExplicit = harmonics != null
+            require(hasUniform xor hasExplicit) {
+                "NotchConfig: set exactly ONE of `numHarmonics` (uniform mode) " +
+                    "or `harmonics` (per-harmonic mode); got numHarmonics=$numHarmonics, " +
+                    "harmonics=${harmonics?.size ?: "null"}."
+            }
+            return if (hasExplicit) {
+                require(harmonics!!.isNotEmpty()) {
+                    "NotchConfig.harmonics must be non-empty in per-harmonic mode."
+                }
+                harmonics.map { NotchFilter.Band(it.frequencyHz, it.q) }
+            } else {
+                NotchFilter.harmonicsToBands(fundamentalHz, q, numHarmonics!!)
+            }
+        }
+
+        /** Short human-readable summary for logs. */
+        internal fun describe(): String = if (harmonics != null) {
+            "explicit[${harmonics.joinToString(",") { "${it.frequencyHz.toInt()}Hz@Q${it.q.toInt()}" }}]"
+        } else {
+            "${fundamentalHz.toInt()}Hz/Q=${q.toInt()}/x${numHarmonics}"
+        }
+    }
+
+    /**
+     * Optional RNNoise-based denoiser stage applied to every emitted chunk
+     * **after** the [NotchConfig] stage and **before** the [AGCConfig] /
+     * [LowPassConfig] / AI encoder. Uses
+     * [com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor], which
+     * resamples to 48 kHz internally, runs RNNoise's 480-sample frames,
+     * and writes the cleaned audio back in place at [TARGET_SAMPLE_RATE].
+     *
+     * Placement rationale: removing wideband background noise before the
+     * AGC stops the AGC from boosting that noise during quiet sections.
+     *
+     * If the native `librnnoise_jni.so` is missing (RNNoise sources not
+     * fetched / CMake didn't build), the processor falls back to
+     * pass-through and the feeder logs a warning — the stage stays
+     * "enabled" but does nothing.
+     *
+     * The feeder will, per source:
+     *  - create one [com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor]
+     *    (state carried across chunks; tail samples held internally),
+     *  - process each chunk in place,
+     *  - accumulate the cleaned samples and write a `<label>-rnnoise.wav`
+     *    file next to the other artifacts so the denoised signal can be
+     *    inspected offline,
+     *  - call `release()` after the last chunk.
+     */
+    data class RnNoiseConfig(
+        val enabled: Boolean = true,
+    ) {
+        /** Short human-readable summary for logs. */
+        internal fun describe(): String = "rnnoise"
+    }
+
+    /**
+     * Optional [AGCFilter] (Automatic Gain Control) stage applied to every
+     * emitted chunk **after** the [NotchConfig] and [RnNoiseConfig] stages
+     * and **before** the [LowPassConfig] / AI encoder. Continuously adjusts
+     * gain so the output stays near [targetLevel] (RMS, normalised to
+     * full-scale).
+     *
+     *  - [targetLevel]    – desired output RMS, 0..1 full-scale (e.g. 0.2 ≈ -14 dBFS).
+     *  - [attackMs]       – time constant when reducing gain (signal got louder).
+     *  - [releaseMs]      – time constant when raising gain (signal got quieter).
+     *  - [maxGainDb]      – maximum boost the AGC may apply.
+     *  - [minGainDb]      – maximum cut the AGC may apply (negative dB).
+     *  - [noiseGateLevel] – RMS below which gain is frozen (0 = disabled).
+     *
+     * The feeder will, per source:
+     *  - create one [AGCFilter] instance (state carried across chunks),
+     *  - process each chunk in place,
+     *  - accumulate the processed samples and write a `<label>-agc-*.wav`
+     *    file next to the other artifacts so the post-AGC signal (exactly
+     *    what the AI encoder receives) can be inspected offline.
+     */
+    data class AGCConfig(
+        val enabled: Boolean = true,
+        val targetLevel: Float = 0.2f,
+        val attackMs: Float = 5f,
+        val releaseMs: Float = 250f,
+        val maxGainDb: Float = 24f,
+        val minGainDb: Float = -12f,
+        val noiseGateLevel: Float = 0f,
+    ) {
+        /** Short human-readable summary for logs. */
+        internal fun describe(): String =
+            "tgt=%.2f/atk=%.0fms/rel=%.0fms/+%.0fdB/%.0fdB/gate=%.3f".format(
+                targetLevel, attackMs, releaseMs, maxGainDb, minGainDb, noiseGateLevel
+            )
+    }
 
     /** Detailed metadata extracted from an input file. */
     data class AudioInfo(
@@ -183,6 +347,10 @@ object AudioTestFeeder {
         realtimePacing: Boolean = true,
         roundTrip: Boolean = false,
         outputDir: File? = null,
+        lowPass: LowPassConfig? = null,
+        notch: NotchConfig? = null,
+        rnNoise: RnNoiseConfig? = null,
+        agc: AGCConfig? = null,
         onDone: (() -> Unit)? = null,
     ): Job {
         stop()
@@ -194,19 +362,24 @@ object AudioTestFeeder {
             lastRunStats.clear()
             lastRunRoundTrips.clear()
             val effectiveOutputDir = outputDir ?: defaultArtifactDir(context, destination)
-            if (roundTrip) {
+            if (roundTrip || (lowPass?.enabled == true) || (notch?.enabled == true) ||
+                (rnNoise?.enabled == true) || (agc?.enabled == true)) {
                 effectiveOutputDir.mkdirs()
-                Timber.tag(TAG).i("Round-trip artifacts will be written to: %s", effectiveOutputDir.absolutePath)
+                Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
             }
             Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b",
-                sources.size, destination, carrier?.toString(), realtimePacing, roundTrip
+                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, lowPass=%s, notch=%s, rnNoise=%s, agc=%s",
+                sources.size, destination, carrier?.toString(), realtimePacing, roundTrip,
+                lowPass?.takeIf { it.enabled }?.let { "${it.cutoffHz}Hz/${it.rollOffDbPerOctave}dBoct" } ?: "off",
+                notch?.takeIf { it.enabled }?.describe() ?: "off",
+                rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
+                agc?.takeIf { it.enabled }?.describe() ?: "off"
             )
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
                     Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
-                    feedSingle(context, destination, carrier, src, realtimePacing, roundTrip, effectiveOutputDir)
+                    feedSingle(context, destination, carrier, src, realtimePacing, roundTrip, effectiveOutputDir, lowPass, notch, rnNoise, agc)
                 }
                 logCrossSourceSummary()
                 if (roundTrip) logCrossSourceRoundTrip()
@@ -242,6 +415,10 @@ object AudioTestFeeder {
         realtimePacing: Boolean,
         roundTrip: Boolean,
         artifactDir: File,
+        lowPass: LowPassConfig?,
+        notch: NotchConfig?,
+        rnNoise: RnNoiseConfig?,
+        agc: AGCConfig?,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
             Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
@@ -262,23 +439,126 @@ object AudioTestFeeder {
             }
         }
 
-        val totalChunks = (pcm.size + SAMPLES_PER_CHUNK - 1) / SAMPLES_PER_CHUNK
+        val fullChunks = pcm.size / SAMPLES_PER_CHUNK
+        val tailSamples = pcm.size % SAMPLES_PER_CHUNK
+        val tailMs = (tailSamples * 1000L) / TARGET_SAMPLE_RATE
         Timber.tag(TAG).i(
-            "  → Emitting %d chunks of %d samples (%d ms each)",
-            totalChunks, SAMPLES_PER_CHUNK, CHUNK_DURATION_MS
+            "  → Emitting %d full chunk(s) of %d samples (%d ms each)%s — chunked exactly like AudioRecorderAI (10 ms reads → %d-sample accumulator)",
+            fullChunks, SAMPLES_PER_CHUNK, CHUNK_DURATION_MS,
+            if (tailSamples > 0) " + 1 partial/final chunk of $tailSamples samples (${tailMs} ms)" else "",
+            SAMPLES_PER_CHUNK
         )
 
-        var emittedSamples = 0
+        // Optional notch stage: runs FIRST in the chain (before AGC / LPF /
+        // AI encoder). State (biquad memories) is preserved across chunks.
+        val notchFilter: NotchFilter? = notch?.takeIf { it.enabled }?.let {
+            val resolvedBands = it.resolveBands()
+            Timber.tag(TAG).i(
+                "  ⌁ Notch ENABLED: %s → %d band(s): %s (applied per chunk before AGC/LPF/AI)",
+                it.describe(),
+                resolvedBands.size,
+                resolvedBands.joinToString(",") { b -> "${b.frequencyHz.toInt()}Hz@Q${b.q.toInt()}" }
+            )
+            NotchFilter(sampleRateHz = TARGET_SAMPLE_RATE, bands = resolvedBands)
+        }
+        val notchAccumulator: ArrayList<Short>? =
+            if (notchFilter != null) ArrayList(pcm.size) else null
+
+        // Optional RNNoise stage: runs AFTER the notch and BEFORE the AGC.
+        // The processor maintains internal state (residual 48 kHz tail) across
+        // chunks, so a single instance is used per source and released at end.
+        val rnNoiseProcessor: com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor? =
+            rnNoise?.takeIf { it.enabled }?.let {
+                Timber.tag(TAG).i(
+                    "  ⌁ RnNoise ENABLED: %s (applied per chunk after notch, before AGC/LPF/AI)",
+                    it.describe()
+                )
+                val proc = com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor().apply {
+                    init(TARGET_SAMPLE_RATE)
+                }
+                if (proc.isActive()) {
+                    Timber.tag(TAG).i(
+                        "  ✓ RnNoise native backend active: %s",
+                        proc.activeClassName()
+                    )
+                } else {
+                    Timber.tag(TAG).w(
+                        "  ⚠ RnNoise is enabled but running in PASS-THROUGH mode " +
+                            "(native librnnoise_jni.so not loaded / wrapper class not on classpath). " +
+                            "The `*-rnnoise.wav` artifact will equal the post-notch audio. " +
+                            "Fix: run ./stardust/scripts/setup_rnnoise.sh then rebuild :stardust."
+                    )
+                }
+                proc
+            }
+        val rnNoiseAccumulator: ArrayList<Short>? =
+            if (rnNoiseProcessor != null) ArrayList(pcm.size) else null
+
+        // Optional AGC stage: runs AFTER the notch and BEFORE the low-pass /
+        // AI encoder. State (envelope, smoothed gain) is preserved across chunks.
+        val agcFilter: AGCFilter? = agc?.takeIf { it.enabled }?.let {
+            Timber.tag(TAG).i(
+                "  ⌁ AGC ENABLED: %s (applied per chunk after notch, before LPF/AI)",
+                it.describe()
+            )
+            AGCFilter(
+                sampleRateHz = TARGET_SAMPLE_RATE,
+                targetLevel = it.targetLevel,
+                attackMs = it.attackMs,
+                releaseMs = it.releaseMs,
+                maxGainDb = it.maxGainDb,
+                minGainDb = it.minGainDb,
+                noiseGateLevel = it.noiseGateLevel,
+            )
+        }
+        val agcAccumulator: ArrayList<Short>? =
+            if (agcFilter != null) ArrayList(pcm.size) else null
+
+        // Optional low-pass stage: runs LAST in the chain, after AGC, right
+        // before the AI encoder. Created once per source so the cascaded
+        // one-pole memories are preserved across consecutive chunks.
+        val lpf: LowPassFilter? = lowPass?.takeIf { it.enabled }?.let {
+            Timber.tag(TAG).i(
+                "  ⌁ Low-pass ENABLED: cutoff=%.1f Hz, roll-off=%.1f dB/oct (applied per chunk after AGC, before AI encode)",
+                it.cutoffHz, it.rollOffDbPerOctave
+            )
+            LowPassFilter(
+                sampleRateHz = TARGET_SAMPLE_RATE,
+                cutoffHz = it.cutoffHz,
+                rollOffDbPerOctave = it.rollOffDbPerOctave,
+            )
+        }
+        val lpfAccumulator: ArrayList<Short>? =
+            if (lpf != null) ArrayList(pcm.size) else null
+
         var chunkIndex = 0
         val startTs = System.currentTimeMillis()
         // Use the same persistent file convention as live recording; PttSendManager only
         // uses it as a sink for debug/persistent storage of the encoded result.
         val sinkFile = createSinkFile(context, destination, source.label)
 
-        while (emittedSamples < pcm.size && isActive) {
-            val end = minOf(emittedSamples + SAMPLES_PER_CHUNK, pcm.size)
-            val chunk = pcm.copyOfRange(emittedSamples, end)
-            val isPartial = chunk.size < SAMPLES_PER_CHUNK
+        // ── Mirror AudioRecorderAI.recordLoop chunking exactly ────────────
+        // Live PTT recording does NOT slice the stream every CHUNK_DURATION_MS;
+        // it pulls 10 ms read-buffers from AudioRecord, copies them into a
+        // fixed-size `chunkSamples` accumulator, emits the chunk only when the
+        // accumulator is full (via System.arraycopy), and ships any leftover
+        // bytes as a single PARTIAL/FINAL chunk on stop. We replicate that
+        // here so file-fed runs produce the exact same chunking behaviour as
+        // a real microphone session.
+        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
+        val readBufferSize = TARGET_SAMPLE_RATE / 100 // 10 ms = 240 samples @ 24 kHz
+        val shortBuffer = ShortArray(readBufferSize)
+        val chunkSamples = ShortArray(SAMPLES_PER_CHUNK)
+        var chunkSampleIndex = 0
+        var totalRead = 0
+        // Approximate AudioRecord's blocking pacing — it returns ~every 10 ms.
+        val msPerReadBuffer = (readBufferSize * 1000L) / TARGET_SAMPLE_RATE
+
+        // Process / log / filter / emit one assembled chunk. Used for both
+        // full chunks (length = SAMPLES_PER_CHUNK) and the final partial one.
+        fun emitChunk(buffer: ShortArray, length: Int, isPartial: Boolean) {
+            // Fresh allocation = same shape as AudioRecorderAI.processSamples().
+            val chunk = applyAiGain(buffer, length, gain)
 
             val cStats = quickChunkStats(chunk)
             Timber.tag(TAG).d(
@@ -288,21 +568,194 @@ object AudioTestFeeder {
                 if (isPartial) "  [PARTIAL/FINAL]" else ""
             )
 
-            PttSendManager.addNewFrame(chunk, sinkFile, carrier, destination)
-
-            emittedSamples = end
-            chunkIndex++
-            if (realtimePacing && emittedSamples < pcm.size) {
-                delay(CHUNK_DURATION_MS)
+            // ── Filter chain: runs AFTER chunking, BEFORE AI encoding ──
+            // Order: raw → Notch → RnNoise → AGC → LPF → AI
+            if (notchFilter != null) {
+                notchFilter.processInPlace(chunk)
+                val nStats = quickChunkStats(chunk)
+                Timber.tag(TAG).d(
+                    "      ↳ post-notch     peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f",
+                    nStats.peak, nStats.peakDbFs, nStats.rms, nStats.rmsDbFs,
+                    nStats.zeroCrossingRate
+                )
+                notchAccumulator?.let { acc -> for (s in chunk) acc.add(s) }
             }
+
+            if (rnNoiseProcessor != null) {
+                rnNoiseProcessor.process(chunk, chunk.size)
+                val rStats = quickChunkStats(chunk)
+                Timber.tag(TAG).d(
+                    "      ↳ post-rnnoise   peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f",
+                    rStats.peak, rStats.peakDbFs, rStats.rms, rStats.rmsDbFs,
+                    rStats.zeroCrossingRate
+                )
+                rnNoiseAccumulator?.let { acc -> for (s in chunk) acc.add(s) }
+            }
+
+            if (agcFilter != null) {
+                agcFilter.processInPlace(chunk)
+                val aStats = quickChunkStats(chunk)
+                Timber.tag(TAG).d(
+                    "      ↳ post-AGC       peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f gain=%.2fx env=%.4f",
+                    aStats.peak, aStats.peakDbFs, aStats.rms, aStats.rmsDbFs,
+                    aStats.zeroCrossingRate,
+                    agcFilter.currentGainLinear(), agcFilter.currentEnvelope()
+                )
+                agcAccumulator?.let { acc -> for (s in chunk) acc.add(s) }
+            }
+
+            if (lpf != null) {
+                lpf.processInPlace(chunk)
+                val fStats = quickChunkStats(chunk)
+                Timber.tag(TAG).d(
+                    "      ↳ post-LPF       peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f",
+                    fStats.peak, fStats.peakDbFs, fStats.rms, fStats.rmsDbFs,
+                    fStats.zeroCrossingRate
+                )
+                lpfAccumulator?.let { acc -> for (s in chunk) acc.add(s) }
+            }
+
+            PttSendManager.addNewFrame(chunk, sinkFile, carrier, destination)
+        }
+
+        while (totalRead < pcm.size && isActive) {
+            // Mimic `AudioRecord.read(shortBuffer, 0, shortBuffer.size)`.
+            val read = minOf(readBufferSize, pcm.size - totalRead)
+            System.arraycopy(pcm, totalRead, shortBuffer, 0, read)
+            totalRead += read
+
+            // Drain the read buffer into the chunk accumulator, emitting whenever it fills.
+            var consumed = 0
+            while (consumed < read && isActive) {
+                val remaining = SAMPLES_PER_CHUNK - chunkSampleIndex
+                val toCopy = minOf(remaining, read - consumed)
+                System.arraycopy(shortBuffer, consumed, chunkSamples, chunkSampleIndex, toCopy)
+                chunkSampleIndex += toCopy
+                consumed += toCopy
+
+                if (chunkSampleIndex == SAMPLES_PER_CHUNK) {
+                    emitChunk(chunkSamples, SAMPLES_PER_CHUNK, isPartial = false)
+                    chunkIndex++
+                    chunkSampleIndex = 0
+                }
+            }
+
+            // Approximate AudioRecord's blocking pacing (~10 ms per read).
+            if (realtimePacing && totalRead < pcm.size) {
+                delay(msPerReadBuffer)
+            }
+        }
+
+        // Flush remainder as a single PARTIAL/FINAL chunk, just like
+        // AudioRecorderAI's onPartialFinalChunk path.
+        if (chunkSampleIndex > 0 && isActive) {
+            emitChunk(chunkSamples, chunkSampleIndex, isPartial = true)
+            chunkIndex++
         }
 
         val elapsed = System.currentTimeMillis() - startTs
         Timber.tag(TAG).i(
             "  ✓ Finished %s: %d chunks, %d samples (%d ms audio) in %d ms wall-clock",
-            source.label, chunkIndex, emittedSamples,
-            (emittedSamples * 1000L) / TARGET_SAMPLE_RATE, elapsed
+            source.label, chunkIndex, totalRead,
+            (totalRead * 1000L) / TARGET_SAMPLE_RATE, elapsed
         )
+
+        // Persist the post-LPF audio so the filtered signal can be inspected
+        // exactly as it was handed to the next filter stage.
+        if (lpf != null && lpfAccumulator != null && lowPass != null && lpfAccumulator.isNotEmpty()) {
+            try {
+                artifactDir.mkdirs()
+                val out = File(
+                    artifactDir,
+                    "${System.currentTimeMillis()}-${source.label}-lowpass-" +
+                        "${lowPass.cutoffHz.toInt()}Hz-" +
+                        "${lowPass.rollOffDbPerOctave.toInt()}dboct.wav"
+                )
+                val arr = ShortArray(lpfAccumulator.size) { lpfAccumulator[it] }
+                writePcm16Wav(out, arr, TARGET_SAMPLE_RATE)
+                Timber.tag(TAG).i(
+                    "  💾 Wrote low-pass-filtered WAV: %s (%d samples, %d ms)",
+                    out.absolutePath, arr.size, (arr.size * 1000L) / TARGET_SAMPLE_RATE
+                )
+            } catch (t: Throwable) {
+                Timber.tag(TAG).e(t, "Failed to write low-pass artifact WAV for %s", source.label)
+            }
+        }
+
+        // Persist the post-notch audio (this is what the AI encoder actually sees
+        // when the notch stage is enabled).
+        if (notchFilter != null && notchAccumulator != null && notch != null && notchAccumulator.isNotEmpty()) {
+            try {
+                artifactDir.mkdirs()
+                val tag = if (notch.harmonics != null) {
+                    notch.harmonics.joinToString(separator = "_") {
+                        "${it.frequencyHz.toInt()}HzQ${it.q.toInt()}"
+                    }
+                } else {
+                    "${notch.fundamentalHz.toInt()}Hz-Q${notch.q.toInt()}-x${notch.numHarmonics}"
+                }
+                val out = File(
+                    artifactDir,
+                    "${System.currentTimeMillis()}-${source.label}-notch-$tag.wav"
+                )
+                val arr = ShortArray(notchAccumulator.size) { notchAccumulator[it] }
+                writePcm16Wav(out, arr, TARGET_SAMPLE_RATE)
+                Timber.tag(TAG).i(
+                    "  💾 Wrote notch-filtered WAV: %s (%d samples, %d ms)",
+                    out.absolutePath, arr.size, (arr.size * 1000L) / TARGET_SAMPLE_RATE
+                )
+            } catch (t: Throwable) {
+                Timber.tag(TAG).e(t, "Failed to write notch artifact WAV for %s", source.label)
+            }
+        }
+
+        // Persist the post-RNNoise audio (what AGC actually saw when the
+        // stage is enabled), then release the native denoiser.
+        if (rnNoiseProcessor != null && rnNoiseAccumulator != null && rnNoiseAccumulator.isNotEmpty()) {
+            try {
+                artifactDir.mkdirs()
+                val out = File(
+                    artifactDir,
+                    "${System.currentTimeMillis()}-${source.label}-rnnoise.wav"
+                )
+                val arr = ShortArray(rnNoiseAccumulator.size) { rnNoiseAccumulator[it] }
+                writePcm16Wav(out, arr, TARGET_SAMPLE_RATE)
+                Timber.tag(TAG).i(
+                    "  💾 Wrote RNNoise-cleaned WAV: %s (%d samples, %d ms)",
+                    out.absolutePath, arr.size, (arr.size * 1000L) / TARGET_SAMPLE_RATE
+                )
+            } catch (t: Throwable) {
+                Timber.tag(TAG).e(t, "Failed to write RNNoise artifact WAV for %s", source.label)
+            }
+        }
+        rnNoiseProcessor?.let {
+            try { it.release() } catch (t: Throwable) {
+                Timber.tag(TAG).w(t, "RnNoise release failed for %s", source.label)
+            }
+        }
+
+        // Persist the post-AGC audio (this is what the AI encoder actually sees
+        // when the AGC stage is enabled).
+        if (agcFilter != null && agcAccumulator != null && agc != null && agcAccumulator.isNotEmpty()) {
+            try {
+                artifactDir.mkdirs()
+                val tag = "tgt%.2f-atk%.0fms-rel%.0fms-max%.0fdB"
+                    .format(agc.targetLevel, agc.attackMs, agc.releaseMs, agc.maxGainDb)
+                    .replace(',', '.')
+                val out = File(
+                    artifactDir,
+                    "${System.currentTimeMillis()}-${source.label}-agc-$tag.wav"
+                )
+                val arr = ShortArray(agcAccumulator.size) { agcAccumulator[it] }
+                writePcm16Wav(out, arr, TARGET_SAMPLE_RATE)
+                Timber.tag(TAG).i(
+                    "  💾 Wrote AGC-processed WAV: %s (%d samples, %d ms)",
+                    out.absolutePath, arr.size, (arr.size * 1000L) / TARGET_SAMPLE_RATE
+                )
+            } catch (t: Throwable) {
+                Timber.tag(TAG).e(t, "Failed to write AGC artifact WAV for %s", source.label)
+            }
+        }
     }
 
     private fun createSinkFile(context: Context, destination: String, label: String): File {
@@ -315,6 +768,27 @@ object AudioTestFeeder {
         return File(dir, "${System.currentTimeMillis()}-$label.pcm").apply {
             if (!exists()) createNewFile()
         }
+    }
+
+    /**
+     * Apply the same AI gain that [com.commcrete.stardust.ai.codec.AudioRecorderAI]
+     * applies in `processSamples()` — i.e. multiply each sample by the
+     * user-configured gain (`SharedPreferencesUtil.getAIGain` / 100) and
+     * clamp to int16 range. Returns a fresh ShortArray of [length] samples
+     * so callers can safely reuse the source buffer.
+     */
+    private fun applyAiGain(source: ShortArray, length: Int, gain: Float): ShortArray {
+        val out = ShortArray(length)
+        if (gain == 1f) {
+            System.arraycopy(source, 0, out, 0, length)
+            return out
+        }
+        for (i in 0 until length) {
+            val v = (source[i] * gain).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            out[i] = v.toShort()
+        }
+        return out
     }
 
     /**

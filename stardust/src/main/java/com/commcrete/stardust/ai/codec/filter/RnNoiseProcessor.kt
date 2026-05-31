@@ -213,6 +213,19 @@ class RnNoiseProcessor : NoiseProcessor {
         pending48k = ShortArray(0)
     }
 
+    /**
+     * `true` if the native denoiser was successfully resolved AND initialised,
+     * i.e. [process] will actually run RNNoise on incoming samples. Returns
+     * `false` when the wrapper class is missing from the classpath, the
+     * native `.so` failed to load, or initialisation threw — in which case
+     * [process] is a no-op (pass-through). Callers can use this to surface
+     * a loud warning instead of silently shipping unfiltered audio.
+     */
+    fun isActive(): Boolean = nativeInstance != null && processMethod != null
+
+    /** Name of the resolved native wrapper class, or `null` in pass-through mode. */
+    fun activeClassName(): String? = nativeInstance?.javaClass?.name
+
     /** Linear-interpolation resampler. Adequate for ASR; swap for polyphase FIR for max fidelity. */
     private fun resample(input: ShortArray, length: Int, fromRate: Int, toRate: Int): ShortArray {
         if (fromRate == toRate || length <= 0) return input.copyOf(length)
