@@ -6,14 +6,12 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
-import com.commcrete.stardust.AiSourceProfile
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.ai.codec.AudioRecorderAI
-import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

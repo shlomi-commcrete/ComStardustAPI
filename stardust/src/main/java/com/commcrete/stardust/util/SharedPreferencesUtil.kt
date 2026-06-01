@@ -46,6 +46,16 @@ object SharedPreferencesUtil {
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
+    // Configurable, multiband alternative to platform AGC. When true, the
+    // recorder attaches an `android.media.audiofx.DynamicsProcessing` effect
+    // to the AudioRecord session instead of the boolean platform AGC.
+    // API 28+; falls back to AGC on older devices or when the effect is
+    // not available on the device.
+    private const val KEY_ENABLE_DYNAMICS_PROCESSING = "enable_dynamics_processing"
+    // Input gain (dB) applied at the head of the DynamicsProcessing chain.
+    // Used as the primary "make-up gain" knob — the PCM2900C in the jbox has
+    // a quiet fixed analog stage and benefits from +6 to +12 dB here.
+    private const val KEY_DP_INPUT_GAIN_DB = "dp_input_gain_db"
     private const val KEY_CODEC_RECORDING_TYPE = "recording_type"
     private const val KEY_AI_RECORDING_TYPE = "ai_recording_type"
     private const val KEY_BITTEL_BIT_SERVER = "enable_bittel_server"
@@ -504,6 +514,35 @@ object SharedPreferencesUtil {
 
     fun getAcousticEchoControl(context: Context) : Boolean {
         return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
+    }
+
+    /**
+     * Whether to attach `android.media.audiofx.DynamicsProcessing` (multiband
+     * compressor + limiter + makeup gain) to the recording session. When
+     * enabled, this takes precedence over the platform [getAutoGainControl]
+     * since both are gain-modifying effects on the same chain.
+     *
+     * Defaults to false. Requires API 28+.
+     */
+    fun getDynamicsProcessingEnabled(context: Context): Boolean {
+        return getPreferencesBoolean(context, KEY_ENABLE_DYNAMICS_PROCESSING)
+    }
+
+    fun setDynamicsProcessingEnabled(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_ENABLE_DYNAMICS_PROCESSING, enabled).apply()
+    }
+
+    /**
+     * Make-up gain (dB) injected at the input of the DynamicsProcessing
+     * chain. Reasonable range: 0 .. +18 dB. Default +6 dB which roughly
+     * compensates for the PCM2900C's quiet analog input stage.
+     */
+    fun getDynamicsProcessingInputGainDb(context: Context): Float {
+        return getPrefs(context).getFloat(KEY_DP_INPUT_GAIN_DB, 6f)
+    }
+
+    fun setDynamicsProcessingInputGainDb(context: Context, gainDb: Float) {
+        getPrefs(context).edit().putFloat(KEY_DP_INPUT_GAIN_DB, gainDb).apply()
     }
 
     fun getCodecAudioSource(context: Context): Int {
