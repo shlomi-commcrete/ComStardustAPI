@@ -5,12 +5,14 @@ import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.bittell.util.connectivity.ConnectivityObserver
 import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager

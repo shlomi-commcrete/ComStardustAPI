@@ -39,13 +39,28 @@ internal object AudioFileLoader {
      * resamples (linear) to [AudioTestFeeder.TARGET_SAMPLE_RATE] and returns 16-bit samples.
      */
     fun loadAndNormalize(source: Source): Pair<AudioInfo, ShortArray> {
+        val (info, nativeRate, mono) = loadMono(source)
+        val resampled = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) mono
+            else AudioDsp.resampleLinear(mono, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
+        return info to resampled
+    }
+
+    /**
+     * Loads the file, parses the header (or treats as raw PCM) and down-mixes
+     * to mono **without resampling**. Returns the source's native sample rate
+     * alongside the mono int16 PCM so callers that want to do their own
+     * resampling (e.g. per-chunk, post-filter) can skip the upfront resample
+     * pass that [loadAndNormalize] performs.
+     *
+     * @return Triple of (audio metadata, native sample rate in Hz, mono int16 PCM at that rate)
+     */
+    fun loadMono(source: Source): Triple<AudioInfo, Int, ShortArray> {
         val fileSize = source.file.length()
         return when {
             source.rawPcm -> {
                 val raw = source.file.readBytes()
                 val pcm = bytesToShortsLe(raw)
                 val mono = AudioDsp.downmix(pcm, source.rawChannels)
-                val resampled = AudioDsp.resampleLinear(mono, source.rawSampleRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
                 val info = AudioInfo(
                     source = source,
                     sampleRate = source.rawSampleRate,
@@ -58,12 +73,11 @@ internal object AudioFileLoader {
                     byteRate = source.rawSampleRate * source.rawChannels * 2,
                     containerLabel = "RAW PCM",
                 )
-                info to resampled
+                Triple(info, source.rawSampleRate, mono)
             }
             isWavFile(source.file) -> {
                 val parsed = parseWav(source.file)
                 val mono = AudioDsp.downmix(parsed.samples, parsed.channels)
-                val resampled = AudioDsp.resampleLinear(mono, parsed.sampleRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
                 val info = AudioInfo(
                     source = source,
                     sampleRate = parsed.sampleRate,
@@ -76,12 +90,11 @@ internal object AudioFileLoader {
                     byteRate = parsed.byteRate,
                     containerLabel = "WAV/RIFF",
                 )
-                info to resampled
+                Triple(info, parsed.sampleRate, mono)
             }
             else -> {
                 val parsed = decodeCompressedAudio(source.file)
                 val mono = AudioDsp.downmix(parsed.samples, parsed.channels)
-                val resampled = AudioDsp.resampleLinear(mono, parsed.sampleRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
                 val info = AudioInfo(
                     source = source,
                     sampleRate = parsed.sampleRate,
@@ -95,7 +108,7 @@ internal object AudioFileLoader {
                     byteRate = parsed.byteRate,
                     containerLabel = "Compressed (${parsed.mimeLabel ?: "MediaCodec"})",
                 )
-                info to resampled
+                Triple(info, parsed.sampleRate, mono)
             }
         }
     }

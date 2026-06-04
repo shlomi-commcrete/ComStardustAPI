@@ -17,8 +17,13 @@ data class NotchConfig(
     val enabled: Boolean = true,
     val fundamentalHz: Float = 1_000f,
     val q: Float = 30f,
-    val numHarmonics: Int? = 1,
-    val harmonics: List<Harmonic>? = null,
+    val numHarmonics: Int? = null,
+    val harmonics: List<Harmonic> = mutableListOf<Harmonic>().also { list ->
+        for (i in 1..4) { list.add(Harmonic(frequencyHz = (i * 50).toFloat(), q = 10f)) }
+        for (i in 3..4) list.add(Harmonic(frequencyHz = (i * 1_00).toFloat(), q = 50f))
+        list.add(Harmonic(frequencyHz = 800f, q = 100f))
+        for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 100f))
+    },
 ) {
     /** One explicit notch band: a target frequency and its Q. */
     data class Harmonic(val frequencyHz: Float, val q: Float)

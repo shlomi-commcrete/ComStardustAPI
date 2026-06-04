@@ -224,7 +224,11 @@ object PttSendManager {
                                 sampleRate = 24000,
                                 channels = 1,
                                 bitsPerSample = 16,
-                                fileNamePrefix = "ai_parsed"
+                                fileNamePrefix = "ai_parsed",
+                                // Same directory AudioFeederEngine.persistArtifacts() writes to
+                                // (set in AudioFeederEngine.feedSingle()), so this debug WAV
+                                // sits alongside the per-stage filter artifacts.
+                                outputDir = RecorderUtils.dirToSaveFile,
                             )
                             debugAiParsedWriter.append(sampleArray, sampleArray.size)
                         } finally {

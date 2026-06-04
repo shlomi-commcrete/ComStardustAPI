@@ -9,6 +9,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.LicenseType
@@ -156,6 +157,7 @@ object BittelUsbManager2 : BittelProtocol {
 //        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
         context?.let { context ->
             uartManager?.send(bittelPackage.getStardustPackageToSend(context))
+            Log.d("PTT DEBUG", "uartManager.send")
         }
     }
 

@@ -18,6 +18,7 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
 import com.commcrete.stardust.util.audio.LowPassFilter
+import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -410,7 +411,7 @@ class AudioRecorderAI(
      */
     private fun pickCaptureRate(device: AudioDeviceInfo?, requestedRate: Int): Int {
         if (device == null) return requestedRate
-        val advertised = device.sampleRates?.toList().orEmpty()
+        val advertised = device.sampleRates.toList()
         val preferred = listOf(48_000, 44_100, 32_000, 16_000)
         val match = preferred.firstOrNull { it in advertised }
         if (match != null) return match

@@ -30,6 +30,9 @@ object RecorderUtils {
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
+    var dirToSaveFile: File = DataManager.context.cacheDir.resolve("ptt").also { it.mkdirs() }
+
+
 
     fun init(pttInterface : PttInterface){
         RecorderUtils.pttInterface = pttInterface

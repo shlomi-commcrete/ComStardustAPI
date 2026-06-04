@@ -117,8 +117,8 @@ internal object RoundTripAnalyzer {
         val baseName = "${timeStamp}_${sourceStem}"
         val tokensTxt = File(artifactDir, "$baseName.tokens.txt")
         val tokensBin = File(artifactDir, "$baseName.tokens.bin")
-        val decodedWav = File(artifactDir, "$baseName.decoded.wav")
-        val originalWav = File(artifactDir, "$baseName.original_24k_mono.wav")
+        val decodedWav = File(artifactDir, "$baseName.decoded_from_full_file.wav")
+        val originalWav = File(artifactDir, "$baseName.original_24k_mono_from_full_file.wav")
 
         val written = mutableListOf<String>()
         runCatching { AudioArtifactWriter.writeTokensTxt(tokensTxt, tokensArr, source, chunks) }
@@ -128,10 +128,10 @@ internal object RoundTripAnalyzer {
             .onSuccess { written += "tokens.bin" }
             .onFailure { Timber.tag(TAG).w(it, "Failed to write %s", tokensBin.name) }
         runCatching { AudioArtifactWriter.writePcm16Wav(decodedWav, reconstructed, AudioTestFeeder.TARGET_SAMPLE_RATE) }
-            .onSuccess { written += "decoded.wav" }
+            .onSuccess { written += "decoded_from_full_file.wav" }
             .onFailure { Timber.tag(TAG).w(it, "Failed to write %s", decodedWav.name) }
         runCatching { AudioArtifactWriter.writePcm16Wav(originalWav, pcm, AudioTestFeeder.TARGET_SAMPLE_RATE) }
-            .onSuccess { written += "original.wav" }
+            .onSuccess { written += "original_from_full_file.wav" }
             .onFailure { Timber.tag(TAG).w(it, "Failed to write %s", originalWav.name) }
 
         if (written.isNotEmpty()) {

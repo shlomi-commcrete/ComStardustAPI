@@ -11,6 +11,8 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.RequiresApi
+import androidx.core.net.toUri
+import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -56,14 +58,27 @@ class DebugRawWavWriter {
     private var bitsPerSample: Int = 0
     private var started: Boolean = false
 
-    /** Opens a new WAV file. Safe to call multiple times — re-opens fresh. */
+    /**
+     * Opens a new WAV file. Safe to call multiple times — re-opens fresh.
+     *
+     * If [outputDir] is supplied the file is written directly into that
+     * directory via plain Java IO (no MediaStore involvement). This is the
+     * preferred path when you want the debug WAV to sit next to other
+     * pipeline artifacts (e.g. `AudioFeederEngine.persistArtifacts()`
+     * outputs in `RecorderUtils.dirToSaveFile`).
+     *
+     * If [outputDir] is null we fall back to MediaStore Downloads on Q+,
+     * or to the legacy public Downloads dir on older APIs (requires
+     * `WRITE_EXTERNAL_STORAGE`).
+     */
     @Synchronized
     fun start(
         context: Context,
         sampleRate: Int,
         channels: Int = 1,
         bitsPerSample: Int = 16,
-        fileNamePrefix: String = "raw"
+        fileNamePrefix: String = "raw",
+        outputDir: File? = null,
     ) {
         stop() // close any prior session
 
@@ -74,10 +89,10 @@ class DebugRawWavWriter {
 
         val displayName = "${System.currentTimeMillis()}_${fileNamePrefix}.wav"
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                openViaMediaStore(context, displayName)
-            } else {
-                openLegacy(displayName)
+            when {
+                outputDir != null -> openInDir(outputDir, displayName)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q -> openViaMediaStore(context, displayName)
+                else -> openLegacy(displayName)
             }
 
             writePlaceholderHeader()
@@ -158,11 +173,11 @@ class DebugRawWavWriter {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$SUBDIR")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, RecorderUtils.dirToSaveFile.absolutePath ?: "${Environment.DIRECTORY_DOWNLOADS}/$SUBDIR")
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
         @SuppressLint("NewApi")
-        val downloadsUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+        val downloadsUri = RecorderUtils.dirToSaveFile.toUri() ?: MediaStore.Downloads.EXTERNAL_CONTENT_URI
         val uri = cr.insert(downloadsUri, values)
             ?: error("MediaStore insert returned null")
 
@@ -187,6 +202,21 @@ class DebugRawWavWriter {
         val raf = RandomAccessFile(file, "rw")
         this.raf = raf
         this.channel = raf.channel
+    }
+
+    /**
+     * Open the WAV directly inside [dir] (created if missing). Bypasses
+     * MediaStore so the artifact lives next to other pipeline outputs that
+     * are written with plain `File` IO (e.g. `AudioFeederEngine`'s
+     * `persistArtifacts`).
+     */
+    private fun openInDir(dir: File, displayName: String) {
+        if (!dir.exists()) dir.mkdirs()
+        val file = File(dir, displayName)
+        val raf = RandomAccessFile(file, "rw")
+        this.raf = raf
+        this.channel = raf.channel
+        Log.i(TAG, "writing directly to ${file.absolutePath}")
     }
 
     private fun writePlaceholderHeader() {

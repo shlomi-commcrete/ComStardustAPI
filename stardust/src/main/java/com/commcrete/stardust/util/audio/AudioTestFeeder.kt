@@ -1,9 +1,12 @@
 package com.commcrete.stardust.util.audio
 
 import android.content.Context
+import android.util.Log
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -136,7 +139,6 @@ object AudioTestFeeder {
         DataManager.requireContext(context)
         PttSendManager.init(context.applicationContext)
         PttSendManager.restart()
-
         val job = feederScope.launch {
             lastRunStats.clear()
             lastRunRoundTrips.clear()
@@ -154,6 +156,9 @@ object AudioTestFeeder {
                 rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
                 agc?.takeIf { it.enabled }?.describe() ?: "off"
             )
+
+            //val checkTicker = heartBeatTest(context, destination, carrier)
+
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
@@ -174,11 +179,49 @@ object AudioTestFeeder {
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
+                // Hard-stop the heartbeat. The structured-concurrency cancel
+                // would happen on its own when this `launch` block returns,
+                // but doing it explicitly makes the lifetime obvious and lets
+                // us log it.
+//                if (checkTicker.isActive) {
+//                    checkTicker.cancel()
+//                    Timber.tag(TAG).i("⏱ Stopped 'check' heartbeat")
+//                }
                 onDone?.invoke()
             }
         }
         currentJob = job
         return job
+    }
+
+    private fun CoroutineScope.heartBeatTest(context: Context, destination: String, carrier: Carrier?): Job {
+
+        // ── "check" heartbeat ─────────────────────────────────────────────
+        // Spam a "check" text message every 200 ms while the feeder is
+        // running so we can see in the device logs / on the receiver side
+        // whether the messaging path stays alive concurrently with the AI
+        // PTT pipeline. The ticker is a CHILD coroutine of the feed job,
+        // so it is automatically cancelled when the feed finishes (or is
+        // cancelled via [stop]) — see the `cancel()` in `finally` below
+        // for the explicit hard-stop.
+        return launch {
+            val checkSource = mRegisterUser?.appId.orEmpty()
+            val checkPackage = StardustAPIPackage(
+                source = checkSource,
+                destination = "00000002",
+                requireAck = false,
+                carrier = carrier,
+            )
+            Log.d("PTT DEBUG", "Starting 'check' heartbeat every 50 ms → %s")
+            while (isActive) {
+                try {
+                    DataManager.sendMessage(context, checkPackage, "check")
+                } catch (t: Throwable) {
+                    Log.d("PTT DEBUG", "'check' heartbeat sendMessage failed")
+                }
+                delay(50)
+            }
+        }
     }
 
     /** Stop the currently running feeder, if any. */

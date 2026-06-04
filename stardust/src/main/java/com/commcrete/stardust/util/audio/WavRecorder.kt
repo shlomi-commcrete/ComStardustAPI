@@ -513,7 +513,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
     private fun sendData(byteArray: ByteArray, isLast : Boolean = false, carrier: Carrier? = null){
         if(BleManager.isNetworkEnabled()){
 //            sendToServer(byteArray, isLast)
-        }else if (BleManager.isBluetoothEnabled()|| BleManager.isUsbEnabled()) {
+        }else if (BleManager.isBluetoothEnabled() || BleManager.isUsbEnabled()) {
             sendToBle(byteArray, isLast, carrier)
         }
     }

@@ -26,7 +26,7 @@ data class AGCConfig(
     val releaseMs: Float = 250f,
     val maxGainDb: Float = 24f,
     val minGainDb: Float = -12f,
-    val noiseGateLevel: Float = 0f,
+    val noiseGateLevel: Float = 0.005f,
 ) {
     /** Short human-readable summary for logs. */
     internal fun describe(): String =
