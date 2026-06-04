@@ -133,6 +133,7 @@ object AudioTestFeeder {
         notch: NotchConfig? = null,
         rnNoise: RnNoiseConfig? = null,
         agc: AGCConfig? = null,
+        dynamics: DynamicsConfig? = null,
         onDone: (() -> Unit)? = null,
     ): Job {
         stop()
@@ -144,17 +145,19 @@ object AudioTestFeeder {
             lastRunRoundTrips.clear()
             val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, destination)
             if (roundTrip || (lowPass?.enabled == true) || (notch?.enabled == true) ||
-                (rnNoise?.enabled == true) || (agc?.enabled == true)) {
+                (rnNoise?.enabled == true) || (agc?.enabled == true) ||
+                (dynamics?.enabled == true)) {
                 effectiveOutputDir.mkdirs()
                 Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
             }
             Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, lowPass=%s, notch=%s, rnNoise=%s, agc=%s",
+                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
                 sources.size, destination, carrier?.toString(), realtimePacing, roundTrip,
                 lowPass?.takeIf { it.enabled }?.let { "${it.cutoffHz}Hz/${it.rollOffDbPerOctave}dBoct" } ?: "off",
                 notch?.takeIf { it.enabled }?.describe() ?: "off",
                 rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
-                agc?.takeIf { it.enabled }?.describe() ?: "off"
+                agc?.takeIf { it.enabled }?.describe() ?: "off",
+                dynamics?.takeIf { it.enabled }?.describe() ?: "off",
             )
 
             //val checkTicker = heartBeatTest(context, destination, carrier)
@@ -166,7 +169,7 @@ object AudioTestFeeder {
                     AudioFeederEngine.feedSingle(
                         context, destination, carrier, src,
                         realtimePacing, roundTrip, effectiveOutputDir,
-                        lowPass, notch, rnNoise, agc,
+                        lowPass, notch, rnNoise, agc, dynamics,
                         onStats = { lastRunStats[src.label] = it },
                         onRoundTrip = { lastRunRoundTrips[src.label] = it },
                     )

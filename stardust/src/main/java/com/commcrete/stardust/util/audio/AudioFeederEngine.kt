@@ -37,6 +37,7 @@ internal object AudioFeederEngine {
         notch: NotchConfig?,
         rnNoise: RnNoiseConfig?,
         agc: AGCConfig?,
+        dynamics: DynamicsConfig?,
         onStats: (AudioStats) -> Unit,
         onRoundTrip: (RoundTripResult) -> Unit,
     ) = withContext(Dispatchers.IO) {
@@ -68,14 +69,17 @@ internal object AudioFeederEngine {
         //    fixed at TARGET_SAMPLE_RATE, so the round-trip path stays there).
         runRoundTripIfRequested(
             roundTrip, source, pcm24k, artifactDir,
-            lowPass, notch, rnNoise, agc, onRoundTrip,
+            lowPass, notch, rnNoise, agc, dynamics, onRoundTrip,
         )
 
         // 3. Build the live per-chunk filter chain at the NATIVE rate. The
         //    chunk after filtering is resampled to TARGET_SAMPLE_RATE before
         //    being handed to PttSendManager so the codec still sees 24 kHz.
         logChunkPlan(monoNative, nativeRate)
-        val chain = LiveFilterChain.build(notch, rnNoise, agc, lowPass, sampleRate = nativeRate, expectedSize = monoNative.size)
+        val chain = LiveFilterChain.build(
+            notch, rnNoise, agc, lowPass, dynamics,
+            sampleRate = nativeRate, expectedSize = monoNative.size,
+        )
 
         // 4. Stream the pcm as 500 ms chunks (at native rate) through the
         //    chain, then resample each filtered chunk to 24 kHz on its way
@@ -95,6 +99,27 @@ internal object AudioFeederEngine {
                 outputDir = artifactDir,
             )
         }
+        // Mirror writer for the AI **output** — captures the decoded
+        // (post-WavTokenizer) PCM that corresponds 1:1 to each input chunk
+        // we hand to PttSendManager. Useful for A/B-ing encoder input vs.
+        // decoder output WAVs in Audacity / ffmpeg.
+//        val aiOutputWriter = com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
+//            start(
+//                context = context,
+//                sampleRate = AudioTestFeeder.TARGET_SAMPLE_RATE,
+//                channels = 1,
+//                bitsPerSample = 16,
+//                fileNamePrefix = "${source.label}-ai_output_24k",
+//                outputDir = artifactDir,
+//            )
+//        }
+        // Reset decoder continuity state for this source and register the
+        // per-chunk decoded-PCM hook. PttSendManager will call back on its
+        // own encoding coroutine; DebugRawWavWriter.append is @Synchronized.
+        PttSendManager.resetLiveDecodeState()
+//        PttSendManager.onDecodedChunk = { decodedChunk ->
+//            runCatching { aiOutputWriter.append(decodedChunk, decodedChunk.size) }
+//        }
         val emission = try {
             streamPcmAsChunks(
                 pcm = monoNative,
@@ -105,16 +130,67 @@ internal object AudioFeederEngine {
             ) { filteredChunk ->
                 val outChunk = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) filteredChunk
                     else AudioDsp.resampleLinear(filteredChunk, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
+
+                // Tail-handling for the AI encoder. The encoder is hard-coded
+                // to 24 kHz / 12 000 samples and zero-pads anything shorter
+                // before running the model, then trims the output tokens by
+                // (audioSamples.size / 600). This produces two tail artifacts:
+                //
+                //   • Sub-token tails (< 600 samples ≈ 25 ms) emit zero
+                //     tokens → a 1-byte SEND_PTT_AI packet flagged LAST,
+                //     which can pop on the decoder side. Drop them.
+                //
+                //   • Tails ending mid-signal create a hard step into the
+                //     zero-pad region inside the 12 000-sample tensor. The
+                //     model leaks transient energy across that boundary into
+                //     the kept tokens. Apply a short cosine fade-out (~5 ms)
+                //     so the boundary is a smooth ramp to zero instead.
+                //
+                // Full chunks (== SAMPLES_PER_CHUNK) are passed through
+                // unchanged — they hit the encoder with no padding at all.
+                val finalChunk: ShortArray = when {
+                    outChunk.size >= AudioTestFeeder.SAMPLES_PER_CHUNK -> outChunk
+                    outChunk.size < 600 -> {
+                        Timber.tag(TAG).d(
+                            "    ⏭ skipping sub-token tail of %d sample(s) (< 600, would emit 0 tokens)",
+                            outChunk.size,
+                        )
+                        return@streamPcmAsChunks
+                    }
+                    else -> {
+                        val faded = outChunk.copyOf()
+                        val fadeLen = minOf(120, faded.size) // ≈ 5 ms @ 24 kHz
+                        val start = faded.size - fadeLen
+                        for (i in 0 until fadeLen) {
+                            // Cosine half-window: 1 → 0 over fadeLen samples.
+                            val w = 0.5 * (1.0 + kotlin.math.cos(Math.PI * i / fadeLen))
+                            faded[start + i] = (faded[start + i] * w).toInt().toShort()
+                        }
+                        Timber.tag(TAG).d(
+                            "    ⤵ partial tail %d samples — applied %d-sample cosine fade-out before AI encode",
+                            faded.size, fadeLen,
+                        )
+                        faded
+                    }
+                }
+
                 // Append BEFORE handing the array off to PttSendManager so the
                 // file always contains exactly what was queued to the encoder,
                 // independent of any later in-place mutations or async hand-off.
-                aiInputWriter.append(outChunk, outChunk.size)
-                PttSendManager.addNewFrame(outChunk, sinkFile, carrier, destination)
+                aiInputWriter.append(finalChunk, finalChunk.size)
+                PttSendManager.addNewFrame(finalChunk, sinkFile, carrier, destination)
             }
         } finally {
             // Patch the WAV header with final sizes regardless of whether
-            // emission completed normally.
+            // emission completed normally. Drain any in-flight encoded chunks
+            // first so the AI-output WAV captures the tail (PttSendManager's
+            // encoding loop polls every ~10 ms, so a short grace period is
+            // enough). Then unregister the hook before closing the writer to
+            // avoid a late append racing with stop().
+            runCatching { delay(150) }
+            PttSendManager.onDecodedChunk = null
             runCatching { aiInputWriter.stop() }
+            //runCatching { aiOutputWriter.stop() }
         }
         Timber.tag(TAG).i(
             "  ✓ Finished %s: %d chunks, %d samples @ %d Hz (%d ms audio) in %d ms wall-clock",
@@ -128,7 +204,7 @@ internal object AudioFeederEngine {
         //    The ai_input_24k artifact has already been streamed to disk by
         //    aiInputWriter above (closed in the finally block), so it sits
         //    next to these per-stage WAVs in artifactDir.
-        chain.persistArtifacts(artifactDir, source.label, lowPass, notch, agc, sampleRate = nativeRate)
+        chain.persistArtifacts(artifactDir, source.label, lowPass, notch, agc, dynamics, sampleRate = nativeRate)
         chain.release(source.label)
     }
 
@@ -152,10 +228,11 @@ internal object AudioFeederEngine {
         notch: NotchConfig?,
         rnNoise: RnNoiseConfig?,
         agc: AGCConfig?,
+        dynamics: DynamicsConfig?,
         onRoundTrip: (RoundTripResult) -> Unit,
     ) {
         if (!roundTrip) return
-        val pcmForRoundTrip = applyFilterChainOneShot(pcm, lowPass, notch, rnNoise, agc)
+        val pcmForRoundTrip = applyFilterChainOneShot(pcm, lowPass, notch, rnNoise, agc, dynamics)
         val rt = RoundTripAnalyzer.runRoundTrip(source, pcmForRoundTrip, artifactDir) ?: return
         onRoundTrip(rt)
         AudioTestFeederLogger.logRoundTrip(rt)
@@ -184,7 +261,7 @@ internal object AudioFeederEngine {
 
     /**
      * Mirrors `AudioRecorderAI.recordLoop` chunking exactly:
-     *  - 10 ms read buffers (240 samples @ 24 kHz),
+     *  - 20 ms read buffers (480 samples @ 24 kHz, 960 @ 48 kHz),
      *  - copy into a [SAMPLES_PER_CHUNK][AudioTestFeeder.SAMPLES_PER_CHUNK]-
      *    sample accumulator, emit a full chunk whenever the accumulator fills,
      *  - flush any remainder as one PARTIAL/FINAL chunk on EOF.
@@ -203,7 +280,12 @@ internal object AudioFeederEngine {
         chain: LiveFilterChain,
         onChunk: (ShortArray) -> Unit,
     ): EmissionStats {
-        val readBufferSize = (sampleRate / 100).coerceAtLeast(1) // 10 ms
+        // 20 ms read buffers — same as AudioRecorderAI.recordLoop:
+        //   `val readChunkSamples = (captureRate / 50).coerceAtLeast(...)`.
+        // 10 ms was producing more syscalls / coroutine yields per second
+        // than the live recorder, which made the feeder's pacing diverge
+        // from production by a constant factor under realtimePacing.
+        val readBufferSize = (sampleRate / 50).coerceAtLeast(1) // 20 ms
         val samplesPerChunk = (sampleRate * AudioTestFeeder.CHUNK_DURATION_MS / 1000L).toInt()
         val shortBuffer = ShortArray(readBufferSize)
         val chunkSamples = ShortArray(samplesPerChunk)
@@ -237,7 +319,7 @@ internal object AudioFeederEngine {
                 }
             }
 
-            // Approximate AudioRecord's blocking pacing (~10 ms per read).
+            // Approximate AudioRecord's blocking pacing (~20 ms per read).
             if (realtimePacing && totalRead < pcm.size) delay(msPerReadBuffer)
         }
 
@@ -302,6 +384,7 @@ internal object AudioFeederEngine {
      *  - [release] to free native resources (RNNoise).
      */
     private class LiveFilterChain private constructor(
+        val dynamicsFilter: DynamicsProcessingFilter?,
         val notchFilter: NotchFilter?,
         val rnNoiseProcessor: com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor?,
         /** RNNoise wet/dry mix in `[0,1]` (1 = full clean, 0 = bypass). */
@@ -310,6 +393,7 @@ internal object AudioFeederEngine {
         val rnNoiseAttenFloor: Float,
         val agcFilter: AGCFilter?,
         val lpf: LowPassFilter?,
+        val dynamicsAccumulator: ArrayList<Short>?,
         val notchAccumulator: ArrayList<Short>?,
         val rnNoiseAccumulator: ArrayList<Short>?,
         val agcAccumulator: ArrayList<Short>?,
@@ -318,6 +402,11 @@ internal object AudioFeederEngine {
 
         /** Run a single chunk through every enabled stage in place. */
         fun processChunkInPlace(chunk: ShortArray) {
+            dynamicsFilter?.let {
+                it.processInPlace(chunk)
+                logStageStats("post-DP", chunk)
+                dynamicsAccumulator?.appendAll(chunk)
+            }
             notchFilter?.let {
                 it.processInPlace(chunk)
                 logStageStats("post-notch", chunk)
@@ -394,8 +483,18 @@ internal object AudioFeederEngine {
             lowPass: LowPassConfig?,
             notch: NotchConfig?,
             agc: AGCConfig?,
+            dynamics: DynamicsConfig?,
             sampleRate: Int = AudioTestFeeder.TARGET_SAMPLE_RATE,
         ) {
+            if (dynamicsFilter != null && dynamicsAccumulator != null && dynamics != null && dynamicsAccumulator.isNotEmpty()) {
+                val tag = "in%+.0fdB-b1_%.0fto%.0f-r%.0f".format(
+                    dynamics.inputGainDb,
+                    dynamics.band0.highEdgeHz, dynamics.band1.highEdgeHz,
+                    dynamics.band1.ratio,
+                ).replace(',', '.')
+                val name = "${System.currentTimeMillis()}-$sourceLabel-dp-$tag.wav"
+                writeStageWav(artifactDir, name, dynamicsAccumulator, sourceLabel, "dynamics-processed", sampleRate)
+            }
             if (lpf != null && lpfAccumulator != null && lowPass != null && lpfAccumulator.isNotEmpty()) {
                 val name = "${System.currentTimeMillis()}-$sourceLabel-lowpass-" +
                     "${lowPass.cutoffHz.toInt()}Hz-${lowPass.rollOffDbPerOctave.toInt()}dboct.wav"
@@ -457,9 +556,18 @@ internal object AudioFeederEngine {
                 rnNoise: RnNoiseConfig?,
                 agc: AGCConfig?,
                 lowPass: LowPassConfig?,
+                dynamics: DynamicsConfig?,
                 sampleRate: Int = AudioTestFeeder.TARGET_SAMPLE_RATE,
                 expectedSize: Int,
             ): LiveFilterChain {
+                val dynamicsFilter = dynamics?.takeIf { it.enabled }?.let {
+                    Timber.tag(TAG).i(
+                        "  ⌁ DynamicsProcessing ENABLED: %s @ %d Hz (applied first, before notch/rnnoise/AGC/LPF/AI — mirrors HAL position in production)",
+                        it.describe(), sampleRate,
+                    )
+                    DynamicsProcessingFilter(sampleRateHz = sampleRate, config = it)
+                }
+
                 val notchFilter = notch?.takeIf { it.enabled }?.let {
                     val resolvedBands = it.resolveBands()
                     Timber.tag(TAG).i(
@@ -521,12 +629,14 @@ internal object AudioFeederEngine {
                 }
 
                 return LiveFilterChain(
+                    dynamicsFilter = dynamicsFilter,
                     notchFilter = notchFilter,
                     rnNoiseProcessor = rnNoiseProcessor,
                     rnNoiseMix = rnNoise?.mixClamped ?: 1f,
                     rnNoiseAttenFloor = rnNoise?.attenuationFloorLin ?: 0f,
                     agcFilter = agcFilter,
                     lpf = lpf,
+                    dynamicsAccumulator = if (dynamicsFilter != null) ArrayList(expectedSize) else null,
                     notchAccumulator = if (notchFilter != null) ArrayList(expectedSize) else null,
                     rnNoiseAccumulator = if (rnNoiseProcessor != null) ArrayList(expectedSize) else null,
                     agcAccumulator = if (agcFilter != null) ArrayList(expectedSize) else null,
@@ -663,17 +773,28 @@ internal object AudioFeederEngine {
         notch: NotchConfig?,
         rnNoise: RnNoiseConfig?,
         agc: AGCConfig?,
+        dynamics: DynamicsConfig?,
     ): ShortArray {
         // Fast path: no stages → return the input unchanged. The round-trip
         // analyzer doesn't mutate its input, so we can hand it the same array.
         val anyEnabled = (notch?.enabled == true) || (rnNoise?.enabled == true) ||
-            (agc?.enabled == true) || (lowPass?.enabled == true)
+            (agc?.enabled == true) || (lowPass?.enabled == true) ||
+            (dynamics?.enabled == true)
         if (!anyEnabled) return pcm
 
         // Operate on a defensive copy — round-trip is supposed to be idempotent
         // and we don't want to disturb the original pcm that the live chunk
         // emitter is about to consume.
         val out = pcm.copyOf()
+
+        // DP runs first to mirror the HAL position in production
+        // (AudioRecorderAI.tryAttachDynamicsProcessing).
+        dynamics?.takeIf { it.enabled }?.let {
+            DynamicsProcessingFilter(
+                sampleRateHz = AudioTestFeeder.TARGET_SAMPLE_RATE,
+                config = it,
+            ).processInPlace(out)
+        }
 
         notch?.takeIf { it.enabled }?.let {
             val resolvedBands = it.resolveBands()
@@ -715,7 +836,8 @@ internal object AudioFeederEngine {
         }
 
         Timber.tag(TAG).i(
-            "  ↻ Round-trip will run on FILTERED audio (notch=%s, rnnoise=%s, agc=%s, lpf=%s)",
+            "  ↻ Round-trip will run on FILTERED audio (dp=%s, notch=%s, rnnoise=%s, agc=%s, lpf=%s)",
+            dynamics?.takeIf { it.enabled }?.describe() ?: "off",
             notch?.takeIf { it.enabled }?.describe() ?: "off",
             rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
             agc?.takeIf { it.enabled }?.describe() ?: "off",

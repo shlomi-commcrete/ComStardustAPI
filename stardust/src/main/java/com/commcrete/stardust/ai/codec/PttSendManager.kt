@@ -20,7 +20,6 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,15 +30,39 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 object PttSendManager {
+
     /**
-     * Additional debug writer for post-AI-parsing audio (captured AFTER the
-     * [onChunkReady] callback has returned, so it reflects any in-place
-     * mutations performed by the AI parsing stage). Saved with `ai_parsed`
-     * in file name.
+     * Optional per-chunk hook for capturing the decoded (post-WavTokenizer)
+     * PCM as it is produced — i.e. the AI **output** that corresponds 1:1
+     * to each [addNewFrame] input chunk.
+     *
+     * Set this to a non-null callback (e.g. from `AudioFeederEngine` during
+     * a test-feed run) to receive every decoded chunk in encode order, and
+     * clear (set back to null) when capture is finished. Call
+     * [resetLiveDecodeState] between sessions to drop residual state.
+     *
+     * Implementation note: when this hook is registered, [handleTokenizerChunk]
+     * runs **one** decode per encoded chunk and shares the resulting PCM
+     * with [saveTofile]. Doing it in two independent decode passes corrupts
+     * the shared `WavTokenizerDecoder` instance state (`cutTokens`, `index`),
+     * because each pass reads what the OTHER pass wrote on the previous
+     * chunk — producing garbled output even though each stream's own
+     * continuity (`lastTokens` / `lastPCM`) looks fine.
      */
-    private val debugAiParsedWriter = DebugRawWavWriter()
-    /** True when the active AI recorder is configured to persist debug raw audio. */
-    private val isAiDebugRawAudioEnabled: Boolean = true
+    @Volatile
+    var onDecodedChunk: ((ShortArray) -> Unit)? = null
+
+    /**
+     * Drop the per-chunk decoder continuity state ([lastTokens] / [lastPCM])
+     * AND any buffered [frameBuffer]. Call between sessions / per source so
+     * the next stream starts with a clean previousTokens=null path through
+     * `WavTokenizerDecoder.decode` (no stale head-cut from a different stream).
+     */
+    fun resetLiveDecodeState() {
+        lastTokens = null
+        lastPCM = null
+        frameBuffer.clear()
+    }
 
     private val TAG = "PttManager"
     private val TAG_DECODE = "PttManager_Decode"
@@ -114,7 +137,35 @@ object PttSendManager {
 
         sendData(context, packedData)
 
-        saveTofile(context, packedData) // Need to delete
+        // ── Per-chunk decode (single source of truth) ────────────────────
+        // Both consumers (onDecodedChunk debug hook AND saveTofile's 45 s
+        // buffered WAV) need the decoded PCM for THIS encoded chunk. We
+        // MUST run that decode at most once per chunk, because
+        // WavTokenizerDecoder is a shared singleton that mutates private
+        // instance state (`cutTokens`, `index`) on every call. Two
+        // independent decode streams against the same instance silently
+        // clobber each other's `cutTokens` between chunks → wrong head-cut
+        // in `handleSmart` → garbled output, even though each stream's
+        // own `previousTokens` / `previousSamples` continuity looks fine.
+        // See `WavTokenizerDecoder.handleSmart` for the math.
+        val decodedSink = onDecodedChunk
+        val savingToFile = needToRun && DataManager.getSavePTTFilesRequired(context)
+        var decodedPcm: ShortArray? = null
+        if (decodedSink != null || savingToFile) {
+            try {
+                val unpack = BitPacking12.unpack12(packedData)
+                val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+                val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
+                lastTokens = unpack
+                lastPCM = pcm
+                decodedPcm = pcm
+                decodedSink?.invoke(pcm)
+            } catch (t: Throwable) {
+                Log.w(TAG_DECODE, "per-chunk decode failed", t)
+            }
+        }
+
+        saveTofile(context, packedData, decodedPcm = decodedPcm) // Need to delete
     }
 
     // Equivalent to private void SendData(byte[] data)
@@ -177,9 +228,9 @@ object PttSendManager {
         isFirst = true
         startRecording = 0L
         needToRun = true
-        frameBuffer.clear()
-        lastPCM = null
-        lastTokens = null
+        // resetLiveDecodeState() clears frameBuffer, lastPCM and lastTokens —
+        // keeping a single source of truth for the decode-side reset.
+        resetLiveDecodeState()
     }
 
     private fun ByteArray.toHexString(): String =
@@ -191,7 +242,12 @@ object PttSendManager {
     private val frameBuffer = mutableListOf<ShortArray>()
     private var lastPCM  : ShortArray? = null
     private var lastTokens  : List<Long>? = null
-    private fun saveTofile(context: Context, packData: ByteArray, finish : Boolean = false) {
+    private fun saveTofile(
+        context: Context,
+        packData: ByteArray,
+        finish: Boolean = false,
+        decodedPcm: ShortArray? = null,
+    ) {
         Log.d(TAG, "saveTofile called with data size: ${packData.size}")
         if (!needToRun || !DataManager.getSavePTTFilesRequired(context)) return
 
@@ -200,13 +256,19 @@ object PttSendManager {
             startRecording = System.currentTimeMillis()
         }
         Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
-        val unpack = BitPacking12.unpack12(packData)
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-        val finalPcmData = wavTokenizerDecoder.decode(unpack,lastTokens, lastPCM, modelTypeSelected)
-        Log.d(TAG_DECODE, "Decoded PCM data size")
+
+        val finalPcmData: ShortArray = if (decodedPcm != null) {
+            decodedPcm
+        } else {
+            val unpack = BitPacking12.unpack12(packData)
+            val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+            val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
+            lastTokens = unpack
+            lastPCM = pcm
+            pcm
+        }
+        Log.d(TAG_DECODE, "Decoded PCM data size ${finalPcmData.size}")
         frameBuffer.add(finalPcmData)
-        lastTokens = unpack
-        lastPCM = finalPcmData
 
         if ((System.currentTimeMillis() - startRecording > 45000) || finish) {
             Log.d(TAG, "3 seconds elapsed, saving to file.")
@@ -217,30 +279,37 @@ object PttSendManager {
                     val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
                     WavHelper.createWavFile(sampleArray, 24000, file)
 
-                    if (isAiDebugRawAudioEnabled) {
-                        try {
-                            debugAiParsedWriter.start(
-                                context = context,
-                                sampleRate = 24000,
-                                channels = 1,
-                                bitsPerSample = 16,
-                                fileNamePrefix = "ai_parsed",
-                                // Same directory AudioFeederEngine.persistArtifacts() writes to
-                                // (set in AudioFeederEngine.feedSingle()), so this debug WAV
-                                // sits alongside the per-stage filter artifacts.
-                                outputDir = RecorderUtils.dirToSaveFile,
-                            )
-                            debugAiParsedWriter.append(sampleArray, sampleArray.size)
-                        } finally {
-                            try {
-                                debugAiParsedWriter.stop()
-                            } catch (_: Throwable) {
-                            }
-                        }
-                    }
 
 
                     Log.d(TAG, "WAV file created: ${file.absolutePath}")
+                    // TODO: remove copy
+                    // Mirror a copy into the active debug-artifact directory
+                    // (set by AudioFeederEngine to the per-run artifactDir,
+                    // i.e. where *-ai_output_24k.wav lives). Lets the streaming
+                    // saveTofile output be A/B'd against the live per-chunk
+                    // *-ai_output_24k.wav side by side without hunting through
+                    // <DataManager.fileLocation>/test_feeder/<destination>/.
+                    // Wrapped in runCatching so production paths (where the
+                    // dir may not be writable, or may equal `file.parentFile`
+                    // turning this into a no-op) never break the WAV write.
+                    runCatching {
+                        val artifactDir = RecorderUtils.dirToSaveFile
+                        val srcParent = file.parentFile?.canonicalFile
+                        val dstParent = artifactDir.canonicalFile
+                        if (srcParent != dstParent) {
+                            if (!artifactDir.exists()) artifactDir.mkdirs()
+                            // Force a `.wav` extension on the mirror — the
+                            // production sinkFile uses `.pcm` (createSinkFile
+                            // in AudioFeederEngine) even though the bytes are
+                            // a real RIFF/WAVE container, which confuses
+                            // Audacity / ffmpeg auto-detect.
+                            val mirrorName = "${file.nameWithoutExtension}-ptt_finish.wav"
+                            val mirror = File(artifactDir, mirrorName)
+                            file.copyTo(mirror, overwrite = true)
+                            Log.d(TAG, "WAV mirror copied: ${mirror.absolutePath}")
+                        }
+                    }.onFailure { Log.w(TAG, "WAV mirror copy failed", it) }
+
                     savePtt(context = DataManager.context, chatID = chatID ?:"", path = fileToSave?.absolutePath?:"")
                 }
             } catch (e: Exception) {
