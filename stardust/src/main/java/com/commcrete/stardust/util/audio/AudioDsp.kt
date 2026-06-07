@@ -56,6 +56,20 @@ internal object AudioDsp {
     }
 
     /**
+     * In-place variant of [applyAiGain] for callers that already own the
+     * destination buffer (e.g. the live filter chain in [AudioFeederEngine]).
+     * Same scaling + int16 clamp semantics; no-op when [gain] is exactly 1f.
+     */
+    fun applyAiGainInPlace(buffer: ShortArray, gain: Float) {
+        if (gain == 1f) return
+        for (i in buffer.indices) {
+            val v = (buffer[i] * gain).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            buffer[i] = v.toShort()
+        }
+    }
+
+    /**
      * Resampler used to normalize any input rate to the target rate before
      * tokenization.
      *

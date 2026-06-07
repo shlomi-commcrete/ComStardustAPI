@@ -67,9 +67,12 @@ internal object AudioFeederEngine {
 
         // 2. Optional round-trip on the FILTERED 24 kHz audio (the codec is
         //    fixed at TARGET_SAMPLE_RATE, so the round-trip path stays there).
+        //    Pass the AI gain so the round-trip sees the exact same chain
+        //    (Notch → RNNoise → DP → AGC → AI-gain → LPF) the live emitter does.
+        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
         runRoundTripIfRequested(
             roundTrip, source, pcm24k, artifactDir,
-            lowPass, notch, rnNoise, agc, dynamics, onRoundTrip,
+            lowPass, notch, rnNoise, agc, dynamics, gain, onRoundTrip,
         )
 
         // 3. Build the live per-chunk filter chain at the NATIVE rate. The
@@ -78,6 +81,7 @@ internal object AudioFeederEngine {
         logChunkPlan(monoNative, nativeRate)
         val chain = LiveFilterChain.build(
             notch, rnNoise, agc, lowPass, dynamics,
+            aiGain = gain,
             sampleRate = nativeRate, expectedSize = monoNative.size,
         )
 
@@ -88,7 +92,6 @@ internal object AudioFeederEngine {
         //    that lives in artifactDir — so the file on disk is bit-identical
         //    to what the AI encoder receives, with no end-of-run buffering.
         val sinkFile = createSinkFile(context, destination, source.label)
-        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
         val aiInputWriter = com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
             start(
                 context = context,
@@ -124,7 +127,6 @@ internal object AudioFeederEngine {
             streamPcmAsChunks(
                 pcm = monoNative,
                 sampleRate = nativeRate,
-                gain = gain,
                 realtimePacing = realtimePacing,
                 chain = chain,
             ) { filteredChunk ->
@@ -217,7 +219,10 @@ internal object AudioFeederEngine {
      * to [onRoundTrip] and log it.
      *
      * Uses fresh, isolated filter instances via [applyFilterChainOneShot] so
-     * the live per-chunk chain built later keeps its own clean state.
+     * the live per-chunk chain built later keeps its own clean state. The
+     * [aiGain] is applied at the same chain slot as the live path
+     * (post-AGC, pre-LPF) so the round-trip metrics aren't biased by a
+     * different overall level than what the encoder sees in production.
      */
     private fun runRoundTripIfRequested(
         roundTrip: Boolean,
@@ -229,10 +234,11 @@ internal object AudioFeederEngine {
         rnNoise: RnNoiseConfig?,
         agc: AGCConfig?,
         dynamics: DynamicsConfig?,
+        aiGain: Float,
         onRoundTrip: (RoundTripResult) -> Unit,
     ) {
         if (!roundTrip) return
-        val pcmForRoundTrip = applyFilterChainOneShot(pcm, lowPass, notch, rnNoise, agc, dynamics)
+        val pcmForRoundTrip = applyFilterChainOneShot(pcm, lowPass, notch, rnNoise, agc, dynamics, aiGain)
         val rt = RoundTripAnalyzer.runRoundTrip(source, pcmForRoundTrip, artifactDir) ?: return
         onRoundTrip(rt)
         AudioTestFeederLogger.logRoundTrip(rt)
@@ -266,8 +272,9 @@ internal object AudioFeederEngine {
      *    sample accumulator, emit a full chunk whenever the accumulator fills,
      *  - flush any remainder as one PARTIAL/FINAL chunk on EOF.
      *
-     * Each fully-assembled chunk goes through:
-     *   gain → notch → rnnoise → AGC → LPF → [onChunk]
+     * Each fully-assembled chunk goes through the voice-first chain
+     * (notch → rnnoise → DP → AGC → AI-gain → LPF) inside [chain] before
+     * being handed to [onChunk].
      *
      * @param onChunk receives the final, post-LPF chunk handed to the AI
      *                encoder (typically `PttSendManager.addNewFrame`).
@@ -275,7 +282,6 @@ internal object AudioFeederEngine {
     private suspend fun CoroutineScope.streamPcmAsChunks(
         pcm: ShortArray,
         sampleRate: Int,
-        gain: Float,
         realtimePacing: Boolean,
         chain: LiveFilterChain,
         onChunk: (ShortArray) -> Unit,
@@ -312,7 +318,7 @@ internal object AudioFeederEngine {
                 if (chunkSampleIndex == samplesPerChunk) {
                     emitOneChunk(
                         chunkSamples, samplesPerChunk,
-                        chunkIndex, isPartial = false, gain, chain, onChunk,
+                        chunkIndex, isPartial = false, chain, onChunk,
                     )
                     chunkIndex++
                     chunkSampleIndex = 0
@@ -328,7 +334,7 @@ internal object AudioFeederEngine {
         if (chunkSampleIndex > 0 && isActive) {
             emitOneChunk(
                 chunkSamples, chunkSampleIndex,
-                chunkIndex, isPartial = true, gain, chain, onChunk,
+                chunkIndex, isPartial = true, chain, onChunk,
             )
             chunkIndex++
         }
@@ -341,26 +347,24 @@ internal object AudioFeederEngine {
     }
 
     /**
-     * Apply AI gain to [length] samples of [buffer] (allocating a fresh
-     * ShortArray, matching `AudioRecorderAI.processSamples()`), log raw
-     * stats, run the chunk through [chain] (which logs its own per-stage
-     * stats and feeds its accumulators), and finally hand the post-LPF
-     * chunk to [onChunk].
+     * Snapshot the raw chunk pre-chain (so we can log the unprocessed input
+     * stats), then run it through [chain] (which logs every enabled stage —
+     * notch → rnnoise → DP → AGC → AI-gain → LPF — in order) and finally
+     * hand the post-LPF chunk to [onChunk].
      */
     private fun emitOneChunk(
         buffer: ShortArray,
         length: Int,
         chunkIndex: Int,
         isPartial: Boolean,
-        gain: Float,
         chain: LiveFilterChain,
         onChunk: (ShortArray) -> Unit,
     ) {
-        val chunk = AudioDsp.applyAiGain(buffer, length, gain)
+        val chunk = if (length == buffer.size) buffer.copyOf() else buffer.copyOf(length)
 
         val raw = AudioStatsAnalyzer.quickChunkStats(chunk)
         Timber.tag(TAG).d(
-            "    chunk #%03d len=%d peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f%s",
+            "    chunk #%03d len=%d peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f%s [pre-chain]",
             chunkIndex, chunk.size, raw.peak, raw.peakDbFs,
             raw.rms, raw.rmsDbFs, raw.zeroCrossingRate,
             if (isPartial) "  [PARTIAL/FINAL]" else "",
@@ -393,6 +397,12 @@ internal object AudioFeederEngine {
         val rnNoiseAttenFloor: Float,
         val agcFilter: AGCFilter?,
         val lpf: LowPassFilter?,
+        /**
+         * Linear AI gain applied between AGC and LPF (post-leveller make-up).
+         * 1f = passthrough. Mirrors `AudioRecorderAI.processSamples()` semantics
+         * (per-sample multiply + int16 clamp via [AudioDsp.applyAiGainInPlace]).
+         */
+        val aiGain: Float,
         val dynamicsAccumulator: ArrayList<Short>?,
         val notchAccumulator: ArrayList<Short>?,
         val rnNoiseAccumulator: ArrayList<Short>?,
@@ -400,13 +410,25 @@ internal object AudioFeederEngine {
         val lpfAccumulator: ArrayList<Short>?,
     ) {
 
-        /** Run a single chunk through every enabled stage in place. */
+        /**
+         * Run a single chunk through every enabled stage in place.
+         *
+         * Order is **voice-first**:
+         *   Notch → RNNoise → DynamicsProcessing → AGC → AI-gain → LPF
+         *
+         * Rationale:
+         *  - Notch first kills tonal interference (mains hum, whistles) so
+         *    later stages don't react to them (no DP/AGC pumping on a tone).
+         *  - RNNoise sees natural mic levels (its training distribution),
+         *    on a tone-free signal — best speech vs. noise discrimination.
+         *  - DP shapes the cleaned signal (presence, multi-band).
+         *  - AGC drives the now-clean, shaped signal toward `targetLevel`.
+         *  - AI-gain is applied AFTER AGC as a post-make-up bias, so the
+         *    user's slider isn't immediately undone by AGC's release loop.
+         *  - LPF runs last to anti-alias before the resample-to-24 kHz +
+         *    encoder hand-off.
+         */
         fun processChunkInPlace(chunk: ShortArray) {
-            dynamicsFilter?.let {
-                it.processInPlace(chunk)
-                logStageStats("post-DP", chunk)
-                dynamicsAccumulator?.appendAll(chunk)
-            }
             notchFilter?.let {
                 it.processInPlace(chunk)
                 logStageStats("post-notch", chunk)
@@ -423,6 +445,11 @@ internal object AudioFeederEngine {
                 logStageStats("post-rnnoise", chunk)
                 rnNoiseAccumulator?.appendAll(chunk)
             }
+            dynamicsFilter?.let {
+                it.processInPlace(chunk)
+                logStageStats("post-DP", chunk)
+                dynamicsAccumulator?.appendAll(chunk)
+            }
             agcFilter?.let {
                 it.processInPlace(chunk)
                 val s = AudioStatsAnalyzer.quickChunkStats(chunk)
@@ -432,6 +459,14 @@ internal object AudioFeederEngine {
                     it.currentGainLinear(), it.currentEnvelope(),
                 )
                 agcAccumulator?.appendAll(chunk)
+            }
+            if (aiGain != 1f) {
+                AudioDsp.applyAiGainInPlace(chunk, aiGain)
+                val s = AudioStatsAnalyzer.quickChunkStats(chunk)
+                Timber.tag(TAG).d(
+                    "      ↳ post-aigain    peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f gain=%.2fx",
+                    s.peak, s.peakDbFs, s.rms, s.rmsDbFs, s.zeroCrossingRate, aiGain,
+                )
             }
             lpf?.let {
                 it.processInPlace(chunk)
@@ -557,12 +592,13 @@ internal object AudioFeederEngine {
                 agc: AGCConfig?,
                 lowPass: LowPassConfig?,
                 dynamics: DynamicsConfig?,
+                aiGain: Float,
                 sampleRate: Int = AudioTestFeeder.TARGET_SAMPLE_RATE,
                 expectedSize: Int,
             ): LiveFilterChain {
                 val dynamicsFilter = dynamics?.takeIf { it.enabled }?.let {
                     Timber.tag(TAG).i(
-                        "  ⌁ DynamicsProcessing ENABLED: %s @ %d Hz (applied first, before notch/rnnoise/AGC/LPF/AI — mirrors HAL position in production)",
+                        "  ⌁ DynamicsProcessing ENABLED: %s @ %d Hz (applied after RNNoise, before AGC — voice-first chain)",
                         it.describe(), sampleRate,
                     )
                     DynamicsProcessingFilter(sampleRateHz = sampleRate, config = it)
@@ -571,7 +607,7 @@ internal object AudioFeederEngine {
                 val notchFilter = notch?.takeIf { it.enabled }?.let {
                     val resolvedBands = it.resolveBands()
                     Timber.tag(TAG).i(
-                        "  ⌁ Notch ENABLED: %s → %d band(s): %s (applied per chunk @ %d Hz before AGC/LPF/AI)",
+                        "  ⌁ Notch ENABLED: %s → %d band(s): %s (applied first per chunk @ %d Hz so DP/AGC don't pump on tones)",
                         it.describe(), resolvedBands.size,
                         resolvedBands.joinToString(",") { b -> "${b.frequencyHz.toInt()}Hz@Q${b.q.toInt()}" },
                         sampleRate,
@@ -581,7 +617,7 @@ internal object AudioFeederEngine {
 
                 val rnNoiseProcessor = rnNoise?.takeIf { it.enabled }?.let {
                     Timber.tag(TAG).i(
-                        "  ⌁ RnNoise ENABLED: %s (applied per chunk @ %d Hz after notch, before AGC/LPF/AI)",
+                        "  ⌁ RnNoise ENABLED: %s (applied per chunk @ %d Hz after notch, before DP/AGC/LPF/AI — fed at natural mic level)",
                         it.describe(), sampleRate,
                     )
                     val proc = com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor().apply {
@@ -602,7 +638,7 @@ internal object AudioFeederEngine {
 
                 val agcFilter = agc?.takeIf { it.enabled }?.let {
                     Timber.tag(TAG).i(
-                        "  ⌁ AGC ENABLED: %s (applied per chunk @ %d Hz after notch, before LPF/AI)",
+                        "  ⌁ AGC ENABLED: %s (applied per chunk @ %d Hz after DP, before AI-gain/LPF)",
                         it.describe(), sampleRate,
                     )
                     AGCFilter(
@@ -618,7 +654,7 @@ internal object AudioFeederEngine {
 
                 val lpf = lowPass?.takeIf { it.enabled }?.let {
                     Timber.tag(TAG).i(
-                        "  ⌁ Low-pass ENABLED: cutoff=%.1f Hz, roll-off=%.1f dB/oct @ %d Hz (applied per chunk after AGC, before AI encode)",
+                        "  ⌁ Low-pass ENABLED: cutoff=%.1f Hz, roll-off=%.1f dB/oct @ %d Hz (applied LAST per chunk, after AI-gain)",
                         it.cutoffHz, it.rollOffDbPerOctave, sampleRate,
                     )
                     LowPassFilter(
@@ -626,6 +662,15 @@ internal object AudioFeederEngine {
                         cutoffHz = it.cutoffHz,
                         rollOffDbPerOctave = it.rollOffDbPerOctave,
                     )
+                }
+
+                if (aiGain != 1f) {
+                    Timber.tag(TAG).i(
+                        "  ⌁ AI gain ENABLED: %.2fx (applied per chunk @ %d Hz after AGC, before LPF — post-leveller make-up so AGC can't undo it)",
+                        aiGain, sampleRate,
+                    )
+                } else {
+                    Timber.tag(TAG).i("  ⌁ AI gain: 1.00x (passthrough)")
                 }
 
                 return LiveFilterChain(
@@ -636,6 +681,7 @@ internal object AudioFeederEngine {
                     rnNoiseAttenFloor = rnNoise?.attenuationFloorLin ?: 0f,
                     agcFilter = agcFilter,
                     lpf = lpf,
+                    aiGain = aiGain,
                     dynamicsAccumulator = if (dynamicsFilter != null) ArrayList(expectedSize) else null,
                     notchAccumulator = if (notchFilter != null) ArrayList(expectedSize) else null,
                     rnNoiseAccumulator = if (rnNoiseProcessor != null) ArrayList(expectedSize) else null,
@@ -753,9 +799,11 @@ internal object AudioFeederEngine {
     }
 
     /**
-     * Run [pcm] through the full DSP chain (notch → rnnoise → AGC → LPF) in
-     * a single batch using **fresh, isolated** filter instances, and return
-     * the filtered copy.
+     * Run [pcm] through the full DSP chain in a single batch using
+     * **fresh, isolated** filter instances, and return the filtered copy.
+     *
+     * Order matches the live per-chunk chain built in [LiveFilterChain]:
+     *   Notch → RNNoise → DynamicsProcessing → AGC → AI-gain → LPF
      *
      * Used to build the input buffer for [RoundTripAnalyzer] so the encoder
      * sees the same signal the live chunk emitter ships to `PttSendManager`.
@@ -774,12 +822,13 @@ internal object AudioFeederEngine {
         rnNoise: RnNoiseConfig?,
         agc: AGCConfig?,
         dynamics: DynamicsConfig?,
+        aiGain: Float,
     ): ShortArray {
         // Fast path: no stages → return the input unchanged. The round-trip
         // analyzer doesn't mutate its input, so we can hand it the same array.
         val anyEnabled = (notch?.enabled == true) || (rnNoise?.enabled == true) ||
             (agc?.enabled == true) || (lowPass?.enabled == true) ||
-            (dynamics?.enabled == true)
+            (dynamics?.enabled == true) || aiGain != 1f
         if (!anyEnabled) return pcm
 
         // Operate on a defensive copy — round-trip is supposed to be idempotent
@@ -787,15 +836,11 @@ internal object AudioFeederEngine {
         // emitter is about to consume.
         val out = pcm.copyOf()
 
-        // DP runs first to mirror the HAL position in production
-        // (AudioRecorderAI.tryAttachDynamicsProcessing).
-        dynamics?.takeIf { it.enabled }?.let {
-            DynamicsProcessingFilter(
-                sampleRateHz = AudioTestFeeder.TARGET_SAMPLE_RATE,
-                config = it,
-            ).processInPlace(out)
-        }
-
+        // Voice-first order — notch first kills tones so DP/AGC don't pump
+        // on them; RNNoise sees natural levels (its training distribution);
+        // DP shapes; AGC drives to target; AI gain is post-leveller make-up
+        // (so AGC can't undo it); LPF runs last to anti-alias before the
+        // encoder.
         notch?.takeIf { it.enabled }?.let {
             val resolvedBands = it.resolveBands()
             NotchFilter(
@@ -815,6 +860,13 @@ internal object AudioFeederEngine {
             }
         }
 
+        dynamics?.takeIf { it.enabled }?.let {
+            DynamicsProcessingFilter(
+                sampleRateHz = AudioTestFeeder.TARGET_SAMPLE_RATE,
+                config = it,
+            ).processInPlace(out)
+        }
+
         agc?.takeIf { it.enabled }?.let {
             AGCFilter(
                 sampleRateHz = AudioTestFeeder.TARGET_SAMPLE_RATE,
@@ -827,6 +879,8 @@ internal object AudioFeederEngine {
             ).processInPlace(out)
         }
 
+        if (aiGain != 1f) AudioDsp.applyAiGainInPlace(out, aiGain)
+
         lowPass?.takeIf { it.enabled }?.let {
             LowPassFilter(
                 sampleRateHz = AudioTestFeeder.TARGET_SAMPLE_RATE,
@@ -836,11 +890,12 @@ internal object AudioFeederEngine {
         }
 
         Timber.tag(TAG).i(
-            "  ↻ Round-trip will run on FILTERED audio (dp=%s, notch=%s, rnnoise=%s, agc=%s, lpf=%s)",
-            dynamics?.takeIf { it.enabled }?.describe() ?: "off",
+            "  ↻ Round-trip will run on FILTERED audio (notch=%s, rnnoise=%s, dp=%s, agc=%s, aiGain=%.2fx, lpf=%s)",
             notch?.takeIf { it.enabled }?.describe() ?: "off",
             rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
+            dynamics?.takeIf { it.enabled }?.describe() ?: "off",
             agc?.takeIf { it.enabled }?.describe() ?: "off",
+            aiGain,
             lowPass?.takeIf { it.enabled }
                 ?.let { "${it.cutoffHz.toInt()}Hz/${it.rollOffDbPerOctave.toInt()}dBoct" } ?: "off",
         )
