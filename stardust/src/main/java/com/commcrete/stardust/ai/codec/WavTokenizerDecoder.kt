@@ -75,63 +75,91 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     // If previousData is provided, it will be used for audio normalization (take the last
     // samples from previous decode to align the new audio)
     // also add 3 fake tokens at the end to help the model
-    fun decode(data: List<Long>, previousTokens: List<Long>? = null, previousSamples: ShortArray? = null, modelType: ModelType = ModelType.General) : ShortArray {
-        // Combine previous data with current data if previous data exists
-
+    fun decode(
+        data: List<Long>,
+        previousTokens: List<Long>? = null,
+        previousSamples: ShortArray? = null,
+        modelType: ModelType = ModelType.General,
+    ): ShortArray {
         val decodeType = SharedPreferencesUtil.getAudioDecodeType(context)
         val selectedModule = getSelectedModule(modelType)
 
-        val combinedData = if (previousTokens != null) {
-            previousTokens + data
-        } else {
-            data
-        }
+        // Keep decode no-throw: callers run on long-lived jobs and a single
+        // bad chunk must not kill the whole stream.
+        return runCatching {
+            // Combine previous data with current data if previous data exists
+            val combinedData = if (previousTokens != null) previousTokens + data else data
 
-        // Add 3 fake values at the end
-        val fixedData = combinedData + listOf(0, 0, 0, 0)
+            // Add fake values at the end
+            val fixedData = combinedData + listOf(0L, 0L, 0L, 0L)
+            val codes = convertLongListToTensor(fixedData)
 
-        val codes = convertLongListToTensor(fixedData)
-
-        var output: Tensor?
-        val duration = measureTime {
-            output = selectedModule.forward(IValue.from(codes)).toTensor()
-        }
-        //        Log.d(TAG, "Decoding took $duration")
-
-        // Remove the last 2400 samples
-        var audioData = output!!.dataAsFloatArray.dropLast(2400).toFloatArray()
-
-        //get index
-        // to cut after
-        //slice previous tokens
-
-//        val tensor = Tensor
-        // Return only the new part after alignment
-        if(decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
-            audioData = handleSmart(previousTokens, audioData, fixedData, output)
-        }
-
-        // Apply audio normalization if we have previous data
-        // 🔹 Apply crossfade with previousSamples to remove "ticks"
-
-        var unalignedAudio: ShortArray
-        if(decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
-            val alignedAudioData = if (previousSamples != null && previousSamples.isNotEmpty()) {
-                fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
-            } else {
-                audioData
+            val output: Tensor
+            val duration = measureTime {
+                output = selectedModule.forward(IValue.from(codes)).toTensor()
             }
-            unalignedAudio = floatArrayToPcm(alignedAudioData)
-        } else {
-            unalignedAudio = floatArrayToPcm(audioData)
+            //Log.d(TAG, "Decoding took $duration")
+
+            val modelOut = output.dataAsFloatArray
+            // Decoder normally appends ~2400 tail samples we trim off. If a
+            // bad output is shorter than that, keep it as-is instead of throwing.
+            var audioData = if (modelOut.size > 2400) {
+                modelOut.copyOfRange(0, modelOut.size - 2400)
+            } else {
+                modelOut
+            }
+
+            // Return only the new part after alignment
+            if (decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
+                audioData = runCatching {
+                    handleSmart(previousTokens, audioData, fixedData, output)
+                }.getOrElse { t ->
+                    Log.w(TAG, "handleSmart failed; using untrimmed audio", t)
+                    audioData
+                }
+            }
+
+            // Apply audio normalization if we have previous data
+            val unalignedAudio: ShortArray = if (decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
+                val alignedAudioData = if (previousSamples != null && previousSamples.isNotEmpty() && audioData.isNotEmpty()) {
+                    runCatching {
+                        fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
+                    }.getOrElse { t ->
+                        Log.w(TAG, "fixAudioAlignment2 failed; using unaligned audio", t)
+                        audioData
+                    }
+                } else {
+                    audioData
+                }
+                floatArrayToPcm(alignedAudioData)
+            } else {
+                floatArrayToPcm(audioData)
+            }
+
+            Log.d(TAG, "decode get size ${data.size} return ${unalignedAudio.size}")
+            loop++
+            unalignedAudio
+        }.getOrElse { t ->
+            Log.e(TAG, "decode failed; returning fallback PCM", t)
+            fallbackPcm(previousSamples, data.size)
         }
+    }
 
-
-
-
-        Log.d(TAG, "decode get size ${data.size } return ${unalignedAudio.size}")
-        loop ++
-        return unalignedAudio
+    /**
+     * Fallback PCM for failed decode paths.
+     *
+     * Prefer a short tail from [previousSamples] to keep continuity in live
+     * playback; otherwise return bounded silence estimated from token count.
+     */
+    private fun fallbackPcm(previousSamples: ShortArray?, currentTokenCount: Int): ShortArray {
+        val estimatedSamples = (currentTokenCount.coerceAtLeast(1) * 600)
+            .coerceAtMost(12_000)
+            .coerceAtLeast(600)
+        if (previousSamples != null && previousSamples.isNotEmpty()) {
+            val tail = min(previousSamples.size, estimatedSamples)
+            return previousSamples.copyOfRange(previousSamples.size - tail, previousSamples.size)
+        }
+        return ShortArray(estimatedSamples)
     }
 
     fun shortArrayToFloatArray(input: ShortArray): FloatArray {
@@ -166,7 +194,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
         val bestBoundaryToken = findLowestEnergyTokenBoundary(trimmed)
 
-        saveDecodedData(output!!.dataAsFloatArray, fixedData)
+        output?.let { saveDecodedData(it.dataAsFloatArray, fixedData) }
 
         index = bestBoundaryToken
         val totalTokens = trimmed.size / 600
@@ -231,7 +259,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
         if (tokensToCheck < 1) {
             Log.d(TAG, "Warning: Not enough tokens to check boundaries")
-            return totalTokens - 1
+            return max(0, totalTokens - 1)
         }
 
 //        Log.d(TAG, "\nAnalyzing $tokensToCheck token boundaries:")
@@ -272,7 +300,9 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         }
 
         // Find lowest-energy token
-        val minIndex = energies.indexOf(energies.minOrNull()!!)
+        if (energies.isEmpty()) return max(0, totalTokens - 1)
+        val minEnergy = energies.minOrNull() ?: return max(0, totalTokens - 1)
+        val minIndex = energies.indexOf(minEnergy)
         val bestToken = tokenIndices[minIndex]
 
         Log.d(TAG, "\n✓ Lowest energy found at token $bestToken with energy %.6f".format(energies[minIndex]))

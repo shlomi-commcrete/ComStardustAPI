@@ -2,8 +2,6 @@ package com.commcrete.aiaudio.codecs
 
 import android.content.Context
 import android.util.Log
-import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import org.pytorch.*
 import java.io.File
 import java.io.FileOutputStream
@@ -32,33 +30,60 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     }
 
     fun encode(audioSamples: ShortArray): LongArray {
-        if (audioSamples.size > EXPECTED_SAMPLES) {
-            throw IllegalArgumentException("Expected not more than 12,000 samples, got ${audioSamples.size}")
+        // Keep encoder no-throw in live streams: a single bad chunk must not
+        // terminate the encoding job. Oversized chunks are trimmed to model
+        // window and failures return deterministic fallback tokens.
+        val safeInput = when {
+            audioSamples.isEmpty() -> {
+                Log.w(TAG, "encode received empty audio; returning fallback token")
+                return fallbackTokens(audioSamples.size)
+            }
+            audioSamples.size > EXPECTED_SAMPLES -> {
+                Log.w(TAG, "encode input larger than expected (${audioSamples.size} > $EXPECTED_SAMPLES); trimming")
+                audioSamples.copyOf(EXPECTED_SAMPLES)
+            }
+            else -> audioSamples
         }
-        Log.d(TAG, "Encoding ${audioSamples.size} audio samples")
-        val selectedModule = getSelectedModule(DataManager.context)
 
-        // Convert ShortArray to FloatArray in range [-1.0, 1.0]
-        val floatSamples = shortArrayToFloatArray(audioSamples)
+        return runCatching {
+            Log.d(TAG, "Encoding ${safeInput.size} audio samples")
+            val selectedModule = getSelectedModule()
 
-        Log.d(TAG, "First 5 float samples before padding: ${floatSamples.take(5)}")
-        // Ensure exactly 12,000 samples by padding with zeros or trimming
-        val paddedSamples = padOrTrim(floatSamples)
-        Log.d(TAG, "First 5 float samples after padding: ${paddedSamples.take(5)}")
-        // Create samples to input tensor
-        val inputTensor = Tensor.fromBlob(paddedSamples, longArrayOf(1, paddedSamples.size.toLong()))
-        Log.d(TAG, "Input tensor shape: ${inputTensor.shape().joinToString(",")}")
-        // Run the model, the result are the tokens
-        var moduleOutputTensor: Tensor?
-        val duration = measureTime {
-            moduleOutputTensor = selectedModule.forward(IValue.from(inputTensor)).toTensor()
+            // Convert ShortArray to FloatArray in range [-1.0, 1.0]
+            val floatSamples = shortArrayToFloatArray(safeInput)
+
+            Log.d(TAG, "First 5 float samples before padding: ${floatSamples.take(5)}")
+            // Ensure exactly 12,000 samples by padding with zeros or trimming
+            val paddedSamples = padOrTrim(floatSamples)
+            Log.d(TAG, "First 5 float samples after padding: ${paddedSamples.take(5)}")
+            // Create samples to input tensor
+            val inputTensor = Tensor.fromBlob(paddedSamples, longArrayOf(1, paddedSamples.size.toLong()))
+            Log.d(TAG, "Input tensor shape: ${inputTensor.shape().joinToString(",")}")
+
+            val moduleOutputTensor: Tensor
+            val duration = measureTime {
+                moduleOutputTensor = selectedModule.forward(IValue.from(inputTensor)).toTensor()
+            }
+            Log.d(TAG, "Encoding took $duration")
+
+            val outputData = moduleOutputTensor.dataAsLongArray
+            val tokens = trimToExpectedTokens(outputData, safeInput.size)
+            if (tokens.isNotEmpty()) tokens else fallbackTokens(safeInput.size)
+        }.getOrElse { t ->
+            Log.e(TAG, "encode failed; returning fallback tokens", t)
+            fallbackTokens(safeInput.size)
         }
-        Log.d(TAG, "Encoding took $duration")
+    }
 
-        val outputData = moduleOutputTensor!!.dataAsLongArray
-        val tokens = trimToExpectedTokens(outputData, audioSamples.size)
-
-        return tokens
+    /**
+     * Fallback token sequence used when encode fails. Values are 12-bit-safe
+     * (0..4095), deterministic and sized to preserve approximate timing.
+     */
+    private fun fallbackTokens(audioSamplesSize: Int): LongArray {
+        val expected = (audioSamplesSize / SAMPLES_PER_TOKEN)
+            .coerceAtLeast(1)
+            .coerceAtMost(EXPECTED_SAMPLES / SAMPLES_PER_TOKEN)
+        return LongArray(expected) { 0L }
     }
 
     fun shortArrayToFloatArray(shortArray: ShortArray): FloatArray {
@@ -101,7 +126,7 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
     }
 
 
-    fun getSelectedModule (context: Context) : Module{
+    fun getSelectedModule(): Module {
 //        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
 
         val modelType = module
