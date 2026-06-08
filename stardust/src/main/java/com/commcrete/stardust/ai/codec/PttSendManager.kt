@@ -57,11 +57,19 @@ object PttSendManager {
      * AND any buffered [frameBuffer]. Call between sessions / per source so
      * the next stream starts with a clean previousTokens=null path through
      * `WavTokenizerDecoder.decode` (no stale head-cut from a different stream).
+     *
+     * Also resets the shared [wavTokenizerDecoder]'s **internal** per-stream
+     * state ([WavTokenizerDecoder.reset] — `index`, `cutTokens`, `loop`,
+     * `listEnergy`). Without this, `cutTokens` from the last chunk of the
+     * previous stream leaks into [WavTokenizerDecoder.handleSmart] for the
+     * next stream's first chunk, slicing the wrong amount off the head and
+     * producing progressively less intelligible output across feed runs.
      */
     fun resetLiveDecodeState() {
         lastTokens = null
         lastPCM = null
         frameBuffer.clear()
+        wavTokenizerDecoder.reset()
     }
 
     private val TAG = "PttManager"

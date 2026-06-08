@@ -32,15 +32,43 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
 
-    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        Log.d(TAG, "Loading WavTokenizerEncoder model")
-        val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
-    }
+//    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+//        Log.d(TAG, "Loading WavTokenizerEncoder model")
+//        val modelAssetName = "wav_to_codes_large_android.ptl"
+//        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+//    }
 
 
     init {
         // If your model is in assets: just put the asset name here.
+    }
+
+    /**
+     * Drop all per-stream state so the next [decode] call starts fresh.
+     *
+     * Required between independent streams (PTT key-down / new feeder
+     * source / restart) because [handleSmart] uses [cutTokens] from the
+     * previous decode to compute the head-cut of the next chunk:
+     *
+     * ```
+     * cutFrom = (20 − cutTokens) × 600
+     * trimmed = trimmed[cutFrom .. ]
+     * ```
+     *
+     * If [cutTokens] carries over from a different stream, the next
+     * stream's first chunk is sliced at the wrong offset → audible
+     * head-cut artefact + misaligned subsequent chunks → output that
+     * gets progressively less intelligible across runs (the symptom
+     * `cutTokens=0` resets at construction but never again until this
+     * method is called).
+     *
+     * Safe to call repeatedly; cheap (just clears 3 ints + a list).
+     */
+    fun reset() {
+        index = 0
+        cutTokens = 0
+        loop = 0
+        listEnergy.clear()
     }
 
     // Decode the list of Long tokens into PCM ShortArray
@@ -434,11 +462,12 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     }
     fun getSelectedModule (modelTypeSelected: ModelType) : Module{
 
-        val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
-            moduleEnglish
-        } else {
-            module
-        }
+        val modelType = module
+//        if(modelTypeSelected == ModelType.English) {
+//            moduleEnglish
+//        } else {
+//            module
+//        }
         return modelType
     }
 
@@ -461,7 +490,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
     fun initModule() {
         Log.d(TAG, "WavTokenizerDecoder module initialized")
         module
-        moduleEnglish
+        //moduleEnglish
         Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
     }
 }

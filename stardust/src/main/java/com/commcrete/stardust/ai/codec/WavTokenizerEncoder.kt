@@ -22,11 +22,11 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
 
-    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        Log.d(TAG, "Loading WavTokenizerEncoder model")
-        val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
-    }
+//    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+//        Log.d(TAG, "Loading WavTokenizerEncoder model")
+//        val modelAssetName = "wav_to_codes_large_android.ptl"
+//        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+//    }
     init {
         // If your model is in assets: just put the asset name here.
     }
@@ -102,20 +102,21 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
 
 
     fun getSelectedModule (context: Context) : Module{
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
+//        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
 
-        val modelType = if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
-            moduleEnglish
-        } else {
-            module
-        }
+        val modelType = module
+//        if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
+//            moduleEnglish
+//        } else {
+//            module
+//        }
         return modelType
     }
 
     fun initModule() {
         Log.d(TAG, "WavTokenizerEncoder module initialized")
         module
-        moduleEnglish
+        //moduleEnglish
         Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
     }
 }
