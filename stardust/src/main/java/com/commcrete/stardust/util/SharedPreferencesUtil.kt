@@ -18,6 +18,8 @@ import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
+import com.commcrete.stardust.util.audio.AiRecorderProfile
+import com.commcrete.stardust.util.audio.RecordingDeviceType
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
@@ -157,6 +159,7 @@ object SharedPreferencesUtil {
     private const val KEY_AI_TONAL_WHINE_CENTER_HZ = "ai_tonal_whine_center_hz"
     private const val KEY_AI_TONAL_WHINE_Q = "ai_tonal_whine_q"
     private const val KEY_AI_TONAL_WHINE_ATTENUATION_DB = "ai_tonal_whine_attenuation_db"
+    private const val KEY_AI_RECORDER_PROFILES = "ai_recorder_profiles"
 
 
     private fun getPrefs(context: Context): SharedPreferences {
@@ -220,6 +223,45 @@ object SharedPreferencesUtil {
 
     fun resetAiSourceProfileSettings(context: Context) {
         getPrefs(context).edit().remove(KEY_AI_SOURCE_PROFILE_SETTINGS).apply()
+    }
+
+    /**
+     * Load the per-device-type recorder DSP profiles. Keys are stored as
+     * [RecordingDeviceType.name] strings so the JSON is human-readable.
+     * Returns an empty map (callers should fall back to their own defaults)
+     * when nothing has been persisted yet.
+     */
+    fun getAiRecorderProfiles(context: Context): Map<RecordingDeviceType, AiRecorderProfile> {
+        val json = getPrefs(context).getString(KEY_AI_RECORDER_PROFILES, null)
+            ?: return emptyMap()
+        return try {
+            val type = object : TypeToken<Map<String, AiRecorderProfile>>() {}.type
+            val raw = Gson().fromJson<Map<String, AiRecorderProfile>>(json, type)
+                ?: return emptyMap()
+            raw.mapNotNull { (key, profile) ->
+                runCatching { RecordingDeviceType.valueOf(key) }.getOrNull()?.let { type ->
+                    type to profile
+                }
+            }.toMap()
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    /**
+     * Persist the full [profiles] map. Existing entries not present in
+     * [profiles] are discarded — pass the full map from [RecorderUtils].
+     */
+    fun setAiRecorderProfiles(
+        context: Context,
+        profiles: Map<RecordingDeviceType, AiRecorderProfile>,
+    ) {
+        val serializable = profiles.map { (type, profile) ->
+            type.name to profile
+        }.toMap()
+        getPrefs(context).edit()
+            .putString(KEY_AI_RECORDER_PROFILES, Gson().toJson(serializable))
+            .apply()
     }
 
     /**

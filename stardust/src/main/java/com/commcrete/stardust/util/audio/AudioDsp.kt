@@ -70,6 +70,43 @@ internal object AudioDsp {
     }
 
     /**
+     * Soft-saturating variant of [applyAiGainInPlace] using a tanh curve.
+     * Same level boost as the linear path but **never hard-clips** — peaks
+     * roll off smoothly toward ±1 instead of getting square-wave clipped.
+     *
+     * Behaviour vs. linear, sample-by-sample:
+     *
+     *  - For samples below ~30 % of full scale (|x_norm| < 0.3) the curve
+     *    is indistinguishable from linear gain → quiet content unaffected.
+     *  - Past ~50 % of full scale tanh starts compressing → loud peaks get
+     *    rounded instead of clipped.
+     *  - At very high drive (gain ≥ 4–5) the curve approaches a soft
+     *    limiter → no output sample exceeds ±32767 even when the linear
+     *    path would have clipped massively.
+     *
+     * Result on voice fed at high `gain` (e.g. 5x = +14 dB): output level
+     * is hot (similar to hard-clipped) but the spectrum gains gentle even
+     * harmonics ("warmth") instead of harsh odd harmonics ("buzz"). The
+     * AI encoder sees a hot signal without the brittle clipping artifacts.
+     *
+     * No-op when [gain] is exactly 1f.
+     */
+    fun applyAiGainSoftSatInPlace(buffer: ShortArray, gain: Float) {
+        if (gain == 1f) return
+        val scale = Short.MAX_VALUE.toFloat()
+        for (i in buffer.indices) {
+            // Normalize → drive → tanh → denormalize. Tanh inherently
+            // saturates within ±1 so the int16 clamp is just a belt-and-
+            // braces safety net (won't trigger in normal operation).
+            val xNorm = buffer[i] / scale
+            val sat = kotlin.math.tanh(gain * xNorm)
+            val v = (sat * scale).toInt()
+                .coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt())
+            buffer[i] = v.toShort()
+        }
+    }
+
+    /**
      * Resampler used to normalize any input rate to the target rate before
      * tokenization.
      *

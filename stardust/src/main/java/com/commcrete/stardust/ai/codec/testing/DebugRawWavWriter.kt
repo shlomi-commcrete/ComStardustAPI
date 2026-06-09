@@ -11,7 +11,6 @@ import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
 import android.util.Log
 import androidx.annotation.RequiresApi
-import androidx.core.net.toUri
 import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
 import java.io.FileOutputStream
@@ -170,15 +169,14 @@ class DebugRawWavWriter {
     @RequiresApi(Build.VERSION_CODES.Q)
     private fun openViaMediaStore(context: Context, displayName: String) {
         val cr = context.contentResolver
+        val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/${RecorderUtils.dirToSaveFile.name}"
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, "audio/wav")
-            put(MediaStore.MediaColumns.RELATIVE_PATH, RecorderUtils.dirToSaveFile.absolutePath ?: "${Environment.DIRECTORY_DOWNLOADS}/$SUBDIR")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
             put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        @SuppressLint("NewApi")
-        val downloadsUri = RecorderUtils.dirToSaveFile.toUri() ?: MediaStore.Downloads.EXTERNAL_CONTENT_URI
-        val uri = cr.insert(downloadsUri, values)
+        val uri = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: error("MediaStore insert returned null")
 
         // "rw" mode is required for FileChannel.position()/write to seek backwards

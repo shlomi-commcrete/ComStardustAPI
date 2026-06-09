@@ -2,11 +2,15 @@ package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.os.Environment
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.Carrier
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
@@ -30,12 +34,87 @@ object RecorderUtils {
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
-    var dirToSaveFile: File = DataManager.context.cacheDir.resolve("ptt").also { it.mkdirs() }
+    var dirToSaveFile: File =
+        File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Stardust_ptt_files")
+            .also { it.mkdirs() }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Per-device-type DSP profiles
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Per-device-type DSP profile presets keyed by [RecordingDeviceType].
+     * Each device type can have multiple profiles (presets) for user selection.
+     * Loaded from [SharedPreferencesUtil] in [init]; updated via
+     * [setAiRecorderProfiles] which persists each change immediately.
+     * Currently one preset per device type, expandable for user-selectable options.
+     */
+    private val profileMap: MutableMap<RecordingDeviceType, List<AiRecorderProfile>> = mutableMapOf<RecordingDeviceType, List<AiRecorderProfile>>().apply {
+        RecordingDeviceType.entries.forEach { deviceType ->
+            val profile = getAiRecorderDefaultProfilePreset(deviceType)
+            // Only add if at least one config is non-null (profile is meaningful)
+            if (profile.lowPass != null || profile.notch != null || profile.rnNoise != null ||
+                profile.agc != null || profile.dynamics != null) {
+                put(deviceType, listOf(profile))
+            }
+        }
+    }
 
 
+    fun getAiRecorderDefaultProfilePreset(recordingDeviceType: RecordingDeviceType): AiRecorderProfile {
+        return AiRecorderProfile(
+            title = "Default",
+            isActive = true,
+            lowPass = LowPassConfig.getDefault(recordingDeviceType),
+            notch = NotchConfig.getDefault(recordingDeviceType),
+            rnNoise = RnNoiseConfig.getDefault(recordingDeviceType),
+            agc = AGCConfig.getDefault(recordingDeviceType),
+            dynamics = DynamicsConfig.getDefault(recordingDeviceType),
+        )
+    }
 
-    fun init(pttInterface : PttInterface){
+    fun getAiRecorderProfiles(recordingDeviceType: RecordingDeviceType): List<AiRecorderProfile>? = profileMap[recordingDeviceType]
+
+    fun getAiActiveRecorderProfile(recordingDeviceType: RecordingDeviceType): AiRecorderProfile? =
+        profileMap[recordingDeviceType]?.find { it.isActive }
+
+    /**
+     * Update (or add) profiles for a device-type and persist to [SharedPreferencesUtil].
+     */
+    fun setAiRecorderProfiles(context: Context, recordingDeviceType: RecordingDeviceType, profiles: List<AiRecorderProfile>) {
+        profileMap[recordingDeviceType] = profiles
+        val flatMap = profileMap.flatMap { (type, profs) ->
+            profs.map { type to it }
+        }.toMap()
+        @Suppress("UNCHECKED_CAST")
+        SharedPreferencesUtil.setAiRecorderProfiles(context, flatMap)
+    }
+
+    /**
+     * Convenience function to update a single preset at a given index (or add as new).
+     */
+    fun setAiRecorderProfile(context: Context, recordingDeviceType: RecordingDeviceType, profile: AiRecorderProfile, presetIndex: Int = 0) {
+        val profiles = profileMap[recordingDeviceType]?.toMutableList() ?: mutableListOf()
+        if (presetIndex < profiles.size) {
+            profiles[presetIndex] = profile
+        } else {
+            profiles.add(profile)
+        }
+        setAiRecorderProfiles(context, recordingDeviceType, profiles)
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+
+    fun init(pttInterface: PttInterface) {
         RecorderUtils.pttInterface = pttInterface
+        if (!dirToSaveFile.exists()) dirToSaveFile.mkdirs()
+        // Load persisted profiles; overlay onto defaults so any type not yet
+        // saved keeps the built-in sensible values.
+        val saved = SharedPreferencesUtil.getAiRecorderProfiles(DataManager.context)
+        // Group loaded profiles by device type to support multiple presets
+        saved.entries.groupBy { it.key }.forEach { (type, entries) ->
+            profileMap[type] = entries.map { it.value }
+        }
     }
 
     fun onPTTTest(){
@@ -109,34 +188,79 @@ object RecorderUtils {
 
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
         PttSendManager.restart()
-        val sourceProfileSettings = SharedPreferencesUtil.getAiSourceProfileSettings(DataManager.context)
+
+        var lastLoggedFilterSignature: String? = null
+        var lastLoggedChunkShape: String? = null
+
+        fun buildFilterSignature(profile: AiRecorderProfile?): String {
+            if (profile == null) return "preset=<none>; filters=[]"
+            val enabledFilters = mutableListOf<String>()
+            profile.lowPass?.takeIf { it.enabled }?.let {
+                enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
+            }
+            profile.notch?.takeIf { it.enabled }?.let {
+                enabledFilters.add("notch(harmonics=${it.harmonics.size})")
+            }
+            profile.rnNoise?.takeIf { it.enabled }?.let {
+                enabledFilters.add("rnNoise(mix=${it.mix}, maxAttenDb=${it.maxAttenuationDb})")
+            }
+            profile.agc?.takeIf { it.enabled }?.let {
+                enabledFilters.add(
+                    "agc(target=${it.targetLevel}, atk=${it.attackMs}, rel=${it.releaseMs}, +${it.maxGainDb}/${it.minGainDb}, gate=${it.noiseGateLevel})"
+                )
+            }
+            profile.dynamics?.takeIf { it.enabled }?.let {
+                enabledFilters.add(
+                    "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
+                )
+            }
+            return "preset=${profile.title}; active=${profile.isActive}; filters=[${enabledFilters.joinToString()}]"
+        }
+
+        val forwardChunkToAi: (ShortArray, Int, Int?, Int) -> Unit = { pcmArray, captureRate, deviceType, chunkIndex ->
+            val recordingDeviceType = inferDeviceType(deviceType)
+            // Use the first preset for this device type, or null if no profiles available
+            val activeProfile = profileMap[recordingDeviceType]?.firstOrNull { it.isActive }
+            val filterSignature = buildFilterSignature(activeProfile)
+            val expectedSamples = (captureRate * 500) / 1000
+            val chunkShape = "rate=${captureRate}Hz size=${pcmArray.size} expected=${expectedSamples}"
+
+            if (chunkIndex == 0 || lastLoggedFilterSignature != filterSignature) {
+                Log.d(
+                    "AudioRecorder",
+                    "AI filter preset for chunk=$chunkIndex deviceType=$recordingDeviceType -> $filterSignature"
+                )
+                lastLoggedFilterSignature = filterSignature
+            }
+
+            if (chunkIndex <= 1 || lastLoggedChunkShape != chunkShape || pcmArray.size != expectedSamples) {
+                val level = if (pcmArray.size == expectedSamples) "D" else "W"
+                val message = "AI chunk shape ($level) chunk=$chunkIndex deviceType=$recordingDeviceType -> $chunkShape"
+                if (pcmArray.size == expectedSamples) Log.d("AudioRecorder", message)
+                else Log.w("AudioRecorder", message)
+                lastLoggedChunkShape = chunkShape
+            }
+
+            PttSendManager.addNewFrame(
+                pcmArray = pcmArray,
+                file = file,
+                carrier = carrier,
+                chatID = destination,
+                nativeRate = captureRate,
+                profile = activeProfile,
+            )
+        }
 
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {
-//            // Cleaning pipeline: hardware NS off (RNNoise replaces it),
-//            // DC removal + HPF + RNNoise + noise gate.
-//            useHardwareEffects = false
-//            useDcRemoval = true
-//            useHighPass = true
-//            highPassCutoffHz = 80f
-//            useSoftClip = true
-//            useNoiseGate = true
-//            noiseGateThresholdRms = 300
-//            noiseProcessor = RnNoiseProcessor()
-//
-//            useSourceProfile = sourceProfileSettings.useSourceProfile
-//            preferProcessedSource = sourceProfileSettings.preferProcessedSource
-//            sourceProfileOverrides = sourceProfileSettings.profiles.mapKeys { it.key.androidSource }
-//                .mapValues { (_, profile) -> profile.toRecorderSourceProfile() }
-
-            onChunkReady = { pcmArray, _ ->
-                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+            onChunkReady = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
+                forwardChunkToAi(pcmArray, captureRate, deviceType, chunkIndex)
             }
-            onPartialFinalChunk = { pcmArray, _ ->
-                PttSendManager.addNewFrame(pcmArray, file, carrier, destination)
+            onPartialFinalChunk = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
+                forwardChunkToAi(pcmArray, captureRate, deviceType, chunkIndex)
             }
             onError = { throwable ->
                 Log.d("AudioRecorder", "error $throwable")
@@ -152,29 +276,28 @@ object RecorderUtils {
         Log.d("AudioRecorder", "AudioRecorderAI started")
     }
 
-//    private fun AiSourceProfile.toRecorderSourceProfile(): AudioRecorderAI.SourceProfile {
-//        return AudioRecorderAI.SourceProfile(
-//            makeupGain = makeupGain,
-//            agcTargetRms = agcTargetRms,
-//            agcMaxGain = agcMaxGain,
-//            agcNoiseFloorRms = agcNoiseFloorRms,
-//            agcMinGain = 0.25f,
-//            agcAttackSec = 0.010f,
-//            agcReleaseSec = 0.350f,
-//            noiseGateRms = noiseGateRms,
-//            expanderRatio = expanderRatio,
-//            expanderOpenSnr = expanderOpenSnr,
-//            expanderMinGain = expanderMinGain,
-//            expanderAttackSec = expanderAttackSec,
-//            expanderReleaseSec = expanderReleaseSec,
-//        )
-//    }
+    /**
+     * Infer [RecordingDeviceType] from actual route when available,
+     * then input-device preference as fallback.
+     *
+     * USB routes can represent jbox hardware; model prefixes map to:
+     * `SD-100*` -> [RecordingDeviceType.JBOX_INTERNAL]
+     * `SD-200*` -> [RecordingDeviceType.JBOX_EXTERNAL]
+     */
+    private fun inferDeviceType(actualInputType: Int? = null): RecordingDeviceType {
+        val hasActualUsbRoute = actualInputType == AudioDeviceInfo.TYPE_USB_DEVICE ||
+            actualInputType == AudioDeviceInfo.TYPE_USB_HEADSET ||
+            actualInputType == AudioDeviceInfo.TYPE_USB_ACCESSORY
 
-    private fun finishAIRecording(context: Context) {
-        Scopes.getDefaultCoroutine().launch {
-            delay(3000)
-            PttSendManager.finish(context)
+        if(BittelUsbManager2.isJboxAudioConnected() && hasActualUsbRoute) {
+            val model = ConfigurationUtils.bittelConfiguration.value?.deviceModel
+            return when {
+                model?.startsWith("SD-100", ignoreCase = true) == true -> RecordingDeviceType.JBOX_EXTERNAL
+                model?.startsWith("SD-200", ignoreCase = true) == true -> RecordingDeviceType.JBOX_INTERNAL
+                else -> RecordingDeviceType.OTHER
+            }
         }
+        return RecordingDeviceType.OTHER
     }
 
     // ----------------------------------------
@@ -213,6 +336,13 @@ object RecorderUtils {
         Scopes.getDefaultCoroutine().launch {
             delay(50)
             aiRecorder = null
+        }
+    }
+
+    private fun finishAIRecording(context: Context) {
+        Scopes.getDefaultCoroutine().launch {
+            delay(3000)
+            PttSendManager.finish(context)
         }
     }
 

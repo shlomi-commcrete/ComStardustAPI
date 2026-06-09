@@ -21,17 +21,33 @@ package com.commcrete.stardust.util.audio
  */
 data class AGCConfig(
     val enabled: Boolean = true,
-    val targetLevel: Float = 0.2f,
-    val attackMs: Float = 5f,
-    val releaseMs: Float = 250f,
-    val maxGainDb: Float = 24f,
-    val minGainDb: Float = -12f,
-    val noiseGateLevel: Float = 0.005f,
+    val targetLevel: Float = 0.15f,
+    val attackMs: Float = 30f,
+    val releaseMs: Float = 350f,
+    val maxGainDb: Float = 18f,
+    val minGainDb: Float = -6f,
+    val noiseGateLevel: Float = 0.003f,
 ) {
     /** Short human-readable summary for logs. */
     internal fun describe(): String =
         "tgt=%.2f/atk=%.0fms/rel=%.0fms/+%.0fdB/%.0fdB/gate=%.3f".format(
             targetLevel, attackMs, releaseMs, maxGainDb, minGainDb, noiseGateLevel
         )
+
+    companion object {
+        fun getDefault(deviceType: RecordingDeviceType): AGCConfig? = when (deviceType) {
+            RecordingDeviceType.JBOX_EXTERNAL -> AGCConfig(
+                enabled = true,
+                targetLevel = 0.12f,
+                attackMs = 50f,
+                releaseMs = 400f,
+                maxGainDb = 12f,
+                minGainDb = -12f,
+                noiseGateLevel = 0.002f
+            )
+            RecordingDeviceType.JBOX_INTERNAL -> null
+            else -> null
+        }
+    }
 }
 

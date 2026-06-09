@@ -3,7 +3,6 @@ package com.commcrete.stardust.ai.codec
 import android.content.Context
 import android.util.Log
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
 import com.commcrete.stardust.ai.codec.filter.PyTorchInitGate
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.delay

@@ -134,6 +134,16 @@ object AudioTestFeeder {
         rnNoise: RnNoiseConfig? = null,
         agc: AGCConfig? = null,
         dynamics: DynamicsConfig? = null,
+        declick: DeclickConfig? = null,
+        /**
+         * `true` → AI gain uses tanh soft saturation (no hard clipping at
+         * any drive level; loud peaks roll off smoothly past ~50 % FS).
+         * `false` (default) → linear gain + int16 hard clip, matches
+         * production `AudioRecorderAI.processSamples`. Set to `true` when
+         * you want hot AI-encoder input (slider 300–500) without the
+         * smeared / square-wave clipping that linear mode produces.
+         */
+        aiGainSoftSat: Boolean = false,
         onDone: (() -> Unit)? = null,
     ): Job {
         stop()
@@ -146,14 +156,15 @@ object AudioTestFeeder {
             val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, destination)
             if (roundTrip || (lowPass?.enabled == true) || (notch?.enabled == true) ||
                 (rnNoise?.enabled == true) || (agc?.enabled == true) ||
-                (dynamics?.enabled == true)) {
+                (dynamics?.enabled == true) || (declick?.enabled == true)) {
                 effectiveOutputDir.mkdirs()
                 Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
             }
             Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
+                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
                 sources.size, destination, carrier?.toString(), realtimePacing, roundTrip,
-                lowPass?.takeIf { it.enabled }?.let { "${it.cutoffHz}Hz/${it.rollOffDbPerOctave}dBoct" } ?: "off",
+                declick?.takeIf { it.enabled }?.describe() ?: "off",
+                lowPass?.takeIf { it.enabled }?.describe() ?: "off",
                 notch?.takeIf { it.enabled }?.describe() ?: "off",
                 rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
                 agc?.takeIf { it.enabled }?.describe() ?: "off",
@@ -168,7 +179,7 @@ object AudioTestFeeder {
                     AudioFeederEngine.feedSingle(
                         context, destination, carrier, src,
                         realtimePacing, roundTrip, effectiveOutputDir,
-                        lowPass, notch, rnNoise, agc, dynamics,
+                        lowPass, notch, rnNoise, agc, dynamics, declick, aiGainSoftSat,
                         onStats = { lastRunStats[src.label] = it },
                         onRoundTrip = { lastRunRoundTrips[src.label] = it },
                     )

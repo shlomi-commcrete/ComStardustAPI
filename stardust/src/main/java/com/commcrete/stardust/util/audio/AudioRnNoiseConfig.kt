@@ -37,16 +37,28 @@ data class RnNoiseConfig(
     /**
      * Wet/dry blend in `[0, 1]`. `1.0` = full RNNoise output, `0.0` = bypass
      * (pure original), `0.5` = equal mix. Values outside `[0, 1]` are clamped.
+     *
+     * Default `0.7` keeps 70 % of RNNoise's clean output blended with 30 %
+     * of the dry input — preserves natural voice texture (breath, sibilance,
+     * room tone) while still doing most of the noise removal. Set to `1.0`
+     * for maximum noise removal at the cost of a more "swooshy", hollow
+     * sound on voice transients.
      */
-    val mix: Float = 1.0f,
+    val mix: Float = 0.8f,
     /**
      * Maximum allowed attenuation per sample, in dB (negative number, or
      * `Float.NEGATIVE_INFINITY` to disable). E.g. `-18.0` means no output
      * sample's magnitude may fall below `10^(-18/20) ≈ 0.126` of the
      * corresponding dry input sample's magnitude. Less negative values =
      * gentler denoising.
+     *
+     * Default `-12` (≈ 25 % of dry magnitude floor) prevents RNNoise from
+     * "swallowing" quiet voice content (whispers, consonant tails, sentence
+     * ends) where its VAD can mistake real speech for noise. Set to
+     * [Float.NEGATIVE_INFINITY] to disable the clamp and let RNNoise do
+     * whatever it wants.
      */
-    val maxAttenuationDb: Float = Float.NEGATIVE_INFINITY,
+    val maxAttenuationDb: Float = -25f,
 ) {
     /** Wet/dry mix clamped to `[0, 1]`. */
     internal val mixClamped: Float get() = mix.coerceIn(0f, 1f)
@@ -66,6 +78,22 @@ data class RnNoiseConfig(
             ", maxAtten=${"%.1f".format(maxAttenuationDb).replace(',', '.')}dB"
         else ""
         return "rnnoise(mix=${mixPct}%$floorTxt)"
+    }
+
+    companion object {
+        fun getDefault(deviceType: RecordingDeviceType): RnNoiseConfig? = when (deviceType) {
+            RecordingDeviceType.JBOX_EXTERNAL -> RnNoiseConfig(
+                enabled = true,
+                mix = 0.9f,
+                maxAttenuationDb = -12f
+            )
+            RecordingDeviceType.JBOX_INTERNAL -> RnNoiseConfig(
+                enabled = true,
+                mix = 0.8f,
+                maxAttenuationDb = -Float.NEGATIVE_INFINITY
+            )
+            else -> null
+        }
     }
 }
 
