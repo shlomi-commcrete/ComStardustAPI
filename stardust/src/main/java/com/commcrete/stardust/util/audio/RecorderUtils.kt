@@ -22,6 +22,7 @@ import kotlinx.coroutines.launch
 import java.io.File
 
 
+@SuppressLint("StaticFieldLeak")
 object RecorderUtils {
 
     //var file : File? = null
@@ -189,65 +190,23 @@ object RecorderUtils {
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
         PttSendManager.restart()
 
-        var lastLoggedFilterSignature: String? = null
-        var lastLoggedChunkShape: String? = null
-
-        fun buildFilterSignature(profile: AiRecorderProfile?): String {
-            if (profile == null) return "preset=<none>; filters=[]"
-            val enabledFilters = mutableListOf<String>()
-            profile.lowPass?.takeIf { it.enabled }?.let {
-                enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
-            }
-            profile.notch?.takeIf { it.enabled }?.let {
-                enabledFilters.add("notch(harmonics=${it.harmonics.size})")
-            }
-            profile.rnNoise?.takeIf { it.enabled }?.let {
-                enabledFilters.add("rnNoise(mix=${it.mix}, maxAttenDb=${it.maxAttenuationDb})")
-            }
-            profile.agc?.takeIf { it.enabled }?.let {
-                enabledFilters.add(
-                    "agc(target=${it.targetLevel}, atk=${it.attackMs}, rel=${it.releaseMs}, +${it.maxGainDb}/${it.minGainDb}, gate=${it.noiseGateLevel})"
-                )
-            }
-            profile.dynamics?.takeIf { it.enabled }?.let {
-                enabledFilters.add(
-                    "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
-                )
-            }
-            return "preset=${profile.title}; active=${profile.isActive}; filters=[${enabledFilters.joinToString()}]"
-        }
-
-        val forwardChunkToAi: (ShortArray, Int, Int?, Int) -> Unit = { pcmArray, captureRate, deviceType, chunkIndex ->
-            val recordingDeviceType = inferDeviceType(deviceType)
-            // Use the first preset for this device type, or null if no profiles available
-            val activeProfile = profileMap[recordingDeviceType]?.firstOrNull { it.isActive }
-            val filterSignature = buildFilterSignature(activeProfile)
-            val expectedSamples = (captureRate * 500) / 1000
-            val chunkShape = "rate=${captureRate}Hz size=${pcmArray.size} expected=${expectedSamples}"
-
-            if (chunkIndex == 0 || lastLoggedFilterSignature != filterSignature) {
-                Log.d(
-                    "AudioRecorder",
-                    "AI filter preset for chunk=$chunkIndex deviceType=$recordingDeviceType -> $filterSignature"
-                )
-                lastLoggedFilterSignature = filterSignature
-            }
-
-            if (chunkIndex <= 1 || lastLoggedChunkShape != chunkShape || pcmArray.size != expectedSamples) {
-                val level = if (pcmArray.size == expectedSamples) "D" else "W"
-                val message = "AI chunk shape ($level) chunk=$chunkIndex deviceType=$recordingDeviceType -> $chunkShape"
-                if (pcmArray.size == expectedSamples) Log.d("AudioRecorder", message)
-                else Log.w("AudioRecorder", message)
-                lastLoggedChunkShape = chunkShape
-            }
-
-            PttSendManager.addNewFrame(
+        val forwardChunkToAi: (ShortArray, Int, Int?, Int) -> Unit = { pcmArray, nativeRate, deviceType, chunkIndex ->
+            val prepared = preprocessChunkForEncoding(
                 pcmArray = pcmArray,
+                nativeRate = nativeRate,
+                actualInputType = deviceType,
+                chunkIndex = chunkIndex,
+                encodingType = CODE_TYPE.AI,
+                chunkDurationMs = 500,
+            )
+            PttSendManager.addNewFrame(
+                pcmArray = prepared,
                 file = file,
                 carrier = carrier,
                 chatID = destination,
-                nativeRate = captureRate,
-                profile = activeProfile,
+                applyFilters = false,
+                nativeRate = 24_000,
+                profile = null,
             )
         }
 
@@ -262,9 +221,9 @@ object RecorderUtils {
             onPartialFinalChunk = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
                 forwardChunkToAi(pcmArray, captureRate, deviceType, chunkIndex)
             }
-            onError = { throwable ->
-                Log.d("AudioRecorder", "error $throwable")
-                stop()
+            .onFailure { throwable ->
+                Timber.d("error $throwable")
+            }
             }
             onStateChanged = { recording ->
                 Log.d(LOG_TAG, "Recording state changed: $recording")
@@ -273,7 +232,88 @@ object RecorderUtils {
             start()
         }
 
-        Log.d("AudioRecorder", "AudioRecorderAI started")
+        Timber.d("AudioRecorderAI started")
+    }
+
+    private val lastLoggedFilterSignatureByFlow: MutableMap<String, String> = mutableMapOf()
+    private val lastLoggedChunkShapeByFlow: MutableMap<String, String> = mutableMapOf()
+
+    private fun resolveActiveProfile(deviceType: RecordingDeviceType): AiRecorderProfile? {
+        return profileMap[deviceType]?.firstOrNull { it.isActive }
+    }
+
+    private fun buildFilterSignature(profile: AiRecorderProfile?): String {
+        if (profile == null) return "preset=<none>; filters=[]"
+        val enabledFilters = mutableListOf<String>()
+        profile.lowPass?.takeIf { it.enabled }?.let {
+            enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
+        }
+        profile.notch?.takeIf { it.enabled }?.let {
+            enabledFilters.add("notch(harmonics=${it.harmonics.size})")
+        }
+        profile.rnNoise?.takeIf { it.enabled }?.let {
+            enabledFilters.add("rnNoise(mix=${it.mix}, maxAttenDb=${it.maxAttenuationDb})")
+        }
+        profile.agc?.takeIf { it.enabled }?.let {
+            enabledFilters.add(
+                "agc(target=${it.targetLevel}, atk=${it.attackMs}, rel=${it.releaseMs}, +${it.maxGainDb}/${it.minGainDb}, gate=${it.noiseGateLevel})"
+            )
+        }
+        profile.dynamics?.takeIf { it.enabled }?.let {
+            enabledFilters.add(
+                "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
+            )
+        }
+        return "preset=${profile.title}; active=${profile.isActive}; filters=[${enabledFilters.joinToString()}]"
+    }
+
+    /**
+     * Shared preprocessing used by AI and CODEC2 paths.
+     * Applies selected profile filters at [nativeRate], then resamples only for AI.
+     */
+    fun preprocessChunkForEncoding(
+        pcmArray: ShortArray,
+        nativeRate: Int,
+        actualInputType: Int?,
+        chunkIndex: Int,
+        encodingType: CODE_TYPE,
+        chunkDurationMs: Int? = null,
+    ): ShortArray {
+        val flowKey = encodingType.name
+        val recordingDeviceType = inferDeviceType(actualInputType)
+        val activeProfile = resolveActiveProfile(recordingDeviceType)
+        val filterSignature = buildFilterSignature(activeProfile)
+
+        val lastFilterSignature = lastLoggedFilterSignatureByFlow[flowKey]
+        if (chunkIndex == 0 || lastFilterSignature != filterSignature) {
+            Timber.d(
+                "$flowKey filter preset for chunk=$chunkIndex deviceType=$recordingDeviceType -> $filterSignature"
+            )
+            lastLoggedFilterSignatureByFlow[flowKey] = filterSignature
+        }
+
+        val expectedSamples = chunkDurationMs?.let { (nativeRate * it) / 1000 }
+        val chunkShape = if (expectedSamples != null) {
+            "rate=${nativeRate}Hz size=${pcmArray.size} expected=${expectedSamples}"
+        } else {
+            "rate=${nativeRate}Hz size=${pcmArray.size}"
+        }
+        val lastShape = lastLoggedChunkShapeByFlow[flowKey]
+        val mismatch = expectedSamples != null && pcmArray.size != expectedSamples
+        if (chunkIndex <= 1 || lastShape != chunkShape || mismatch) {
+            val message = "$flowKey chunk shape chunk=$chunkIndex deviceType=$recordingDeviceType -> $chunkShape"
+            if (mismatch) Timber.w(message) else Timber.d(message)
+            lastLoggedChunkShapeByFlow[flowKey] = chunkShape
+        }
+
+        val targetRate = if (encodingType == CODE_TYPE.AI) 24_000 else nativeRate
+        return PttSendManager.preprocessForEncoding(
+            pcmArray = pcmArray,
+            nativeRate = nativeRate,
+            profile = activeProfile,
+            applyFilters = true,
+            targetRate = targetRate,
+        )
     }
 
     /**

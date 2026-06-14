@@ -139,8 +139,22 @@ internal object AudioFeederEngine {
                 }
 
                 aiInputWriter.append(finalChunk, finalChunk.size)
+                val profile = AiRecorderProfile(
+                    context = context,
+                    recordingRate = nativeRate,
+                    recordingDeviceType = RecordingDeviceType.FILE_FEEDER,
+                    destination = destination,
+                    carrier = carrier,
+                    source = source,
+                    lowPass = lowPass,
+                    notch = notch,
+                    rnNoise = rnNoise,
+                    agc = agc,
+                    dynamics = dynamics,
+                    declick = declick,
+                )
                 PttSendManager.addNewFrame(
-                    finalChunk, sinkFile, carrier, destination,
+                    finalChunk, sinkFile, profile,
                     applyFilters = false,
                 )
             }
@@ -1023,6 +1037,8 @@ internal object AudioFeederEngine {
         return out
     }
 }
+
+
 
 
 

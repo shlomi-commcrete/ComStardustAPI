@@ -1,5 +1,6 @@
 package com.commcrete.stardust.ai.codec
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.MediaCodec
 import android.util.Log
@@ -92,6 +93,7 @@ object PttSendManager {
     private var encodingJob: Job? = null
     private var toEncodeQueue = Channel<ShortArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
     private var wavTokenizerEncoder: WavTokenizerEncoder= AIModuleInitializer.wavTokenizerEncoder
+    @SuppressLint("StaticFieldLeak")
     private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
     private lateinit var cacheDir: File
     private var fileToSave: File? = null
@@ -127,6 +129,30 @@ object PttSendManager {
         nativeRate: Int = TARGET_SAMPLE_RATE,
         profile: AiRecorderProfile? = null,
     ) {
+        val toQueue = preprocessForEncoding(
+            pcmArray = pcmArray,
+            nativeRate = nativeRate,
+            profile = profile,
+            applyFilters = applyFilters,
+            targetRate = TARGET_SAMPLE_RATE,
+        )
+        toEncodeQueue.trySend(toQueue)
+        fileToSave = file
+        this.carrier = carrier
+        this.chatID = chatID
+    }
+
+    /**
+     * Shared PCM preprocessing for both AI and CODEC2 paths.
+     * Applies profile-driven DSP at [nativeRate], then optionally resamples to [targetRate].
+     */
+    fun preprocessForEncoding(
+        pcmArray: ShortArray,
+        nativeRate: Int,
+        profile: AiRecorderProfile? = null,
+        applyFilters: Boolean = true,
+        targetRate: Int = TARGET_SAMPLE_RATE,
+    ): ShortArray {
         val filtered: ShortArray = if (applyFilters) {
             val mutable = pcmArray.copyOf()
             applyFilterChain(mutable, nativeRate, profile)
@@ -134,15 +160,11 @@ object PttSendManager {
         } else {
             pcmArray
         }
-        val toQueue: ShortArray = if (nativeRate != TARGET_SAMPLE_RATE) {
-            AudioDsp.resampleLinear(filtered, nativeRate, TARGET_SAMPLE_RATE)
+        return if (nativeRate != targetRate) {
+            AudioDsp.resampleLinear(filtered, nativeRate, targetRate)
         } else {
             filtered
         }
-        toEncodeQueue.trySend(toQueue)
-        fileToSave = file
-        this.carrier = carrier
-        this.chatID = chatID
     }
 
     fun finish(context: Context) {
@@ -205,6 +227,7 @@ object PttSendManager {
         if (decodedSink != null || savingToFile) {
             try {
                 val unpack = BitPacking12.unpack12(packedData)
+                @Suppress("DEPRECATION")
                 val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
                 val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
                 lastTokens = unpack
@@ -316,6 +339,7 @@ object PttSendManager {
             decodedPcm
         } else {
             val unpack = BitPacking12.unpack12(packData)
+            @Suppress("DEPRECATION")
             val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
             val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
             lastTokens = unpack
@@ -337,16 +361,6 @@ object PttSendManager {
 
 
                     Log.d(TAG, "WAV file created: ${file.absolutePath}")
-                    // TODO: remove copy
-                    // Mirror a copy into the active debug-artifact directory
-                    // (set by AudioFeederEngine to the per-run artifactDir,
-                    // i.e. where *-ai_output_24k.wav lives). Lets the streaming
-                    // saveTofile output be A/B'd against the live per-chunk
-                    // *-ai_output_24k.wav side by side without hunting through
-                    // <DataManager.fileLocation>/test_feeder/<destination>/.
-                    // Wrapped in runCatching so production paths (where the
-                    // dir may not be writable, or may equal `file.parentFile`
-                    // turning this into a no-op) never break the WAV write.
                     runCatching {
                         val artifactDir = RecorderUtils.dirToSaveFile
                         val srcParent = file.parentFile?.canonicalFile
@@ -373,35 +387,6 @@ object PttSendManager {
         }
     }
 
-    private var isFirst2 = true;
-    private var startRecording2 = 0L
-    private var needToRun2 = true;
-    private val frameBuffer2 = mutableListOf<ShortArray>()
-
-    private fun savePcmTofile(pcmData: ShortArray) {
-        if (!needToRun2) return
-
-        if (isFirst2) {
-            isFirst2 = false
-            startRecording2 = System.currentTimeMillis()
-        }
-
-        frameBuffer2.add(pcmData)
-
-        if (System.currentTimeMillis() - startRecording2 > 3000) {
-            needToRun2 = false
-            val fileName = "record.wav"
-            val file = File("/data/data/com.commcrete.aiaudio/cache", fileName)
-
-            try {
-                val sampleArray = frameBuffer2.flatMap { it.asIterable() }.toShortArray()
-                WavHelper.createWavFile(sampleArray, 24000, file)
-                Log.d(TAG, "WAV file created: ${file.absolutePath}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Error creating WAV file", e)
-            }
-        }
-    }
 
     // ──────────────────────────────────────────────────────────────────────
     // Pre-encode DSP filter chain
@@ -442,7 +427,7 @@ object PttSendManager {
     /**
      * Sample rate the currently-built filter chain runs at. Set on first
      * build; if a later [addNewFrame] call arrives with a different
-     * [nativeRate], the chain is torn down and rebuilt so biquad / one-pole
+     * [sampleRate], the chain is torn down and rebuilt so biquad / one-pole
      * coefficients (and RNNoise's internal resampler) are correct for the
      * new rate. `-1` means no chain built yet.
      */

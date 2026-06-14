@@ -68,8 +68,7 @@ object BittelUsbManager2 : BittelProtocol {
 
     private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
 
-    fun isJboxAudioConnected(): Boolean =
-        isJboxAudioPresent || isConnectedAudio || audioDevice != null
+    fun isJboxAudioConnected(): Boolean = isJboxAudioPresent
 
     private fun isJboxAudioDevice(device: UsbDevice): Boolean {
         val productName = device.productName ?: return false
@@ -100,10 +99,12 @@ object BittelUsbManager2 : BittelProtocol {
     fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
         if (isJboxAudioDevice(device)) {
             isJboxAudioPresent = false
-            disconnectAudio()
-        } else if (isStardustDataDevice(device)) {
             disconnect()
+        } else if (isStardustDataDevice(device)) {
+            disconnectAudio()
         }
+        disconnect()
+        disconnectAudio()
     }
 
     fun getConnectedDevicesStartup (context: Context) {

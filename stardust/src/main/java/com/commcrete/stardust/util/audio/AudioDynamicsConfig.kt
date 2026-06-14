@@ -217,26 +217,15 @@ data class DynamicsConfig(
         fun voiceFocusDpOnlyPreset() = DynamicsConfig()
 
         fun getDefault(deviceType: RecordingDeviceType): DynamicsConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> DynamicsConfig(
+            RecordingDeviceType.JBOX_INTERNAL -> DynamicsConfig(
                 enabled = true,
                 inputGainDb = 2f,
                 band0 = Band.subBassVoiceFocus(),
-                band1 = Band(
-                    highEdgeHz = 4_500f,
-                    attackMs = 5f,
-                    releaseMs = 35f,
-                    ratio = 2.5f,
-                    thresholdDb = -22f,
-                    kneeWidthDb = 6f,
-                    noiseGateDb = -48f,
-                    expanderRatio = 4f,
-                    preGainDb = 0f,
-                    postGainDb = 4f,
-                ),
+                band1 = Band.speechVoiceFocusDpOnly(),
                 band2 = Band.highsVoiceFocus(),
                 limiter = Limiter.defaultPreset(),
             )
-            RecordingDeviceType.JBOX_INTERNAL -> DynamicsConfig(
+            RecordingDeviceType.JBOX_EXTERNAL -> DynamicsConfig(
                 enabled = true,
                 inputGainDb = 2f,
                 band0 = Band.subBassVoiceFocus(),
