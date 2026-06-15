@@ -411,6 +411,7 @@ object RecorderUtils {
         Scopes.getDefaultCoroutine().launch {
             delay(3000)
             PttSendManager.finish(context)
+            AudioRecordingKeepAlive.release()
         }
     }
 

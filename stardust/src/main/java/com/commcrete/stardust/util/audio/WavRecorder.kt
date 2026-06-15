@@ -93,6 +93,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
+        AudioRecordingKeepAlive.acquire(context)
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
             context = context,
             requestedRate = RECORDER_SAMPLE_RATE,
@@ -219,6 +220,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
                     AudioCaptureConfig.clearInputRoute(context)
+                    AudioRecordingKeepAlive.release()
                     recordingThread = null
                     recorder = null
                 }
@@ -248,6 +250,7 @@ class WavRecorder(val context: Context, private val viewModel : PttInterface? = 
                     stopRecording(retryNum, chatID, path, context, carrier)
                 } finally {
                     AudioCaptureConfig.clearInputRoute(context)
+                    AudioRecordingKeepAlive.release()
                     recordingThread = null
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }

@@ -10,6 +10,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.AudioCaptureConfig
 import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
@@ -73,6 +74,7 @@ class AudioRecorderAI(
         synchronized(this) {
             // Already running or cancelling
             if (job?.isActive == true) return
+            AudioRecordingKeepAlive.acquire(context)
 
             job = scope.launch {
                 onStateChanged?.invoke(true)
