@@ -116,14 +116,7 @@ data class NotchConfig(
 
 
     companion object {
-        fun getDefault(deviceType: RecordingDeviceType): NotchConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
-                enabled = true,
-                harmonics = mutableListOf<Harmonic>().also { list ->
-                    list.add(Harmonic(frequencyHz = 375f, q = 50f))
-                    for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 60f))
-                }
-            )
+        fun getDefault(deviceType: RecordingDeviceType): NotchConfig = when (deviceType) {
             RecordingDeviceType.JBOX_EXTERNAL -> NotchConfig(
                 enabled = true,
                 harmonics = mutableListOf<Harmonic>().also { list ->
@@ -131,7 +124,14 @@ data class NotchConfig(
                     for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 60f))
                 }
             )
-            else -> null
+            RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
+                enabled = true,
+                harmonics = mutableListOf<Harmonic>().also { list ->
+                    list.add(Harmonic(frequencyHz = 375f, q = 30f))
+                    for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 50f))
+                }
+            )
+            else -> NotchConfig(enabled = false)
         }
     }
 }

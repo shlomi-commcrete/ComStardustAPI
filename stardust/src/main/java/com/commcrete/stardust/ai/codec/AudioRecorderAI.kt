@@ -10,6 +10,7 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.AudioCaptureConfig
 import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
 import kotlinx.coroutines.*
@@ -37,7 +38,7 @@ class AudioRecorderAI(
     private val context: Context,
     private val chunkDurationMs: Long,
     private val filesDirProvider: () -> File,
-    private val sampleRate: Int = 24_000,
+    private val sampleRate: Int = RECORDER_SAMPLE_RATE,
     private val bitsPerSample: Int = 16,
     private val channels: Int = 1,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -93,8 +94,7 @@ class AudioRecorderAI(
         synchronized(this) {
             job?.cancel()
         }
-
-        disableBluetoothSco()
+        AudioCaptureConfig.clearInputRoute(context)
     }
 
 //    fun start() {
@@ -130,19 +130,13 @@ class AudioRecorderAI(
 
         val gain = SharedPreferencesUtil.getAIGain(context) / 100f
 
-        val usbDevice = findUsbInputDevice()
-        val useUsb = usbDevice != null
-        val captureRate = pickCaptureRate(usbDevice, sampleRate)
-
-        if (!useUsb) {
-            enableBluetoothSco()
-        }
-        
-        val audioSource = if (useUsb && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
-        } else {
-            SharedPreferencesUtil.getAIAudioSource(context)
-        }
+        val capturePlan = AudioCaptureConfig.buildCapturePlan(
+            context = context,
+            requestedRate = sampleRate,
+            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource(context),
+        )
+        val captureRate = capturePlan.captureRate
+        val audioSource = capturePlan.audioSource
 
         val minBuffer = AudioRecord.getMinBufferSize(
             captureRate,
@@ -171,7 +165,9 @@ class AudioRecorderAI(
             )
         }
 
-        val deviceTag = usbDevice?.let { sanitizeDeviceName(it.productName?.toString()) }
+        AudioCaptureConfig.applyInputRoute(context, audioRecord, capturePlan.preferredInputDevice)
+
+        val deviceTag = capturePlan.preferredInputDevice?.let { sanitizeDeviceName(it.productName?.toString()) }
             ?: "default-mic"
 
         // Emit chunks at native capture rate (no pre-callback decimation).
@@ -185,9 +181,9 @@ class AudioRecorderAI(
             bitsPerSample = bitsPerSample,
         ).also {
             it.onStart(
-                deviceName = usbDevice?.productName?.toString(),
-                deviceType = usbDevice?.type ?: -1,
-                deviceRates = usbDevice?.sampleRates?.toList() ?: emptyList(),
+                deviceName = capturePlan.preferredInputDevice?.productName?.toString(),
+                deviceType = capturePlan.preferredInputDevice?.type ?: -1,
+                deviceRates = capturePlan.preferredInputDevice?.sampleRates?.toList() ?: emptyList(),
             )
         }
 
@@ -208,7 +204,7 @@ class AudioRecorderAI(
         audioRecord.startRecording()
 
         // Report the actual route chosen by AudioRecord when available.
-        val resolvedInputType = audioRecord.routedDevice?.type ?: usbDevice?.type
+        val resolvedInputType = audioRecord.routedDevice?.type ?: capturePlan.preferredInputDevice?.type
 
         // Save bit-exact PCM straight from the ADC, BEFORE gain / decimation,
         // tagged with the *real* capture rate so the file is meaningful.
@@ -274,54 +270,8 @@ class AudioRecorderAI(
 
             try { audioRecord.stop() } catch (_: Exception) {}
             audioRecord.release()
-            if (!useUsb) disableBluetoothSco()
+            AudioCaptureConfig.clearInputRoute(context)
         }
-    }
-
-    /**
-     * Returns the first USB-class input device exposed by [AudioManager], or
-     * null if none is present. Logs every input it sees so that "is the jbox
-     * actually visible?" is answerable from a single logcat line.
-     */
-    @SuppressLint("NewApi")
-    private fun findUsbInputDevice(): AudioDeviceInfo? {
-        val am = context.getSystemService(AudioManager::class.java) ?: return null
-        val inputs = try {
-            am.getDevices(AudioManager.GET_DEVICES_INPUTS)
-        } catch (t: Throwable) {
-            Log.w("AudioRecorder", "getDevices(INPUTS) failed", t)
-            return null
-        }
-        for (d in inputs) {
-            Log.d(
-                "AudioRecorder",
-                "input device: name='${d.productName}' type=${d.type} " +
-                    "rates=${d.sampleRates.toList()} chans=${d.channelCounts.toList()}"
-            )
-        }
-        return inputs.firstOrNull {
-            it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
-                it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
-        }
-    }
-
-    /**
-     * Choose a capture sample rate that the USB ADC supports natively, in
-     * order of preference: 48000, 44100, 32000, 16000. If the device does
-     * not advertise rates (some OEM HALs return an empty array), default to
-     * 48 kHz which is what the PCM2900C produces. Falls back to
-     * [requestedRate] when there is no USB device at all.
-     */
-    private fun pickCaptureRate(device: AudioDeviceInfo?, requestedRate: Int): Int {
-        if (device == null) return requestedRate
-        val advertised = device.sampleRates.toList()
-        val preferred = listOf(48_000, 44_100, 32_000, 16_000)
-        val match = preferred.firstOrNull { it in advertised }
-        if (match != null) return match
-        // Some HALs report an empty rate list — assume 48 kHz, which is the
-        // PCM2900C's input rate and the most common USB-audio default.
-        return if (advertised.isEmpty()) 48_000 else advertised.max()
     }
 
 
@@ -373,40 +323,9 @@ class AudioRecorderAI(
         return out
     }
 
-    // In your BleManager or recording activity
-//    @SuppressLint("ServiceCast")
-    @SuppressLint("NewApi")
-    private fun enableBluetoothSco() {
-        // Get an AudioManager instance
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
-        var speakerDevice: AudioDeviceInfo? = null
-        val devices = audioManager.availableCommunicationDevices
-        for (device in devices) {
-            if (device != null) {
-                Log.d("AudioRecorder", "audio device ${device.productName}, type ${device.type}")
-                if (device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-                    speakerDevice = device as AudioDeviceInfo?
-                    break
-                }
-            }
-        }
-        if (speakerDevice != null) {
-            // Turn speakerphone ON.
-            val result = audioManager.setCommunicationDevice(speakerDevice)
-            if (!result) {
-                // Handle error.
-                Log.e("AudioRecorder", "setCommunicationDevice failed to set ble device")
-            }
-        }
+    companion object {
+        const val RECORDER_SAMPLE_RATE = 24_000
     }
 
-    @SuppressLint("NewApi")
-    private fun disableBluetoothSco() {
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
-        audioManager.clearCommunicationDevice()
-        audioManager.isBluetoothScoOn = false
-    }
 
 }

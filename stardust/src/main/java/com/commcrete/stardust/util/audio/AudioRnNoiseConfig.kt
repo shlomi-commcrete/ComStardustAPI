@@ -81,18 +81,18 @@ data class RnNoiseConfig(
     }
 
     companion object {
-        fun getDefault(deviceType: RecordingDeviceType): RnNoiseConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> RnNoiseConfig(
-                enabled = true,
-                mix = 0.8f,
-                maxAttenuationDb = -Float.NEGATIVE_INFINITY
-            )
+        fun getDefault(deviceType: RecordingDeviceType): RnNoiseConfig = when (deviceType) {
             RecordingDeviceType.JBOX_EXTERNAL -> RnNoiseConfig(
                 enabled = true,
-                mix = 0.8f,
+                mix = 0.9f,
+                maxAttenuationDb = -12f
+            )
+            RecordingDeviceType.JBOX_INTERNAL -> RnNoiseConfig(
+                enabled = true,
+                mix = 0.7f,
                 maxAttenuationDb = -Float.NEGATIVE_INFINITY
             )
-            else -> null
+            else -> RnNoiseConfig(enabled = false)
         }
     }
 }

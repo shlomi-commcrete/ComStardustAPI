@@ -1,5 +1,6 @@
 package com.commcrete.stardust.util.audio
 
+import android.annotation.SuppressLint
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
 import android.media.AudioDeviceInfo
@@ -19,6 +20,7 @@ import com.commcrete.stardust.ai.codec.AudioRecorderAI
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.io.File
 
 
@@ -32,6 +34,8 @@ object RecorderUtils {
     private var pttInterface : PttInterface? = null
     private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
     private var aiRecorder : AudioRecorderAI? = null
+
+    private const val AI_TARGET_SAMPLE_RATE = 24_000
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
@@ -190,49 +194,73 @@ object RecorderUtils {
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
         PttSendManager.restart()
 
-        val forwardChunkToAi: (ShortArray, Int, Int?, Int) -> Unit = { pcmArray, nativeRate, deviceType, chunkIndex ->
-            val prepared = preprocessChunkForEncoding(
-                pcmArray = pcmArray,
-                nativeRate = nativeRate,
-                actualInputType = deviceType,
-                chunkIndex = chunkIndex,
-                encodingType = CODE_TYPE.AI,
-                chunkDurationMs = 500,
-            )
-            PttSendManager.addNewFrame(
-                pcmArray = prepared,
-                file = file,
-                carrier = carrier,
-                chatID = destination,
-                applyFilters = false,
-                nativeRate = 24_000,
-                profile = null,
-            )
-        }
-
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
             chunkDurationMs = 500,
             filesDirProvider = { file }
         ).apply {
             onChunkReady = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
-                forwardChunkToAi(pcmArray, captureRate, deviceType, chunkIndex)
+                forwardAiChunk(
+                    pcmArray = pcmArray,
+                    chunkIndex = chunkIndex,
+                    captureRate = captureRate,
+                    deviceType = deviceType,
+                    file = file,
+                    carrier = carrier,
+                    destination = destination,
+                )
             }
             onPartialFinalChunk = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
-                forwardChunkToAi(pcmArray, captureRate, deviceType, chunkIndex)
+                forwardAiChunk(
+                    pcmArray = pcmArray,
+                    chunkIndex = chunkIndex,
+                    captureRate = captureRate,
+                    deviceType = deviceType,
+                    file = file,
+                    carrier = carrier,
+                    destination = destination,
+                )
             }
-            .onFailure { throwable ->
-                Timber.d("error $throwable")
-            }
+            onError = { throwable ->
+                Timber.w(throwable, "AudioRecorderAI error")
             }
             onStateChanged = { recording ->
                 Log.d(LOG_TAG, "Recording state changed: $recording")
                 if (!recording) finishAIRecording(DataManager.context)
             }
-            start()
         }
 
+        aiRecorder?.start()
+
         Timber.d("AudioRecorderAI started")
+    }
+
+    private fun forwardAiChunk(
+        pcmArray: ShortArray,
+        chunkIndex: Int,
+        captureRate: Int,
+        deviceType: Int?,
+        file: File,
+        carrier: Carrier?,
+        destination: String,
+    ) {
+        val prepared = preprocessChunkForEncoding(
+            pcmArray = pcmArray,
+            nativeRate = captureRate,
+            actualInputType = deviceType,
+            chunkIndex = chunkIndex,
+            encodingType = CODE_TYPE.AI,
+            chunkDurationMs = 500,
+        )
+        PttSendManager.addNewFrame(
+            pcmArray = prepared,
+            file = file,
+            carrier = carrier,
+            chatID = destination,
+            applyFilters = false,
+            nativeRate = AI_TARGET_SAMPLE_RATE,
+            profile = null,
+        )
     }
 
     private val lastLoggedFilterSignatureByFlow: MutableMap<String, String> = mutableMapOf()
@@ -286,7 +314,7 @@ object RecorderUtils {
 
         val lastFilterSignature = lastLoggedFilterSignatureByFlow[flowKey]
         if (chunkIndex == 0 || lastFilterSignature != filterSignature) {
-            Timber.d(
+            Log.d(LOG_TAG,
                 "$flowKey filter preset for chunk=$chunkIndex deviceType=$recordingDeviceType -> $filterSignature"
             )
             lastLoggedFilterSignatureByFlow[flowKey] = filterSignature
@@ -306,7 +334,7 @@ object RecorderUtils {
             lastLoggedChunkShapeByFlow[flowKey] = chunkShape
         }
 
-        val targetRate = if (encodingType == CODE_TYPE.AI) 24_000 else nativeRate
+        val targetRate = if (encodingType == CODE_TYPE.AI) AudioRecorderAI.RECORDER_SAMPLE_RATE else WavRecorder.RECORDER_SAMPLE_RATE
         return PttSendManager.preprocessForEncoding(
             pcmArray = pcmArray,
             nativeRate = nativeRate,

@@ -2,9 +2,14 @@ package com.commcrete.stardust.util.audio
 
 import android.content.Context
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.enums.FunctionalityType
+import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -12,6 +17,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
+import kotlin.random.Random
 import kotlin.math.roundToInt
 
 /**
@@ -26,11 +32,24 @@ internal object AudioFeederEngine {
 
     private const val TAG = "AudioTestFeeder"
 
+    internal interface Codec2Sink {
+        fun enqueuePcm(pcm8k: ShortArray)
+        fun finish()
+    }
+
+    internal fun createCodec2ChunkSink(
+        context: Context,
+        destination: String,
+        carrier: Carrier?,
+    ): Codec2Sink = Codec2ChunkSink(context, destination, carrier)
+
     suspend fun feedSingle(
         context: Context,
         destination: String,
         carrier: Carrier?,
         source: Source,
+        codeType: RecorderUtils.CODE_TYPE,
+        codec2Sink: Codec2Sink?,
         realtimePacing: Boolean,
         roundTrip: Boolean,
         artifactDir: File,
@@ -79,9 +98,9 @@ internal object AudioFeederEngine {
         )
 
         // 3. Build the live per-chunk filter chain at the NATIVE rate. The
-        //    chunk after filtering is resampled to TARGET_SAMPLE_RATE before
-        //    being handed to PttSendManager so the codec still sees 24 kHz.
-        logChunkPlan(monoNative, nativeRate)
+        //    chunk is always filtered first, then resampled at the sink
+        //    boundary (24 kHz for AI, 8 kHz for CODEC2).
+        logChunkPlan(monoNative, nativeRate, codeType)
         val chain = LiveFilterChain.build(
             notch, rnNoise, agc, lowPass, dynamics, declick,
             aiGain = gain,
@@ -89,19 +108,29 @@ internal object AudioFeederEngine {
             sampleRate = nativeRate, expectedSize = monoNative.size,
         )
 
-        val sinkFile = createSinkFile(context, destination, source.label)
-        val aiInputWriter = com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
-            start(
-                context = context,
-                sampleRate = AudioTestFeeder.TARGET_SAMPLE_RATE,
-                channels = 1,
-                bitsPerSample = 16,
-                fileNamePrefix = "${source.label}-ai_input_24k",
-                outputDir = artifactDir,
-            )
+        val sinkFile: File? = if (codeType == RecorderUtils.CODE_TYPE.AI) {
+            createSinkFile(context, destination, source.label)
+        } else {
+            null
+        }
+        val aiInputWriter = if (codeType == RecorderUtils.CODE_TYPE.AI) {
+            com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
+                start(
+                    context = context,
+                    sampleRate = AudioTestFeeder.TARGET_SAMPLE_RATE,
+                    channels = 1,
+                    bitsPerSample = 16,
+                    fileNamePrefix = "${source.label}-ai_input_24k",
+                    outputDir = artifactDir,
+                )
+            }
+        } else {
+            null
         }
 
-        PttSendManager.resetLiveDecodeState()
+        if (codeType == RecorderUtils.CODE_TYPE.AI) {
+            PttSendManager.resetLiveDecodeState()
+        }
         val emission = try {
             streamPcmAsChunks(
                 pcm = monoNative,
@@ -109,54 +138,22 @@ internal object AudioFeederEngine {
                 realtimePacing = realtimePacing,
                 chain = chain,
             ) { filteredChunk ->
-                val outChunk = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) filteredChunk
-                    else AudioDsp.resampleLinear(filteredChunk, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
-
-                val finalChunk: ShortArray = when {
-                    outChunk.size >= AudioTestFeeder.SAMPLES_PER_CHUNK -> outChunk
-                    outChunk.size < 600 -> {
-                        Timber.tag(TAG).d(
-                            "    ⏭ skipping sub-token tail of %d sample(s) (< 600, would emit 0 tokens)",
-                            outChunk.size,
-                        )
-                        return@streamPcmAsChunks
-                    }
-                    else -> {
-                        val faded = outChunk.copyOf()
-                        val fadeLen = minOf(120, faded.size) // ≈ 5 ms @ 24 kHz
-                        val start = faded.size - fadeLen
-                        for (i in 0 until fadeLen) {
-                            // Cosine half-window: 1 → 0 over fadeLen samples.
-                            val w = 0.5 * (1.0 + kotlin.math.cos(Math.PI * i / fadeLen))
-                            faded[start + i] = (faded[start + i] * w).toInt().toShort()
-                        }
-                        Timber.tag(TAG).d(
-                            "    ⤵ partial tail %d samples — applied %d-sample cosine fade-out before AI encode",
-                            faded.size, fadeLen,
-                        )
-                        faded
-                    }
+                if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                    routeChunkToAi(
+                        filteredChunk = filteredChunk,
+                        nativeRate = nativeRate,
+                        sinkFile = sinkFile ?: return@streamPcmAsChunks,
+                        carrier = carrier,
+                        destination = destination,
+                        aiInputWriter = aiInputWriter,
+                    )
+                } else {
+                    routeChunkToCodec2(
+                        filteredChunk = filteredChunk,
+                        nativeRate = nativeRate,
+                        codec2Sink = codec2Sink,
+                    )
                 }
-
-                aiInputWriter.append(finalChunk, finalChunk.size)
-                val profile = AiRecorderProfile(
-                    context = context,
-                    recordingRate = nativeRate,
-                    recordingDeviceType = RecordingDeviceType.FILE_FEEDER,
-                    destination = destination,
-                    carrier = carrier,
-                    source = source,
-                    lowPass = lowPass,
-                    notch = notch,
-                    rnNoise = rnNoise,
-                    agc = agc,
-                    dynamics = dynamics,
-                    declick = declick,
-                )
-                PttSendManager.addNewFrame(
-                    finalChunk, sinkFile, profile,
-                    applyFilters = false,
-                )
             }
         } finally {
             // Patch the WAV header with final sizes regardless of whether
@@ -166,8 +163,10 @@ internal object AudioFeederEngine {
             // enough). Then unregister the hook before closing the writer to
             // avoid a late append racing with stop().
             runCatching { delay(150) }
-            PttSendManager.onDecodedChunk = null
-            runCatching { aiInputWriter.stop() }
+            if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                PttSendManager.onDecodedChunk = null
+                runCatching { aiInputWriter?.stop() }
+            }
             //runCatching { aiOutputWriter.stop() }
         }
         Timber.tag(TAG).i(
@@ -184,6 +183,111 @@ internal object AudioFeederEngine {
         //    next to these per-stage WAVs in artifactDir.
         chain.persistArtifacts(artifactDir, source.label, lowPass, notch, agc, dynamics, declick, sampleRate = nativeRate)
         chain.release(source.label)
+    }
+
+    private class Codec2ChunkSink(
+        private val context: Context,
+        private val destination: String,
+        private val carrier: Carrier?,
+    ) : Codec2Sink {
+        companion object {
+            const val TARGET_CODEC2_SAMPLE_RATE = 8_000
+            private const val CODEC2_FRAME_SAMPLES = 320
+            private const val CODEC2_FRAME_BYTES = 4
+            private const val PTT_PACKET_BYTES = 77
+            private val SUFFIX = arrayOf(-50, -10, -128, -4, -17, 104, 0, 0)
+        }
+
+        private val codec2Encoder = Codec2Encoder(RecorderUtils.CodecValues.MODE700.mode)
+        private val sampleRemainder = ArrayList<Short>()
+        private var pending4Bytes: ByteArray? = null
+        private val packetBuffer = ArrayList<Byte>()
+
+        override fun enqueuePcm(pcm8k: ShortArray) {
+            if (pcm8k.isEmpty()) return
+            sampleRemainder.addAll(pcm8k.asList())
+            while (sampleRemainder.size >= CODEC2_FRAME_SAMPLES) {
+                val frame = ShortArray(CODEC2_FRAME_SAMPLES)
+                for (i in 0 until CODEC2_FRAME_SAMPLES) frame[i] = sampleRemainder[i]
+                repeat(CODEC2_FRAME_SAMPLES) { sampleRemainder.removeAt(0) }
+                pushCodec2Frame(frame)
+            }
+        }
+
+        override fun finish() {
+            if (sampleRemainder.isNotEmpty()) {
+                val padded = ShortArray(CODEC2_FRAME_SAMPLES)
+                for (i in sampleRemainder.indices) padded[i] = sampleRemainder[i]
+                sampleRemainder.clear()
+                pushCodec2Frame(padded)
+            }
+            pending4Bytes?.let {
+                pushPacked7(packTwoCodec2Frames(it, ByteArray(CODEC2_FRAME_BYTES)))
+                pending4Bytes = null
+            }
+            sendPacket(packetBuffer.toByteArray(), isLast = true)
+            packetBuffer.clear()
+        }
+
+        private fun pushCodec2Frame(frame: ShortArray) {
+            val chars = CharArray(RecorderUtils.CodecValues.MODE700.charNumOutput)
+            codec2Encoder.encode(frame, chars)
+            val bytes = ByteArray(chars.size)
+            chars.forEachIndexed { index, c -> bytes[index] = c.code.toByte() }
+            val pending = pending4Bytes
+            if (pending == null) {
+                pending4Bytes = bytes
+            } else {
+                pushPacked7(packTwoCodec2Frames(pending, bytes))
+                pending4Bytes = null
+            }
+        }
+
+        private fun pushPacked7(bytes7: ByteArray) {
+            bytes7.forEach { packetBuffer.add(it) }
+            while (packetBuffer.size >= PTT_PACKET_BYTES) {
+                val payload = packetBuffer.take(PTT_PACKET_BYTES).toByteArray()
+                repeat(PTT_PACKET_BYTES) { packetBuffer.removeAt(0) }
+                sendPacket(payload, isLast = false)
+            }
+        }
+
+        private fun sendPacket(payload: ByteArray, isLast: Boolean) {
+            val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
+            val audioIntArray = StardustPackageUtils.byteArrayToIntArray(payload)
+            if (audioIntArray.endsWith(SUFFIX)) {
+                val num = Random.nextInt(0, 41)
+                audioIntArray[audioIntArray.lastIndex] = num
+                audioIntArray[audioIntArray.lastIndex - 1] = num
+            }
+            val pkg = StardustPackageUtils.getStardustPackage(
+                context = context,
+                source = DataManager.getSource(),
+                destenation = destination,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
+                data = audioIntArray,
+            )
+            pkg.stardustControlByte.stardustPartType = if (isLast) {
+                StardustControlByte.StardustPartType.LAST
+            } else {
+                StardustControlByte.StardustPartType.MESSAGE
+            }
+            pkg.stardustControlByte.stardustDeliveryType = radio.second
+            pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
+            DataManager.sendDataToBle(pkg)
+        }
+
+        private fun packTwoCodec2Frames(a: ByteArray, b: ByteArray): ByteArray {
+            val out = ByteArray(7)
+            out[0] = a[0]
+            out[1] = a[1]
+            out[2] = a[2]
+            out[3] = ((a[3].toInt() and 0xF0) or ((b[0].toInt() and 0xFF) ushr 4)).toByte()
+            out[4] = (((b[0].toInt() and 0xFF) shl 4) or ((b[1].toInt() and 0xFF) ushr 4)).toByte()
+            out[5] = (((b[1].toInt() and 0xFF) shl 4) or ((b[2].toInt() and 0xFF) ushr 4)).toByte()
+            out[6] = (((b[2].toInt() and 0xFF) shl 4) or ((b[3].toInt() and 0xFF) ushr 4)).toByte()
+            return out
+        }
     }
 
     // ─── feedSingle phases ───────────────────────────────────────────────────
@@ -224,17 +328,85 @@ internal object AudioFeederEngine {
         AudioTestFeederLogger.logRoundTrip(rt)
     }
 
+    private fun routeChunkToAi(
+        filteredChunk: ShortArray,
+        nativeRate: Int,
+        sinkFile: File,
+        carrier: Carrier?,
+        destination: String,
+        aiInputWriter: com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter?,
+    ) {
+        val outChunk = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) filteredChunk
+            else AudioDsp.resampleLinear(filteredChunk, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
+
+        val finalChunk: ShortArray = when {
+            outChunk.size >= AudioTestFeeder.SAMPLES_PER_CHUNK -> outChunk
+            outChunk.size < 600 -> {
+                Timber.tag(TAG).d(
+                    "    ⏭ skipping sub-token tail of %d sample(s) (< 600, would emit 0 tokens)",
+                    outChunk.size,
+                )
+                return
+            }
+            else -> {
+                val faded = outChunk.copyOf()
+                val fadeLen = minOf(120, faded.size) // ≈ 5 ms @ 24 kHz
+                val start = faded.size - fadeLen
+                for (i in 0 until fadeLen) {
+                    // Cosine half-window: 1 → 0 over fadeLen samples.
+                    val w = 0.5 * (1.0 + kotlin.math.cos(Math.PI * i / fadeLen))
+                    faded[start + i] = (faded[start + i] * w).toInt().toShort()
+                }
+                Timber.tag(TAG).d(
+                    "    ⤵ partial tail %d samples — applied %d-sample cosine fade-out before AI encode",
+                    faded.size, fadeLen,
+                )
+                faded
+            }
+        }
+
+        aiInputWriter?.append(finalChunk, finalChunk.size)
+        // applyFilters = false: the LiveFilterChain above already ran at
+        // native rate and was resampled here at the handoff boundary.
+        PttSendManager.addNewFrame(
+            finalChunk,
+            sinkFile,
+            carrier,
+            destination,
+            applyFilters = false,
+        )
+    }
+
+    private fun routeChunkToCodec2(
+        filteredChunk: ShortArray,
+        nativeRate: Int,
+        codec2Sink: Codec2Sink?,
+    ) {
+        val pcm8k = if (nativeRate == Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE) {
+            filteredChunk
+        } else {
+            AudioDsp.resampleLinear(filteredChunk, nativeRate, Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE)
+        }
+        codec2Sink?.enqueuePcm(pcm8k)
+    }
+
     /** Log how many full / partial chunks the upcoming emission will produce. */
-    private fun logChunkPlan(pcm: ShortArray, sampleRate: Int) {
+    private fun logChunkPlan(pcm: ShortArray, sampleRate: Int, codeType: RecorderUtils.CODE_TYPE) {
         val samplesPerChunk = (sampleRate * AudioTestFeeder.CHUNK_DURATION_MS / 1000L).toInt()
         val fullChunks = pcm.size / samplesPerChunk
         val tailSamples = pcm.size % samplesPerChunk
         val tailMs = (tailSamples * 1000L) / sampleRate
+        val targetRate = if (codeType == RecorderUtils.CODE_TYPE.AI) {
+            AudioTestFeeder.TARGET_SAMPLE_RATE
+        } else {
+            Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE
+        }
         Timber.tag(TAG).i(
-            "  → Emitting %d full chunk(s) of %d samples (%d ms each) @ %d Hz%s — filtered at native rate, resampled to %d Hz before AI",
+            "  → Emitting %d full chunk(s) of %d samples (%d ms each) @ %d Hz%s — filtered at native rate, resampled to %d Hz before %s",
             fullChunks, samplesPerChunk, AudioTestFeeder.CHUNK_DURATION_MS, sampleRate,
             if (tailSamples > 0) " + 1 partial/final chunk of $tailSamples samples (${tailMs} ms)" else "",
-            AudioTestFeeder.TARGET_SAMPLE_RATE,
+            targetRate,
+            codeType.name,
         )
     }
 
@@ -1037,9 +1209,6 @@ internal object AudioFeederEngine {
         return out
     }
 }
-
-
-
 
 
 

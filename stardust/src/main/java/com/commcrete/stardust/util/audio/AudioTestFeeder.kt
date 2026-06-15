@@ -125,6 +125,7 @@ object AudioTestFeeder {
         context: Context,
         destination: String,
         carrier: Carrier?,
+        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         sources: List<Source>,
         realtimePacing: Boolean = true,
         roundTrip: Boolean = false,
@@ -148,8 +149,10 @@ object AudioTestFeeder {
     ): Job {
         stop()
         DataManager.requireContext(context)
-        PttSendManager.init(context.applicationContext)
-        PttSendManager.restart()
+        if (codeType == RecorderUtils.CODE_TYPE.AI) {
+            PttSendManager.init(context.applicationContext)
+            PttSendManager.restart()
+        }
         val job = feederScope.launch {
             lastRunStats.clear()
             lastRunRoundTrips.clear()
@@ -161,8 +164,8 @@ object AudioTestFeeder {
                 Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
             }
             Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), destination=%s, carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
-                sources.size, destination, carrier?.toString(), realtimePacing, roundTrip,
+                "▶ Starting feeder: %d source(s), codeType=%s, destination=%s, carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
+                sources.size, codeType.name, destination, carrier?.toString(), realtimePacing, roundTrip,
                 declick?.takeIf { it.enabled }?.describe() ?: "off",
                 lowPass?.takeIf { it.enabled }?.describe() ?: "off",
                 notch?.takeIf { it.enabled }?.describe() ?: "off",
@@ -171,24 +174,48 @@ object AudioTestFeeder {
                 dynamics?.takeIf { it.enabled }?.describe() ?: "off",
             )
 
+            val codec2Sink = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
+                AudioFeederEngine.createCodec2ChunkSink(context, destination, carrier)
+            } else {
+                null
+            }
+
 
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
                     Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
                     AudioFeederEngine.feedSingle(
-                        context, destination, carrier, src,
-                        realtimePacing, roundTrip, effectiveOutputDir,
-                        lowPass, notch, rnNoise, agc, dynamics, declick, aiGainSoftSat,
+                        context = context,
+                        destination = destination,
+                        carrier = carrier,
+                        source = src,
+                        codeType = codeType,
+                        codec2Sink = codec2Sink,
+                        realtimePacing = realtimePacing,
+                        roundTrip = roundTrip,
+                        artifactDir = effectiveOutputDir,
+                        lowPass = lowPass,
+                        notch = notch,
+                        rnNoise = rnNoise,
+                        agc = agc,
+                        dynamics = dynamics,
+                        declick = declick,
+                        aiGainSoftSat = aiGainSoftSat,
                         onStats = { lastRunStats[src.label] = it },
                         onRoundTrip = { lastRunRoundTrips[src.label] = it },
                     )
                 }
                 AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
                 if (roundTrip) AudioTestFeederLogger.logCrossSourceRoundTrip(lastRunRoundTrips)
-                Timber.tag(TAG).i("✔ All sources fed. Calling PttSendManager.finish() in 3s")
-                delay(3_000)
-                PttSendManager.finish(context)
+                if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                    Timber.tag(TAG).i("✔ All sources fed. Calling PttSendManager.finish() in 3s")
+                    delay(3_000)
+                    PttSendManager.finish(context)
+                } else {
+                    Timber.tag(TAG).i("✔ All sources fed. Flushing CODEC2 sink")
+                    codec2Sink?.finish()
+                }
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
@@ -222,6 +249,7 @@ object AudioTestFeeder {
         context: Context,
         destination: String,
         carrier: Carrier?,
+        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         files: List<File>,
         realtimePacing: Boolean = true,
         roundTrip: Boolean = false,
@@ -230,6 +258,7 @@ object AudioTestFeeder {
         context = context,
         destination = destination,
         carrier = carrier,
+        codeType = codeType,
         sources = files.map { Source(it) },
         realtimePacing = realtimePacing,
         roundTrip = roundTrip,

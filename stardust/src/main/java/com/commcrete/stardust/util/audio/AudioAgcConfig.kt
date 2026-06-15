@@ -35,19 +35,7 @@ data class AGCConfig(
         )
 
     companion object {
-        fun getDefault(deviceType: RecordingDeviceType): AGCConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> AGCConfig(enabled = false)
-            RecordingDeviceType.JBOX_EXTERNAL -> AGCConfig(
-                enabled = true,
-                targetLevel = 0.12f,
-                attackMs = 50f,
-                releaseMs = 400f,
-                maxGainDb = 12f,
-                minGainDb = -12f,
-                noiseGateLevel = 0.002f
-            )
-            else -> null
-        }
+        fun getDefault(deviceType: RecordingDeviceType): AGCConfig = AGCConfig(enabled = false)
     }
 }
 

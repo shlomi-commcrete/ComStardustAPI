@@ -161,6 +161,13 @@ object SharedPreferencesUtil {
     private const val KEY_AI_TONAL_WHINE_ATTENUATION_DB = "ai_tonal_whine_attenuation_db"
     private const val KEY_AI_RECORDER_PROFILES = "ai_recorder_profiles"
 
+    // Recorder profiles may intentionally carry special float values
+    // (e.g. RNNoise maxAttenuationDb = -Infinity), so use a Gson instance
+    // that can serialize them safely.
+    private val aiRecorderProfilesGson: Gson = GsonBuilder()
+        .serializeSpecialFloatingPointValues()
+        .create()
+
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -236,7 +243,7 @@ object SharedPreferencesUtil {
             ?: return emptyMap()
         return try {
             val type = object : TypeToken<Map<String, AiRecorderProfile>>() {}.type
-            val raw = Gson().fromJson<Map<String, AiRecorderProfile>>(json, type)
+            val raw = aiRecorderProfilesGson.fromJson<Map<String, AiRecorderProfile>>(json, type)
                 ?: return emptyMap()
             raw.mapNotNull { (key, profile) ->
                 runCatching { RecordingDeviceType.valueOf(key) }.getOrNull()?.let { type ->
@@ -260,7 +267,7 @@ object SharedPreferencesUtil {
             type.name to profile
         }.toMap()
         getPrefs(context).edit()
-            .putString(KEY_AI_RECORDER_PROFILES, Gson().toJson(serializable))
+            .putString(KEY_AI_RECORDER_PROFILES, aiRecorderProfilesGson.toJson(serializable))
             .apply()
     }
 
