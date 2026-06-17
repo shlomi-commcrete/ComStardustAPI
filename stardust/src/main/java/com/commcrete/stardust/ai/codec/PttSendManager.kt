@@ -292,6 +292,24 @@ object PttSendManager {
         finishSession(session)
     }
 
+    /**
+     * Suspend until [session]'s encode/finalize job has fully completed —
+     * i.e. the queue has been drained, [finalizeSession] has written the
+     * WAV file (and any mirror copy under [RecorderUtils.dirToSaveFile]),
+     * and the per-session resources have been released.
+     *
+     * Safe to call before, during, or after [finish]: if the queue isn't
+     * closed yet this will hang, so callers that don't control the
+     * lifecycle (e.g. a "wait then time out" path) should wrap in
+     * `withTimeoutOrNull(...)`.
+     *
+     * Returns immediately if the session has no job yet (never started)
+     * or has already completed.
+     */
+    suspend fun awaitFinalized(session: PttSession) {
+        session.job?.join()
+    }
+
     private fun finishSession(session: PttSession) {
         if (!session.finishRequested.compareAndSet(false, true)) {
             Log.d(TAG, "finish(${session.id}): already finished — ignoring")

@@ -179,22 +179,15 @@ object AudioTestFeeder {
     ): Job {
         stop()
         DataManager.requireContext(context)
-        // Real BLE/USB destination only when the caller has explicitly
-        // opted in via `withSend` AND supplied a non-blank id. Otherwise
-        // the feeder runs in artifact-only mode and never transmits.
         val sendTo: String? = destinationId?.takeIf { withSend && it.isNotBlank() }
-        if (codeType == RecorderUtils.CODE_TYPE.AI) {
-            // For the AI path, the live transmission goes through
-            // `PttSendManager.sendData(...)` which only emits when a
-            // `PttInterface` is registered (`viewModel?.let { ... }`).
-            // Plug a feeder-local adapter in so chunks travel through the
-            // same `DataManager.sendDataToBle(pkg)` path live recording
-            // uses; pass null when transmission is disabled so the
-            // existing artifact-only behaviour is preserved.
-            val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
-            PttSendManager.init(context.applicationContext, pttInterface)
-            PttSendManager.restart()
-        }
+        val aiSession: com.commcrete.stardust.ai.codec.PttSession? =
+            if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
+                PttSendManager.init(context.applicationContext, pttInterface)
+                PttSendManager.restart()
+            } else {
+                null
+            }
         val job = feederScope.launch {
             lastRunStats.clear()
             lastRunRoundTrips.clear()
@@ -256,7 +249,10 @@ object AudioTestFeeder {
                 if (codeType == RecorderUtils.CODE_TYPE.AI) {
                     Timber.tag(TAG).i("✔ All sources fed. Calling PttSendManager.finish() in 3s")
                     delay(3_000)
-                    PttSendManager.finish(context)
+                    // Use the session-aware overload so a newer recording
+                    // started in the meantime is unaffected.
+                    aiSession?.let { PttSendManager.finish(it) }
+                        ?: PttSendManager.finish(context)
                 } else {
                     Timber.tag(TAG).i("✔ All sources fed. Flushing CODEC2 sink")
                     codec2Sink?.finish()
@@ -269,6 +265,10 @@ object AudioTestFeeder {
                 // re-registers DataManager without our stale adapter
                 // racing it. Cheap, idempotent.
                 if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                    if (aiSession != null) {
+                        runCatching { PttSendManager.finish(aiSession) }
+                        runCatching { PttSendManager.awaitFinalized(aiSession) }
+                    }
                     runCatching { PttSendManager.init(context.applicationContext, null) }
                 }
                 onDone?.invoke()
