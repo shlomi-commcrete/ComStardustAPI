@@ -406,8 +406,7 @@ internal object AudioFeederEngine {
             pcmArray = finalChunk,
             file = sinkFile,
             carrier = carrier,
-            chatID = chatID,
-            applyFilters = false,
+            chatID = chatID
         )
     }
 

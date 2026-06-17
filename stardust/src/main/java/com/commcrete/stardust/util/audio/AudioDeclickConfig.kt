@@ -134,6 +134,13 @@ data class DeclickConfig(
             thresholdMad, minPeakDbFs, maxTickSamples, splineMaxLength, medianWindow,
             if (useDerivativeDetection) "on" else "off", expansionFraction,
         ).replace(',', '.')
+
+    companion object {
+        fun getDefault(deviceType: RecordingDeviceType): DeclickConfig = when (deviceType) {
+            RecordingDeviceType.JBOX_INTERNAL -> DeclickConfig(enabled = true)
+            else -> DeclickConfig(enabled = false)
+        }
+    }
 }
 
 

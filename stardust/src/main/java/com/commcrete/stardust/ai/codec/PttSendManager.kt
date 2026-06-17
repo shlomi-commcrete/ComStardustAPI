@@ -26,7 +26,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -35,21 +34,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
-import com.commcrete.stardust.util.audio.AGCConfig
-import com.commcrete.stardust.util.audio.AGCFilter
-import com.commcrete.stardust.util.audio.AiRecorderProfile
-import com.commcrete.stardust.util.audio.AudioDsp
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
-import com.commcrete.stardust.util.audio.DeclickConfig
-import com.commcrete.stardust.util.audio.DeclickFilter
-import com.commcrete.stardust.util.audio.DynamicsConfig
-import com.commcrete.stardust.util.audio.DynamicsProcessingFilter
-import com.commcrete.stardust.util.audio.LowPassConfig
-import com.commcrete.stardust.util.audio.LowPassFilter
-import com.commcrete.stardust.util.audio.NotchConfig
-import com.commcrete.stardust.util.audio.NotchFilter
-import com.commcrete.stardust.util.audio.RnNoiseConfig
+import com.commcrete.stardust.util.audio.PttAudioProcessor
 
 /**
  * Per-recording session handle returned by [PttSendManager.restart].
@@ -192,76 +178,26 @@ object PttSendManager {
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
-    /**
-     * Queue [pcmArray] for AI encoding on the **current session**.
-     *
-     * Must be called between [restart] (which creates the session) and
-     * [finish] (which closes its queue). If no session is active the chunk
-     * is dropped with a warning.
-     *
-     * - [nativeRate]: sample rate of the incoming PCM. Resampled to the
-     *   encoder's 24 kHz target when it differs.
-     * - [profile]: optional DSP config for this session's device type.
-     *   `null` → use no-arg defaults (RNNoise + DP + LPF on, others off).
-     * - [applyFilters]: set `false` when the caller already ran its own
-     *   DSP chain (e.g. the test feeder), to prevent double-filtering.
-     */
     fun addNewFrame(
         pcmArray: ShortArray,
         file: File,
         carrier: Carrier? = null,
-        chatID: String? = null,
-        applyFilters: Boolean = true,
-        nativeRate: Int = TARGET_SAMPLE_RATE,
-        profile: AiRecorderProfile? = null,
+        chatID: String? = null
     ) {
         val session = synchronized(sessionsLock) { currentSession } ?: run {
             Log.w(TAG, "addNewFrame: no active session — dropping ${pcmArray.size}-sample chunk")
             return
         }
-        val toQueue = preprocessForEncoding(
-            pcmArray = pcmArray,
-            nativeRate = nativeRate,
-            profile = profile,
-            applyFilters = applyFilters,
-            targetRate = TARGET_SAMPLE_RATE,
-        )
-        // File / carrier / chatID can change as the session progresses
-        // (first frame typically sets them). Keep them on the session so
-        // finalization writes to the session's own file even if a newer
-        // session has since been started for a different chat.
+
         session.file = file
         session.carrier = carrier
         session.chatID = chatID
-        if (!session.queue.trySend(toQueue).isSuccess) {
+        if (!session.queue.trySend(pcmArray).isSuccess) {
             Log.w(TAG, "Session ${session.id}: queue trySend failed (queue closed?)")
         }
     }
 
-    /**
-     * Shared PCM preprocessing for both AI and CODEC2 paths.
-     * Applies profile-driven DSP at [nativeRate], then optionally resamples to [targetRate].
-     */
-    fun preprocessForEncoding(
-        pcmArray: ShortArray,
-        nativeRate: Int,
-        profile: AiRecorderProfile? = null,
-        applyFilters: Boolean = true,
-        targetRate: Int = TARGET_SAMPLE_RATE,
-    ): ShortArray {
-        val filtered: ShortArray = if (applyFilters) {
-            val mutable = pcmArray.copyOf()
-            applyFilterChain(mutable, nativeRate, profile)
-            mutable
-        } else {
-            pcmArray
-        }
-        return if (nativeRate != targetRate) {
-            AudioDsp.resampleLinear(filtered, nativeRate, targetRate)
-        } else {
-            filtered
-        }
-    }
+
 
     /**
      * Finish the **current** session (the one most recently started via
@@ -351,7 +287,7 @@ object PttSendManager {
             finishSession(orphan)
         }
 
-        releaseFilters()
+        PttAudioProcessor.reset()
         wavTokenizerDecoder.clearDebugDump()
         newSession.job = launchSessionJob(newSession)
         Log.d(TAG, "restart() -> new session ${newSession.id}")
@@ -568,179 +504,5 @@ object PttSendManager {
         } catch (e: Exception) {
             Log.e(TAG, "Session ${session.id}: WAV save failed", e)
         }
-    }
-
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Pre-encode DSP filter chain
-    // ──────────────────────────────────────────────────────────────────────
-    //
-    // Mirrors the live per-chunk chain assembled in
-    // `AudioFeederEngine.LiveFilterChain.processChunkInPlace`:
-    //
-    //     Declick → Notch → RNNoise → DP → AGC → AI-gain → LPF
-    //
-    // Built lazily on the first filtered chunk and torn down by [restart].
-    // Stage parameters come from the no-arg constructors of the public
-    // config classes — those are the user-tuned voice-focus defaults
-    // (DP voice-focus DP-only, LPF voice-band, RNNoise default). AGC,
-    // declick and notch are intentionally NOT included by default so the
-    // chain stays consistent with the DP-only voice-focus preset; if you
-    // need them, adjust the relevant `*Config` defaults or extend the
-    // builder below.
-
-    /** Sample rate the AI encoder requires (`addNewFrame` resamples to this). */
-    private const val TARGET_SAMPLE_RATE = 24_000
-
-    private var declickFilter: DeclickFilter? = null
-    private var notchFilter: NotchFilter? = null
-    private var rnNoiseProcessor: RnNoiseProcessor? = null
-    private var dynamicsFilter: DynamicsProcessingFilter? = null
-    private var agcFilter: AGCFilter? = null
-    private var lpf: LowPassFilter? = null
-
-    /** RNNoise wet/dry mix in `[0,1]` (1 = full clean, 0 = bypass). */
-    private var rnNoiseMix: Float = 1f
-    /** RNNoise max-attenuation linear floor (0 = disabled). */
-    private var rnNoiseAttenFloor: Float = 0f
-    /** Post-AGC make-up multiplier (1 = passthrough). Reserved hook. */
-    private var filterAiGain: Float = 1f
-    private var filterAiGainSoftSat: Boolean = false
-
-    /**
-     * Sample rate the currently-built filter chain runs at. Set on first
-     * build; if a later [addNewFrame] call arrives with a different
-     * [sampleRate], the chain is torn down and rebuilt so biquad / one-pole
-     * coefficients (and RNNoise's internal resampler) are correct for the
-     * new rate. `-1` means no chain built yet.
-     */
-    @Volatile private var currentFilterRate: Int = -1
-    /** Key that captures which profile the chain was built for. */
-    @Volatile private var currentFilterKey: AiRecorderProfile? = null
-    @Volatile private var filtersBuilt: Boolean = false
-
-    private fun ensureFiltersBuilt(sampleRate: Int, profile: AiRecorderProfile?) {
-        if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
-        synchronized(this) {
-            if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
-            if (filtersBuilt) {
-                Log.i(
-                    TAG,
-                    "Filter chain changed (rate/profile): ${currentFilterRate}Hz → ${sampleRate}Hz, rebuilding",
-                )
-                releaseFilters()
-            }
-            currentFilterRate = sampleRate
-            currentFilterKey = profile
-
-            // Profile provides the DSP configs; null fields fall back to
-            // no-arg defaults so the chain always has the three core stages.
-            val rn: RnNoiseConfig? = (profile?.rnNoise ?: RnNoiseConfig()).takeIf { it.enabled }
-            val dp: DynamicsConfig? = (profile?.dynamics ?: DynamicsConfig()).takeIf { it.enabled }
-            val lp: LowPassConfig? = (profile?.lowPass ?: LowPassConfig()).takeIf { it.enabled }
-            // Opt-in stages: only enabled when the profile explicitly provides them.
-            val notch: NotchConfig?    = profile?.notch?.takeIf { it.enabled }
-            val agc: AGCConfig?        = profile?.agc?.takeIf { it.enabled }
-
-            declickFilter   = null
-            notchFilter     = notch?.let { NotchFilter(sampleRate, it.resolveBands()) }
-            rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(sampleRate) } }
-            rnNoiseMix        = rn?.mixClamped ?: 1f
-            rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
-            dynamicsFilter   = dp?.let { DynamicsProcessingFilter(sampleRateHz = sampleRate, config = it) }
-            agcFilter = agc?.let {
-                AGCFilter(
-                    sampleRateHz = sampleRate,
-                    targetLevel = it.targetLevel,
-                    attackMs = it.attackMs,
-                    releaseMs = it.releaseMs,
-                    maxGainDb = it.maxGainDb,
-                    minGainDb = it.minGainDb,
-                    noiseGateLevel = it.noiseGateLevel,
-                )
-            }
-            lpf = lp?.let {
-                LowPassFilter(
-                    sampleRateHz = sampleRate,
-                    cutoffHz = it.cutoffHz,
-                    rollOffDbPerOctave = it.rollOffDbPerOctave,
-                )
-            }
-            filtersBuilt = true
-        }
-    }
-
-    private fun applyFilterChain(chunk: ShortArray, sampleRate: Int, profile: AiRecorderProfile?) {
-        ensureFiltersBuilt(sampleRate, profile)
-        declickFilter?.processInPlace(chunk)
-        notchFilter?.processInPlace(chunk)
-        rnNoiseProcessor?.let { proc ->
-            // Optional wet/dry blend + magnitude floor (same math as
-            // LiveFilterChain.softenRnNoise so output is bit-comparable).
-            val needsBlend = rnNoiseMix < 1f || rnNoiseAttenFloor > 0f
-            val dry = if (needsBlend) chunk.copyOf() else null
-            proc.process(chunk, chunk.size)
-            if (dry != null) softenRnNoise(chunk, dry, rnNoiseMix, rnNoiseAttenFloor)
-        }
-        dynamicsFilter?.processInPlace(chunk)
-        agcFilter?.processInPlace(chunk)
-        if (filterAiGain != 1f) {
-            if (filterAiGainSoftSat) AudioDsp.applyAiGainSoftSatInPlace(chunk, filterAiGain)
-            else AudioDsp.applyAiGainInPlace(chunk, filterAiGain)
-        }
-        lpf?.processInPlace(chunk)
-    }
-
-    /**
-     * Identical to `AudioFeederEngine.LiveFilterChain.softenRnNoise`:
-     * clamp each cleaned sample's magnitude to be at least [floor] of the
-     * dry sample's magnitude, then linearly blend cleaned vs. dry by [mix].
-     */
-    private fun softenRnNoise(wet: ShortArray, dry: ShortArray, mix: Float, floor: Float) {
-        val n = minOf(wet.size, dry.size)
-        for (i in 0 until n) {
-            val d = dry[i].toInt()
-            var w = wet[i].toInt()
-            if (floor > 0f && d != 0) {
-                val absDry = if (d < 0) -d else d
-                val minAbs = (absDry * floor).toInt()
-                val absWet = if (w < 0) -w else w
-                if (absWet < minAbs) {
-                    val sign = when {
-                        w > 0 -> 1
-                        w < 0 -> -1
-                        d >= 0 -> 1
-                        else -> -1
-                    }
-                    w = sign * minAbs
-                }
-            }
-            val blended = if (mix >= 1f) w
-            else (w * mix + d * (1f - mix)).toInt()
-            wet[i] = blended.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
-        }
-    }
-
-    /**
-     * Release native resources held by the chain (RNNoise's denoise state in
-     * particular) and clear the per-stage filter instances so the next
-     * session rebuilds with fresh state. Idempotent.
-     */
-    private fun releaseFilters() {
-        runCatching { rnNoiseProcessor?.release() }
-            .onFailure { Log.w(TAG, "RnNoise release failed", it) }
-        rnNoiseProcessor = null
-        declickFilter = null
-        notchFilter = null
-        dynamicsFilter = null
-        agcFilter = null
-        lpf = null
-        rnNoiseMix = 1f
-        rnNoiseAttenFloor = 0f
-        filterAiGain = 1f
-        filterAiGainSoftSat = false
-        currentFilterRate = -1
-        currentFilterKey = null
-        filtersBuilt = false
     }
 }

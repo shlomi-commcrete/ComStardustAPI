@@ -16,7 +16,6 @@ import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.ai.codec.AudioRecorderAI
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
@@ -36,8 +35,6 @@ object RecorderUtils {
     private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
     private var aiRecorder : AudioRecorderAI? = null
 
-    private const val AI_TARGET_SAMPLE_RATE = 24_000
-
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
     var dirToSaveFile: File =
@@ -45,82 +42,11 @@ object RecorderUtils {
             .also { it.mkdirs() }
 
     // ──────────────────────────────────────────────────────────────────────
-    // Per-device-type DSP profiles
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Per-device-type DSP profile presets keyed by [RecordingDeviceType].
-     * Each device type can have multiple profiles (presets) for user selection.
-     * Loaded from [SharedPreferencesUtil] in [init]; updated via
-     * [setAiRecorderProfiles] which persists each change immediately.
-     * Currently one preset per device type, expandable for user-selectable options.
-     */
-    private val profileMap: MutableMap<RecordingDeviceType, List<AiRecorderProfile>> = mutableMapOf<RecordingDeviceType, List<AiRecorderProfile>>().apply {
-        RecordingDeviceType.entries.forEach { deviceType ->
-            val profile = getAiRecorderDefaultProfilePreset(deviceType)
-            // Only add if at least one config is non-null (profile is meaningful)
-            if (profile.lowPass != null || profile.notch != null || profile.rnNoise != null ||
-                profile.agc != null || profile.dynamics != null) {
-                put(deviceType, listOf(profile))
-            }
-        }
-    }
-
-
-    fun getAiRecorderDefaultProfilePreset(recordingDeviceType: RecordingDeviceType): AiRecorderProfile {
-        return AiRecorderProfile(
-            title = "Default",
-            isActive = true,
-            lowPass = LowPassConfig.getDefault(recordingDeviceType),
-            notch = NotchConfig.getDefault(recordingDeviceType),
-            rnNoise = RnNoiseConfig.getDefault(recordingDeviceType),
-            agc = AGCConfig.getDefault(recordingDeviceType),
-            dynamics = DynamicsConfig.getDefault(recordingDeviceType),
-        )
-    }
-
-    fun getAiRecorderProfiles(recordingDeviceType: RecordingDeviceType): List<AiRecorderProfile>? = profileMap[recordingDeviceType]
-
-    fun getAiActiveRecorderProfile(recordingDeviceType: RecordingDeviceType): AiRecorderProfile? =
-        profileMap[recordingDeviceType]?.find { it.isActive }
-
-    /**
-     * Update (or add) profiles for a device-type and persist to [SharedPreferencesUtil].
-     */
-    fun setAiRecorderProfiles(context: Context, recordingDeviceType: RecordingDeviceType, profiles: List<AiRecorderProfile>) {
-        profileMap[recordingDeviceType] = profiles
-        val flatMap = profileMap.flatMap { (type, profs) ->
-            profs.map { type to it }
-        }.toMap()
-        @Suppress("UNCHECKED_CAST")
-        SharedPreferencesUtil.setAiRecorderProfiles(context, flatMap)
-    }
-
-    /**
-     * Convenience function to update a single preset at a given index (or add as new).
-     */
-    fun setAiRecorderProfile(context: Context, recordingDeviceType: RecordingDeviceType, profile: AiRecorderProfile, presetIndex: Int = 0) {
-        val profiles = profileMap[recordingDeviceType]?.toMutableList() ?: mutableListOf()
-        if (presetIndex < profiles.size) {
-            profiles[presetIndex] = profile
-        } else {
-            profiles.add(profile)
-        }
-        setAiRecorderProfiles(context, recordingDeviceType, profiles)
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
 
     fun init(pttInterface: PttInterface) {
+        PttAudioProcessor.loadProfiles(DataManager.context)
         RecorderUtils.pttInterface = pttInterface
         if (!dirToSaveFile.exists()) dirToSaveFile.mkdirs()
-        // Load persisted profiles; overlay onto defaults so any type not yet
-        // saved keeps the built-in sensible values.
-        val saved = SharedPreferencesUtil.getAiRecorderProfiles(DataManager.context)
-        // Group loaded profiles by device type to support multiple presets
-        saved.entries.groupBy { it.key }.forEach { (type, entries) ->
-            profileMap[type] = entries.map { it.value }
-        }
     }
 
     fun onPTTTest(){
@@ -263,48 +189,19 @@ object RecorderUtils {
             pcmArray = prepared,
             file = file,
             carrier = carrier,
-            chatID = destination,
-            applyFilters = false,
-            nativeRate = AI_TARGET_SAMPLE_RATE,
-            profile = null,
+            chatID = destination
         )
     }
 
-    private val lastLoggedFilterSignatureByFlow: MutableMap<String, String> = mutableMapOf()
-    private val lastLoggedChunkShapeByFlow: MutableMap<String, String> = mutableMapOf()
-
-    private fun resolveActiveProfile(deviceType: RecordingDeviceType): AiRecorderProfile? {
-        return profileMap[deviceType]?.firstOrNull { it.isActive }
-    }
-
-    private fun buildFilterSignature(profile: AiRecorderProfile?): String {
-        if (profile == null) return "preset=<none>; filters=[]"
-        val enabledFilters = mutableListOf<String>()
-        profile.lowPass?.takeIf { it.enabled }?.let {
-            enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
-        }
-        profile.notch?.takeIf { it.enabled }?.let {
-            enabledFilters.add("notch(harmonics=${it.harmonics.size})")
-        }
-        profile.rnNoise?.takeIf { it.enabled }?.let {
-            enabledFilters.add("rnNoise(mix=${it.mix}, maxAttenDb=${it.maxAttenuationDb})")
-        }
-        profile.agc?.takeIf { it.enabled }?.let {
-            enabledFilters.add(
-                "agc(target=${it.targetLevel}, atk=${it.attackMs}, rel=${it.releaseMs}, +${it.maxGainDb}/${it.minGainDb}, gate=${it.noiseGateLevel})"
-            )
-        }
-        profile.dynamics?.takeIf { it.enabled }?.let {
-            enabledFilters.add(
-                "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
-            )
-        }
-        return "preset=${profile.title}; active=${profile.isActive}; filters=[${enabledFilters.joinToString()}]"
-    }
-
     /**
-     * Shared preprocessing used by AI and CODEC2 paths.
-     * Applies selected profile filters at [nativeRate], then resamples only for AI.
+     * Resolve the current input route to a [RecordingDeviceType] and
+     * delegate the actual filtering + resampling to [PttAudioProcessor].
+     *
+     * Both encoder paths (AI / CODEC2) come through here so they share
+     * identical preprocessing semantics — only the target rate differs
+     * (24 kHz for AI, 8 kHz for CODEC2). The active DSP profile for
+     * the inferred device type is looked up inside the processor; this
+     * facade just handles the device-routing concern.
      */
     fun preprocessChunkForEncoding(
         pcmArray: ShortArray,
@@ -314,42 +211,23 @@ object RecorderUtils {
         encodingType: CODE_TYPE,
         chunkDurationMs: Int? = null,
     ): ShortArray {
-        val flowKey = encodingType.name
         val recordingDeviceType = inferDeviceType(actualInputType)
-        val activeProfile = resolveActiveProfile(recordingDeviceType)
-        val filterSignature = buildFilterSignature(activeProfile)
-
-        val lastFilterSignature = lastLoggedFilterSignatureByFlow[flowKey]
-        if (chunkIndex == 0 || lastFilterSignature != filterSignature) {
-            Log.d(LOG_TAG,
-                "$flowKey filter preset for chunk=$chunkIndex deviceType=$recordingDeviceType -> $filterSignature"
-            )
-            lastLoggedFilterSignatureByFlow[flowKey] = filterSignature
+        val targetRate = when (encodingType) {
+            CODE_TYPE.AI -> PttAudioProcessor.AI_TARGET_SAMPLE_RATE
+            CODE_TYPE.CODEC2 -> PttAudioProcessor.CODEC2_TARGET_SAMPLE_RATE
         }
-
-        val expectedSamples = chunkDurationMs?.let { (nativeRate * it) / 1000 }
-        val chunkShape = if (expectedSamples != null) {
-            "rate=${nativeRate}Hz size=${pcmArray.size} expected=${expectedSamples}"
-        } else {
-            "rate=${nativeRate}Hz size=${pcmArray.size}"
-        }
-        val lastShape = lastLoggedChunkShapeByFlow[flowKey]
-        val mismatch = expectedSamples != null && pcmArray.size != expectedSamples
-        if (chunkIndex <= 1 || lastShape != chunkShape || mismatch) {
-            val message = "$flowKey chunk shape chunk=$chunkIndex deviceType=$recordingDeviceType -> $chunkShape"
-            if (mismatch) Timber.w(message) else Timber.d(message)
-            lastLoggedChunkShapeByFlow[flowKey] = chunkShape
-        }
-
-        val targetRate = if (encodingType == CODE_TYPE.AI) AudioRecorderAI.RECORDER_SAMPLE_RATE else WavRecorder.RECORDER_SAMPLE_RATE
-        return PttSendManager.preprocessForEncoding(
+        return PttAudioProcessor.process(
             pcmArray = pcmArray,
             nativeRate = nativeRate,
-            profile = activeProfile,
-            applyFilters = true,
             targetRate = targetRate,
+            deviceType = recordingDeviceType,
+            applyFilters = true,
+            flowKey = encodingType.name,
+            chunkIndex = chunkIndex,
+            chunkDurationMs = chunkDurationMs,
         )
     }
+
 
     /**
      * Infer [RecordingDeviceType] from actual route when available,
