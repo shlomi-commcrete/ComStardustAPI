@@ -37,15 +37,21 @@ internal object AudioFeederEngine {
         fun finish()
     }
 
+    /**
+     * Build a CODEC2 chunk sink. When [destination] is `null`, encoded CODEC2
+     * packets are still produced (so the sink can be flushed cleanly via
+     * [Codec2Sink.finish]) but **no** BLE/USB transmission occurs — used when
+     * the test feeder is invoked without `withSend = true`.
+     */
     internal fun createCodec2ChunkSink(
         context: Context,
-        destination: String,
+        destination: String?,
         carrier: Carrier?,
     ): Codec2Sink = Codec2ChunkSink(context, destination, carrier)
 
     suspend fun feedSingle(
         context: Context,
-        destination: String,
+        sendTo: String?,
         carrier: Carrier?,
         source: Source,
         codeType: RecorderUtils.CODE_TYPE,
@@ -109,7 +115,7 @@ internal object AudioFeederEngine {
         )
 
         val sinkFile: File? = if (codeType == RecorderUtils.CODE_TYPE.AI) {
-            createSinkFile(context, destination, source.label)
+            createSinkFile(context, sendTo ?: "${source.file.name}_codec", source.label)
         } else {
             null
         }
@@ -121,6 +127,25 @@ internal object AudioFeederEngine {
                     channels = 1,
                     bitsPerSample = 16,
                     fileNamePrefix = "${source.label}-ai_input_24k",
+                    outputDir = artifactDir,
+                )
+            }
+        } else {
+            null
+        }
+        // Parallel of `aiInputWriter` for the CODEC2 path: captures the
+        // exact 8 kHz mono PCM that is fed into the Codec2 encoder, so the
+        // resulting WAV matches what the encoder actually sees (post-DSP,
+        // post-resample). Filename mirrors the AI writer with "ai" → "codec"
+        // and the rate suffix updated to the CODEC2 target (8 kHz).
+        val codecInputWriter = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
+            com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
+                start(
+                    context = context,
+                    sampleRate = Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE,
+                    channels = 1,
+                    bitsPerSample = 16,
+                    fileNamePrefix = "${source.label}-codec_input_8k",
                     outputDir = artifactDir,
                 )
             }
@@ -144,7 +169,7 @@ internal object AudioFeederEngine {
                         nativeRate = nativeRate,
                         sinkFile = sinkFile ?: return@streamPcmAsChunks,
                         carrier = carrier,
-                        destination = destination,
+                        chatID = sendTo,
                         aiInputWriter = aiInputWriter,
                     )
                 } else {
@@ -152,6 +177,7 @@ internal object AudioFeederEngine {
                         filteredChunk = filteredChunk,
                         nativeRate = nativeRate,
                         codec2Sink = codec2Sink,
+                        codecInputWriter = codecInputWriter,
                     )
                 }
             }
@@ -166,6 +192,8 @@ internal object AudioFeederEngine {
             if (codeType == RecorderUtils.CODE_TYPE.AI) {
                 PttSendManager.onDecodedChunk = null
                 runCatching { aiInputWriter?.stop() }
+            } else {
+                runCatching { codecInputWriter?.stop() }
             }
             //runCatching { aiOutputWriter.stop() }
         }
@@ -187,7 +215,7 @@ internal object AudioFeederEngine {
 
     private class Codec2ChunkSink(
         private val context: Context,
-        private val destination: String,
+        private val destination: String?,
         private val carrier: Carrier?,
     ) : Codec2Sink {
         companion object {
@@ -253,6 +281,12 @@ internal object AudioFeederEngine {
         }
 
         private fun sendPacket(payload: ByteArray, isLast: Boolean) {
+            // Artifact-only runs (test feeder invoked without an explicit
+            // BLE destination) skip transmission entirely. The encoder /
+            // packer above still runs so the sink can be flushed cleanly
+            // via [finish], matching the live recording cadence for any
+            // downstream artifact capture.
+            val dest = destination ?: return
             val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
             val audioIntArray = StardustPackageUtils.byteArrayToIntArray(payload)
             if (audioIntArray.endsWith(SUFFIX)) {
@@ -263,7 +297,7 @@ internal object AudioFeederEngine {
             val pkg = StardustPackageUtils.getStardustPackage(
                 context = context,
                 source = DataManager.getSource(),
-                destenation = destination,
+                destenation = dest,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
                 data = audioIntArray,
             )
@@ -333,7 +367,7 @@ internal object AudioFeederEngine {
         nativeRate: Int,
         sinkFile: File,
         carrier: Carrier?,
-        destination: String,
+        chatID: String?,
         aiInputWriter: com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter?,
     ) {
         val outChunk = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) filteredChunk
@@ -369,10 +403,10 @@ internal object AudioFeederEngine {
         // applyFilters = false: the LiveFilterChain above already ran at
         // native rate and was resampled here at the handoff boundary.
         PttSendManager.addNewFrame(
-            finalChunk,
-            sinkFile,
-            carrier,
-            destination,
+            pcmArray = finalChunk,
+            file = sinkFile,
+            carrier = carrier,
+            chatID = chatID,
             applyFilters = false,
         )
     }
@@ -381,12 +415,16 @@ internal object AudioFeederEngine {
         filteredChunk: ShortArray,
         nativeRate: Int,
         codec2Sink: Codec2Sink?,
+        codecInputWriter: com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter?,
     ) {
         val pcm8k = if (nativeRate == Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE) {
             filteredChunk
         } else {
             AudioDsp.resampleLinear(filteredChunk, nativeRate, Codec2ChunkSink.TARGET_CODEC2_SAMPLE_RATE)
         }
+        // Capture the exact PCM the Codec2 encoder is about to consume —
+        // mirrors `aiInputWriter.append(...)` in [routeChunkToAi].
+        codecInputWriter?.append(pcm8k, pcm8k.size)
         codec2Sink?.enqueuePcm(pcm8k)
     }
 

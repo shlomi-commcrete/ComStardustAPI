@@ -3,6 +3,9 @@ package com.commcrete.stardust.ai.codec
 import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.Scopes
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.pytorch.*
 import java.io.File
 import java.io.FileOutputStream
@@ -169,10 +172,21 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         return modelType
     }
 
-    fun initModule() {
-        Log.d(TAG, "WavTokenizerEncoder module initialized")
-        module
-        //moduleEnglish
-        Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
+    fun initModule(): Job = initJob
+
+    /**
+     * Cached, single-shot init job. The first call to [initModule] triggers
+     * the lazy → launches one coroutine that touches [module] (which is
+     * itself `by lazy(SYNCHRONIZED)` so the underlying PyTorch model is
+     * loaded exactly once). Every subsequent call returns the same [Job],
+     * so `.join()` from multiple sites is safe and only waits for the
+     * single load to finish.
+     */
+    private val initJob: Job by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Scopes.getDefaultCoroutine().launch {
+            Log.d(TAG, "WavTokenizerEncoder module initializing")
+            module
+            Log.d(TAG, "WavTokenizerEncoder model loaded successfully")
+        }
     }
 }

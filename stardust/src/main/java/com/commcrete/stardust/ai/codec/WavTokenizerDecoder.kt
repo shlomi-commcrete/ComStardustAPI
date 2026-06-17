@@ -2,8 +2,10 @@ package com.commcrete.aiaudio.codecs
 
 import android.content.Context
 import android.util.Log
-import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.pytorch.IValue
 import org.pytorch.LiteModuleLoader
 import org.pytorch.Module
@@ -22,10 +24,19 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
     private var index = 0
     private var cutTokens = 0
-
     private var loop = 0
-    val outFile = File(context.cacheDir, "decoded_data.txt")
     val listEnergy = mutableListOf<String>()
+
+    val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+    @Volatile
+    var debugDumpDecodes: Boolean = false
+        @Synchronized set(value) {
+            val wasOff = !field
+            field = value
+            if (value && wasOff) clearDebugDump()
+        }
+
+
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerDecoder model")
         val modelAssetName = "codes_to_wav_large_android.ptl"
@@ -39,35 +50,38 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 //    }
 
 
-    init {
-        // If your model is in assets: just put the asset name here.
-    }
 
-    /**
-     * Drop all per-stream state so the next [decode] call starts fresh.
-     *
-     * Required between independent streams (PTT key-down / new feeder
-     * source / restart) because [handleSmart] uses [cutTokens] from the
-     * previous decode to compute the head-cut of the next chunk:
-     *
-     * ```
-     * cutFrom = (20 − cutTokens) × 600
-     * trimmed = trimmed[cutFrom .. ]
-     * ```
-     *
-     * If [cutTokens] carries over from a different stream, the next
-     * stream's first chunk is sliced at the wrong offset → audible
-     * head-cut artefact + misaligned subsequent chunks → output that
-     * gets progressively less intelligible across runs (the symptom
-     * `cutTokens=0` resets at construction but never again until this
-     * method is called).
-     *
-     * Safe to call repeatedly; cheap (just clears 3 ints + a list).
-     */
     fun reset() {
         index = 0
         cutTokens = 0
         loop = 0
+        listEnergy.clear()
+    }
+
+    data class InternalState(
+        val index: Int,
+        val cutTokens: Int,
+        val loop: Int,
+    ) {
+        companion object {
+            val INITIAL = InternalState(index = 0, cutTokens = 0, loop = 0)
+        }
+    }
+
+    /** Capture the current per-stream state. */
+    fun snapshotInternalState(): InternalState =
+        InternalState(index = index, cutTokens = cutTokens, loop = loop)
+
+    /**
+     * Restore a previously captured [snapshotInternalState] before
+     * [decode] is called for the corresponding stream. Always pair with a
+     * matching snapshot AFTER decode so the stream's continuity is kept
+     * intact for its next chunk.
+     */
+    fun restoreInternalState(state: InternalState) {
+        index = state.index
+        cutTokens = state.cutTokens
+        loop = state.loop
         listEnergy.clear()
     }
 
@@ -194,7 +208,13 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
         val bestBoundaryToken = findLowestEnergyTokenBoundary(trimmed)
 
-        output?.let { saveDecodedData(it.dataAsFloatArray, fixedData) }
+        // Debug-only: writing every chunk to disk on the codec critical
+        // path measurably slows decoding once `decoded_data.txt` has
+        // grown across many recordings. Guard with [debugDumpDecodes]
+        // so production runs incur no I/O here.
+        if (debugDumpDecodes) {
+            output?.let { saveDecodedData(it.dataAsFloatArray, fixedData) }
+        }
 
         index = bestBoundaryToken
         val totalTokens = trimmed.size / 600
@@ -466,7 +486,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
     private fun saveDecodedData (byteArray: FloatArray, fixedData: List<Long>, ) {
         try {
-            FileOutputStream(outFile, true).use { fos ->
+            FileOutputStream(debugOutFile, true).use { fos ->
                 // Write each int16 value on its own line
                 val sb = StringBuilder()
                 sb.append("\n").append("Loop number $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
@@ -484,12 +504,20 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
                 }
                 fos.write(sb.toString().toByteArray(Charsets.UTF_8))
             }
-            Log.e("WavHelper", "Finished writing RAW TXT file to ${outFile.absolutePath}")
+            Log.e("WavHelper", "Finished writing RAW TXT file to ${debugOutFile.absolutePath}")
         } catch (e: IOException) {
             Log.e("WavHelper", "Error writing raw txt file", e)
         }
 
     }
+
+    fun clearDebugDump() {
+        runCatching {
+            if (debugOutFile.exists()) debugOutFile.delete()
+        }.onFailure { Log.w(TAG, "clearDebugDump: failed to delete ${debugOutFile.absolutePath}", it) }
+    }
+
+
     fun getSelectedModule (modelTypeSelected: ModelType) : Module{
 
         val modelType = module
@@ -509,7 +537,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
 
     enum class ModelType (val type : Int) {
         General (0x00),
-        English (0x01);
+        English (0x01); // For now this option is commented out since this model isn't good enough to justify the extra app size
         companion object {
             fun fromInt(value: Int): ModelType? {
                 return entries.firstOrNull { it.type == value }
@@ -517,10 +545,21 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
         }
     }
 
-    fun initModule() {
-        Log.d(TAG, "WavTokenizerDecoder module initialized")
-        module
-        //moduleEnglish
-        Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
+    fun initModule(): Job = initJob
+
+    /**
+     * Cached, single-shot init job. The first call to [initModule] triggers
+     * the lazy → launches one coroutine that touches [module] (which is
+     * itself `by lazy(SYNCHRONIZED)` so the underlying PyTorch model is
+     * loaded exactly once). Every subsequent call returns the same [Job],
+     * so `.join()` from multiple sites is safe and only waits for the
+     * single load to finish.
+     */
+    private val initJob: Job by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Scopes.getDefaultCoroutine().launch {
+            Log.d(TAG, "WavTokenizerDecoder module initializing")
+            module
+            Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
+        }
     }
 }

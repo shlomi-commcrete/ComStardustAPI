@@ -23,16 +23,24 @@ import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.commcrete.stardust.util.audio.AGCConfig
 import com.commcrete.stardust.util.audio.AGCFilter
 import com.commcrete.stardust.util.audio.AiRecorderProfile
 import com.commcrete.stardust.util.audio.AudioDsp
+import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.DeclickConfig
 import com.commcrete.stardust.util.audio.DeclickFilter
 import com.commcrete.stardust.util.audio.DynamicsConfig
@@ -42,6 +50,49 @@ import com.commcrete.stardust.util.audio.LowPassFilter
 import com.commcrete.stardust.util.audio.NotchConfig
 import com.commcrete.stardust.util.audio.NotchFilter
 import com.commcrete.stardust.util.audio.RnNoiseConfig
+
+/**
+ * Per-recording session handle returned by [PttSendManager.restart].
+ *
+ * Each session owns its own encode queue, frame buffer, decoder continuity
+ * state and target file, so a new recording can begin before the previous
+ * one has finished encoding/saving without losing or corrupting either.
+ *
+ * Pass the handle back into [PttSendManager.finish] to ensure the correct
+ * session is finalized even if [PttSendManager.restart] has since been
+ * called again for a newer recording.
+ */
+class PttSession internal constructor(
+    val id: Long,
+    internal val context: Context,
+) {
+    internal val queue = Channel<ShortArray>(Channel.UNLIMITED)
+    internal val frameBuffer = mutableListOf<ShortArray>()
+    @Volatile internal var file: File? = null
+    @Volatile internal var carrier: Carrier? = null
+    @Volatile internal var chatID: String? = null
+    internal var lastTokens: List<Long>? = null
+    internal var lastPCM: ShortArray? = null
+    internal var recordingTs: Long = 0L
+
+    /**
+     * Atomic so concurrent calls to [PttSendManager.finish] (e.g. the
+     * delayed `finishAIRecording` coroutine racing the legacy
+     * `finish(Context)` path) cannot both pass the guard and
+     * double-close the queue / log the "queue closed" line twice.
+     */
+    internal val finishRequested = AtomicBoolean(false)
+
+    /**
+     * Atomic guard for the file-write path. Even though only one job
+     * runs per session today, an atomic CAS makes finalization
+     * unambiguously single-shot under any future code path or
+     * cancellation order.
+     */
+    internal val finalized = AtomicBoolean(false)
+
+    internal var job: Job? = null
+}
 
 object PttSendManager {
 
@@ -57,8 +108,9 @@ object PttSendManager {
      *
      * Implementation note: when this hook is registered, [handleTokenizerChunk]
      * runs **one** decode per encoded chunk and shares the resulting PCM
-     * with [saveTofile]. Doing it in two independent decode passes corrupts
-     * the shared `WavTokenizerDecoder` instance state (`cutTokens`, `index`),
+     * with the per-session frame buffer (see [finalizeSession]). Doing it
+     * in two independent decode passes corrupts the shared
+     * `WavTokenizerDecoder` instance state (`cutTokens`, `index`),
      * because each pass reads what the OTHER pass wrote on the previous
      * chunk — producing garbled output even though each stream's own
      * continuity (`lastTokens` / `lastPCM`) looks fine.
@@ -67,10 +119,11 @@ object PttSendManager {
     var onDecodedChunk: ((ShortArray) -> Unit)? = null
 
     /**
-     * Drop the per-chunk decoder continuity state ([lastTokens] / [lastPCM])
-     * AND any buffered [frameBuffer]. Call between sessions / per source so
-     * the next stream starts with a clean previousTokens=null path through
-     * `WavTokenizerDecoder.decode` (no stale head-cut from a different stream).
+     * Drop the per-chunk decoder continuity state (`lastTokens` / `lastPCM`)
+     * AND any buffered frames for the **currently active session**. Call
+     * between sources / sub-streams so the next stream starts with a clean
+     * `previousTokens=null` path through `WavTokenizerDecoder.decode` (no
+     * stale head-cut from a different stream).
      *
      * Also resets the shared [wavTokenizerDecoder]'s **internal** per-stream
      * state ([WavTokenizerDecoder.reset] — `index`, `cutTokens`, `loop`,
@@ -78,40 +131,73 @@ object PttSendManager {
      * previous stream leaks into [WavTokenizerDecoder.handleSmart] for the
      * next stream's first chunk, slicing the wrong amount off the head and
      * producing progressively less intelligible output across feed runs.
+     *
+     * If you want a fully isolated session (separate file / queue / state),
+     * call [restart] instead — that creates a brand-new [PttSession] and
+     * leaves any previously-running session untouched.
      */
     fun resetLiveDecodeState() {
-        lastTokens = null
-        lastPCM = null
-        frameBuffer.clear()
+        val session = synchronized(sessionsLock) { currentSession }
+        session?.let {
+            it.lastTokens = null
+            it.lastPCM = null
+            it.frameBuffer.clear()
+        }
         wavTokenizerDecoder.reset()
     }
 
     private val TAG = "PttManager"
     private val TAG_DECODE = "PttManager_Decode"
     private val TAG_ENCODE = "PttManager_Encode"
-    private var coroutineScope = CoroutineScope(Dispatchers.Default) // Scope for decoding and frame dropping
-    private var encodingJob: Job? = null
-    private var toEncodeQueue = Channel<ShortArray>(Channel.UNLIMITED) // Equivalent to m_packet_queue using a Channel
-    private var wavTokenizerEncoder: WavTokenizerEncoder= AIModuleInitializer.wavTokenizerEncoder
+
+    /** Coroutine scope owning every per-session encoding job. */
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Serializes access to the **shared** ML codec instances
+     * ([wavTokenizerEncoder] / [wavTokenizerDecoder]). Session jobs queue
+     * up on this mutex so a new recording can begin (its [PttSession] is
+     * created immediately, chunks are buffered into its queue) but does
+     * not actually use the codec until the previous session has finished
+     * draining and finalized its file.
+     *
+     * This mutex is **also held by [PttReceiveManager]** when it decodes
+     * incoming PTT packets — the tokenizer decoder is a singleton with
+     * mutable per-stream state (`index`, `cutTokens`, `loop`, `listEnergy`)
+     * that gets clobbered if Send and Receive call `decode()` interleaved
+     * (audible artifacts + progressively worse audio across sessions).
+     * Both sides reset the decoder at the start of their own stream so
+     * they never inherit each other's continuity.
+     */
+    internal val codecMutex = Mutex()
+
+    private var wavTokenizerEncoder: WavTokenizerEncoder = AIModuleInitializer.wavTokenizerEncoder
     @SuppressLint("StaticFieldLeak")
     private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
     private lateinit var cacheDir: File
-    private var fileToSave: File? = null
-    var carrier : Carrier? = null
-    var chatID: String? = null
     private var viewModel : PttInterface? = null
     var aiEnabled = false
+
+    // ── Session management ────────────────────────────────────────────
+    private val sessionsLock = Any()
+
+    @SuppressLint("StaticFieldLeak")
+    @Volatile private var currentSession: PttSession? = null
+    private val sessionIdGen = AtomicLong(0)
 
     fun init(context: Context, viewModel : PttInterface? = null) {
         cacheDir = context.cacheDir
         this.viewModel = viewModel
-        startEncodingJob(context)
         aiEnabled = true
 //        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
     /**
-     * Queue [pcmArray] for AI encoding.
+     * Queue [pcmArray] for AI encoding on the **current session**.
+     *
+     * Must be called between [restart] (which creates the session) and
+     * [finish] (which closes its queue). If no session is active the chunk
+     * is dropped with a warning.
      *
      * - [nativeRate]: sample rate of the incoming PCM. Resampled to the
      *   encoder's 24 kHz target when it differs.
@@ -129,6 +215,10 @@ object PttSendManager {
         nativeRate: Int = TARGET_SAMPLE_RATE,
         profile: AiRecorderProfile? = null,
     ) {
+        val session = synchronized(sessionsLock) { currentSession } ?: run {
+            Log.w(TAG, "addNewFrame: no active session — dropping ${pcmArray.size}-sample chunk")
+            return
+        }
         val toQueue = preprocessForEncoding(
             pcmArray = pcmArray,
             nativeRate = nativeRate,
@@ -136,10 +226,16 @@ object PttSendManager {
             applyFilters = applyFilters,
             targetRate = TARGET_SAMPLE_RATE,
         )
-        toEncodeQueue.trySend(toQueue)
-        fileToSave = file
-        this.carrier = carrier
-        this.chatID = chatID
+        // File / carrier / chatID can change as the session progresses
+        // (first frame typically sets them). Keep them on the session so
+        // finalization writes to the session's own file even if a newer
+        // session has since been started for a different chat.
+        session.file = file
+        session.carrier = carrier
+        session.chatID = chatID
+        if (!session.queue.trySend(toQueue).isSuccess) {
+            Log.w(TAG, "Session ${session.id}: queue trySend failed (queue closed?)")
+        }
     }
 
     /**
@@ -167,85 +263,192 @@ object PttSendManager {
         }
     }
 
+    /**
+     * Finish the **current** session (the one most recently started via
+     * [restart]). Idempotent — extra calls are silently ignored.
+     *
+     * Use the [finish] overload that takes a [PttSession] when you need to
+     * guarantee finalization of a specific session even if a newer
+     * recording has since started ([restart] called again before this
+     * finish fires).
+     */
     fun finish(context: Context) {
-        saveTofile(context, byteArrayOf(), finish = true) // Need to delete
+        val session = synchronized(sessionsLock) {
+            val s = currentSession
+            if (s != null) currentSession = null
+            s
+        } ?: return
+        finishSession(session)
     }
 
-    private fun startEncodingJob(context: Context) {
-        if (!aiEnabled) return  // hard guard everywhere you might touch PyTorch
-        encodingJob = coroutineScope.launch {
-            while (isActive) { // Keep the decoding loop active
+    /**
+     * Finish the specific [session]. Idempotent. Safe to call even after a
+     * newer session has been started — only [session] will be finalized.
+     */
+    fun finish(session: PttSession) {
+        synchronized(sessionsLock) {
+            if (currentSession === session) currentSession = null
+        }
+        finishSession(session)
+    }
+
+    private fun finishSession(session: PttSession) {
+        if (!session.finishRequested.compareAndSet(false, true)) {
+            Log.d(TAG, "finish(${session.id}): already finished — ignoring")
+            return
+        }
+        // Closing the channel ends the per-session for-loop in
+        // launchSessionJob; the job then runs finalizeSession exactly once
+        // and releases [codecMutex] so any newer session can start using
+        // the shared codec.
+        session.queue.close()
+        Log.d(TAG, "finish(${session.id}): queue closed — awaiting drain")
+    }
+
+    fun restart(): PttSession {
+        val newSession = PttSession(
+            id = sessionIdGen.incrementAndGet(),
+            context = DataManager.context,
+        )
+        newSession.recordingTs = RecorderUtils.ts
+
+        // Atomic swap: detach previous session (if any) and install the
+        // new one in a single critical section so concurrent observers
+        // see a consistent view of `currentSession`.
+        val orphan = synchronized(sessionsLock) {
+            val prev = currentSession
+            currentSession = newSession
+            prev
+        }
+
+        // Safety net: if a previous session was never explicitly finished
+        // (e.g. recorder was killed without firing `onStateChanged(false)`,
+        // a crash skipped the finishAIRecording path, or the SDK consumer
+        // simply forgot to call stopRecording), close its queue NOW.
+        // Without this, the orphan's `for (chunk in queue)` consumer
+        // would suspend forever, holding the shared codec mutex and
+        // blocking every future session — including this one.
+        if (orphan != null && !orphan.finishRequested.get()) {
+            Log.w(TAG, "restart(): previous session ${orphan.id} was never finished — auto-finalizing")
+            finishSession(orphan)
+        }
+
+        releaseFilters()
+        wavTokenizerDecoder.clearDebugDump()
+        newSession.job = launchSessionJob(newSession)
+        Log.d(TAG, "restart() -> new session ${newSession.id}")
+        return newSession
+    }
+
+
+    private fun launchSessionJob(session: PttSession): Job {
+        return coroutineScope.launch {
+            // Hold a wake lock for the duration of encode + finalize so
+            // screen-off / background does not suspend the codec coroutine
+            // mid-session. The recorder also holds one of these; refcount
+            // makes both safe.
+            AudioRecordingKeepAlive.acquire(session.context)
+            try {
+                // OUTER try-finally: guarantees [finalizeSession] runs no
+                // matter how the inner block exits — including when the
+                // codec mutex acquisition itself was cancelled (in which
+                // case the inner try-finally inside withLock never gets
+                // a chance to run). Without this layering, a job
+                // cancelled while waiting on [codecMutex] would silently
+                // skip finalization, leaving its file unwritten.
                 try {
-                    // Offer the packet to the channel without suspending if the channel is not full
-                    // If the channel was limited, offer might return false or suspend
-                    val pcmArray = toEncodeQueue.tryReceive().getOrNull() // Attempt to receive without suspending
+                    codecMutex.withLock {
+                        Log.d(TAG, "Session ${session.id}: codec acquired")
+                        // Fresh per-stream codec state for this session.
+                        wavTokenizerDecoder.reset()
+                        session.lastTokens = null
+                        session.lastPCM = null
 
-                    if (pcmArray != null) {
-                        handleTokenizerChunk(context, pcmArray)
-                        Log.d(TAG, "Codec decoding loop iteration completed.")
+                        for (pcmArray in session.queue) {
+                            if (!isActive) break
+                            try {
+                                handleTokenizerChunk(session, pcmArray)
+                            } catch (e: MediaCodec.CodecException) {
+                                Log.e(TAG, "Session ${session.id}: codec exception", e)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Session ${session.id}: chunk error", e)
+                            }
+                        }
+                        Log.d(TAG, "Session ${session.id}: codec releasing")
                     }
-
-                } catch (e: MediaCodec.CodecException) {
-                    Log.e(TAG, "Codec exception during decoding: ${e.diagnosticInfo}", e)
-                    break // Exit the decoding loop on error
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error in decoding loop: ${e.message}", e)
-                    break // Exit the decoding loop on other errors
+                } finally {
+                    // Atomic CAS guarantees finalize runs at most once
+                    // per session even if some future code path adds
+                    // another finalize call site.
+                    if (session.finalized.compareAndSet(false, true)) {
+                        // [NonCancellable] so the WAV write completes
+                        // even when the surrounding job is cancelling.
+                        // Otherwise a partial recording's frames would
+                        // be lost on app shutdown / scope cancel.
+                        withContext(NonCancellable) {
+                            try {
+                                finalizeSession(session)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Session ${session.id}: finalize failed", e)
+                            }
+                        }
+                    }
+                    // Idempotent: ensures any producer that races a
+                    // finished session sees a fast-failing trySend
+                    // instead of silently buffering into a dead queue.
+                    session.queue.close()
                 }
-
-                // Small delay to prevent a tight loop from consuming too much CPU if no buffers are available
-                delay(10) // Adjust delay as needed
+            } catch (t: Throwable) {
+                // Cancellation is expected (scope.cancel / job.cancel);
+                // don't pollute logs with stack traces for it. Other
+                // throwables are real and worth recording.
+                if (t !is kotlinx.coroutines.CancellationException) {
+                    Log.e(TAG, "Session ${session.id}: job failed", t)
+                }
+            } finally {
+                AudioRecordingKeepAlive.release()
             }
-            Log.d(TAG, "Decoding job finished.")
         }
     }
 
-    private fun handleTokenizerChunk(context: Context, pcmArray: ShortArray) {
-        Log.d(TAG_ENCODE, "Encoding PCM pcmArray of size ${pcmArray.size}")
+    private fun handleTokenizerChunk(session: PttSession, pcmArray: ShortArray) {
+        Log.d(TAG_ENCODE, "Session ${session.id}: encoding ${pcmArray.size} samples")
         val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
-        Log.d(TAG_ENCODE, "Tokenizer encoded chunk size")
-        Log.d(TAG, "Encoded chunk size ${chunkCodes.size}")
+        Log.d(TAG_ENCODE, "Session ${session.id}: encoded chunk size ${chunkCodes.size}")
 
         val packedData = BitPacking12.pack12(chunkCodes.toList())
 
-        sendData(context, packedData)
+        sendData(session, packedData)
 
         // ── Per-chunk decode (single source of truth) ────────────────────
-        // Both consumers (onDecodedChunk debug hook AND saveTofile's 45 s
-        // buffered WAV) need the decoded PCM for THIS encoded chunk. We
-        // MUST run that decode at most once per chunk, because
+        // Both consumers (onDecodedChunk debug hook AND the per-session
+        // saved WAV) need the decoded PCM for THIS encoded chunk. We MUST
+        // run that decode at most once per chunk, because
         // WavTokenizerDecoder is a shared singleton that mutates private
-        // instance state (`cutTokens`, `index`) on every call. Two
-        // independent decode streams against the same instance silently
-        // clobber each other's `cutTokens` between chunks → wrong head-cut
-        // in `handleSmart` → garbled output, even though each stream's
-        // own `previousTokens` / `previousSamples` continuity looks fine.
-        // See `WavTokenizerDecoder.handleSmart` for the math.
+        // instance state (`cutTokens`, `index`) on every call.
         val decodedSink = onDecodedChunk
-        val savingToFile = needToRun && DataManager.getSavePTTFilesRequired(context)
-        var decodedPcm: ShortArray? = null
+        val savingToFile = DataManager.getSavePTTFilesRequired(session.context)
         if (decodedSink != null || savingToFile) {
             try {
                 val unpack = BitPacking12.unpack12(packedData)
                 @Suppress("DEPRECATION")
                 val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-                val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
-                lastTokens = unpack
-                lastPCM = pcm
-                decodedPcm = pcm
+                val pcm = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
+                session.lastTokens = unpack
+                session.lastPCM = pcm
                 decodedSink?.invoke(pcm)
+                if (savingToFile) {
+                    session.frameBuffer.add(pcm)
+                }
             } catch (t: Throwable) {
-                Log.w(TAG_DECODE, "per-chunk decode failed", t)
+                Log.w(TAG_DECODE, "Session ${session.id}: per-chunk decode failed", t)
             }
         }
-
-        saveTofile(context, packedData, decodedPcm = decodedPcm) // Need to delete
     }
 
-    // Equivalent to private void SendData(byte[] data)
-    private fun sendData(context: Context, data: ByteArray) {
-        Log.d(TAG, "Send msg: ${data.size} data: ${data.toHexString()}")
-        val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
+    private fun sendData(session: PttSession, data: ByteArray) {
+        Log.d(TAG, "Session ${session.id} send msg: ${data.size} data: ${data.toHexString()}")
+        val radio = CarriersUtils.getRadioToSend(session.carrier, functionalityType = FunctionalityType.PTT) ?: return
 
         Scopes.getDefaultCoroutine().launch {
             val bittelPackage = viewModel?.let {
@@ -254,7 +457,7 @@ object PttSendManager {
                 System.arraycopy(data, 0, fullData, 1, data.size)
                 val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
                 StardustPackageUtils.getStardustPackage(
-                    context = context,
+                    context = session.context,
                     source = it.getSource(),
                     destenation = it.getDestenation() ?: "" ,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
@@ -274,10 +477,10 @@ object PttSendManager {
 
     }
 
-    private fun savePtt(chatID : String, path : String, context: Context){
+    private fun savePtt(session: PttSession, chatID: String, path: String) {
         Scopes.getDefaultCoroutine().launch {
-            SharedPreferencesUtil.getAppUser(context)?.appId?.let {
-                val chatsRepo = DataManager.getChatsRepo(context)
+            SharedPreferencesUtil.getAppUser(session.context)?.appId?.let {
+                val chatsRepo = DataManager.getChatsRepo(session.context)
                 val chatItem = chatsRepo.getChatByBittelID(chatID)
                 chatItem?.message = Message(
                     senderID = it,
@@ -286,104 +489,66 @@ object PttSendManager {
                 )
                 chatItem?.let { chatsRepo.addChat(it) }
                 DataManager.getMessagesRepo(DataManager.context).saveMessage(
-                    context = context,
+                    context = session.context,
                     isPTT = true,
                     messageItem = MessageItem(senderID = it,
-                        epochTimeMs = RecorderUtils.ts, senderName = "" ,
+                        epochTimeMs = session.recordingTs, senderName = "" ,
                         chatId = chatID, text = "", fileLocation = path,
                         isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)
                 )
             }
-            RecorderUtils.ts = 0
         }
-    }
-
-    fun restart () {
-        isFirst = true
-        startRecording = 0L
-        needToRun = true
-        // resetLiveDecodeState() clears frameBuffer, lastPCM and lastTokens —
-        // keeping a single source of truth for the decode-side reset.
-        resetLiveDecodeState()
-        // Tear down the pre-encode filter chain too — the next session
-        // re-builds with fresh biquad / envelope / RNNoise state so a
-        // previous session's residual tail doesn't leak in.
-        releaseFilters()
     }
 
     private fun ByteArray.toHexString(): String =
         joinToString("") { "%02x ".format(it) }
 
-    private var isFirst = true;
-    private var startRecording = 0L
-    private var needToRun = true;
-    private val frameBuffer = mutableListOf<ShortArray>()
-    private var lastPCM  : ShortArray? = null
-    private var lastTokens  : List<Long>? = null
-    private fun saveTofile(
-        context: Context,
-        packData: ByteArray,
-        finish: Boolean = false,
-        decodedPcm: ShortArray? = null,
-    ) {
-        Log.d(TAG, "saveTofile called with data size: ${packData.size}")
-        if (!needToRun || !DataManager.getSavePTTFilesRequired(context)) return
-
-        if (isFirst) {
-            isFirst = false
-            startRecording = System.currentTimeMillis()
+    /**
+     * Write the session's accumulated decoded PCM to its target WAV file
+     * and persist a PTT message row. Runs at most once per session
+     * (guarded by [PttSession.finalized] in the caller).
+     */
+    private fun finalizeSession(session: PttSession) {
+        Log.d(TAG, "Session ${session.id}: finalize (${session.frameBuffer.size} frame(s))")
+        if (!DataManager.getSavePTTFilesRequired(session.context)) {
+            Log.d(TAG, "Session ${session.id}: save not required — skipping file")
+            return
         }
-        Log.d(TAG_DECODE, "Processing packData of size: ${packData.size}")
-
-        val finalPcmData: ShortArray = if (decodedPcm != null) {
-            decodedPcm
-        } else {
-            val unpack = BitPacking12.unpack12(packData)
-            @Suppress("DEPRECATION")
-            val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-            val pcm = wavTokenizerDecoder.decode(unpack, lastTokens, lastPCM, modelTypeSelected)
-            lastTokens = unpack
-            lastPCM = pcm
-            pcm
+        val file = session.file ?: run {
+            Log.d(TAG, "Session ${session.id}: file is null — nothing to save")
+            return
         }
-        Log.d(TAG_DECODE, "Decoded PCM data size ${finalPcmData.size}")
-        frameBuffer.add(finalPcmData)
+        if (session.frameBuffer.isEmpty()) {
+            Log.d(TAG, "Session ${session.id}: no decoded frames — skipping file save")
+            return
+        }
+        try {
+            val sampleArray = session.frameBuffer.flatMap { it.asIterable() }.toShortArray()
+            WavHelper.createWavFile(sampleArray, 24000, file)
 
-        if ((System.currentTimeMillis() - startRecording > 45000) || finish) {
-            Log.d(TAG, "3 seconds elapsed, saving to file.")
-            needToRun = false
-            val file = fileToSave
-            try {
-                file?.let {
-                    val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-                    WavHelper.createWavFile(sampleArray, 24000, file)
+            Log.d(TAG, "Session ${session.id}: WAV created -> ${file.absolutePath}")
+            runCatching {
 
-
-
-                    Log.d(TAG, "WAV file created: ${file.absolutePath}")
-                    runCatching {
-                        val artifactDir = RecorderUtils.dirToSaveFile
-                        val srcParent = file.parentFile?.canonicalFile
-                        val dstParent = artifactDir.canonicalFile
-                        if (srcParent != dstParent) {
-                            if (!artifactDir.exists()) artifactDir.mkdirs()
-                            // Force a `.wav` extension on the mirror — the
-                            // production sinkFile uses `.pcm` (createSinkFile
-                            // in AudioFeederEngine) even though the bytes are
-                            // a real RIFF/WAVE container, which confuses
-                            // Audacity / ffmpeg auto-detect.
-                            val mirrorName = "${file.nameWithoutExtension}-ptt_finish.wav"
-                            val mirror = File(artifactDir, mirrorName)
-                            file.copyTo(mirror, overwrite = true)
-                            Log.d(TAG, "WAV mirror copied: ${mirror.absolutePath}")
-                        }
-                    }.onFailure { Log.w(TAG, "WAV mirror copy failed", it) }
-
-                    savePtt(context = DataManager.context, chatID = chatID ?:"", path = fileToSave?.absolutePath?:"")
+                val artifactDir = RecorderUtils.dirToSaveFile
+                val srcParent = file.parentFile?.canonicalFile
+                val dstParent = artifactDir.canonicalFile
+                if (srcParent != dstParent) {
+                    if (!artifactDir.exists()) artifactDir.mkdirs()
+                    // Force a `.wav` extension on the mirror — the
+                    // production sinkFile uses `.pcm` (createSinkFile in
+                    // AudioFeederEngine) even though the bytes are a real
+                    // RIFF/WAVE container, which confuses Audacity / ffmpeg
+                    // auto-detect.
+                    val mirrorName = "${file.nameWithoutExtension}-ptt_finish.wav"
+                    val mirror = File(artifactDir, mirrorName)
+                    file.copyTo(mirror, overwrite = true)
+                    Log.d(TAG, "Session ${session.id}: WAV mirror -> ${mirror.absolutePath}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error creating WAV file", e)
-            }
+            }.onFailure { Log.w(TAG, "Session ${session.id}: mirror copy failed", it) }
+
+            savePtt(session = session, chatID = session.chatID ?: "", path = file.absolutePath)
+        } catch (e: Exception) {
+            Log.e(TAG, "Session ${session.id}: WAV save failed", e)
         }
     }
 

@@ -1,12 +1,10 @@
 package com.commcrete.stardust.util.audio
 
 import android.content.Context
-import android.util.Log
-import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.UsersUtils.mRegisterUser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -47,13 +45,17 @@ import java.io.File
  * ```
  * AudioTestFeeder.feed(
  *     context = ctx,
- *     destination = "DEV-001",
+ *     pathToSaveFilesIn = "deviceA-run1",
  *     carrier = currentCarrier,
  *     sources = listOf(
  *         Source(File("/sdcard/test/deviceA.wav"), label = "device-A"),
  *         Source(File("/sdcard/test/deviceB.wav"), label = "device-B"),
  *     ),
  *     realtimePacing = true,
+ *     // Opt in to actually transmit each encoded chunk over the live
+ *     // BLE/USB pathway, exactly like a real PTT recording would:
+ *     destinationId = "DEV-001",
+ *     withSend = true,
  * )
  * ```
  */
@@ -121,9 +123,35 @@ object AudioTestFeeder {
      * @param outputDir      directory for round-trip / filtered artifacts.
      * @param onDone         optional completion callback (IO dispatcher).
      */
+    /**
+     * Feed the given audio [sources] into the AI pipeline as if they were just
+     * recorded. Cancels the previous job (if any) first.
+     *
+     * @param pathToSaveFilesIn folder name (under the SDK file root) used for
+     *                          per-run artifact persistence — independent of
+     *                          whether anything is actually transmitted.
+     * @param destinationId     real BLE/USB destination ID. Combined with
+     *                          [withSend], gates whether each encoded chunk is
+     *                          handed off to `DataManager.sendDataToBle(...)`
+     *                          via the same path the live PTT recorder uses.
+     * @param withSend          when `true` AND [destinationId] is non-blank,
+     *                          encoded chunks are transmitted to the device
+     *                          identified by [destinationId] using the exact
+     *                          same pathway as a live PTT recording (AI path:
+     *                          `PttSendManager.sendData` → `SEND_PTT_AI`;
+     *                          CODEC2 path: `Codec2ChunkSink.sendPacket` →
+     *                          `SEND_PTT`). When `false` (default), the feeder
+     *                          only generates artifacts and never touches the
+     *                          radio, regardless of [destinationId].
+     * @param realtimePacing if true, paces chunks like AudioRecord does;
+     *                       if false, pushes them back-to-back.
+     * @param roundTrip      if true, also runs each source through the
+     *                       WavTokenizer encoder + decoder and logs metrics.
+     * @param outputDir      directory for round-trip / filtered artifacts.
+     * @param onDone         optional completion callback (IO dispatcher).
+     */
     fun feed(
         context: Context,
-        destination: String,
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         sources: List<Source>,
@@ -145,18 +173,32 @@ object AudioTestFeeder {
          * smeared / square-wave clipping that linear mode produces.
          */
         aiGainSoftSat: Boolean = false,
+        destinationId: String? = null,
+        withSend: Boolean = false,
         onDone: (() -> Unit)? = null,
     ): Job {
         stop()
         DataManager.requireContext(context)
+        // Real BLE/USB destination only when the caller has explicitly
+        // opted in via `withSend` AND supplied a non-blank id. Otherwise
+        // the feeder runs in artifact-only mode and never transmits.
+        val sendTo: String? = destinationId?.takeIf { withSend && it.isNotBlank() }
         if (codeType == RecorderUtils.CODE_TYPE.AI) {
-            PttSendManager.init(context.applicationContext)
+            // For the AI path, the live transmission goes through
+            // `PttSendManager.sendData(...)` which only emits when a
+            // `PttInterface` is registered (`viewModel?.let { ... }`).
+            // Plug a feeder-local adapter in so chunks travel through the
+            // same `DataManager.sendDataToBle(pkg)` path live recording
+            // uses; pass null when transmission is disabled so the
+            // existing artifact-only behaviour is preserved.
+            val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
+            PttSendManager.init(context.applicationContext, pttInterface)
             PttSendManager.restart()
         }
         val job = feederScope.launch {
             lastRunStats.clear()
             lastRunRoundTrips.clear()
-            val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, destination)
+            val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, sendTo ?: "artifact-only")
             if (roundTrip || (lowPass?.enabled == true) || (notch?.enabled == true) ||
                 (rnNoise?.enabled == true) || (agc?.enabled == true) ||
                 (dynamics?.enabled == true) || (declick?.enabled == true)) {
@@ -164,8 +206,9 @@ object AudioTestFeeder {
                 Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
             }
             Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), codeType=%s, destination=%s, carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
-                sources.size, codeType.name, destination, carrier?.toString(), realtimePacing, roundTrip,
+                "▶ Starting feeder: %d source(s), codeType=%s, destinationId=%s, withSend=%b (sendTo=%s), carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
+                sources.size, codeType.name, destinationId, withSend, sendTo,
+                carrier?.toString(), realtimePacing, roundTrip,
                 declick?.takeIf { it.enabled }?.describe() ?: "off",
                 lowPass?.takeIf { it.enabled }?.describe() ?: "off",
                 notch?.takeIf { it.enabled }?.describe() ?: "off",
@@ -175,7 +218,9 @@ object AudioTestFeeder {
             )
 
             val codec2Sink = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
-                AudioFeederEngine.createCodec2ChunkSink(context, destination, carrier)
+                // `sendTo` is null for artifact-only runs — the sink will
+                // still encode/pack but skip `DataManager.sendDataToBle`.
+                AudioFeederEngine.createCodec2ChunkSink(context, sendTo, carrier)
             } else {
                 null
             }
@@ -187,7 +232,7 @@ object AudioTestFeeder {
                     Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
                     AudioFeederEngine.feedSingle(
                         context = context,
-                        destination = destination,
+                        sendTo = sendTo,
                         carrier = carrier,
                         source = src,
                         codeType = codeType,
@@ -219,11 +264,33 @@ object AudioTestFeeder {
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
+                // Detach our feeder-local PttInterface so a subsequent
+                // production `RecorderUtils.startAIRecording` call cleanly
+                // re-registers DataManager without our stale adapter
+                // racing it. Cheap, idempotent.
+                if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                    runCatching { PttSendManager.init(context.applicationContext, null) }
+                }
                 onDone?.invoke()
             }
         }
         currentJob = job
         return job
+    }
+
+
+    /**
+     * Minimal [PttInterface] used while [feed] is running with `withSend`
+     * enabled. `getDestenation()` returns the id passed to [feed]; everything
+     * else delegates to `DataManager` so we go through exactly the same
+     * BLE/USB write path as a live PTT recording.
+     */
+    private class FeederPttInterface(private val dest: String) : PttInterface {
+        override fun getSource(): String = DataManager.getSource()
+        override fun getDestenation(): String = dest
+        override fun sendDataToBle(bittelPackage: StardustPackage) {
+            DataManager.sendDataToBle(bittelPackage)
+        }
     }
 
 
@@ -254,15 +321,18 @@ object AudioTestFeeder {
         realtimePacing: Boolean = true,
         roundTrip: Boolean = false,
         outputDir: File? = null,
+        destinationId: String? = null,
+        withSend: Boolean = false,
     ): Job = feed(
         context = context,
-        destination = destination,
         carrier = carrier,
         codeType = codeType,
         sources = files.map { Source(it) },
         realtimePacing = realtimePacing,
         roundTrip = roundTrip,
         outputDir = outputDir,
+        destinationId = destinationId,
+        withSend = withSend,
     )
 }
 

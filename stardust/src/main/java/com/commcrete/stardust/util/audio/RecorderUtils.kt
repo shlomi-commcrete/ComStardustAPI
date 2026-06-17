@@ -9,6 +9,7 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.ai.codec.PttSession
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.ConfigurationUtils
@@ -192,7 +193,13 @@ object RecorderUtils {
     }
 
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
-        PttSendManager.restart()
+        // Begin a new isolated session. This session owns its own queue,
+        // frame buffer and target file — a previous session that hasn't
+        // finished encoding/saving yet keeps running independently and
+        // will not be corrupted by this one. Capture the handle so the
+        // delayed finishAIRecording finalizes THIS session, even if the
+        // user starts another recording before the 3 s grace expires.
+        val session = PttSendManager.restart()
 
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
@@ -225,14 +232,14 @@ object RecorderUtils {
                 Timber.w(throwable, "AudioRecorderAI error")
             }
             onStateChanged = { recording ->
-                Log.d(LOG_TAG, "Recording state changed: $recording")
-                if (!recording) finishAIRecording(DataManager.context)
+                Log.d(LOG_TAG, "Recording state changed: $recording (session ${session.id})")
+                if (!recording) finishAIRecording(DataManager.context, session)
             }
         }
 
         aiRecorder?.start()
 
-        Timber.d("AudioRecorderAI started")
+        Timber.d("AudioRecorderAI started for session ${session.id}")
     }
 
     private fun forwardAiChunk(
@@ -407,10 +414,20 @@ object RecorderUtils {
         }
     }
 
-    private fun finishAIRecording(context: Context) {
+    private fun finishAIRecording(context: Context, session: PttSession) {
         Scopes.getDefaultCoroutine().launch {
+            // Short grace period so any in-flight `addNewFrame` calls from
+            // the recorder's tail (onPartialFinalChunk) reach this
+            // session's queue before we close it. The encoding job then
+            // drains the queue, finalizes the file ONCE and releases its
+            // wake lock — making finalization fully idempotent and safe
+            // against duplicate calls.
             delay(3000)
-            PttSendManager.finish(context)
+            PttSendManager.finish(session)
+            // Note: PttSendManager's session job holds its own wake lock
+            // until it has saved the WAV, so it's safe to release the
+            // recorder-side lock here even though encoding may still be
+            // running.
             AudioRecordingKeepAlive.release()
         }
     }
