@@ -32,7 +32,7 @@ object RecorderUtils {
     private val LOG_TAG = "AudioRecordTest"
 
     private var pttInterface : PttInterface? = null
-    private var wavRecorder : WavRecorder? = WavRecorder(DataManager.context)
+    private var audioRecorderCodec2 : AudioRecorderCodec2? = AudioRecorderCodec2(DataManager.context)
     private var aiRecorder : AudioRecorderAI? = null
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
@@ -47,11 +47,6 @@ object RecorderUtils {
         PttAudioProcessor.loadProfiles(DataManager.context)
         RecorderUtils.pttInterface = pttInterface
         if (!dirToSaveFile.exists()) dirToSaveFile.mkdirs()
-    }
-
-    fun onPTTTest(){
-        wavRecorder = WavRecorder(DataManager.context, null)
-        wavRecorder?.sendAudioTest(DataManager.context)
     }
 
 
@@ -76,19 +71,19 @@ object RecorderUtils {
     }
 
     private fun startCodec2Recording(destination: String, carrier: Carrier?): File? {
-        wavRecorder = WavRecorder(DataManager.context, pttInterface)
-        wavRecorder ?: return null
+        audioRecorderCodec2 = AudioRecorderCodec2(DataManager.context, pttInterface)
+        audioRecorderCodec2 ?: return null
         val file: File? = if (!DataManager.getSavePTTFilesRequired(DataManager.context)) {
             FileUtils.withTempFile(
                 context = DataManager.context,
                 prefix = destination,
                 suffix = DataManager.getSource()
             ) { tempFile ->
-                wavRecorder?.startRecording(tempFile, carrier)
+                audioRecorderCodec2?.startRecording(tempFile, carrier)
             }
         } else {
             createFile(DataManager.fileLocation, destination, DataManager.getSource())?.also {
-                wavRecorder?.startRecording(it, carrier)
+                audioRecorderCodec2?.startRecording(it, carrier)
             }
         }
         return file
@@ -125,7 +120,23 @@ object RecorderUtils {
         // will not be corrupted by this one. Capture the handle so the
         // delayed finishAIRecording finalizes THIS session, even if the
         // user starts another recording before the 3 s grace expires.
-        val session = PttSendManager.restart()
+        //
+        // The `onMaxTimeoutReached` lambda mirrors what
+        // [AudioRecorderCodec2.onPipelinePacketSent] does inline: when
+        // the session crosses [SharedPreferencesUtil.getPTTTimeout],
+        // PttSendManager has already fired the SDK / viewModel
+        // callbacks; we just need to stop the recorder itself, which
+        // PttSendManager can't reach because it lives here. Calling
+        // `aiRecorder?.stop()` cancels the capture coroutine, which
+        // fires `onStateChanged(false)` → `finishAIRecording(...)` →
+        // [PttSendManager.finish] downstream so the session finalizes
+        // cleanly.
+        val session = PttSendManager.restart(
+            onMaxTimeoutReached = {
+                Log.d(LOG_TAG, "AI session: max PTT timeout reached — stopping recorder")
+                aiRecorder?.stop()
+            }
+        )
 
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
@@ -221,7 +232,6 @@ object RecorderUtils {
             nativeRate = nativeRate,
             targetRate = targetRate,
             deviceType = recordingDeviceType,
-            applyFilters = true,
             flowKey = encodingType.name,
             chunkIndex = chunkIndex,
             chunkDurationMs = chunkDurationMs,
@@ -274,11 +284,11 @@ object RecorderUtils {
     }
 
     private fun stopCodec2Recording(chatID: String, carrier: Carrier?, file: File?) {
-        wavRecorder?.run {
+        audioRecorderCodec2?.run {
             file?.let { stopRecording(retry = 0, chatID, it.absolutePath, DataManager.context, carrier) }
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
-                wavRecorder = null
+                audioRecorderCodec2 = null
             }
         }
     }

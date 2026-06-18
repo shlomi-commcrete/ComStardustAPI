@@ -33,14 +33,11 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.context
-import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.UsersUtils
@@ -116,7 +113,7 @@ object PlayerUtils : BleMediaConnector() {
             }
             StardustPackageUtils.packageLiveData.value = null
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-            Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
+            Timber.tag(AudioRecorderCodec2.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
 //            removeSyncBleDevices ()
             isPttReceived.value = "empty"
         }

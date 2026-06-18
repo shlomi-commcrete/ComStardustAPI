@@ -89,8 +89,16 @@ object DataManager : StardustAPI, PttInterface{
     private var hasTimber = false
     var isPlayPttFromSdk = true
 
+    init {
+        runCatching {
+            val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+            if (debugOutFile.exists()) debugOutFile.delete()
+        }
+    }
+
     fun requireContext (context: Context) {
         this.context = context
+
 //       if(!hasTimber) { // TODO: for debug only
 //            Timber.plant(Timber.DebugTree())
 //            hasTimber = true

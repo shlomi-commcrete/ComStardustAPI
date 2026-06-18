@@ -41,9 +41,10 @@ package com.commcrete.stardust.util.audio
  *  - [Band.highEdgeHz] is the **upper edge** of each band (lower edge is
  *    the previous band's `highEdgeHz`, or 0 for band 0). Same convention
  *    as the HAL `MbcBand.cutoffFrequency`.
- *  - This filter runs at `LiveFilterChain.sampleRate` (source's native
- *    rate — 48 kHz for jbox WAVs, 24 kHz for already-decimated sources).
- *    Band edges that exceed Nyquist are silently clamped.
+ *  - This filter runs at the chunk's native rate as set up in
+ *    `PttAudioProcessor.ensureFiltersBuilt` (48 kHz for jbox WAVs,
+ *    24 kHz for already-decimated sources). Band edges that exceed
+ *    Nyquist are silently clamped.
  */
 data class DynamicsConfig(
     val enabled: Boolean = true,

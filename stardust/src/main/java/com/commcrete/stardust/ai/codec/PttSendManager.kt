@@ -77,84 +77,51 @@ class PttSession internal constructor(
      */
     internal val finalized = AtomicBoolean(false)
 
+    /**
+     * Number of packets transmitted so far in this session. Used by
+     * the per-session max-PTT-timeout check in
+     * [PttSendManager.handleTokenizerChunk] — direct analogue of
+     * `AudioRecorderCodec2.numOfPackage`.
+     */
+    internal var numPacketsSent: Int = 0
+
+    /**
+     * Single-shot hook fired when the session's accumulated wall-clock
+     * audio exceeds [SharedPreferencesUtil.getPTTTimeout]. Set by the
+     * host (currently
+     * [com.commcrete.stardust.util.audio.RecorderUtils.setupAIRecorder])
+     * to stop the AudioRecorderAI from outside [PttSendManager], which
+     * doesn't own the recorder instance directly.
+     *
+     * `AudioRecorderCodec2` solves the same problem in-class by calling
+     * its own `stopRecording(...)` from inside `onPipelinePacketSent`;
+     * the AI path needs an explicit hook because the recorder lives in
+     * a different object.
+     *
+     * Cleared by the timeout check after firing so subsequent chunks
+     * already in the queue don't re-trigger the host callbacks.
+     */
+    @Volatile internal var onMaxTimeoutReached: (() -> Unit)? = null
+
     internal var job: Job? = null
 }
 
 object PttSendManager {
 
-    /**
-     * Optional per-chunk hook for capturing the decoded (post-WavTokenizer)
-     * PCM as it is produced — i.e. the AI **output** that corresponds 1:1
-     * to each [addNewFrame] input chunk.
-     *
-     * Set this to a non-null callback (e.g. from `AudioFeederEngine` during
-     * a test-feed run) to receive every decoded chunk in encode order, and
-     * clear (set back to null) when capture is finished. Call
-     * [resetLiveDecodeState] between sessions to drop residual state.
-     *
-     * Implementation note: when this hook is registered, [handleTokenizerChunk]
-     * runs **one** decode per encoded chunk and shares the resulting PCM
-     * with the per-session frame buffer (see [finalizeSession]). Doing it
-     * in two independent decode passes corrupts the shared
-     * `WavTokenizerDecoder` instance state (`cutTokens`, `index`),
-     * because each pass reads what the OTHER pass wrote on the previous
-     * chunk — producing garbled output even though each stream's own
-     * continuity (`lastTokens` / `lastPCM`) looks fine.
-     */
+
     @Volatile
     var onDecodedChunk: ((ShortArray) -> Unit)? = null
 
-    /**
-     * Drop the per-chunk decoder continuity state (`lastTokens` / `lastPCM`)
-     * AND any buffered frames for the **currently active session**. Call
-     * between sources / sub-streams so the next stream starts with a clean
-     * `previousTokens=null` path through `WavTokenizerDecoder.decode` (no
-     * stale head-cut from a different stream).
-     *
-     * Also resets the shared [wavTokenizerDecoder]'s **internal** per-stream
-     * state ([WavTokenizerDecoder.reset] — `index`, `cutTokens`, `loop`,
-     * `listEnergy`). Without this, `cutTokens` from the last chunk of the
-     * previous stream leaks into [WavTokenizerDecoder.handleSmart] for the
-     * next stream's first chunk, slicing the wrong amount off the head and
-     * producing progressively less intelligible output across feed runs.
-     *
-     * If you want a fully isolated session (separate file / queue / state),
-     * call [restart] instead — that creates a brand-new [PttSession] and
-     * leaves any previously-running session untouched.
-     */
-    fun resetLiveDecodeState() {
-        val session = synchronized(sessionsLock) { currentSession }
-        session?.let {
-            it.lastTokens = null
-            it.lastPCM = null
-            it.frameBuffer.clear()
-        }
-        wavTokenizerDecoder.reset()
-    }
 
     private val TAG = "PttManager"
     private val TAG_DECODE = "PttManager_Decode"
     private val TAG_ENCODE = "PttManager_Encode"
 
+    private const val AI_PACKET_DURATION_MS = 500
+
     /** Coroutine scope owning every per-session encoding job. */
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    /**
-     * Serializes access to the **shared** ML codec instances
-     * ([wavTokenizerEncoder] / [wavTokenizerDecoder]). Session jobs queue
-     * up on this mutex so a new recording can begin (its [PttSession] is
-     * created immediately, chunks are buffered into its queue) but does
-     * not actually use the codec until the previous session has finished
-     * draining and finalized its file.
-     *
-     * This mutex is **also held by [PttReceiveManager]** when it decodes
-     * incoming PTT packets — the tokenizer decoder is a singleton with
-     * mutable per-stream state (`index`, `cutTokens`, `loop`, `listEnergy`)
-     * that gets clobbered if Send and Receive call `decode()` interleaved
-     * (audible artifacts + progressively worse audio across sessions).
-     * Both sides reset the decoder at the start of their own stream so
-     * they never inherit each other's continuity.
-     */
     internal val codecMutex = Mutex()
 
     private var wavTokenizerEncoder: WavTokenizerEncoder = AIModuleInitializer.wavTokenizerEncoder
@@ -259,12 +226,13 @@ object PttSendManager {
         Log.d(TAG, "finish(${session.id}): queue closed — awaiting drain")
     }
 
-    fun restart(): PttSession {
+    fun restart(onMaxTimeoutReached: (() -> Unit)? = null): PttSession {
         val newSession = PttSession(
             id = sessionIdGen.incrementAndGet(),
             context = DataManager.context,
         )
         newSession.recordingTs = RecorderUtils.ts
+        newSession.onMaxTimeoutReached = onMaxTimeoutReached
 
         // Atomic swap: detach previous session (if any) and install the
         // new one in a single critical section so concurrent observers
@@ -288,7 +256,6 @@ object PttSendManager {
         }
 
         PttAudioProcessor.reset()
-        wavTokenizerDecoder.clearDebugDump()
         newSession.job = launchSessionJob(newSession)
         Log.d(TAG, "restart() -> new session ${newSession.id}")
         return newSession
@@ -365,7 +332,38 @@ object PttSendManager {
         }
     }
 
+    /**
+     * Per-chunk orchestrator inside the session's encode loop.
+     *
+     * Three sequential phases, each delegated to its own helper:
+     *  1. [encodeAndSendChunk] — encode the captured PCM and ship the
+     *     packed payload over the wire.
+     *  2. [enforceMaxPttTimeout] — count this packet against the
+     *     per-session max-PTT-timeout and fire the host callbacks once
+     *     when the threshold is crossed.
+     *  3. [mirrorDecodeChunk] — optionally self-decode the just-shipped
+     *     payload to feed the WAV mirror / debug hook.
+     *
+     * Phases run unconditionally even if step 2 fires the timeout —
+     * the chunk was already encoded and transmitted in step 1, so its
+     * mirror PCM is still wanted in the local WAV. The timeout only
+     * stops *future* chunks (via the recorder-stop hook).
+     */
     private fun handleTokenizerChunk(session: PttSession, pcmArray: ShortArray) {
+        val packedData = encodeAndSendChunk(session, pcmArray)
+        enforceMaxPttTimeout(session)
+        mirrorDecodeChunk(session, packedData)
+    }
+
+    /**
+     * Phase 1: encode [pcmArray] via the AI tokenizer, pack the tokens
+     * to bytes, and hand the result to [sendData] for BLE transmission.
+     *
+     * @return the packed payload — passed to [mirrorDecodeChunk] so
+     *         the per-session WAV mirror can self-decode the SAME
+     *         bytes the receiver will see.
+     */
+    private fun encodeAndSendChunk(session: PttSession, pcmArray: ShortArray): ByteArray {
         Log.d(TAG_ENCODE, "Session ${session.id}: encoding ${pcmArray.size} samples")
         val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
         Log.d(TAG_ENCODE, "Session ${session.id}: encoded chunk size ${chunkCodes.size}")
@@ -374,29 +372,84 @@ object PttSendManager {
 
         sendData(session, packedData)
 
-        // ── Per-chunk decode (single source of truth) ────────────────────
-        // Both consumers (onDecodedChunk debug hook AND the per-session
-        // saved WAV) need the decoded PCM for THIS encoded chunk. We MUST
-        // run that decode at most once per chunk, because
-        // WavTokenizerDecoder is a shared singleton that mutates private
-        // instance state (`cutTokens`, `index`) on every call.
+        return packedData
+    }
+
+    /**
+     * Phase 2: max-PTT-timeout enforcement.
+     *
+     * Direct analogue of [com.commcrete.stardust.util.audio.AudioRecorderCodec2.onPipelinePacketSent].
+     * Each successful [encodeAndSendChunk] ships exactly one BLE packet
+     * representing [AI_PACKET_DURATION_MS] of captured audio, so
+     *
+     *   numPacketsSent × AI_PACKET_DURATION_MS
+     *
+     * is the accumulated wall-clock duration of audio sent on this
+     * session. When that exceeds the user-configured timeout (default
+     * 45_000 ms via [SharedPreferencesUtil.getPTTTimeout]) the host is
+     * notified and the AudioRecorderAI is told to stop via the
+     * per-session callback. PttSendManager doesn't own the recorder
+     * directly — `AudioRecorderCodec2` solves the same problem inline
+     * because the recorder + encoder live in the same class.
+     *
+     * Single-shot: the [PttSession.onMaxTimeoutReached] hook is cleared
+     * before firing, so any chunks already in the queue that drain
+     * after this point go through this branch silently without
+     * re-triggering the host callbacks.
+     */
+    private fun enforceMaxPttTimeout(session: PttSession) {
+        session.numPacketsSent++
+        val maxMs = SharedPreferencesUtil.getPTTTimeout(session.context)
+        if (session.numPacketsSent.times(AI_PACKET_DURATION_MS) <= maxMs) return
+
+        val onTimeout = session.onMaxTimeoutReached ?: return
+        session.onMaxTimeoutReached = null
+        Log.w(
+            TAG,
+            "Session ${session.id}: PTT max timeout reached " +
+                "(${session.numPacketsSent} packets × ${AI_PACKET_DURATION_MS}ms > ${maxMs}ms)"
+        )
+        DataManager.getCallbacks()?.pttMaxTimeoutReached()
+        onTimeout.invoke()
+        viewModel?.maxPTTTimeoutReached()
+    }
+
+    /**
+     * Phase 3: optional per-chunk self-decode for the local WAV mirror
+     * and the [onDecodedChunk] debug hook.
+     *
+     * Both consumers (the `onDecodedChunk` debug hook AND the
+     * per-session saved WAV) need the decoded PCM for THIS encoded
+     * chunk. We MUST run that decode **at most once** per chunk
+     * because [WavTokenizerDecoder] is a shared singleton that mutates
+     * private instance state (`cutTokens`, `index`) on every call —
+     * doing it twice in two independent passes corrupts the shared
+     * decoder state, because each pass reads what the OTHER pass
+     * wrote on the previous chunk and produces garbled output even
+     * though each stream's own continuity (`lastTokens` / `lastPCM`)
+     * looks fine.
+     *
+     * No-op when neither consumer is interested — saves a model
+     * forward pass on every chunk.
+     */
+    private fun mirrorDecodeChunk(session: PttSession, packedData: ByteArray) {
         val decodedSink = onDecodedChunk
         val savingToFile = DataManager.getSavePTTFilesRequired(session.context)
-        if (decodedSink != null || savingToFile) {
-            try {
-                val unpack = BitPacking12.unpack12(packedData)
-                @Suppress("DEPRECATION")
-                val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-                val pcm = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
-                session.lastTokens = unpack
-                session.lastPCM = pcm
-                decodedSink?.invoke(pcm)
-                if (savingToFile) {
-                    session.frameBuffer.add(pcm)
-                }
-            } catch (t: Throwable) {
-                Log.w(TAG_DECODE, "Session ${session.id}: per-chunk decode failed", t)
+        if (decodedSink == null && !savingToFile) return
+
+        try {
+            val unpack = BitPacking12.unpack12(packedData)
+            @Suppress("DEPRECATION")
+            val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+            val pcm = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
+            session.lastTokens = unpack
+            session.lastPCM = pcm
+            decodedSink?.invoke(pcm)
+            if (savingToFile) {
+                session.frameBuffer.add(pcm)
             }
+        } catch (t: Throwable) {
+            Log.w(TAG_DECODE, "Session ${session.id}: per-chunk decode failed", t)
         }
     }
 
@@ -417,8 +470,9 @@ object PttSendManager {
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
                     data = audioIntArray)
             }
+            
             val isLast = data.size != 30
-
+            
 
             bittelPackage?.let { bittelPackage ->
                 bittelPackage.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE

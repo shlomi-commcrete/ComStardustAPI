@@ -2,12 +2,8 @@ package com.commcrete.stardust.ai.codec
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.os.Build
 import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive

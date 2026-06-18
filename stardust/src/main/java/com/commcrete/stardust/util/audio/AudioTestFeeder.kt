@@ -32,12 +32,11 @@ import java.io.File
  *  - This object is the public **facade** — public API + last-run state.
  *  - **Model** (one class per file, all in this package):
  *    [Source], [LowPassConfig], [NotchConfig], [RnNoiseConfig], [AGCConfig],
- *    [AudioInfo], [AudioStats], [RoundTripResult].
+ *    [AudioInfo], [AudioStats].
  *  - [AudioFeederEngine]      — orchestration of the per-source pipeline.
  *  - [AudioFileLoader]        — WAV / MediaCodec decoding to mono 16-bit PCM.
  *  - [AudioDsp]               — down-mix, resample, anti-alias, AI gain, FFT.
  *  - [AudioStatsAnalyzer]     — PCM stats + spectral fingerprint + tone alert.
- *  - [RoundTripAnalyzer]      — encode → decode → metrics (PSNR / SI-SDR / LSD).
  *  - [AudioArtifactWriter]    — WAV + token (txt/bin) writers.
  *  - [AudioTestFeederLogger]  — all human-readable diagnostics formatting.
  *
@@ -67,7 +66,7 @@ object AudioTestFeeder {
     const val TARGET_SAMPLE_RATE = 24_000
     const val TARGET_CHANNELS = 1
     const val TARGET_BITS_PER_SAMPLE = 16
-    const val CHUNK_DURATION_MS = 500L
+    const val CHUNK_DURATION_MS = 500
     const val SAMPLES_PER_CHUNK = (TARGET_SAMPLE_RATE * CHUNK_DURATION_MS / 1000L).toInt() // 12 000
 
     /** Frequency bands used for [AudioStats.subBandEnergyPct]. Edges in Hz at 24 kHz Fs. */
@@ -87,10 +86,6 @@ object AudioTestFeeder {
     private val lastRunStats = LinkedHashMap<String, AudioStats>()
     fun lastRunStats(): Map<String, AudioStats> = lastRunStats.toMap()
 
-    /** Per-source WavTokenizer round-trip metrics from the most recent [feed] call. */
-    private val lastRunRoundTrips = LinkedHashMap<String, RoundTripResult>()
-    fun lastRunRoundTrips(): Map<String, RoundTripResult> = lastRunRoundTrips.toMap()
-
     // ---------------- Public model types ----------------
     //
     // The public model is now spread across one-class-per-file modules in this
@@ -103,7 +98,6 @@ object AudioTestFeeder {
     //   • [AGCConfig]         — AudioAgcConfig.kt
     //   • [AudioInfo]         — AudioInfo.kt
     //   • [AudioStats]        — AudioStats.kt
-    //   • [RoundTripResult]   — AudioRoundTripResult.kt
     //
     // They keep their original short names so callers continue to use them as
     // `Source(...)`, `LowPassConfig(...)`, etc. (no qualifier needed inside
@@ -116,20 +110,18 @@ object AudioTestFeeder {
      * Feed the given audio [sources] into the AI pipeline as if they were just
      * recorded. Cancels the previous job (if any) first.
      *
-     * @param realtimePacing if true, paces chunks like AudioRecord does;
-     *                       if false, pushes them back-to-back.
-     * @param roundTrip      if true, also runs each source through the
-     *                       WavTokenizer encoder + decoder and logs metrics.
-     * @param outputDir      directory for round-trip / filtered artifacts.
-     * @param onDone         optional completion callback (IO dispatcher).
-     */
-    /**
-     * Feed the given audio [sources] into the AI pipeline as if they were just
-     * recorded. Cancels the previous job (if any) first.
-     *
-     * @param pathToSaveFilesIn folder name (under the SDK file root) used for
-     *                          per-run artifact persistence — independent of
-     *                          whether anything is actually transmitted.
+     * @param profile           per-device DSP configuration. The feeder
+     *                          honors the same gating semantics as the live
+     *                          path in `PttAudioProcessor.process`:
+     *                          - `profile == null` → no filters (resample only).
+     *                          - `profile.isActive == false` → no filters
+     *                            even if individual stages are populated.
+     *                          - Otherwise each stage is gated on its own
+     *                            non-null + `enabled = true` flag.
+     *                          Convenient construction:
+     *                          `PttAudioProcessor.getAiRecorderDefaultProfilePreset(deviceType)`
+     *                          or
+     *                          `PttAudioProcessor.getAiActiveRecorderProfile(deviceType)`.
      * @param destinationId     real BLE/USB destination ID. Combined with
      *                          [withSend], gates whether each encoded chunk is
      *                          handed off to `DataManager.sendDataToBle(...)`
@@ -139,15 +131,14 @@ object AudioTestFeeder {
      *                          identified by [destinationId] using the exact
      *                          same pathway as a live PTT recording (AI path:
      *                          `PttSendManager.sendData` → `SEND_PTT_AI`;
-     *                          CODEC2 path: `Codec2ChunkSink.sendPacket` →
+     *                          CODEC2 path: `Codec2SendPipeline.sendPacket` →
      *                          `SEND_PTT`). When `false` (default), the feeder
      *                          only generates artifacts and never touches the
      *                          radio, regardless of [destinationId].
      * @param realtimePacing if true, paces chunks like AudioRecord does;
      *                       if false, pushes them back-to-back.
-     * @param roundTrip      if true, also runs each source through the
-     *                       WavTokenizer encoder + decoder and logs metrics.
-     * @param outputDir      directory for round-trip / filtered artifacts.
+     * @param outputDir      directory for per-source artifacts (input WAV
+     *                       snapshots, encoder-input mirrors).
      * @param onDone         optional completion callback (IO dispatcher).
      */
     fun feed(
@@ -155,24 +146,9 @@ object AudioTestFeeder {
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         sources: List<Source>,
+        profile: AiRecorderProfile? = null,
         realtimePacing: Boolean = true,
-        roundTrip: Boolean = false,
         outputDir: File? = null,
-        lowPass: LowPassConfig? = null,
-        notch: NotchConfig? = null,
-        rnNoise: RnNoiseConfig? = null,
-        agc: AGCConfig? = null,
-        dynamics: DynamicsConfig? = null,
-        declick: DeclickConfig? = null,
-        /**
-         * `true` → AI gain uses tanh soft saturation (no hard clipping at
-         * any drive level; loud peaks roll off smoothly past ~50 % FS).
-         * `false` (default) → linear gain + int16 hard clip, matches
-         * production `AudioRecorderAI.processSamples`. Set to `true` when
-         * you want hot AI-encoder input (slider 300–500) without the
-         * smeared / square-wave clipping that linear mode produces.
-         */
-        aiGainSoftSat: Boolean = false,
         destinationId: String? = null,
         withSend: Boolean = false,
         onDone: (() -> Unit)? = null,
@@ -180,6 +156,8 @@ object AudioTestFeeder {
         stop()
         DataManager.requireContext(context)
         val sendTo: String? = destinationId?.takeIf { withSend && it.isNotBlank() }
+
+
         val aiSession: com.commcrete.stardust.ai.codec.PttSession? =
             if (codeType == RecorderUtils.CODE_TYPE.AI) {
                 val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
@@ -190,30 +168,11 @@ object AudioTestFeeder {
             }
         val job = feederScope.launch {
             lastRunStats.clear()
-            lastRunRoundTrips.clear()
             val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, sendTo ?: "artifact-only")
-            if (roundTrip || (lowPass?.enabled == true) || (notch?.enabled == true) ||
-                (rnNoise?.enabled == true) || (agc?.enabled == true) ||
-                (dynamics?.enabled == true) || (declick?.enabled == true)) {
-                effectiveOutputDir.mkdirs()
-                Timber.tag(TAG).i("Artifacts will be written to: %s", effectiveOutputDir.absolutePath)
-            }
-            Timber.tag(TAG).i(
-                "▶ Starting feeder: %d source(s), codeType=%s, destinationId=%s, withSend=%b (sendTo=%s), carrier=%s, realtime=%b, roundTrip=%b, declick=%s, lowPass=%s, notch=%s, rnNoise=%s, agc=%s, dp=%s",
-                sources.size, codeType.name, destinationId, withSend, sendTo,
-                carrier?.toString(), realtimePacing, roundTrip,
-                declick?.takeIf { it.enabled }?.describe() ?: "off",
-                lowPass?.takeIf { it.enabled }?.describe() ?: "off",
-                notch?.takeIf { it.enabled }?.describe() ?: "off",
-                rnNoise?.takeIf { it.enabled }?.describe() ?: "off",
-                agc?.takeIf { it.enabled }?.describe() ?: "off",
-                dynamics?.takeIf { it.enabled }?.describe() ?: "off",
-            )
+            effectiveOutputDir.mkdirs()
 
-            val codec2Sink = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
-                // `sendTo` is null for artifact-only runs — the sink will
-                // still encode/pack but skip `DataManager.sendDataToBle`.
-                AudioFeederEngine.createCodec2ChunkSink(context, sendTo, carrier)
+            val codec2Pipeline = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
+                AudioFeederEngine.createCodec2Pipeline(context, sendTo, carrier)
             } else {
                 null
             }
@@ -229,23 +188,14 @@ object AudioTestFeeder {
                         carrier = carrier,
                         source = src,
                         codeType = codeType,
-                        codec2Sink = codec2Sink,
+                        codec2Pipeline = codec2Pipeline,
                         realtimePacing = realtimePacing,
-                        roundTrip = roundTrip,
                         artifactDir = effectiveOutputDir,
-                        lowPass = lowPass,
-                        notch = notch,
-                        rnNoise = rnNoise,
-                        agc = agc,
-                        dynamics = dynamics,
-                        declick = declick,
-                        aiGainSoftSat = aiGainSoftSat,
+                        profile = profile,
                         onStats = { lastRunStats[src.label] = it },
-                        onRoundTrip = { lastRunRoundTrips[src.label] = it },
                     )
                 }
                 AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
-                if (roundTrip) AudioTestFeederLogger.logCrossSourceRoundTrip(lastRunRoundTrips)
                 if (codeType == RecorderUtils.CODE_TYPE.AI) {
                     Timber.tag(TAG).i("✔ All sources fed. Calling PttSendManager.finish() in 3s")
                     delay(3_000)
@@ -254,8 +204,8 @@ object AudioTestFeeder {
                     aiSession?.let { PttSendManager.finish(it) }
                         ?: PttSendManager.finish(context)
                 } else {
-                    Timber.tag(TAG).i("✔ All sources fed. Flushing CODEC2 sink")
-                    codec2Sink?.finish()
+                    Timber.tag(TAG).i("✔ All sources fed. Flushing CODEC2 pipeline")
+                    codec2Pipeline?.finish()
                 }
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
@@ -300,16 +250,6 @@ object AudioTestFeeder {
         currentJob = null
     }
 
-    /** Inspect an audio file (load + analyze + log) without feeding it. */
-    fun inspect(source: Source): Pair<AudioInfo, AudioStats> {
-        val loaded: Pair<AudioInfo, ShortArray> = AudioFileLoader.loadAndNormalize(source)
-        val info: AudioInfo = loaded.first
-        val pcm: ShortArray = loaded.second
-        AudioTestFeederLogger.logAudioInfo(info)
-        val stats: AudioStats = AudioStatsAnalyzer.computeStats(pcm, source)
-        AudioTestFeederLogger.logAudioStats(source.label, stats)
-        return info to stats
-    }
 
     /** Convenience: feed a list of file paths without building [Source] manually. */
     fun feedFiles(
@@ -318,8 +258,8 @@ object AudioTestFeeder {
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         files: List<File>,
+        profile: AiRecorderProfile? = null,
         realtimePacing: Boolean = true,
-        roundTrip: Boolean = false,
         outputDir: File? = null,
         destinationId: String? = null,
         withSend: Boolean = false,
@@ -328,8 +268,8 @@ object AudioTestFeeder {
         carrier = carrier,
         codeType = codeType,
         sources = files.map { Source(it) },
+        profile = profile,
         realtimePacing = realtimePacing,
-        roundTrip = roundTrip,
         outputDir = outputDir,
         destinationId = destinationId,
         withSend = withSend,
