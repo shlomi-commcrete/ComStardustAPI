@@ -304,18 +304,8 @@ object RecorderUtils {
 
     private fun finishAIRecording(context: Context, session: PttSession) {
         Scopes.getDefaultCoroutine().launch {
-            // Short grace period so any in-flight `addNewFrame` calls from
-            // the recorder's tail (onPartialFinalChunk) reach this
-            // session's queue before we close it. The encoding job then
-            // drains the queue, finalizes the file ONCE and releases its
-            // wake lock — making finalization fully idempotent and safe
-            // against duplicate calls.
             delay(3000)
             PttSendManager.finish(session)
-            // Note: PttSendManager's session job holds its own wake lock
-            // until it has saved the WAV, so it's safe to release the
-            // recorder-side lock here even though encoding may still be
-            // running.
             AudioRecordingKeepAlive.release()
         }
     }

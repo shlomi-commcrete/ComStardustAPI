@@ -126,6 +126,7 @@ object PttAudioProcessor {
             agc = AGCConfig.getDefault(recordingDeviceType),
             dynamics = DynamicsConfig.getDefault(recordingDeviceType),
             highPass = HighPassConfig.getDefault(recordingDeviceType),
+            declick = DeclickConfig.getDefault(recordingDeviceType),
         )
     }
 
@@ -201,12 +202,10 @@ object PttAudioProcessor {
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Run [pcmArray] through the full DSP chain (when [applyFilters] is
-     * `true`) and resample to [targetRate] when [nativeRate] differs.
+     * Run [pcmArray] through the full DSP chain  and resample to [targetRate] when [nativeRate] differs.
      *
      * **Filter-skip semantics — DSP is bypassed entirely (only the
      * resample step runs) when ANY of the following holds:**
-     *  - [applyFilters] is `false` (caller has already filtered).
      *  - [profile] is `null`.
      *  - [profile]`.isActive` is `false`.
      *
@@ -226,10 +225,6 @@ object PttAudioProcessor {
      *                        profile with `isActive = false` runs no
      *                        filters even when [applyFilters] is `true`
      *                        — see "Filter-skip semantics" above.
-     * @param applyFilters    set `false` when the caller already filtered
-     *                        the chunk (e.g. the test feeder runs its own
-     *                        per-chunk chain) — this skips DSP and only
-     *                        does the resample step.
      * @param flowKey         identifier for diagnostic dedupe; pass
      *                        `"AI"` / `"CODEC2"` so the log lines per flow
      *                        are independent.
@@ -249,19 +244,14 @@ object PttAudioProcessor {
         nativeRate: Int,
         targetRate: Int,
         profile: AiRecorderProfile?,
-        applyFilters: Boolean = true,
         flowKey: String = DEFAULT_FLOW_KEY,
         chunkIndex: Int = 0,
         chunkDurationMs: Int? = null,
     ): ShortArray {
-        if (applyFilters) logFilterSignature(flowKey, chunkIndex, profile)
+        logFilterSignature(flowKey, chunkIndex, profile)
         logChunkShape(flowKey, chunkIndex, pcmArray.size, nativeRate, chunkDurationMs)
 
-        // DSP runs only when ALL three conditions hold. A `null` profile
-        // OR an inactive profile (`isActive == false`) is treated the same
-        // as `applyFilters = false` — full bypass, just resample if needed.
-        // No defaults are substituted; the profile is authoritative.
-        val shouldFilter = applyFilters && profile != null && profile.isActive
+        val shouldFilter = profile != null && profile.isActive
         val filtered: ShortArray = if (shouldFilter) {
             val mutable = pcmArray.copyOf()
             applyFilterChain(mutable, nativeRate, profile!!)
@@ -291,7 +281,6 @@ object PttAudioProcessor {
         nativeRate: Int,
         targetRate: Int,
         deviceType: RecordingDeviceType,
-        applyFilters: Boolean = true,
         flowKey: String = DEFAULT_FLOW_KEY,
         chunkIndex: Int = 0,
         chunkDurationMs: Int? = null,
@@ -300,7 +289,6 @@ object PttAudioProcessor {
         nativeRate = nativeRate,
         targetRate = targetRate,
         profile = resolveActiveProfile(deviceType),
-        applyFilters = applyFilters,
         flowKey = flowKey,
         chunkIndex = chunkIndex,
         chunkDurationMs = chunkDurationMs,
@@ -347,6 +335,7 @@ object PttAudioProcessor {
         hpf?.processInPlace(chunk)
         declickFilter?.processInPlace(chunk)
         notchFilter?.processInPlace(chunk)
+        lpf?.processInPlace(chunk)
         rnNoiseProcessor?.let { proc ->
             // Optional wet/dry blend + magnitude floor — same math as
             // AudioFeederEngine.LiveFilterChain.softenRnNoise so the test
@@ -362,7 +351,6 @@ object PttAudioProcessor {
             if (filterAiGainSoftSat) AudioDsp.applyAiGainSoftSatInPlace(chunk, filterAiGain)
             else AudioDsp.applyAiGainInPlace(chunk, filterAiGain)
         }
-        lpf?.processInPlace(chunk)
     }
 
     private fun ensureFiltersBuilt(sampleRate: Int, profile: AiRecorderProfile) {
@@ -385,6 +373,7 @@ object PttAudioProcessor {
             val hp: HighPassConfig? = profile.highPass?.takeIf { it.enabled }
             val notch: NotchConfig? = profile.notch?.takeIf { it.enabled }
             val agc: AGCConfig? = profile.agc?.takeIf { it.enabled }
+            val declick: DeclickConfig? = profile.declick?.takeIf { it.enabled }
 
             hpf = hp?.let {
                 HighPassFilter(
@@ -393,7 +382,9 @@ object PttAudioProcessor {
                     rollOffDbPerOctave = it.rollOffDbPerOctave,
                 )
             }
-            declickFilter = null
+            declickFilter = declick?.let {
+                DeclickFilter(sampleRateHz = sampleRate, config = it)
+            }
             notchFilter = notch?.let { NotchFilter(sampleRate, it.resolveBands()) }
             rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(sampleRate) } }
             rnNoiseMix = rn?.mixClamped ?: 1f
@@ -512,16 +503,18 @@ object PttAudioProcessor {
 
     private fun buildFilterSignature(profile: AiRecorderProfile?): String {
         if (profile == null) return "preset=<none>; filters=[]"
-        // An inactive profile is treated as a full DSP bypass by [process]
-        // — surface that explicitly in the log instead of listing enabled
-        // stages, which would otherwise wrongly suggest that those stages
-        // are running on the audio.
+        
         if (!profile.isActive) {
             return "preset=${profile.title}; active=false; filters=[] (profile inactive — DSP bypassed)"
         }
         val enabledFilters = mutableListOf<String>()
         profile.highPass?.takeIf { it.enabled }?.let {
             enabledFilters.add("highPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
+        }
+        profile.declick?.takeIf { it.enabled }?.let {
+            enabledFilters.add(
+                "declick(thr=${it.thresholdMad}xMAD, minPk=${it.minPeakDbFs}dBFS, maxRun=${it.maxTickSamples}, dDet=${it.useDerivativeDetection})"
+            )
         }
         profile.lowPass?.takeIf { it.enabled }?.let {
             enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
