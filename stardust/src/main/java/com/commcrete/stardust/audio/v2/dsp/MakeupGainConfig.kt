@@ -76,6 +76,8 @@ sealed class MakeupGainConfig {
         fun getDefault(deviceType: RecordingDeviceType): MakeupGainConfig = when (deviceType) {
             RecordingDeviceType.JBOX_INTERNAL,
             RecordingDeviceType.JBOX_EXTERNAL -> SoftClip(gainLinear = 1.0f, knee = 0.5f)
+            RecordingDeviceType.PHONE_MIC,
+            RecordingDeviceType.BLE_MIC,
             RecordingDeviceType.OTHER -> HardClip(gainLinear = 1.0f)
         }
     }

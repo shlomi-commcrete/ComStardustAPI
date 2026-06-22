@@ -44,7 +44,6 @@ object RecorderUtils {
     // ──────────────────────────────────────────────────────────────────────
 
     fun init(pttInterface: PttInterface) {
-        PttAudioProcessor.loadProfiles(DataManager.context)
         RecorderUtils.pttInterface = pttInterface
         if (!dirToSaveFile.exists()) dirToSaveFile.mkdirs()
     }
@@ -232,6 +231,7 @@ object RecorderUtils {
             nativeRate = nativeRate,
             targetRate = targetRate,
             deviceType = recordingDeviceType,
+            codeType = encodingType,
             flowKey = encodingType.name,
             chunkIndex = chunkIndex,
             chunkDurationMs = chunkDurationMs,
@@ -260,6 +260,20 @@ object RecorderUtils {
                 else -> RecordingDeviceType.OTHER
             }
         }
+
+        // Bluetooth SCO mic (car kit, BLE headset).
+        val isBleMic = actualInputType == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+            actualInputType == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
+                actualInputType == AudioDeviceInfo.TYPE_BLE_HEADSET)
+        if (isBleMic) return RecordingDeviceType.BLE_MIC
+
+        // Phone's built-in mic.
+        val isBuiltInMic = actualInputType == null ||
+            actualInputType == AudioDeviceInfo.TYPE_BUILTIN_MIC ||
+            actualInputType == AudioDeviceInfo.TYPE_UNKNOWN
+        if (isBuiltInMic) return RecordingDeviceType.PHONE_MIC
+
         return RecordingDeviceType.OTHER
     }
 

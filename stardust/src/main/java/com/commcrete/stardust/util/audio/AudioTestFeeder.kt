@@ -9,7 +9,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -146,7 +145,7 @@ object AudioTestFeeder {
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         sources: List<Source>,
-        profile: AiRecorderProfile? = null,
+        profile: RecorderProfile? = null,
         realtimePacing: Boolean = true,
         outputDir: File? = null,
         destinationId: String? = null,
@@ -158,30 +157,56 @@ object AudioTestFeeder {
         val sendTo: String? = destinationId?.takeIf { withSend && it.isNotBlank() }
 
 
-        val aiSession: com.commcrete.stardust.ai.codec.PttSession? =
-            if (codeType == RecorderUtils.CODE_TYPE.AI) {
-                val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
-                PttSendManager.init(context.applicationContext, pttInterface)
-                PttSendManager.restart()
-            } else {
-                null
-            }
+        val isAi = codeType == RecorderUtils.CODE_TYPE.AI
+        if (isAi) {
+            val pttInterface: PttInterface? = sendTo?.let { FeederPttInterface(it) }
+            PttSendManager.init(context.applicationContext, pttInterface)
+        }
+
         val job = feederScope.launch {
             lastRunStats.clear()
             val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, sendTo ?: "artifact-only")
             effectiveOutputDir.mkdirs()
 
-            val codec2Pipeline = if (codeType == RecorderUtils.CODE_TYPE.CODEC2) {
-                AudioFeederEngine.createCodec2Pipeline(context, sendTo, carrier)
-            } else {
-                null
-            }
-
+            val isCodec2 = codeType == RecorderUtils.CODE_TYPE.CODEC2
 
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
                     Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
+
+                    // ── Per-source session: mirrors real PTT key-down →
+                    // record → key-up cycle. Each file gets fresh filter
+                    // state, fresh encoder/decoder state, and its own
+                    // output artifact.
+
+                    // AI path: restart PttSendManager session.
+                    val session: com.commcrete.stardust.ai.codec.PttSession? =
+                        if (isAi) PttSendManager.restart() else null
+
+                    // CODEC2 path: fresh pipeline + decoder + data buffer
+                    // per source (mirrors AudioRecorderCodec2 lifecycle).
+                    val decodedCodec2Data = if (isCodec2) ArrayList<Byte>() else null
+                    val codec2FrameDecoder = if (isCodec2)
+                        com.ustadmobile.codec2.Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
+                    else null
+                    val codec2Pipeline = if (isCodec2) {
+                        // Reset filter chain for the new "session".
+                        PttAudioProcessor.reset()
+                        AudioFeederEngine.createCodec2Pipeline(
+                            context = context,
+                            destination = sendTo,
+                            carrier = carrier,
+                            onEncodedFrame = { encodedFrame ->
+                                val byteBuffer = codec2FrameDecoder!!.readFrame(encodedFrame)
+                                val bDataCodec = byteBuffer.array()
+                                for (b in bDataCodec) decodedCodec2Data!!.add(b)
+                            },
+                        )
+                    } else {
+                        null
+                    }
+
                     AudioFeederEngine.feedSingle(
                         context = context,
                         sendTo = sendTo,
@@ -194,19 +219,36 @@ object AudioTestFeeder {
                         profile = profile,
                         onStats = { lastRunStats[src.label] = it },
                     )
+
+                    // ── Finalize this source's session before the next.
+
+                    if (isAi && session != null) {
+                        Timber.tag(TAG).i("  ⏳ Finishing AI session ${session.id} for ${src.label}")
+                        PttSendManager.finish(session)
+                        PttSendManager.awaitFinalized(session)
+                        Timber.tag(TAG).i("  ✔ AI session ${session.id} finalized")
+                    }
+
+                    if (isCodec2) {
+                        Timber.tag(TAG).i("  ⏳ Flushing CODEC2 pipeline for ${src.label}")
+                        codec2Pipeline?.finish()
+                        // Write per-source decoded artifact.
+                        if (decodedCodec2Data != null && decodedCodec2Data.isNotEmpty()) {
+                            runCatching {
+                                val artifactDir = RecorderUtils.dirToSaveFile
+                                if (!artifactDir.exists()) artifactDir.mkdirs()
+                                val mirrorName = "${System.currentTimeMillis()}-${src.label}-codec2_decoded.wav"
+                                val mirror = File(artifactDir, mirrorName)
+                                val pcmBytes = decodedCodec2Data.toByteArray()
+                                mirror.writeBytes(buildWavHeader(pcmBytes.size, sampleRate = 8000, bitDepth = 16, channels = 1) + pcmBytes)
+                                Timber.tag(TAG).i("  ✔ CODEC2 decoded artifact → %s", mirror.absolutePath)
+                            }.onFailure { t ->
+                                Timber.tag(TAG).e(t, "Failed to write CODEC2 decoded artifact for ${src.label}")
+                            }
+                        }
+                    }
                 }
                 AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
-                if (codeType == RecorderUtils.CODE_TYPE.AI) {
-                    Timber.tag(TAG).i("✔ All sources fed. Calling PttSendManager.finish() in 3s")
-                    delay(3_000)
-                    // Use the session-aware overload so a newer recording
-                    // started in the meantime is unaffected.
-                    aiSession?.let { PttSendManager.finish(it) }
-                        ?: PttSendManager.finish(context)
-                } else {
-                    Timber.tag(TAG).i("✔ All sources fed. Flushing CODEC2 pipeline")
-                    codec2Pipeline?.finish()
-                }
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
@@ -214,11 +256,7 @@ object AudioTestFeeder {
                 // production `RecorderUtils.startAIRecording` call cleanly
                 // re-registers DataManager without our stale adapter
                 // racing it. Cheap, idempotent.
-                if (codeType == RecorderUtils.CODE_TYPE.AI) {
-                    if (aiSession != null) {
-                        runCatching { PttSendManager.finish(aiSession) }
-                        runCatching { PttSendManager.awaitFinalized(aiSession) }
-                    }
+                if (isAi) {
                     runCatching { PttSendManager.init(context.applicationContext, null) }
                 }
                 onDone?.invoke()
@@ -226,6 +264,28 @@ object AudioTestFeeder {
         }
         currentJob = job
         return job
+    }
+
+    fun buildWavHeader(pcmSize: Int, sampleRate: Int, bitDepth: Int, channels: Int): ByteArray {
+        val byteRate = sampleRate * channels * bitDepth / 8
+        val blockAlign = (channels * bitDepth / 8).toShort()
+        return java.io.ByteArrayOutputStream(44).apply {
+            fun Int.le4() = byteArrayOf(toByte(), shr(8).toByte(), shr(16).toByte(), shr(24).toByte())
+            fun Short.le2() = byteArrayOf(toByte(), toInt().shr(8).toByte())
+            write("RIFF".toByteArray())
+            write((36 + pcmSize).le4())
+            write("WAVE".toByteArray())
+            write("fmt ".toByteArray())
+            write(16.le4())                          // subchunk1 size
+            write(1.toShort().le2())                 // PCM format
+            write(channels.toShort().le2())
+            write(sampleRate.le4())
+            write(byteRate.le4())
+            write(blockAlign.le2())
+            write(bitDepth.toShort().le2())
+            write("data".toByteArray())
+            write(pcmSize.le4())
+        }.toByteArray()
     }
 
 
@@ -258,7 +318,7 @@ object AudioTestFeeder {
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         files: List<File>,
-        profile: AiRecorderProfile? = null,
+        profile: RecorderProfile? = null,
         realtimePacing: Boolean = true,
         outputDir: File? = null,
         destinationId: String? = null,

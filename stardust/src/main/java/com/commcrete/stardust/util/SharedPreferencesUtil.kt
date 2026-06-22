@@ -18,7 +18,9 @@ import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.util.audio.AiRecorderProfile
+import com.commcrete.stardust.util.audio.RecordingEnvironmentPreset
+import com.commcrete.stardust.util.audio.ProfileKey
+import com.commcrete.stardust.util.audio.RecorderProfile
 import com.commcrete.stardust.util.audio.RecordingDeviceType
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -160,6 +162,7 @@ object SharedPreferencesUtil {
     private const val KEY_AI_TONAL_WHINE_Q = "ai_tonal_whine_q"
     private const val KEY_AI_TONAL_WHINE_ATTENUATION_DB = "ai_tonal_whine_attenuation_db"
     private const val KEY_AI_RECORDER_PROFILES = "ai_recorder_profiles"
+    private const val KEY_ACTIVE_ENVIRONMENT_PRESET = "active_environment_preset"
 
     // Recorder profiles may intentionally carry special float values
     // (e.g. RNNoise maxAttenuationDb = -Infinity), so use a Gson instance
@@ -238,17 +241,22 @@ object SharedPreferencesUtil {
      * Returns an empty map (callers should fall back to their own defaults)
      * when nothing has been persisted yet.
      */
-    fun getAiRecorderProfiles(context: Context): Map<RecordingDeviceType, AiRecorderProfile> {
+    /**
+     * Load recorder profiles keyed by [ProfileKey] (device type + codec type).
+     *
+     * Backward-compatible: old entries keyed by device-type name alone
+     * (e.g. `"JBOX_INTERNAL"`) are parsed via [ProfileKey.fromStorageKeyCompat]
+     * and imported as AI profiles.
+     */
+    fun getRecorderProfiles(context: Context): Map<ProfileKey, RecorderProfile> {
         val json = getPrefs(context).getString(KEY_AI_RECORDER_PROFILES, null)
             ?: return emptyMap()
         return try {
-            val type = object : TypeToken<Map<String, AiRecorderProfile>>() {}.type
-            val raw = aiRecorderProfilesGson.fromJson<Map<String, AiRecorderProfile>>(json, type)
+            val type = object : TypeToken<Map<String, RecorderProfile>>() {}.type
+            val raw = aiRecorderProfilesGson.fromJson<Map<String, RecorderProfile>>(json, type)
                 ?: return emptyMap()
             raw.mapNotNull { (key, profile) ->
-                runCatching { RecordingDeviceType.valueOf(key) }.getOrNull()?.let { type ->
-                    type to profile
-                }
+                ProfileKey.fromStorageKeyCompat(key)?.let { it to profile }
             }.toMap()
         } catch (_: Exception) {
             emptyMap()
@@ -256,18 +264,60 @@ object SharedPreferencesUtil {
     }
 
     /**
-     * Persist the full [profiles] map. Existing entries not present in
-     * [profiles] are discarded — pass the full map from [RecorderUtils].
+     * Persist the full [profiles] map. Keys are serialized as
+     * `"DEVICE_TYPE:CODE_TYPE"` (e.g. `"JBOX_INTERNAL:AI"`).
      */
-    fun setAiRecorderProfiles(
+    fun setRecorderProfiles(
         context: Context,
-        profiles: Map<RecordingDeviceType, AiRecorderProfile>,
+        profiles: Map<ProfileKey, RecorderProfile>,
     ) {
-        val serializable = profiles.map { (type, profile) ->
-            type.name to profile
+        val serializable = profiles.map { (key, profile) ->
+            key.toStorageKey() to profile
         }.toMap()
         getPrefs(context).edit()
             .putString(KEY_AI_RECORDER_PROFILES, aiRecorderProfilesGson.toJson(serializable))
+            .apply()
+    }
+
+    /** @deprecated Use [getRecorderProfiles]. */
+    @Deprecated("Use getRecorderProfiles", replaceWith = ReplaceWith("getRecorderProfiles(context)"))
+    fun getAiRecorderProfiles(context: Context): Map<RecordingDeviceType, RecorderProfile> {
+        return getRecorderProfiles(context).mapNotNull { (key, profile) ->
+            if (key.codeType == RecorderUtils.CODE_TYPE.AI) key.deviceType to profile
+            else null
+        }.toMap()
+    }
+
+    /** @deprecated Use [setRecorderProfiles]. */
+    @Deprecated("Use setRecorderProfiles")
+    fun setAiRecorderProfiles(
+        context: Context,
+        profiles: Map<RecordingDeviceType, RecorderProfile>,
+    ) {
+        val keyed = profiles.map { (type, profile) ->
+            ProfileKey(type, RecorderUtils.CODE_TYPE.AI) to profile
+        }.toMap()
+        setRecorderProfiles(context, keyed)
+    }
+
+    /**
+     * Get the active [RecordingEnvironmentPreset], or `null` if no preset is
+     * selected (all profiles disabled — no filters applied).
+     */
+    fun getActiveRecordingEnvironmentPreset(context: Context): RecordingEnvironmentPreset? {
+        val name = getPrefs(context).getString(KEY_ACTIVE_ENVIRONMENT_PRESET, null)
+            ?: return RecordingEnvironmentPreset.DEFAULT
+        if (name == "null") return null
+        return runCatching { RecordingEnvironmentPreset.valueOf(name) }.getOrNull()
+    }
+
+    /**
+     * Set the active [RecordingEnvironmentPreset]. Pass `null` to disable all
+     * profiles (no filters applied — raw audio to encoder).
+     */
+    fun setActiveRecordingEnvironmentPreset(context: Context, preset: RecordingEnvironmentPreset?) {
+        getPrefs(context).edit()
+            .putString(KEY_ACTIVE_ENVIRONMENT_PRESET, preset?.name ?: "null")
             .apply()
     }
 

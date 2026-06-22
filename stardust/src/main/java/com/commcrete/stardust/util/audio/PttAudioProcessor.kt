@@ -59,6 +59,10 @@ object PttAudioProcessor {
     private var hpf: HighPassFilter? = null
     private var declickFilter: DeclickFilter? = null
     private var notchFilter: NotchFilter? = null
+    private var adaptiveNotchDetector: AdaptiveNotchDetector? = null
+    /** Static bands resolved from the NotchConfig (kept for merging with adaptive). */
+    private var staticNotchBands: List<NotchFilter.Band> = emptyList()
+    private var spectralSubtractionFilter: SpectralSubtractionFilter? = null
     private var rnNoiseProcessor: RnNoiseProcessor? = null
     private var dynamicsFilter: DynamicsProcessingFilter? = null
     private var agcFilter: AGCFilter? = null
@@ -66,10 +70,7 @@ object PttAudioProcessor {
 
     // ── Tuning knobs derived from the current profile ─────────────────────
 
-    /** RNNoise wet/dry mix in `[0,1]` (1 = full clean, 0 = bypass). */
-    private var rnNoiseMix: Float = 1f
-
-    /** RNNoise max-attenuation linear floor (0 = disabled). */
+    /** RNNoise per-frame RMS floor, linear (0 = disabled). */
     private var rnNoiseAttenFloor: Float = 0f
 
     /** Post-AGC make-up multiplier (1 = passthrough). */
@@ -82,7 +83,7 @@ object PttAudioProcessor {
     @Volatile private var currentFilterRate: Int = -1
 
     /** Profile the currently-built chain was built for. */
-    @Volatile private var currentFilterKey: AiRecorderProfile? = null
+    @Volatile private var currentFilterKey: RecorderProfile? = null
 
     @Volatile private var filtersBuilt: Boolean = false
 
@@ -96,106 +97,327 @@ object PttAudioProcessor {
     // ──────────────────────────────────────────────────────────────────────
 
     /**
-     * Per-device-type DSP profile presets keyed by [RecordingDeviceType].
-     * Each device type can have multiple presets for user selection (one
-     * marked `isActive` at a time is the one [process] picks up via
-     * [resolveActiveProfile]).
+     * Per-(device, codec) DSP profile presets keyed by [ProfileKey].
+     * Each key can have multiple presets (user-selectable); exactly one
+     * is `isActive = true` at a time. The active profile is resolved at
+     * recording time via [resolveActiveProfile].
      *
-     * Seeded eagerly with [getAiRecorderDefaultProfilePreset] for every
-     * known device type. Persisted overrides loaded later via
-     * [loadProfiles] (called from `RecorderUtils.init`).
-     *
-     * Currently one preset per device type, expandable for user-selectable
-     * options without API churn.
+     * Seeded lazily with [getDefaultProfile] on first access per key.
+     * Persisted overrides loaded via [loadProfiles] (called from
+     * `RecorderUtils.init`).
      */
-    private val profileMap: MutableMap<RecordingDeviceType, List<AiRecorderProfile>> = mutableMapOf()
+    private val profileMap: MutableMap<ProfileKey, List<RecorderProfile>> = mutableMapOf()
 
     /**
-     * Build the built-in default DSP preset for [recordingDeviceType].
-     * Pulls per-stage defaults from each `*Config.getDefault(deviceType)`
-     * so per-device tuning lives in one place (the config classes) rather
-     * than scattered across the SDK.
+     * Build the built-in default DSP preset for the given device +
+     * codec combination. Each codec type gets filter configs optimized
+     * for its encoder:
+     *
+     *  - **AI**: capture at 48 kHz (RNNoise/spectral-sub at full bandwidth),
+     *    resample to 24 kHz. Notch for 48 kHz tones.
+     *  - **Codec2**: capture at 8 kHz (hardware decimation), no resample.
+     *    Minimal filters — notch for 8 kHz-mode tones only.
      */
-    fun getAiRecorderDefaultProfilePreset(recordingDeviceType: RecordingDeviceType): AiRecorderProfile {
-        return AiRecorderProfile(
-            title = "Default",
-            isActive = true,
-            lowPass = LowPassConfig.getDefault(recordingDeviceType),
-            notch = NotchConfig.getDefault(recordingDeviceType),
-            rnNoise = RnNoiseConfig.getDefault(recordingDeviceType),
-            agc = AGCConfig.getDefault(recordingDeviceType),
-            dynamics = DynamicsConfig.getDefault(recordingDeviceType),
-            highPass = HighPassConfig.getDefault(recordingDeviceType),
-            declick = DeclickConfig.getDefault(recordingDeviceType),
+    fun getDefaultProfile(
+        deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
+    ): RecorderProfile = when {
+        // ── PHONE_MIC profiles ──────────────────────────────────────────
+        // VOICE_RECOGNITION: Android's Google DNS handles broadband noise
+        // and tonal hum. No RNNoise / spectral subtraction / notch needed.
+        // Capture at 24 kHz (no need for 48 kHz without RNNoise).
+        deviceType == RecordingDeviceType.PHONE_MIC && codeType == RecorderUtils.CODE_TYPE.AI ->
+            RecorderProfile(
+                preset = RecordingEnvironmentPreset.DEFAULT,
+                codeType = RecorderUtils.CODE_TYPE.AI,
+                requestedSampleRateHz = AI_TARGET_SAMPLE_RATE,
+                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_RECOGNITION,
+                highPass = HighPassConfig.getDefault(deviceType),
+                declick = DeclickConfig.getDefault(deviceType),
+                agc = AGCConfig.getDefault(deviceType),
+            )
+        deviceType == RecordingDeviceType.PHONE_MIC && codeType == RecorderUtils.CODE_TYPE.CODEC2 ->
+            RecorderProfile(
+                preset = RecordingEnvironmentPreset.DEFAULT,
+                codeType = RecorderUtils.CODE_TYPE.CODEC2,
+                requestedSampleRateHz = CODEC2_TARGET_SAMPLE_RATE, // 8 kHz — no resample needed
+                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_RECOGNITION,
+                highPass = HighPassConfig.getDefault(deviceType),
+                declick = DeclickConfig.getDefault(deviceType),
+                agc = AGCConfig.getDefault(deviceType),
+            )
+
+        // ── BLE_MIC profiles ────────────────────────────────────────────
+        // VOICE_COMMUNICATION: required for BT SCO routing. Android applies
+        // AEC + NS + AGC at HAL level, but car cabin noise needs additional
+        // noise reduction.
+        //
+        // Strategy: request 48 kHz (best case — RNNoise can run). If the
+        // BLE device only supports 8/16 kHz, pickCaptureRate returns the
+        // highest available, and rnNoiseMinRateHz causes RNNoise to be
+        // skipped in favor of spectral subtraction at the native rate.
+        deviceType == RecordingDeviceType.BLE_MIC && codeType == RecorderUtils.CODE_TYPE.AI ->
+            RecorderProfile(
+                preset = RecordingEnvironmentPreset.DEFAULT,
+                codeType = RecorderUtils.CODE_TYPE.AI,
+                requestedSampleRateHz = 48_000, // ideal; pickCaptureRate falls back if unavailable
+                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
+                highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
+                declick = DeclickConfig(enabled = true),
+                rnNoise = RnNoiseConfig(enabled = true, maxAttenuationDb = -6f),
+                rnNoiseMinRateHz = 48_000,      // only run RNNoise at native 48 kHz
+                rnNoiseFallback = SpectralSubtractionConfig(
+                    enabled = true,
+                    silenceThresholdDbFs = -40f,
+                    noiseLearnAlpha = 0.2f,
+                    overSubtractionFactor = 1.5f,
+                    spectralFloor = 0.05f,
+                    minNoiseFrames = 2,
+                    adaptiveAggressiveness = true,
+                ),
+                agc = AGCConfig(
+                    enabled = true,
+                    targetLevel = 0.20f,
+                    attackMs = 5f,
+                    releaseMs = 300f,
+                    maxGainDb = 15f,
+                    minGainDb = -8f,
+                    noiseGateLevel = 0.008f,
+                ),
+            )
+        deviceType == RecordingDeviceType.BLE_MIC && codeType == RecorderUtils.CODE_TYPE.CODEC2 ->
+            RecorderProfile(
+                preset = RecordingEnvironmentPreset.DEFAULT,
+                codeType = RecorderUtils.CODE_TYPE.CODEC2,
+                requestedSampleRateHz = 48_000,
+                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
+                highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
+                declick = DeclickConfig(enabled = true),
+                rnNoise = RnNoiseConfig(enabled = true, maxAttenuationDb = -6f),
+                rnNoiseMinRateHz = 48_000,
+                rnNoiseFallback = SpectralSubtractionConfig(
+                    enabled = true,
+                    silenceThresholdDbFs = -40f,
+                    noiseLearnAlpha = 0.2f,
+                    overSubtractionFactor = 1.5f,
+                    spectralFloor = 0.04f,
+                    minNoiseFrames = 2,
+                    adaptiveAggressiveness = true,
+                ),
+                agc = AGCConfig(
+                    enabled = true,
+                    targetLevel = 0.20f,
+                    attackMs = 5f,
+                    releaseMs = 300f,
+                    maxGainDb = 15f,
+                    minGainDb = -8f,
+                    noiseGateLevel = 0.008f,
+                ),
+            )
+
+        // ── Codec2 (non-phone, non-BLE) ─────────────────────────────────
+        codeType == RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
+            preset = RecordingEnvironmentPreset.DEFAULT,
+            codeType = RecorderUtils.CODE_TYPE.CODEC2,
+            requestedSampleRateHz = CODEC2_TARGET_SAMPLE_RATE,
+            highPass = HighPassConfig.getDefault(deviceType),
+            declick = DeclickConfig.getDefault(deviceType),
+            notch = NotchConfig.getDefaultForCodec2(deviceType),
+            agc = AGCConfig.getDefault(deviceType),
+        )
+
+        // ── AI (non-phone) ──────────────────────────────────────────────
+        else -> RecorderProfile(
+            preset = RecordingEnvironmentPreset.DEFAULT,
+            codeType = RecorderUtils.CODE_TYPE.AI,
+            requestedSampleRateHz = 48_000,
+            lowPass = LowPassConfig.getDefault(deviceType),
+            notch = NotchConfig.getDefault(deviceType),
+            rnNoise = RnNoiseConfig.getDefault(deviceType),
+            agc = AGCConfig.getDefault(deviceType),
+            dynamics = DynamicsConfig.getDefault(deviceType),
+            highPass = HighPassConfig.getDefault(deviceType),
+            declick = DeclickConfig.getDefault(deviceType),
+            spectralSubtraction = SpectralSubtractionConfig.getDefault(deviceType),
         )
     }
 
-    /** All presets registered for [recordingDeviceType], or null if none. */
-    fun getAiRecorderProfiles(recordingDeviceType: RecordingDeviceType): List<AiRecorderProfile>? =
-        profileMap[recordingDeviceType]
+    /** @deprecated Use [getDefaultProfile] with explicit codeType. */
+    @Deprecated("Use getDefaultProfile(deviceType, codeType)",
+        replaceWith = ReplaceWith("getDefaultProfile(recordingDeviceType)"))
+    fun getAiRecorderDefaultProfilePreset(recordingDeviceType: RecordingDeviceType): RecorderProfile =
+        getDefaultProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
 
-    /** The active preset for [recordingDeviceType], or null if none / none active. */
-    fun getAiActiveRecorderProfile(recordingDeviceType: RecordingDeviceType): AiRecorderProfile? =
-        profileMap[recordingDeviceType]?.find { it.isActive }
+    /** All presets registered for the given key, or null if none. */
+    fun getProfiles(key: ProfileKey): List<RecorderProfile>? =
+        profileMap[key]
+
+    /** All presets for a device + codec combination. */
+    fun getProfiles(deviceType: RecordingDeviceType, codeType: RecorderUtils.CODE_TYPE): List<RecorderProfile>? =
+        profileMap[ProfileKey(deviceType, codeType)]
+
+    /** @deprecated Use [getProfiles] with explicit codeType. */
+    @Deprecated("Use getProfiles(deviceType, codeType)",
+        replaceWith = ReplaceWith("getProfiles(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)"))
+    fun getAiRecorderProfiles(recordingDeviceType: RecordingDeviceType): List<RecorderProfile>? =
+        getProfiles(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
 
     /**
-     * Update (or add) the full preset list for [recordingDeviceType] and
-     * persist the flattened view to [SharedPreferencesUtil].
-     *
-     * Persistence model: SharedPreferences stores a flat
-     * `Map<RecordingDeviceType, AiRecorderProfile>` (one preset per
-     * device type), so the flatten step picks the first preset per type.
-     * Multi-preset history lives only in-memory until the storage schema
-     * is upgraded.
+     * The profile matching the active [RecordingEnvironmentPreset] from
+     * SharedPreferences, or `null` if the preset is `null` (all
+     * profiles disabled — no filters applied).
      */
+    fun getActiveProfile(key: ProfileKey): RecorderProfile? {
+        val activePreset = SharedPreferencesUtil.getActiveRecordingEnvironmentPreset(
+            com.commcrete.stardust.util.DataManager.context
+        ) ?: return null
+        return profileMap[key]?.firstOrNull { it.preset == activePreset }
+    }
+
+    /** The active profile for a device + codec combination. */
+    fun getActiveProfile(deviceType: RecordingDeviceType, codeType: RecorderUtils.CODE_TYPE): RecorderProfile? =
+        getActiveProfile(ProfileKey(deviceType, codeType))
+
+    /** @deprecated Use [getActiveProfile] with explicit codeType. */
+    @Deprecated("Use getActiveProfile(deviceType, codeType)",
+        replaceWith = ReplaceWith("getActiveProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)"))
+    fun getAiActiveRecorderProfile(recordingDeviceType: RecordingDeviceType): RecorderProfile? =
+        getActiveProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
+
+    /**
+     * Update (or add) the full preset list for [key] and persist.
+     */
+    fun setProfiles(
+        context: Context,
+        key: ProfileKey,
+        profiles: List<RecorderProfile>,
+    ) {
+        profileMap[key] = profiles
+        persistAllProfiles(context)
+    }
+
+    /** @deprecated Use [setProfiles] with a [ProfileKey]. */
+    @Deprecated("Use setProfiles(context, ProfileKey, profiles)")
     fun setAiRecorderProfiles(
         context: Context,
         recordingDeviceType: RecordingDeviceType,
-        profiles: List<AiRecorderProfile>,
+        profiles: List<RecorderProfile>,
     ) {
-        profileMap[recordingDeviceType] = profiles
-        val flatMap = profileMap.flatMap { (type, profs) ->
-            profs.map { type to it }
-        }.toMap()
-        SharedPreferencesUtil.setAiRecorderProfiles(context, flatMap)
+        setProfiles(context, ProfileKey(recordingDeviceType, RecorderUtils.CODE_TYPE.AI), profiles)
     }
 
     /**
      * Convenience: update a single preset at [presetIndex] (or append as
      * a new preset when [presetIndex] is past the end) and persist.
      */
-    fun setAiRecorderProfile(
+    fun setProfile(
         context: Context,
-        recordingDeviceType: RecordingDeviceType,
-        profile: AiRecorderProfile,
+        key: ProfileKey,
+        profile: RecorderProfile,
         presetIndex: Int = 0,
     ) {
-        val profiles = profileMap[recordingDeviceType]?.toMutableList() ?: mutableListOf()
+        val profiles = profileMap[key]?.toMutableList() ?: mutableListOf()
         if (presetIndex < profiles.size) {
             profiles[presetIndex] = profile
         } else {
             profiles.add(profile)
         }
-        setAiRecorderProfiles(context, recordingDeviceType, profiles)
+        setProfiles(context, key, profiles)
+    }
+
+    /** @deprecated Use [setProfile] with a [ProfileKey]. */
+    @Deprecated("Use setProfile(context, ProfileKey, profile, presetIndex)")
+    fun setAiRecorderProfile(
+        context: Context,
+        recordingDeviceType: RecordingDeviceType,
+        profile: RecorderProfile,
+        presetIndex: Int = 0,
+    ) {
+        setProfile(
+            context,
+            ProfileKey(recordingDeviceType, profile.codeType),
+            profile,
+            presetIndex,
+        )
     }
 
     /**
      * Overlay persisted profiles onto the in-memory defaults. Call once
-     * during SDK init (from `RecorderUtils.init`) so any device type the
-     * host has saved overrides for picks them up. Device types with no
-     * saved entry keep their built-in defaults seeded in [profileMap].
+     * during SDK init (from `RecorderUtils.init`) so any saved overrides
+     * are picked up. Keys with no saved entry keep their built-in
+     * defaults seeded lazily by [resolveActiveProfile].
+     *
+     * Backward-compatible: old SharedPreferences entries keyed by device
+     * type alone (no codec type) are imported as AI profiles.
      */
     fun loadProfiles(context: Context) {
-        val saved = SharedPreferencesUtil.getAiRecorderProfiles(context)
-        // Group loaded profiles by device type to support multiple presets.
-        saved.entries.groupBy { it.key }.forEach { (type, entries) ->
-            profileMap[type] = entries.map { it.value }
+        val saved = SharedPreferencesUtil.getRecorderProfiles(context)
+        saved.forEach { (key, profile) ->
+            profileMap[key] = listOf(profile)
         }
     }
 
-    /** Active preset for [deviceType] — picked up by [process] internally. */
-    private fun resolveActiveProfile(deviceType: RecordingDeviceType): AiRecorderProfile? =
-        profileMap[deviceType]?.firstOrNull { it.isActive }
+    /**
+     * Active preset for [deviceType] + [codeType] — picked up by
+     * [process] internally. Returns `null` when:
+     *  - The active [RecordingEnvironmentPreset] in SharedPreferences is `null`
+     *    (user disabled all profiles → no filters).
+     *  - No profile with the matching preset is registered for the key.
+     *
+     * `null` tells [process] to skip all filters and only resample.
+     */
+    fun resolveActiveProfile(
+        deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
+    ): RecorderProfile? {
+        val activePreset = SharedPreferencesUtil.getActiveRecordingEnvironmentPreset(
+            com.commcrete.stardust.util.DataManager.context
+        ) ?: return null
+        val key = ProfileKey(deviceType, codeType)
+        return profileMap[key]?.firstOrNull { it.preset == activePreset }
+    }
+
+    /**
+     * Resolve the audio source (Android `MediaRecorder.AudioSource` int)
+     * for a recording session. Checks the active profile first; if the
+     * profile doesn't specify an audio source, returns `null` so the
+     * caller can fall back to the legacy SharedPreferences setting.
+     */
+    fun resolveAudioSource(
+        deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE,
+    ): Int? = resolveActiveProfile(deviceType, codeType)?.resolveAudioSourceInt()
+
+    /**
+     * Resolve the requested capture sample rate from the active profile.
+     * Returns `null` if no profile is registered, so the caller can fall
+     * back to the recorder's default rate.
+     */
+    fun resolveRequestedSampleRate(
+        deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE,
+    ): Int? = resolveActiveProfile(deviceType, codeType)?.requestedSampleRateHz
+
+    /**
+     * Resolve the input gain (linear multiplier) from the active profile.
+     * Returns `null` if no profile is registered or the profile doesn't
+     * specify a gain, so the caller can fall back to the legacy
+     * SharedPreferences setting.
+     */
+    fun resolveInputGain(
+        deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE,
+    ): Float? = resolveActiveProfile(deviceType, codeType)
+        ?.inputGainPercent
+        ?.let { it / 100f }
+
+    /** Persist the full profileMap to SharedPreferences. */
+    private fun persistAllProfiles(context: Context) {
+        val flat = profileMap.flatMap { (key, profs) ->
+            profs.map { key to it }
+        }.toMap()
+        SharedPreferencesUtil.setRecorderProfiles(context, flat)
+    }
 
     // ──────────────────────────────────────────────────────────────────────
     // Public API
@@ -243,7 +465,7 @@ object PttAudioProcessor {
         pcmArray: ShortArray,
         nativeRate: Int,
         targetRate: Int,
-        profile: AiRecorderProfile?,
+        profile: RecorderProfile?,
         flowKey: String = DEFAULT_FLOW_KEY,
         chunkIndex: Int = 0,
         chunkDurationMs: Int? = null,
@@ -251,7 +473,9 @@ object PttAudioProcessor {
         logFilterSignature(flowKey, chunkIndex, profile)
         logChunkShape(flowKey, chunkIndex, pcmArray.size, nativeRate, chunkDurationMs)
 
-        val shouldFilter = profile != null && profile.isActive
+        // profile is non-null only when resolveActiveProfile found a
+        // matching preset in SharedPreferences. null = no filters.
+        val shouldFilter = profile != null
         val filtered: ShortArray = if (shouldFilter) {
             val mutable = pcmArray.copyOf()
             applyFilterChain(mutable, nativeRate, profile!!)
@@ -268,8 +492,8 @@ object PttAudioProcessor {
 
     /**
      * Device-aware overload of [process]: resolves the active DSP profile
-     * for [deviceType] internally via [resolveActiveProfile], then forwards
-     * to the main [process] entry point.
+     * for [deviceType] + [codeType] internally via [resolveActiveProfile],
+     * then forwards to the main [process] entry point.
      *
      * Use this from recording paths that already infer the device route
      * (e.g. `RecorderUtils.preprocessChunkForEncoding`) so neither the
@@ -281,6 +505,7 @@ object PttAudioProcessor {
         nativeRate: Int,
         targetRate: Int,
         deviceType: RecordingDeviceType,
+        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         flowKey: String = DEFAULT_FLOW_KEY,
         chunkIndex: Int = 0,
         chunkDurationMs: Int? = null,
@@ -288,7 +513,7 @@ object PttAudioProcessor {
         pcmArray = pcmArray,
         nativeRate = nativeRate,
         targetRate = targetRate,
-        profile = resolveActiveProfile(deviceType),
+        profile = resolveActiveProfile(deviceType, codeType),
         flowKey = flowKey,
         chunkIndex = chunkIndex,
         chunkDurationMs = chunkDurationMs,
@@ -301,18 +526,25 @@ object PttAudioProcessor {
      * `PttSendManager.restart` so a new session starts with fresh
      * per-stream state (no biquad ringing across recordings, no stale
      * RNNoise frame history).
+     *
+     * Synchronized on `this` — same lock as [applyFilterChain] and
+     * [ensureFiltersBuilt] — so a concurrent [process] call on the audio
+     * thread finishes its current chunk before the native state is torn
+     * down.
      */
-    fun reset() {
+    fun reset() = synchronized(this) {
         runCatching { rnNoiseProcessor?.release() }
             .onFailure { Log.w(TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
         declickFilter = null
         notchFilter = null
+        adaptiveNotchDetector = null
+        staticNotchBands = emptyList()
+        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
         lpf = null
-        rnNoiseMix = 1f
         rnNoiseAttenFloor = 0f
         filterAiGain = 1f
         filterAiGainSoftSat = false
@@ -327,23 +559,34 @@ object PttAudioProcessor {
     // Filter chain
     // ──────────────────────────────────────────────────────────────────────
 
-    private fun applyFilterChain(chunk: ShortArray, sampleRate: Int, profile: AiRecorderProfile) {
+    /**
+     * Run the full DSP chain on [chunk] in place. Synchronized on `this`
+     * so [reset] (called from the restart thread) cannot destroy native
+     * filter state while the audio thread is mid-chunk.
+     */
+    private fun applyFilterChain(chunk: ShortArray, sampleRate: Int, profile: RecorderProfile) = synchronized(this) {
         ensureFiltersBuilt(sampleRate, profile)
-        // HP first: kills HVAC / traffic / thump rumble before declick or
-        // notch try to detect transients (a thump can fool a declicker)
-        // and before RNNoise spends spectral budget on sub-voice content.
-        hpf?.processInPlace(chunk)
+
         declickFilter?.processInPlace(chunk)
         notchFilter?.processInPlace(chunk)
-        lpf?.processInPlace(chunk)
+        adaptiveNotchDetector?.let { detector ->
+            val newBands = detector.detectAndTrack(chunk)
+            if (newBands != null) {
+                val merged = staticNotchBands + newBands
+                notchFilter?.configure(bands = merged)
+            }
+        }
+        spectralSubtractionFilter?.processInPlace(chunk)
         rnNoiseProcessor?.let { proc ->
-            // Optional wet/dry blend + magnitude floor — same math as
-            // AudioFeederEngine.LiveFilterChain.softenRnNoise so the test
-            // feeder and live recording stay bit-comparable.
-            val needsBlend = rnNoiseMix < 1f || rnNoiseAttenFloor > 0f
-            val dry = if (needsBlend) chunk.copyOf() else null
+            // Per-frame RMS floor: save dry copy only when a floor is
+            // configured, run RNNoise, then scale up any frame that was
+            // suppressed below the floor.  Wet/dry sample blending (mix)
+            // is intentionally removed — it caused comb-filtering due to
+            // phase differences between wet and dry signals.
+            val needsFloor = rnNoiseAttenFloor > 0f
+            val dry = if (needsFloor) chunk.copyOf() else null
             proc.process(chunk, chunk.size)
-            if (dry != null) softenRnNoise(chunk, dry, rnNoiseMix, rnNoiseAttenFloor)
+            if (dry != null) softenRnNoise(chunk, dry, rnNoiseAttenFloor)
         }
         dynamicsFilter?.processInPlace(chunk)
         agcFilter?.processInPlace(chunk)
@@ -351,29 +594,46 @@ object PttAudioProcessor {
             if (filterAiGainSoftSat) AudioDsp.applyAiGainSoftSatInPlace(chunk, filterAiGain)
             else AudioDsp.applyAiGainInPlace(chunk, filterAiGain)
         }
+        // HP first: kills HVAC / traffic / thump rumble before declick or
+        // notch try to detect transients (a thump can fool a declicker)
+        // and before RNNoise spends spectral budget on sub-voice content.
+        hpf?.processInPlace(chunk)
+        lpf?.processInPlace(chunk)
     }
 
-    private fun ensureFiltersBuilt(sampleRate: Int, profile: AiRecorderProfile) {
+    private fun ensureFiltersBuilt(sampleRate: Int, profile: RecorderProfile) {
         if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
         synchronized(this) {
             if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
             if (filtersBuilt) {
                 Log.i(
                     TAG,
-                    "Filter chain changed (rate=${currentFilterRate}Hz→${sampleRate}Hz / profile=${currentFilterKey?.title}→${profile.title}) — rebuilding",
+                    "Filter chain changed (rate=${currentFilterRate}Hz→${sampleRate}Hz / profile=${currentFilterKey?.preset}→${profile.preset}) — rebuilding",
                 )
                 releaseFiltersInternal()
             }
             currentFilterRate = sampleRate
             currentFilterKey = profile
 
-            val rn: RnNoiseConfig? = profile.rnNoise?.takeIf { it.enabled }
+            // RNNoise + fallback resolution: if the capture rate is below
+            // the profile's rnNoiseMinRateHz, skip RNNoise and use the
+            // fallback (spectral subtraction) instead — if configured.
+            val rnNoiseUsable = profile.rnNoise?.takeIf { it.enabled }
+                ?.takeIf { profile.rnNoiseMinRateHz <= 0 || sampleRate >= profile.rnNoiseMinRateHz }
+            val useFallback = profile.rnNoise?.enabled == true && rnNoiseUsable == null
+            val fallbackSs = if (useFallback) profile.rnNoiseFallback?.takeIf { it.enabled } else null
+
+            val rn: RnNoiseConfig? = rnNoiseUsable
             val dp: DynamicsConfig? = profile.dynamics?.takeIf { it.enabled }
             val lp: LowPassConfig? = profile.lowPass?.takeIf { it.enabled }
             val hp: HighPassConfig? = profile.highPass?.takeIf { it.enabled }
             val notch: NotchConfig? = profile.notch?.takeIf { it.enabled }
             val agc: AGCConfig? = profile.agc?.takeIf { it.enabled }
             val declick: DeclickConfig? = profile.declick?.takeIf { it.enabled }
+            // Spectral subtraction: use the profile's own config, OR the
+            // RNNoise fallback if RNNoise was skipped due to low capture rate.
+            val ss: SpectralSubtractionConfig? =
+                profile.spectralSubtraction?.takeIf { it.enabled } ?: fallbackSs
 
             hpf = hp?.let {
                 HighPassFilter(
@@ -385,9 +645,16 @@ object PttAudioProcessor {
             declickFilter = declick?.let {
                 DeclickFilter(sampleRateHz = sampleRate, config = it)
             }
-            notchFilter = notch?.let { NotchFilter(sampleRate, it.resolveBands()) }
+            val resolvedBands = notch?.resolveBands() ?: emptyList()
+            staticNotchBands = resolvedBands
+            notchFilter = notch?.let { NotchFilter(sampleRate, resolvedBands) }
+            adaptiveNotchDetector = notch?.adaptive?.let {
+                AdaptiveNotchDetector(sampleRate, it)
+            }
+            spectralSubtractionFilter = ss?.let {
+                SpectralSubtractionFilter(sampleRateHz = sampleRate, config = it)
+            }
             rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(sampleRate) } }
-            rnNoiseMix = rn?.mixClamped ?: 1f
             rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
             dynamicsFilter = dp?.let { DynamicsProcessingFilter(sampleRateHz = sampleRate, config = it) }
             agcFilter = agc?.let {
@@ -425,10 +692,12 @@ object PttAudioProcessor {
         hpf = null
         declickFilter = null
         notchFilter = null
+        adaptiveNotchDetector = null
+        staticNotchBands = emptyList()
+        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
         lpf = null
-        rnNoiseMix = 1f
         rnNoiseAttenFloor = 0f
         filterAiGain = 1f
         filterAiGainSoftSat = false
@@ -438,31 +707,67 @@ object PttAudioProcessor {
     }
 
     /**
-     * Identical math to `AudioFeederEngine.LiveFilterChain.softenRnNoise`:
-     * clamp each cleaned sample's magnitude to be at least [floor] of the
-     * dry sample's magnitude, then linearly blend cleaned vs. dry by [mix].
+     * Per-frame RMS floor for RNNoise output.
+     *
+     * Replaces the old per-sample magnitude clamp + wet/dry blend which had
+     * two bugs:
+     *
+     *  1. **Per-sample floor** compared individual sample magnitudes between
+     *     wet and dry. A sample's magnitude says nothing about voice vs.
+     *     noise — the floor re-introduced noise with spectral artifacts.
+     *
+     *  2. **Wet/dry blend** (`mix < 1`) combined two signals with different
+     *     phase spectra (RNNoise reshapes phase). The sum produced
+     *     frequency-dependent cancellation = comb-filtering = echo.
+     *
+     * The fix: no blend (always `mix = 1`), and a **per-frame RMS floor**
+     * that uniformly scales a frame up when RNNoise suppresses it too much.
+     * This preserves RNNoise's spectral decisions (which frequencies to
+     * keep/cut) while preventing overall energy collapse (hollowness).
+     *
+     * @param wet   RNNoise output (modified in place).
+     * @param dry   copy of the input saved before RNNoise ran.
+     * @param floor linear RMS floor ratio in `(0, 1]`. If the wet frame's
+     *              RMS falls below `dry_rms * floor`, the entire frame is
+     *              scaled up so `wet_rms == dry_rms * floor`. `0` disables.
      */
-    private fun softenRnNoise(wet: ShortArray, dry: ShortArray, mix: Float, floor: Float) {
+    private fun softenRnNoise(wet: ShortArray, dry: ShortArray, floor: Float) {
+        if (floor <= 0f) return
         val n = minOf(wet.size, dry.size)
-        for (i in 0 until n) {
-            val d = dry[i].toInt()
-            var w = wet[i].toInt()
-            if (floor > 0f && d != 0) {
-                val absDry = if (d < 0) -d else d
-                val minAbs = (absDry * floor).toInt()
-                val absWet = if (w < 0) -w else w
-                if (absWet < minAbs) {
-                    val sign = when {
-                        w > 0 -> 1
-                        w < 0 -> -1
-                        d >= 0 -> 1
-                        else -> -1
-                    }
-                    w = sign * minAbs
+        if (n == 0) return
+
+        // Process in 480-sample frames (RNNoise's native frame size) so the
+        // floor decision aligns with the granularity RNNoise operates at.
+        val frameSize = 480
+        var off = 0
+        while (off < n) {
+            val end = minOf(off + frameSize, n)
+            val len = end - off
+
+            // Compute RMS of wet and dry for this frame.
+            var wetSumSq = 0.0
+            var drySumSq = 0.0
+            for (i in off until end) {
+                val w = wet[i].toDouble()
+                val d = dry[i].toDouble()
+                wetSumSq += w * w
+                drySumSq += d * d
+            }
+            val wetRms = kotlin.math.sqrt(wetSumSq / len)
+            val dryRms = kotlin.math.sqrt(drySumSq / len)
+
+            // If wet RMS is below the floor threshold, scale up uniformly.
+            val minRms = dryRms * floor
+            if (wetRms > 0.0 && wetRms < minRms) {
+                val gain = (minRms / wetRms).toFloat()
+                for (i in off until end) {
+                    val scaled = (wet[i] * gain).toInt()
+                    wet[i] = scaled.coerceIn(
+                        Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()
+                    ).toShort()
                 }
             }
-            val blended = if (mix >= 1f) w else (w * mix + d * (1f - mix)).toInt()
-            wet[i] = blended.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            off = end
         }
     }
 
@@ -470,7 +775,7 @@ object PttAudioProcessor {
     // Diagnostic logging
     // ──────────────────────────────────────────────────────────────────────
 
-    private fun logFilterSignature(flowKey: String, chunkIndex: Int, profile: AiRecorderProfile?) {
+    private fun logFilterSignature(flowKey: String, chunkIndex: Int, profile: RecorderProfile?) {
         val signature = buildFilterSignature(profile)
         val previous = lastLoggedFilterSignatureByFlow[flowKey]
         if (chunkIndex == 0 || previous != signature) {
@@ -501,12 +806,8 @@ object PttAudioProcessor {
         }
     }
 
-    private fun buildFilterSignature(profile: AiRecorderProfile?): String {
-        if (profile == null) return "preset=<none>; filters=[]"
-        
-        if (!profile.isActive) {
-            return "preset=${profile.title}; active=false; filters=[] (profile inactive — DSP bypassed)"
-        }
+    private fun buildFilterSignature(profile: RecorderProfile?): String {
+        if (profile == null) return "preset=<none>; filters=[] (no active preset — DSP bypassed)"
         val enabledFilters = mutableListOf<String>()
         profile.highPass?.takeIf { it.enabled }?.let {
             enabledFilters.add("highPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
@@ -520,10 +821,14 @@ object PttAudioProcessor {
             enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
         }
         profile.notch?.takeIf { it.enabled }?.let {
-            enabledFilters.add("notch(harmonics=${it.harmonics.size})")
+            val adaptiveTag = if (it.adaptive != null) "+adaptive" else ""
+            enabledFilters.add("notch(harmonics=${it.harmonics?.size ?: 0}$adaptiveTag)")
+        }
+        profile.spectralSubtraction?.takeIf { it.enabled }?.let {
+            enabledFilters.add(it.describe())
         }
         profile.rnNoise?.takeIf { it.enabled }?.let {
-            enabledFilters.add("rnNoise(mix=${it.mix}, maxAttenDb=${it.maxAttenuationDb})")
+            enabledFilters.add("rnNoise(maxAttenDb=${it.maxAttenuationDb})")
         }
         profile.agc?.takeIf { it.enabled }?.let {
             enabledFilters.add(
@@ -535,7 +840,7 @@ object PttAudioProcessor {
                 "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
             )
         }
-        return "preset=${profile.title}; active=true; filters=[${enabledFilters.joinToString()}]"
+        return "preset=${profile.preset}; active=true; filters=[${enabledFilters.joinToString()}]"
     }
 }
 

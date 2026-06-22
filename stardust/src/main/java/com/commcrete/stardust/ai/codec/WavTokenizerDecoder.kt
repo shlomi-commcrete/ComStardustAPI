@@ -4,6 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.NotchConfig
+import com.commcrete.stardust.util.audio.NotchConfig.Harmonic
+import com.commcrete.stardust.util.audio.NotchFilter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.pytorch.IValue
@@ -113,6 +116,11 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
             } else {
                 modelOut
             }
+
+            NotchFilter(24000, NotchConfig(harmonics = mutableListOf<Harmonic>().also { list ->
+                list.add(Harmonic(frequencyHz = 120f, q = 50f))
+                list.add(Harmonic(frequencyHz = 200f, q = 50f))
+            }).resolveBands()).processInPlace(audioData)
 
             // Return only the new part after alignment
             if (decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {

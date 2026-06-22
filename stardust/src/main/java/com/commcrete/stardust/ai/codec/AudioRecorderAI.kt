@@ -8,6 +8,9 @@ import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.AudioCaptureConfig
+import com.commcrete.stardust.util.audio.PttAudioProcessor
+import com.commcrete.stardust.util.audio.RecorderUtils
+import com.commcrete.stardust.util.audio.RecordingDeviceType
 import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
 import kotlinx.coroutines.*
@@ -126,12 +129,22 @@ class AudioRecorderAI(
     private suspend fun recordLoop() = withContext(Dispatchers.IO) {
         Log.d("AudioRecorder", "recordLoop")
 
-        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
+        // Input gain: profile setting takes precedence, then SharedPreferences.
+        val gain = PttAudioProcessor.resolveInputGain(
+            RecordingDeviceType.JBOX_INTERNAL,
+            RecorderUtils.CODE_TYPE.AI,
+        ) ?: (SharedPreferencesUtil.getAIGain(context) / 100f)
 
+        // Audio source: profile setting takes precedence, then SharedPreferences.
+        val profileAudioSource = PttAudioProcessor.resolveAudioSource(
+            RecordingDeviceType.JBOX_INTERNAL,
+            RecorderUtils.CODE_TYPE.AI,
+        )
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
             context = context,
             requestedRate = sampleRate,
-            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource(context),
+            defaultAudioSource = profileAudioSource
+                ?: SharedPreferencesUtil.getAIAudioSource(context),
         )
         val captureRate = capturePlan.captureRate
         val audioSource = capturePlan.audioSource

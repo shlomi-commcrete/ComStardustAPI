@@ -60,7 +60,8 @@ data class HighPassConfig(
          * dB/oct setting; tighten via [telephony] for hostile rooms.
          */
         fun getDefault(deviceType: RecordingDeviceType): HighPassConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f)
+            RecordingDeviceType.JBOX_EXTERNAL -> HighPassConfig(enabled = true, cutoffHz = 60f, rollOffDbPerOctave = 12f)
+            RecordingDeviceType.PHONE_MIC -> HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f)
             else -> HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f)
         }
     }

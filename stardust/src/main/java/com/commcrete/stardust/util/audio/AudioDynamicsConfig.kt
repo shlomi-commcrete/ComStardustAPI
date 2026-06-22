@@ -47,8 +47,8 @@ package com.commcrete.stardust.util.audio
  *    Nyquist are silently clamped.
  */
 data class DynamicsConfig(
-    val enabled: Boolean = true,
-    val inputGainDb: Float = 0.5f,
+    val enabled: Boolean = false,
+    val inputGainDb: Float = 0f,
     val band0: Band = Band.subBassVoiceFocus(),
     val band1: Band = Band.speechVoiceFocusDpOnly(),
     val band2: Band = Band.highsVoiceFocus(),
@@ -92,13 +92,13 @@ data class DynamicsConfig(
             fun subBassVoiceFocus() = Band(
                 highEdgeHz = 80f,
                 attackMs = 5f,
-                releaseMs = 90f,
+                releaseMs = 100f,
                 ratio = 1f,
                 thresholdDb = 0f,
                 kneeWidthDb = 0f,
-                noiseGateDb = -52f,
-                expanderRatio = 6f,
-                preGainDb = -16f,
+                noiseGateDb = -50f,
+                expanderRatio = 3f,
+                preGainDb = -14f,
                 postGainDb = 0f,
             )
 
@@ -122,14 +122,14 @@ data class DynamicsConfig(
              * [DynamicsConfig] constructor — it builds exactly that).
              */
             fun speechVoiceFocusDpOnly() = Band(
-                highEdgeHz = 4_500f,
+                highEdgeHz = 5_500f,
                 attackMs = 10f,
-                releaseMs = 100f,
-                ratio = 1f,
-                thresholdDb = -22f,
+                releaseMs = 120f,
+                ratio = 1.5f,
+                thresholdDb = -18f,
                 kneeWidthDb = 10f,
-                noiseGateDb = -70f,
-                expanderRatio = 2f,
+                noiseGateDb = -90f,
+                expanderRatio = 1f,
                 preGainDb = 0f,
                 postGainDb = 2f,
             )
@@ -146,14 +146,14 @@ data class DynamicsConfig(
              */
             fun highsVoiceFocus() = Band(
                 highEdgeHz = 24_000f,
-                attackMs = 4f,
-                releaseMs = 100f,
+                attackMs = 5f,
+                releaseMs = 150f,
                 ratio = 1f,
                 thresholdDb = 0f,
                 kneeWidthDb = 0f,
-                noiseGateDb = -60f,
-                expanderRatio = 2.5f,
-                preGainDb = -10f,
+                noiseGateDb = -90f,
+                expanderRatio = 1f,
+                preGainDb = -3f,
                 postGainDb = 0f,
             )
         }
@@ -170,10 +170,10 @@ data class DynamicsConfig(
         companion object {
             /** −1 dBFS ceiling, 1 ms attack, 50 ms release, 20:1. */
             fun defaultPreset() = Limiter(
-                thresholdDb = -2.5f,
+                thresholdDb = -1f,
                 attackMs = 1f,
-                releaseMs = 120f,
-                ratio = 16f,
+                releaseMs = 100f,
+                ratio = 10f,
                 postGainDb = 0f,
             )
         }
@@ -219,7 +219,7 @@ data class DynamicsConfig(
 
         fun getDefault(deviceType: RecordingDeviceType): DynamicsConfig = when (deviceType) {
             RecordingDeviceType.JBOX_EXTERNAL -> DynamicsConfig(
-                enabled = true,
+                enabled = false,
                 inputGainDb = 2f,
                 band0 = Band.subBassVoiceFocus(),
                 band1 = Band(
@@ -238,8 +238,8 @@ data class DynamicsConfig(
                 limiter = Limiter.defaultPreset(),
             )
             RecordingDeviceType.JBOX_INTERNAL -> DynamicsConfig(
-                enabled = true,
-                inputGainDb = 2f,
+                enabled = false,
+                inputGainDb = 0f,
                 band0 = Band.subBassVoiceFocus(),
                 band1 = Band.speechVoiceFocusDpOnly(),
                 band2 = Band.highsVoiceFocus(),

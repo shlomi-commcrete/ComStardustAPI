@@ -33,16 +33,26 @@ internal object AudioFeederEngine {
      * This is the **same** pipeline the live `WavRecorder` path uses, so
      * audio fed by the test feeder hits identical encode → pack → send
      * code as a real microphone recording.
+     *
+     * [onEncodedFrame] mirrors the same parameter in the live
+     * [AudioRecorderCodec2] pipeline: the feeder uses it to run each
+     * 4-byte CODEC2 frame back through a [com.ustadmobile.codec2.Codec2Decoder]
+     * and accumulate the decoded PCM bytes so they can be written to the
+     * artifact directory — exactly the decoded-WAV artifact that
+     * [AudioRecorderCodec2.mirrorDecodedArtifact] produces during live
+     * recording.
      */
     internal fun createCodec2Pipeline(
         context: Context,
         destination: String?,
         carrier: Carrier?,
+        onEncodedFrame: ((ByteArray) -> Unit)? = null,
     ): Codec2SendPipeline = Codec2SendPipeline(
         context = context,
         carrier = carrier,
         sourceProvider = { DataManager.getSource() },
         destinationProvider = { destination },
+        onEncodedFrame = onEncodedFrame,
     )
 
     suspend fun feedSingle(
@@ -54,7 +64,7 @@ internal object AudioFeederEngine {
         codec2Pipeline: Codec2SendPipeline?,
         realtimePacing: Boolean,
         artifactDir: File,
-        profile: AiRecorderProfile?,
+        profile: RecorderProfile?,
         onStats: (AudioStats) -> Unit,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {

@@ -66,6 +66,7 @@ import kotlin.random.Random
 
 import com.commcrete.stardust.AiAudioSource
 import com.commcrete.stardust.AiSourceProfile
+import com.commcrete.stardust.util.audio.PttAudioProcessor
 
 @SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface{
@@ -344,6 +345,7 @@ object DataManager : StardustAPI, PttInterface{
         requireFileLocation(fileLocation)
         UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
         GroupsUtils.resetGroupIds(context)
+        PttAudioProcessor.loadProfiles(DataManager.context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {

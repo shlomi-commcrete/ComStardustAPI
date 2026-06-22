@@ -1,15 +1,16 @@
 package com.commcrete.stardust.audio.v2.dsp
 
-import com.commcrete.stardust.util.audio.AiRecorderProfile
+import com.commcrete.stardust.util.audio.RecordingEnvironmentPreset
+import com.commcrete.stardust.util.audio.RecorderProfile
 import com.commcrete.stardust.util.audio.RecordingDeviceType
 
 /**
  * v2 DSP profile — envelope around the existing
- * [com.commcrete.stardust.util.audio.AiRecorderProfile] PLUS the new
+ * [com.commcrete.stardust.util.audio.RecorderProfile] PLUS the new
  * [MakeupGainConfig] stage that the legacy profile didn't carry.
  *
  * Kept as a separate type so v2 doesn't have to modify
- * [com.commcrete.stardust.util.audio.AiRecorderProfile] (per "don't
+ * [com.commcrete.stardust.util.audio.RecorderProfile] (per "don't
  * change existing files" constraint). When v1 is eventually retired
  * the two can be merged.
  *
@@ -21,15 +22,15 @@ import com.commcrete.stardust.util.audio.RecordingDeviceType
  *                      [MakeupGainConfig.getDefault].
  */
 data class AiRecorderProfileV2(
-    val base: AiRecorderProfile,
+    val base: RecorderProfile,
     val makeupGain: MakeupGainConfig? = null,
 ) {
 
-    /** Convenience: whether the profile is currently active (delegates to [base]). */
-    val isActive: Boolean get() = base.isActive
+    /** Convenience: environment preset (delegates to [base]). */
+    val environmentPreset: RecordingEnvironmentPreset get() = base.preset
 
-    /** Convenience: profile title (delegates to [base]). */
-    val title: String get() = base.title
+    /** Convenience: profile preset (delegates to [base]). */
+    val preset: com.commcrete.stardust.util.audio.RecordingEnvironmentPreset get() = base.preset
 
     companion object {
 
@@ -41,7 +42,7 @@ data class AiRecorderProfileV2(
          * registry has one.
          */
         fun fromV1(
-            base: AiRecorderProfile,
+            base: RecorderProfile,
             deviceType: RecordingDeviceType,
         ): AiRecorderProfileV2 = AiRecorderProfileV2(
             base = base,
@@ -50,7 +51,7 @@ data class AiRecorderProfileV2(
 
         /** A no-op profile — every stage disabled. Useful in tests. */
         fun bypass(): AiRecorderProfileV2 = AiRecorderProfileV2(
-            base = AiRecorderProfile(title = "bypass", isActive = false),
+            base = RecorderProfile(preset = com.commcrete.stardust.util.audio.RecordingEnvironmentPreset.DEFAULT),
             makeupGain = null,
         )
     }

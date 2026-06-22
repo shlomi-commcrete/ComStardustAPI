@@ -8,6 +8,7 @@ import com.commcrete.stardust.util.audio.DynamicsProcessingFilter
 import com.commcrete.stardust.util.audio.HighPassFilter
 import com.commcrete.stardust.util.audio.LowPassFilter
 import com.commcrete.stardust.util.audio.NotchFilter
+import com.commcrete.stardust.util.audio.SpectralSubtractionFilter
 import timber.log.Timber
 import kotlin.math.tanh
 
@@ -87,12 +88,12 @@ class PttAudioProcessorV2(
     private var declickFilter: DeclickFilter? = null
     private var notchFilter: NotchFilter? = null
     private var lpf: LowPassFilter? = null
+    private var spectralSubtractionFilter: SpectralSubtractionFilter? = null
     private var rnNoiseProcessor: RnNoiseProcessor? = null
     private var dynamicsFilter: DynamicsProcessingFilter? = null
     private var agcFilter: AGCFilter? = null
 
-    /** Cached RNNoise wet/dry knobs — read in the hot path. */
-    private val rnNoiseMix: Float
+    /** Cached RNNoise per-frame RMS floor — read in the hot path. */
     private val rnNoiseAttenFloor: Float
 
     init {
@@ -105,6 +106,7 @@ class PttAudioProcessorV2(
         val dc = base.declick?.takeIf { it.enabled }
         val nt = base.notch?.takeIf { it.enabled }
         val lp = base.lowPass?.takeIf { it.enabled }
+        val ss = base.spectralSubtraction?.takeIf { it.enabled }
         val rn = base.rnNoise?.takeIf { it.enabled }
         val dp = base.dynamics?.takeIf { it.enabled }
         val ag = base.agc?.takeIf { it.enabled }
@@ -125,8 +127,10 @@ class PttAudioProcessorV2(
                 rollOffDbPerOctave = it.rollOffDbPerOctave,
             )
         }
+        spectralSubtractionFilter = ss?.let {
+            SpectralSubtractionFilter(sampleRateHz = nativeSampleRateHz, config = it)
+        }
         rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(nativeSampleRateHz) } }
-        rnNoiseMix = rn?.mixClamped ?: 1f
         rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
         dynamicsFilter = dp?.let {
             DynamicsProcessingFilter(sampleRateHz = nativeSampleRateHz, config = it)
@@ -145,11 +149,13 @@ class PttAudioProcessorV2(
 
         Timber.tag(TAG).d(
             "[$flowKey] built DSP chain rate=$nativeSampleRateHz→$targetSampleRateHz " +
-                "profile='${profile.title}' " +
+                "profile='${profile.preset}' " +
                 "hpf=${hpf != null} declick=${declickFilter != null} " +
                 "notch=${notchFilter != null} lpf=${lpf != null} " +
+                "specSub=${spectralSubtractionFilter != null} " +
                 "rnnoise=${rnNoiseProcessor != null} dyn=${dynamicsFilter != null} " +
-                "agc=${agcFilter != null} makeup=${profile.makeupGain?.let { it::class.simpleName } ?: "off"}"
+                "agc=${agcFilter != null} " +
+                "makeup=${profile.makeupGain?.let { it::class.simpleName } ?: "off"}"
         )
     }
 
@@ -188,6 +194,7 @@ class PttAudioProcessorV2(
         declickFilter = null
         notchFilter = null
         lpf = null
+        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
     }
@@ -196,7 +203,8 @@ class PttAudioProcessorV2(
 
     private fun anyFilterActive(): Boolean =
         hpf != null || declickFilter != null || notchFilter != null || lpf != null ||
-            rnNoiseProcessor != null || dynamicsFilter != null || agcFilter != null ||
+            spectralSubtractionFilter != null || rnNoiseProcessor != null ||
+            dynamicsFilter != null || agcFilter != null ||
             (profile.makeupGain?.enabled == true)
 
     private fun applyFilterChain(chunk: ShortArray) {
@@ -207,11 +215,12 @@ class PttAudioProcessorV2(
         declickFilter?.processInPlace(chunk)
         notchFilter?.processInPlace(chunk)
         lpf?.processInPlace(chunk)
+        spectralSubtractionFilter?.processInPlace(chunk)
         rnNoiseProcessor?.let { proc ->
-            val needsBlend = rnNoiseMix < 1f || rnNoiseAttenFloor > 0f
-            val dry = if (needsBlend) chunk.copyOf() else null
+            val needsFloor = rnNoiseAttenFloor > 0f
+            val dry = if (needsFloor) chunk.copyOf() else null
             proc.process(chunk, chunk.size)
-            if (dry != null) softenRnNoise(chunk, dry, rnNoiseMix, rnNoiseAttenFloor)
+            if (dry != null) softenRnNoise(chunk, dry, rnNoiseAttenFloor)
         }
         dynamicsFilter?.processInPlace(chunk)
         agcFilter?.processInPlace(chunk)
@@ -219,31 +228,45 @@ class PttAudioProcessorV2(
     }
 
     /**
-     * Identical math to [com.commcrete.stardust.util.audio.PttAudioProcessor.softenRnNoise].
-     * Inlined here so v2 doesn't depend on a private method of the v1
-     * singleton.
+     * Per-frame RMS floor for RNNoise output. Same algorithm as
+     * [com.commcrete.stardust.util.audio.PttAudioProcessor.softenRnNoise].
+     * See that method's KDoc for the rationale (replaces the old per-sample
+     * magnitude clamp + wet/dry blend which caused spectral artifacts and
+     * comb-filtering).
      */
-    private fun softenRnNoise(wet: ShortArray, dry: ShortArray, mix: Float, floor: Float) {
+    private fun softenRnNoise(wet: ShortArray, dry: ShortArray, floor: Float) {
+        if (floor <= 0f) return
         val n = minOf(wet.size, dry.size)
-        for (i in 0 until n) {
-            val d = dry[i].toInt()
-            var w = wet[i].toInt()
-            if (floor > 0f && d != 0) {
-                val absDry = if (d < 0) -d else d
-                val minAbs = (absDry * floor).toInt()
-                val absWet = if (w < 0) -w else w
-                if (absWet < minAbs) {
-                    val sign = when {
-                        w > 0 -> 1
-                        w < 0 -> -1
-                        d >= 0 -> 1
-                        else -> -1
-                    }
-                    w = sign * minAbs
+        if (n == 0) return
+
+        val frameSize = 480
+        var off = 0
+        while (off < n) {
+            val end = minOf(off + frameSize, n)
+            val len = end - off
+
+            var wetSumSq = 0.0
+            var drySumSq = 0.0
+            for (i in off until end) {
+                val w = wet[i].toDouble()
+                val d = dry[i].toDouble()
+                wetSumSq += w * w
+                drySumSq += d * d
+            }
+            val wetRms = kotlin.math.sqrt(wetSumSq / len)
+            val dryRms = kotlin.math.sqrt(drySumSq / len)
+
+            val minRms = dryRms * floor
+            if (wetRms > 0.0 && wetRms < minRms) {
+                val gain = (minRms / wetRms).toFloat()
+                for (i in off until end) {
+                    val scaled = (wet[i] * gain).toInt()
+                    wet[i] = scaled.coerceIn(
+                        Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()
+                    ).toShort()
                 }
             }
-            val blended = if (mix >= 1f) w else (w * mix + d * (1f - mix)).toInt()
-            wet[i] = blended.coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+            off = end
         }
     }
 

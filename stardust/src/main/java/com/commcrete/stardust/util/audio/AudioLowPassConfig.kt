@@ -27,8 +27,8 @@ package com.commcrete.stardust.util.audio
  */
 data class LowPassConfig(
     val enabled: Boolean = true,
-    val cutoffHz: Float = 3_500f,
-    val rollOffDbPerOctave: Float = 40f,
+    val cutoffHz: Float = 3_800f,
+    val rollOffDbPerOctave: Float = 30f,
 ) {
     /** Short human-readable summary for logs. */
     @Suppress("unused")
@@ -38,24 +38,9 @@ data class LowPassConfig(
             .replace(',', '.')
 
     companion object {
-        /**
-         * Voice-band limiter (7.5 kHz / 24 dB/octave). The only preset
-         * and equivalent to the no-arg [LowPassConfig] constructor — it
-         * exists so callers can name the intent explicitly. Preserves
-         * all intelligible speech content (vowel formants, fricatives
-         * /s/ /sh/ /f/, sibilance) while attenuating residual hiss
-         * above the voice band. 24 dB/octave is gentle enough that
-         * consonant transients don't ring or pre-echo. Also serves as
-         * the anti-aliasing filter for the chain's 24 kHz resample
-         * step (7.5 kHz cutoff is well below the 12 kHz Nyquist).
-         */
-        @Suppress("unused")
         fun voiceBand() = LowPassConfig()
 
-        fun getDefault(deviceType: RecordingDeviceType): LowPassConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> LowPassConfig(enabled = true, cutoffHz = 4500f, rollOffDbPerOctave = 40f)
-            else -> LowPassConfig(enabled = false)
-        }
+        fun getDefault(deviceType: RecordingDeviceType): LowPassConfig = LowPassConfig(enabled = false)
     }
 }
 

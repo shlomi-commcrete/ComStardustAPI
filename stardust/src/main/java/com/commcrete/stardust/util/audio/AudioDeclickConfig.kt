@@ -74,7 +74,7 @@ package com.commcrete.stardust.util.audio
  *    without flagging the former.
  */
 data class DeclickConfig(
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     /**
      * Detection threshold as a multiple of the rolling MAD.
      *  - `4` — aggressive (catches subtle ticks, may flag some loud
@@ -82,42 +82,42 @@ data class DeclickConfig(
      *  - `6` — default, voice-safe
      *  - `8` — conservative (only obvious ticks)
      */
-    val thresholdMad: Float = 6f,
+    val thresholdMad: Float = 7f,
     /**
      * Absolute minimum peak (dBFS) for a candidate tick. Anything quieter
      * is ignored. Prevents noise-floor wiggles and tiny dither flickers
      * from triggering interpolation. Default `−20 dBFS` keeps voice
      * plosives safe.
      */
-    val minPeakDbFs: Float = -20f,
+    val minPeakDbFs: Float = -18f,
     /**
      * Maximum consecutive samples (after region expansion) treated as a
      * single tick. Longer runs are deemed "real audio loss" and left alone.
      */
-    val maxTickSamples: Int = 50,
+    val maxTickSamples: Int = 80,
     /** Use Hermite cubic spline for ticks up to this length; linear interpolation beyond. */
-    val splineMaxLength: Int = 5,
+    val splineMaxLength: Int = 8,
     /**
      * Median-filter window size (odd, 5–9). Reference signal for
      * computing per-sample deviation. Larger = more robust against runs
      * of contiguous ticks, but adds latency / boundary loss.
      */
-    val medianWindow: Int = 7,
+    val medianWindow: Int = 9,
     /**
      * EMA smoothing for the per-chunk MAD estimate. Larger window = MAD
      * tracks signal statistics more slowly (good when ticks come in
      * bursts; bad when signal levels change a lot).
      */
-    val madSmoothingSamples: Int = 24_000,
+    val madSmoothingSamples: Int = 48_000,
     /** Emit a Timber debug line per chunk with tick count and positions. */
-    val logDetections: Boolean = true,
+    val logDetections: Boolean = false,
     /**
      * Detect anomalies via per-sample first-difference jumps in addition
      * to amplitude deviation. Catches **wave kinks** — slope discontinuities
      * that don't necessarily produce a large absolute peak. Recommended `true`
      * for voice / smooth signals.
      */
-    val useDerivativeDetection: Boolean = true,
+    val useDerivativeDetection: Boolean = false,
     /**
      * Region-expansion threshold as a fraction of the main threshold.
      * After detecting a candidate above `thresholdMad × MAD`, walks left
@@ -126,7 +126,7 @@ data class DeclickConfig(
      * "expand while still half-abnormal". Set to `0.0` to disable
      * expansion (only the strict-threshold samples are repaired).
      */
-    val expansionFraction: Float = 0.5f,
+    val expansionFraction: Float = 0.2f,
 ) {
     /** Short human-readable summary for logs. */
     internal fun describe(): String =
@@ -138,6 +138,9 @@ data class DeclickConfig(
     companion object {
         fun getDefault(deviceType: RecordingDeviceType): DeclickConfig = when (deviceType) {
             RecordingDeviceType.JBOX_INTERNAL -> DeclickConfig(enabled = true)
+            // Phone mic: buffer-underrun clicks (~4600/file observed).
+            RecordingDeviceType.PHONE_MIC -> DeclickConfig(enabled = true)
+            // JBOX_EXTERNAL: no USB click artifacts from external mic path.
             else -> DeclickConfig(enabled = false)
         }
     }

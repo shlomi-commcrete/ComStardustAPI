@@ -256,7 +256,11 @@ object PttSendManager {
             finishSession(orphan)
         }
 
-        PttAudioProcessor.reset()
+        // NOTE: PttAudioProcessor.reset() is NOT called here — it runs
+        // inside launchSessionJob, after the codecMutex is acquired. This
+        // guarantees the previous session's encode loop has fully drained
+        // (all queued chunks processed through filters + encoder) before
+        // the filter chain's native state (RNNoise, biquads) is torn down.
         newSession.job = launchSessionJob(newSession)
         Log.d(TAG, "restart() -> new session ${newSession.id}")
         return newSession
@@ -281,7 +285,10 @@ object PttSendManager {
                 try {
                     codecMutex.withLock {
                         Log.d(TAG, "Session ${session.id}: codec acquired")
-                        // Fresh per-stream codec state for this session.
+                        // Previous session's encode loop has now fully
+                        // drained (it held this mutex until its queue was
+                        // empty). Safe to tear down filter + encoder state.
+                        PttAudioProcessor.reset()
                         wavTokenizerDecoder.reset()
                         session.lastTokens = null
                         session.lastPCM = null

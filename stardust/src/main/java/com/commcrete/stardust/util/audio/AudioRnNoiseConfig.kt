@@ -17,54 +17,39 @@ import kotlin.math.pow
  * ## Tuning aggressiveness
  *
  * RNNoise itself has no built-in "intensity" knob — it's a trained model
- * that outputs whatever it outputs. The two parameters below let you soften
+ * that outputs whatever it outputs. The parameter below lets you soften
  * its output without touching the native code:
  *
- * - [mix] — straight wet/dry blend. `1.0` = full RNNoise, `0.0` = bypass,
- *   `0.5` = equal blend. Use this when RNNoise sounds artificial / hollow.
+ * - [maxAttenuationDb] — per-frame RMS floor. When RNNoise suppresses a
+ *   480-sample frame's RMS below `dry_rms × 10^(maxAttenuationDb/20)`,
+ *   the entire frame is uniformly scaled up to meet the floor. This
+ *   preserves RNNoise's spectral decisions (which frequencies to keep or
+ *   cut) while preventing overall energy collapse (hollowness). Use
+ *   `Float.NEGATIVE_INFINITY` (default) to disable the floor entirely
+ *   and let RNNoise do whatever it wants.
  *
- * - [maxAttenuationDb] — clamp per-sample attenuation. RNNoise often pulls
- *   noise-only frames down by 30+ dB which can sound "swallowed". Set this
- *   to e.g. `-18.0` to ensure no sample is ever attenuated below 12.6 % of
- *   its dry magnitude (preserves room tone / breathing). Use `Float.NEGATIVE_INFINITY`
- *   (default) to disable the clamp entirely and let RNNoise do whatever it wants.
- *
- * The two stack: RNNoise output is first attenuation-clamped against the
- * dry signal, then wet/dry mixed.
  */
 data class RnNoiseConfig(
     val enabled: Boolean = true,
     /**
-     * Wet/dry blend in `[0, 1]`. `1.0` = full RNNoise output, `0.0` = bypass
-     * (pure original), `0.5` = equal mix. Values outside `[0, 1]` are clamped.
+     * Maximum allowed attenuation per frame, in dB (negative number, or
+     * `Float.NEGATIVE_INFINITY` to disable). Applied as a per-frame RMS
+     * floor: if a 480-sample frame's RMS drops below
+     * `dry_rms × 10^(maxAttenuationDb/20)`, the frame is uniformly scaled
+     * up to the floor level. This preserves RNNoise's spectral shape
+     * while preventing excessive suppression.
      *
-     * Default `0.7` keeps 70 % of RNNoise's clean output blended with 30 %
-     * of the dry input — preserves natural voice texture (breath, sibilance,
-     * room tone) while still doing most of the noise removal. Set to `1.0`
-     * for maximum noise removal at the cost of a more "swooshy", hollow
-     * sound on voice transients.
-     */
-    val mix: Float = 0.8f,
-    /**
-     * Maximum allowed attenuation per sample, in dB (negative number, or
-     * `Float.NEGATIVE_INFINITY` to disable). E.g. `-18.0` means no output
-     * sample's magnitude may fall below `10^(-18/20) ≈ 0.126` of the
-     * corresponding dry input sample's magnitude. Less negative values =
-     * gentler denoising.
+     * E.g. `-6.0` means no frame's RMS may fall below 50 % of the
+     * corresponding dry frame's RMS. Less negative = gentler denoising.
      *
-     * Default `-12` (≈ 25 % of dry magnitude floor) prevents RNNoise from
-     * "swallowing" quiet voice content (whispers, consonant tails, sentence
-     * ends) where its VAD can mistake real speech for noise. Set to
-     * [Float.NEGATIVE_INFINITY] to disable the clamp and let RNNoise do
-     * whatever it wants.
+     * Default `Float.NEGATIVE_INFINITY` disables the floor — RNNoise
+     * output is used as-is. Set to e.g. `-6f` if RNNoise sounds hollow
+     * on quiet voice content.
      */
-    val maxAttenuationDb: Float = -25f,
+    val maxAttenuationDb: Float = Float.NEGATIVE_INFINITY,
 ) {
-    /** Wet/dry mix clamped to `[0, 1]`. */
-    internal val mixClamped: Float get() = mix.coerceIn(0f, 1f)
-
     /**
-     * Linear floor derived from [maxAttenuationDb]. `0.0` if no clamp is
+     * Linear floor derived from [maxAttenuationDb]. `0.0` if no floor is
      * configured (i.e. RNNoise output is used as-is, regardless of how
      * much it attenuated).
      */
@@ -73,27 +58,20 @@ data class RnNoiseConfig(
 
     /** Short human-readable summary for logs. */
     internal fun describe(): String {
-        val mixPct = (mixClamped * 100f).toInt()
         val floorTxt = if (attenuationFloorLin > 0f)
-            ", maxAtten=${"%.1f".format(maxAttenuationDb).replace(',', '.')}dB"
-        else ""
-        return "rnnoise(mix=${mixPct}%$floorTxt)"
+            "maxAtten=${"%.1f".format(maxAttenuationDb).replace(',', '.')}dB"
+        else "no-floor"
+        return "rnnoise($floorTxt)"
     }
 
     companion object {
         fun getDefault(deviceType: RecordingDeviceType): RnNoiseConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> RnNoiseConfig(
-                enabled = true,
-                mix = 0.8f,
-                maxAttenuationDb = -Float.NEGATIVE_INFINITY
-            )
+            RecordingDeviceType.JBOX_INTERNAL -> null // digital USB audio — no broadband noise to remove
             RecordingDeviceType.JBOX_EXTERNAL -> RnNoiseConfig(
                 enabled = true,
-                mix = 0.8f,
-                maxAttenuationDb = -Float.NEGATIVE_INFINITY
+                maxAttenuationDb = Float.NEGATIVE_INFINITY,
             )
             else -> null
         }
     }
 }
-

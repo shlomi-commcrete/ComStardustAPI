@@ -62,26 +62,26 @@ data class NotchConfig(
          */
         val qThreshold: Float = 80f,
         /** Peak must be at least this much above local median magnitude (dB). */
-        val prominenceDb: Float = 15f,
+        val prominenceDb: Float = 12f,
         /** Ignore peaks quieter than this absolute level (dBFS). */
-        val minPeakDbFs: Float = -50f,
+        val minPeakDbFs: Float = -55f,
         /** Q applied to each adaptive notch — narrow so voice damage is minimal. */
-        val notchQ: Float = 100f,
+        val notchQ: Float = 120f,
         /** Cap on the number of simultaneously-applied adaptive notches. */
         val maxBands: Int = 8,
         /** A bucket must be detected in this many consecutive chunks to be applied. */
         val stabilityChunks: Int = 2,
         /** Keep an applied bucket alive for this many chunks after it stops being detected. */
-        val holdoverChunks: Int = 6,
+        val holdoverChunks: Int = 8,
         /** Treat chunks at or below this RMS (dBFS) as silence for the learning path. */
-        val silenceRmsDbFs: Float = -45f,
+        val silenceRmsDbFs: Float = -48f,
         /** During silence, also scan the voice band for tones (otherwise voice-band-only Q gate applies). */
         val learnInVoiceBand: Boolean = true,
         /** Voice band lower edge (Hz) — peaks below this require no Q check. */
 
         val voiceBandLowHz: Float = 300f,
         /** Voice band upper edge (Hz) — peaks above this require no Q check. */
-        val voiceBandHighHz: Float = 4_000f,
+        val voiceBandHighHz: Float = 8_000f,
         /** Frequency bucketing for tracker (Hz). Detections within this distance share a bucket. */
         val bucketHz: Int = 5,
     )
@@ -116,20 +116,46 @@ data class NotchConfig(
 
 
     companion object {
+        /** Default notch config for AI path (48 kHz capture). */
         fun getDefault(deviceType: RecordingDeviceType): NotchConfig = when (deviceType) {
             RecordingDeviceType.JBOX_EXTERNAL -> NotchConfig(
                 enabled = true,
                 harmonics = mutableListOf<Harmonic>().also { list ->
-                    list.add(Harmonic(frequencyHz = 375f, q = 50f))
-                    for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 60f))
+                    list.add(Harmonic(frequencyHz = 375f, q = 80f))
+                    list.add(Harmonic(frequencyHz = (1_000).toFloat(), q = 120f))
+                    for (i in 2..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 50f))
                 }
             )
             RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
                 enabled = true,
-                harmonics = mutableListOf<Harmonic>().also { list ->
-                    list.add(Harmonic(frequencyHz = 375f, q = 30f))
-                    for (i in 1..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 50f))
-                }
+                harmonics = listOf(
+                    Harmonic(frequencyHz = 375f, q = 150f),
+                    Harmonic(frequencyHz = 1000f, q = 300f),
+                    Harmonic(frequencyHz = 2000f, q = 300f),
+                    Harmonic(frequencyHz = 3000f, q = 300f),
+                ),
+            )
+            else -> NotchConfig(enabled = false)
+        }
+
+        /**
+         * Default notch config for Codec2 path (8 kHz native capture).
+         * At 8 kHz, the PCM2900 ADC produces a 1000 Hz clock artifact.
+         * Tones at 2000+ Hz are above 4 kHz Nyquist and are killed by
+         * the hardware decimation filter — no software notch needed.
+         */
+        fun getDefaultForCodec2(deviceType: RecordingDeviceType): NotchConfig = when (deviceType) {
+            RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
+                enabled = true,
+                harmonics = listOf(
+                    Harmonic(frequencyHz = 1000f, q = 200f),
+                ),
+            )
+            RecordingDeviceType.JBOX_EXTERNAL -> NotchConfig(
+                enabled = true,
+                harmonics = listOf(
+                    Harmonic(frequencyHz = 1000f, q = 200f),
+                ),
             )
             else -> NotchConfig(enabled = false)
         }

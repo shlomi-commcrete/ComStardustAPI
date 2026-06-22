@@ -113,15 +113,44 @@ internal object AudioCaptureConfig {
             ?: inputs.firstOrNull()
     }
 
+    /**
+     * Pick the best capture rate for [device].
+     *
+     * **Goal:** capture at a rate ≥ [requestedRate] so the resampler only
+     * downsizes (or skips if exact match). Upsizing produces content that
+     * doesn't exist in the original signal and degrades encoder output.
+     *
+     * **USB devices:** prefer [requestedRate] if advertised, else highest
+     * advertised rate.
+     *
+     * **Non-USB devices:** smallest advertised rate ≥ [requestedRate].
+     *
+     * **Fallback:** if no advertised rate meets the minimum, return
+     * [requestedRate] and let Android's AudioRecord negotiate — it may
+     * succeed at a rate it didn't explicitly advertise. This prevents
+     * the encoder from receiving garbage due to low-quality upsampling.
+     */
     private fun pickCaptureRate(device: AudioDeviceInfo?, requestedRate: Int): Int {
         if (device == null) return requestedRate
         val advertised = device.sampleRates.toList()
-        val preferred = listOf(48_000, 44_100, 32_000, 24_000, 16_000, 8_000)
-        preferred.firstOrNull { it in advertised }?.let { return it }
-        if (advertised.isEmpty()) {
-            return if (device.isUsbInput()) 48_000 else requestedRate
+
+        if (device.isUsbInput()) {
+            if (requestedRate in advertised) return requestedRate
+            if (advertised.isEmpty()) return 48_000
+            // Prefer a rate ≥ requested; fall back to requested if none.
+            return advertised.filter { it >= requestedRate }.minOrNull()
+                ?: advertised.maxOrNull()?.takeIf { it >= requestedRate }
+                ?: requestedRate
         }
-        return advertised.maxOrNull() ?: requestedRate
+
+        // Non-USB: smallest advertised rate ≥ requestedRate.
+        if (advertised.isEmpty()) return requestedRate
+        val atOrAbove = advertised.filter { it >= requestedRate }.minOrNull()
+        if (atOrAbove != null) return atOrAbove
+        // No advertised rate is high enough — fall back to requestedRate
+        // so AudioRecord can negotiate. This is safer than picking a rate
+        // below the encoder's minimum which would require upsampling.
+        return requestedRate
     }
 
     private fun AudioDeviceInfo.isUsbInput(): Boolean {
