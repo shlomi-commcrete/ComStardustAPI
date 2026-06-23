@@ -39,6 +39,22 @@ import com.commcrete.stardust.AiAudioSource
  * Each [RecordingDeviceType] + [RecorderUtils.CODE_TYPE] combination
  * can have up to three presets; exactly one is `isActive = true`.
  */
+/**
+ * Capture sample rates supported by the audio pipeline.
+ * Matches PCM2900C ADC rates (8, 11.025, 16, 22.05, 32, 44.1, 48 kHz)
+ * plus standard Android AudioRecord rates.
+ */
+enum class CaptureRate(val hz: Int) {
+    RATE_8K(8_000),
+    RATE_11K(11_025),
+    RATE_16K(16_000),
+    RATE_22K(22_050),
+    RATE_24K(24_000),
+    RATE_32K(32_000),
+    RATE_44K(44_100),
+    RATE_48K(48_000),
+}
+
 enum class RecordingEnvironmentPreset {
     /** Clean / low-noise environment (office, quiet room). */
     DEFAULT,
@@ -56,12 +72,12 @@ data class RecorderProfile(
      */
     val codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
     /**
-     * Sample rate (Hz) to request from the audio capture device. The
-     * filter chain runs at this rate. [PttAudioProcessor] resamples to
-     * the encoder's target rate (24 kHz for AI, 8 kHz for Codec2) after
+     * Sample rate to request from the audio capture device. The filter
+     * chain runs at this rate. [PttAudioProcessor] resamples to the
+     * encoder's target rate (24 kHz for AI, 8 kHz for Codec2) after
      * filtering. Set to the encoder target rate to skip the resample.
      */
-    val requestedSampleRateHz: Int = 48_000,
+    val captureRate: CaptureRate = CaptureRate.RATE_48K,
     /**
      * Android audio source to use for recording. `null` = fall back to
      * the per-codec SharedPreferences setting (legacy behavior:
@@ -92,7 +108,7 @@ data class RecorderProfile(
      *
      * Default `0` = always run RNNoise regardless of capture rate.
      */
-    val rnNoiseMinRateHz: Int = 0,
+    val rnNoiseMinRateHz: CaptureRate = CaptureRate.RATE_48K,
     /**
      * Fallback noise reduction when [rnNoise] is skipped due to
      * [rnNoiseMinRateHz]. `null` = no fallback (no noise reduction if

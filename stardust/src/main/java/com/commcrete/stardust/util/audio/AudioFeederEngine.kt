@@ -146,19 +146,38 @@ internal object AudioFeederEngine {
             null
         }
 
+        // Input gain: resolve from profile the same way live recorders do.
+        // AI uses soft-clip (tanh), Codec2 uses hard-clip — matching
+        // AudioRecorderAI.processSamples / AudioRecorderCodec2 gain paths.
+        val inputGain = profile?.inputGainPercent?.let { it / 100f }
+            ?: when (codeType) {
+                RecorderUtils.CODE_TYPE.AI -> com.commcrete.stardust.util.SharedPreferencesUtil.getAIGain(context) / 100f
+                RecorderUtils.CODE_TYPE.CODEC2 -> com.commcrete.stardust.util.SharedPreferencesUtil.getCodecGain(context) / 100f
+            }
+
         val emission = try {
             streamPcmAsChunks(
                 pcm = monoNative,
                 sampleRate = nativeRate,
                 realtimePacing = realtimePacing,
             ) { rawChunk, chunkIndex ->
-                // Single point of DSP: PttAudioProcessor handles the full
-                // chain (HPF → Declick → Notch → RNNoise → DP → AGC →
-                // AI-gain → LPF) AND the resample to the encoder's target
-                // rate, gated on the same null/!isActive/!enabled rules
-                // as the live recording path.
+                // Apply input gain BEFORE DSP — same as live recorders.
+                val gained = if (inputGain != 1f) {
+                    if (codeType == RecorderUtils.CODE_TYPE.AI) {
+                        // Soft-clip tanh — matches AudioRecorderAI.processSamples
+                        AudioDsp.applyAiGainSoftSatInPlace(rawChunk, inputGain)
+                    } else {
+                        // Hard-clip — matches AudioRecorderCodec2 gain path
+                        AudioDsp.applyAiGainInPlace(rawChunk, inputGain)
+                    }
+                    rawChunk
+                } else {
+                    rawChunk
+                }
+
+                // DSP chain + resample to encoder target rate.
                 val processed = PttAudioProcessor.process(
-                    pcmArray = rawChunk,
+                    pcmArray = gained,
                     nativeRate = nativeRate,
                     targetRate = targetRate,
                     profile = profile,
@@ -200,6 +219,36 @@ internal object AudioFeederEngine {
             (emission.samplesProcessed * 1000L) / nativeRate,
             emission.elapsedMs,
         )
+    }
+
+    /**
+     * Save a copy of the source file into [artifactDir] in the same
+     * format the feeder uses (`*-original_source.wav`), without any
+     * DSP processing or encoding.
+     *
+     * Use this to capture raw recordings for later analysis or
+     * offline feeding via [feedSingle].
+     */
+    suspend fun saveOnly(
+        source: Source,
+        artifactDir: File,
+        onStats: (AudioStats) -> Unit = {},
+    ) = withContext(Dispatchers.IO) {
+        if (!source.file.exists() || !source.file.canRead()) {
+            Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
+            return@withContext
+        }
+
+        artifactDir.mkdirs()
+        persistOriginalSourceFile(source, artifactDir)
+
+        val (info, _, monoNative) = AudioFileLoader.loadMono(source)
+        AudioTestFeederLogger.logAudioInfo(info)
+        val stats = AudioStatsAnalyzer.computeStats(monoNative, source)
+        AudioTestFeederLogger.logAudioStats(source.label, stats)
+        onStats(stats)
+
+        Timber.tag(TAG).i("  ✓ saveOnly %s → %s", source.label, artifactDir.absolutePath)
     }
 
     // ─── feedSingle phases ───────────────────────────────────────────────────

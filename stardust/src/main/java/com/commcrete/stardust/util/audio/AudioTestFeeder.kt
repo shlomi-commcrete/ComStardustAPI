@@ -150,6 +150,13 @@ object AudioTestFeeder {
         outputDir: File? = null,
         destinationId: String? = null,
         withSend: Boolean = false,
+        /**
+         * When `true`, saves a WAV snapshot after each DSP filter stage
+         * into [outputDir]. File names include step number and filter name:
+         * `*-00-declick.wav`, `*-01-notch.wav`, `*-02-spectral_sub.wav`, etc.
+         * Useful for diagnosing which filter is causing audio quality issues.
+         */
+        savePerFilterStage: Boolean = false,
         onDone: (() -> Unit)? = null,
     ): Job {
         stop()
@@ -170,10 +177,42 @@ object AudioTestFeeder {
 
             val isCodec2 = codeType == RecorderUtils.CODE_TYPE.CODEC2
 
+            // Per-filter debug writers: one DebugRawWavWriter per filter
+            // step, created lazily on first callback. Keyed by "stepIdx-name".
+            val debugWriters = if (savePerFilterStage)
+                LinkedHashMap<String, com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter>()
+            else null
+            // Capture rate from the profile for debug WAV headers.
+            val debugSampleRate = profile?.captureRate?.hz ?: 48_000
+
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
                     Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
+
+                    // Set up per-filter debug hook if requested.
+                    if (savePerFilterStage) {
+                        // Close writers from previous source.
+                        debugWriters?.values?.forEach { runCatching { it.stop() } }
+                        debugWriters?.clear()
+
+                        PttAudioProcessor.onFilterStepDebug = { stepIdx, filterName, snapshot ->
+                            val key = "%02d-%s".format(stepIdx, filterName)
+                            val writer = debugWriters!!.getOrPut(key) {
+                                com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
+                                    start(
+                                        context = context,
+                                        sampleRate = debugSampleRate,
+                                        channels = 1,
+                                        bitsPerSample = 16,
+                                        fileNamePrefix = "${src.label}-$key",
+                                        outputDir = effectiveOutputDir,
+                                    )
+                                }
+                            }
+                            writer.append(snapshot, snapshot.size)
+                        }
+                    }
 
                     // ── Per-source session: mirrors real PTT key-down →
                     // record → key-up cycle. Each file gets fresh filter
@@ -252,6 +291,12 @@ object AudioTestFeeder {
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
+                // Clean up per-filter debug writers and hook.
+                if (savePerFilterStage) {
+                    PttAudioProcessor.onFilterStepDebug = null
+                    debugWriters?.values?.forEach { runCatching { it.stop() } }
+                    debugWriters?.clear()
+                }
                 // Detach our feeder-local PttInterface so a subsequent
                 // production `RecorderUtils.startAIRecording` call cleanly
                 // re-registers DataManager without our stale adapter
@@ -303,6 +348,48 @@ object AudioTestFeeder {
         }
     }
 
+
+    /**
+     * Save raw recordings without any DSP or encoding. Writes only:
+     *  - `*-original_source.wav` — byte-for-byte copy of the input file
+     *
+     * Same format as the feeder's original-source artifact, so saved
+     * files can be fed later via [feed] for offline testing.
+     */
+    fun saveOnly(
+        context: Context,
+        sources: List<Source>,
+        outputDir: File? = null,
+        onDone: (() -> Unit)? = null,
+    ): Job {
+        stop()
+        DataManager.requireContext(context)
+        val job = feederScope.launch {
+            lastRunStats.clear()
+            val effectiveOutputDir = outputDir
+                ?: AudioArtifactWriter.defaultArtifactDir(context, "saved-recordings")
+            effectiveOutputDir.mkdirs()
+
+            try {
+                sources.forEachIndexed { idx, src ->
+                    if (!isActive) return@forEachIndexed
+                    Timber.tag(TAG).i("── [%d/%d] saveOnly: %s", idx + 1, sources.size, src.label)
+                    AudioFeederEngine.saveOnly(
+                        source = src,
+                        artifactDir = effectiveOutputDir,
+                        onStats = { lastRunStats[src.label] = it },
+                    )
+                }
+                AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
+            } catch (t: Throwable) {
+                Timber.tag(TAG).e(t, "saveOnly failed")
+            } finally {
+                onDone?.invoke()
+            }
+        }
+        currentJob = job
+        return job
+    }
 
     /** Stop the currently running feeder, if any. */
     fun stop() {

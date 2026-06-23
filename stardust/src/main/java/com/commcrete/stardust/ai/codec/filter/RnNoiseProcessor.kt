@@ -2,6 +2,7 @@ package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
 import com.commcrete.stardust.ai.codec.filter.NoiseProcessor
+import com.commcrete.stardust.util.audio.CaptureRate
 import java.lang.reflect.Method
 
 /**
