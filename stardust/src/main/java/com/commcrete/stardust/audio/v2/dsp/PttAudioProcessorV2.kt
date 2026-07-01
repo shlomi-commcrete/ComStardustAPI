@@ -3,12 +3,10 @@ package com.commcrete.stardust.audio.v2.dsp
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.commcrete.stardust.util.audio.AGCFilter
 import com.commcrete.stardust.util.audio.AudioDsp
-import com.commcrete.stardust.util.audio.DeclickFilter
 import com.commcrete.stardust.util.audio.DynamicsProcessingFilter
 import com.commcrete.stardust.util.audio.HighPassFilter
 import com.commcrete.stardust.util.audio.LowPassFilter
 import com.commcrete.stardust.util.audio.NotchFilter
-import com.commcrete.stardust.util.audio.SpectralSubtractionFilter
 import timber.log.Timber
 import kotlin.math.tanh
 
@@ -45,14 +43,13 @@ import kotlin.math.tanh
  * ```
  * raw PCM @ nativeRate
  *   ─► HPF              (sub-voice rumble)
- *   ─► Declick          (transient artefact suppression)
  *   ─► Notch            (mains-hum harmonics)
  *   ─► LPF              (band limit + anti-alias for resample)
  *   ─► RNNoise          (ML denoise + optional wet/dry blend + floor)
  *   ─► DynamicsProcessor (multiband compression)
  *   ─► AGC              (level normalisation)
  *   ─► MakeupGain       (HardClip | SoftClip per profile)
- *   ─► resampleLinear   → targetSampleRateHz
+ *   ─► resamplePolyphase   → targetSampleRateHz
  * ```
  *
  * # Thread safety
@@ -85,10 +82,8 @@ class PttAudioProcessorV2(
     // bypass that stage). RNNoise is the only one with native state.
 
     private var hpf: HighPassFilter? = null
-    private var declickFilter: DeclickFilter? = null
     private var notchFilter: NotchFilter? = null
     private var lpf: LowPassFilter? = null
-    private var spectralSubtractionFilter: SpectralSubtractionFilter? = null
     private var rnNoiseProcessor: RnNoiseProcessor? = null
     private var dynamicsFilter: DynamicsProcessingFilter? = null
     private var agcFilter: AGCFilter? = null
@@ -103,10 +98,8 @@ class PttAudioProcessorV2(
         // pattern as PttAudioProcessor.ensureFiltersBuilt so a v1 profile
         // wrapped in a v2 envelope behaves identically pre-makeup-gain.
         val hp = base.highPass?.takeIf { it.enabled }
-        val dc = base.declick?.takeIf { it.enabled }
         val nt = base.notch?.takeIf { it.enabled }
         val lp = base.lowPass?.takeIf { it.enabled }
-        val ss = base.spectralSubtraction?.takeIf { it.enabled }
         val rn = base.rnNoise?.takeIf { it.enabled }
         val dp = base.dynamics?.takeIf { it.enabled }
         val ag = base.agc?.takeIf { it.enabled }
@@ -118,7 +111,6 @@ class PttAudioProcessorV2(
                 rollOffDbPerOctave = it.rollOffDbPerOctave,
             )
         }
-        declickFilter = dc?.let { DeclickFilter(sampleRateHz = nativeSampleRateHz, config = it) }
         notchFilter = nt?.let { NotchFilter(nativeSampleRateHz, it.resolveBands()) }
         lpf = lp?.let {
             LowPassFilter(
@@ -126,9 +118,6 @@ class PttAudioProcessorV2(
                 cutoffHz = it.cutoffHz,
                 rollOffDbPerOctave = it.rollOffDbPerOctave,
             )
-        }
-        spectralSubtractionFilter = ss?.let {
-            SpectralSubtractionFilter(sampleRateHz = nativeSampleRateHz, config = it)
         }
         rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(nativeSampleRateHz) } }
         rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
@@ -150,9 +139,8 @@ class PttAudioProcessorV2(
         Timber.tag(TAG).d(
             "[$flowKey] built DSP chain rate=$nativeSampleRateHz→$targetSampleRateHz " +
                 "profile='${profile.preset}' " +
-                "hpf=${hpf != null} declick=${declickFilter != null} " +
+                "hpf=${hpf != null} " +
                 "notch=${notchFilter != null} lpf=${lpf != null} " +
-                "specSub=${spectralSubtractionFilter != null} " +
                 "rnnoise=${rnNoiseProcessor != null} dyn=${dynamicsFilter != null} " +
                 "agc=${agcFilter != null} " +
                 "makeup=${profile.makeupGain?.let { it::class.simpleName } ?: "off"}"
@@ -180,7 +168,7 @@ class PttAudioProcessorV2(
             pcm
         }
         return if (nativeSampleRateHz != targetSampleRateHz) {
-            AudioDsp.resampleLinear(working, nativeSampleRateHz, targetSampleRateHz)
+            AudioDsp.resamplePolyphase(working, nativeSampleRateHz, targetSampleRateHz)
         } else {
             working
         }
@@ -191,10 +179,8 @@ class PttAudioProcessorV2(
             .onFailure { Timber.tag(TAG).w(it, "[$flowKey] RnNoise release failed") }
         rnNoiseProcessor = null
         hpf = null
-        declickFilter = null
         notchFilter = null
         lpf = null
-        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
     }
@@ -202,8 +188,8 @@ class PttAudioProcessorV2(
     // ── internals ────────────────────────────────────────────────────
 
     private fun anyFilterActive(): Boolean =
-        hpf != null || declickFilter != null || notchFilter != null || lpf != null ||
-            spectralSubtractionFilter != null || rnNoiseProcessor != null ||
+        hpf != null || notchFilter != null || lpf != null ||
+            rnNoiseProcessor != null ||
             dynamicsFilter != null || agcFilter != null ||
             (profile.makeupGain?.enabled == true)
 
@@ -212,10 +198,8 @@ class PttAudioProcessorV2(
         // EXCEPT the post-AGC make-up gain is now a sealed-class stage
         // that any codec can pick.
         hpf?.processInPlace(chunk)
-        declickFilter?.processInPlace(chunk)
         notchFilter?.processInPlace(chunk)
         lpf?.processInPlace(chunk)
-        spectralSubtractionFilter?.processInPlace(chunk)
         rnNoiseProcessor?.let { proc ->
             val needsFloor = rnNoiseAttenFloor > 0f
             val dry = if (needsFloor) chunk.copyOf() else null

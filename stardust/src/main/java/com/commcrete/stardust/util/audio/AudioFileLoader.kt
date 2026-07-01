@@ -41,7 +41,7 @@ internal object AudioFileLoader {
     fun loadAndNormalize(source: Source): Pair<AudioInfo, ShortArray> {
         val (info, nativeRate, mono) = loadMono(source)
         val resampled = if (nativeRate == AudioTestFeeder.TARGET_SAMPLE_RATE) mono
-            else AudioDsp.resampleLinear(mono, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
+            else AudioDsp.resamplePolyphase(mono, nativeRate, AudioTestFeeder.TARGET_SAMPLE_RATE)
         return info to resampled
     }
 

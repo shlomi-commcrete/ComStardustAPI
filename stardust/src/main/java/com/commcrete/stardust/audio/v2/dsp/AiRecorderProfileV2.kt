@@ -14,7 +14,7 @@ import com.commcrete.stardust.util.audio.RecordingDeviceType
  * change existing files" constraint). When v1 is eventually retired
  * the two can be merged.
  *
- * @property base       seven stage configs (HPF, declick, notch, LPF,
+ * @property base       six stage configs (HPF, notch, LPF,
  *                      RNNoise, dynamics, AGC) — handled by the
  *                      existing v1 filter classes.
  * @property makeupGain new post-AGC make-up stage. `null` ⇒ skipped.

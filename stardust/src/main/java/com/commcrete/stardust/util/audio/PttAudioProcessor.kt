@@ -18,14 +18,13 @@ import timber.log.Timber
  * ```
  * raw PCM @ nativeRate
  *   ─► HPF              (sub-voice rumble: HVAC, traffic, thump)
- *   ─► Declick          (transient artefact suppression)
  *   ─► Notch            (mains-hum harmonics)
  *   ─► RNNoise          (ML denoise + optional wet/dry blend & floor)
  *   ─► DynamicsProcessor (multiband compression / voice focus)
  *   ─► AGC              (level normalisation)
  *   ─► AI-gain          (post-AGC make-up, optional soft saturation)
  *   ─► LPF              (band limit + anti-alias for the upcoming resample)
- *   ─► resampleLinear → targetRate (24 kHz for AI, 8 kHz for CODEC2)
+ *   ─► resamplePolyphase → targetRate (24 kHz for AI, 8 kHz for CODEC2)
  * ```
  *
  * Stateful: each filter holds per-stream history (biquad memory, RNNoise
@@ -57,12 +56,10 @@ object PttAudioProcessor {
     // ── Filter chain instances ────────────────────────────────────────────
 
     private var hpf: HighPassFilter? = null
-    private var declickFilter: DeclickFilter? = null
     private var notchFilter: NotchFilter? = null
     private var adaptiveNotchDetector: AdaptiveNotchDetector? = null
     /** Static bands resolved from the NotchConfig (kept for merging with adaptive). */
     private var staticNotchBands: List<NotchFilter.Band> = emptyList()
-    private var spectralSubtractionFilter: SpectralSubtractionFilter? = null
     private var rnNoiseProcessor: RnNoiseProcessor? = null
     private var dynamicsFilter: DynamicsProcessingFilter? = null
     private var agcFilter: AGCFilter? = null
@@ -150,32 +147,27 @@ object PttAudioProcessor {
             RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_32K, // closest PCM2900C rate above 24kHz
+                captureRate = CaptureRate.RATE_32K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
+
                 notch = NotchConfig(enabled = true, harmonics = listOf(
                     NotchConfig.Harmonic(375f, 150f),
                 )),
-                spectralSubtraction = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> SpectralSubtractionConfig(enabled = true)
-                    RecordingEnvironmentPreset.NOISY -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 1.5f, spectralFloor = 0.03f,
-                    )
-                    RecordingEnvironmentPreset.EXTREME -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 2.0f, spectralFloor = 0.02f,
-                    )
-                },
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
             )
             RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.CODEC2,
                 captureRate = CaptureRate.RATE_8K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
                 notch = NotchConfig(enabled = true, harmonics = listOf(
                     NotchConfig.Harmonic(1000f, 200f),
                 )),
@@ -187,55 +179,40 @@ object PttAudioProcessor {
         }
 
         // ════════════════════════════════════════════════════════════════
-        // JBOX_EXTERNAL — digital USB audio, noisier signal, no clicks.
+        // JBOX_EXTERNAL — digital USB audio, noisier signal.
         // Same digital path as INTERNAL but external mic picks up more
-        // ambient noise. Still digital — no RNNoise.
-        // AI: capture 24kHz. Codec2: capture 8kHz, notch 1kHz.
+        // ambient noise and clicks (~76% of INTERNAL rate).
+        // Still digital — no RNNoise.
+        // AI: capture 32kHz. Codec2: capture 8kHz, notch 1kHz.
         // ════════════════════════════════════════════════════════════════
         RecordingDeviceType.JBOX_EXTERNAL -> when (codeType) {
             RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.AI,
                 captureRate = CaptureRate.RATE_32K, // closest PCM2900C rate above 24kHz
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
+
                 notch = NotchConfig(enabled = true, harmonics = listOf(
                     NotchConfig.Harmonic(375f, 150f),
                 )),
-                spectralSubtraction = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> SpectralSubtractionConfig(enabled = true)
-                    RecordingEnvironmentPreset.NOISY -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 1.5f, spectralFloor = 0.03f,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.EXTREME -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 2.0f, spectralFloor = 0.02f,
-                        adaptiveAggressiveness = true,
-                    )
-                },
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
             )
             RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.CODEC2,
                 captureRate = CaptureRate.RATE_8K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
                 notch = NotchConfig(enabled = true, harmonics = listOf(
                     NotchConfig.Harmonic(1000f, 200f),
                 )),
-                spectralSubtraction = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> null
-                    RecordingEnvironmentPreset.NOISY -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 1.5f, spectralFloor = 0.03f,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.EXTREME -> SpectralSubtractionConfig(
-                        enabled = true, overSubtractionFactor = 2.0f, spectralFloor = 0.02f,
-                        adaptiveAggressiveness = true,
-                    )
-                },
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
@@ -245,16 +222,18 @@ object PttAudioProcessor {
 
         // ════════════════════════════════════════════════════════════════
         // PHONE_MIC — built-in phone microphone. Analog audio.
-        // Capture at 48kHz. RNNoise appropriate (analog broadband noise).
-        // NOISY/EXTREME: RNNoise floor loosens progressively.
+        // AudioSource MIC (not VOICE_RECOGNITION — dataset shows VR at
+        // 48kHz causes 78k clips vs 237 for MIC). RNNoise handles noise.
         // ════════════════════════════════════════════════════════════════
         RecordingDeviceType.PHONE_MIC -> when (codeType) {
             RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.AI,
                 captureRate = CaptureRate.RATE_48K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
+
                 rnNoise = when (preset) {
                     RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
                     RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
@@ -264,13 +243,16 @@ object PttAudioProcessor {
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
             )
             RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.CODEC2,
                 captureRate = CaptureRate.RATE_48K, // need 48kHz for RNNoise, resample to 8kHz
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
+
                 rnNoise = when (preset) {
                     RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
                     RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
@@ -280,85 +262,53 @@ object PttAudioProcessor {
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 3_600f, rollOffDbPerOctave = 48f),
             )
         }
 
         // ════════════════════════════════════════════════════════════════
         // BLE_MIC — Bluetooth SCO mic (car, headset). Analog noise.
         // VOICE_COMMUNICATION required for SCO routing.
-        // Request 48kHz for RNNoise; fallback to spectral subtraction
-        // if device only supports 8/16kHz.
+        // Request 48kHz for RNNoise.
         // ════════════════════════════════════════════════════════════════
         RecordingDeviceType.BLE_MIC -> when (codeType) {
             RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.AI,
                 captureRate = CaptureRate.RATE_48K,
+                inputGainPercent = 100f,
                 audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
                 rnNoise = when (preset) {
                     RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
                     RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
                     RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
                 },
                 rnNoiseMinRateHz = CaptureRate.RATE_48K,
-                rnNoiseFallback = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -40f, noiseLearnAlpha = 0.2f,
-                        overSubtractionFactor = 1.5f, spectralFloor = 0.05f, minNoiseFrames = 2,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.NOISY -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -38f, noiseLearnAlpha = 0.25f,
-                        overSubtractionFactor = 2.0f, spectralFloor = 0.04f, minNoiseFrames = 2,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.EXTREME -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -35f, noiseLearnAlpha = 0.3f,
-                        overSubtractionFactor = 2.5f, spectralFloor = 0.02f, minNoiseFrames = 1,
-                        adaptiveAggressiveness = true,
-                    )
-                },
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.20f, attackMs = 5f, releaseMs = 300f,
                     maxGainDb = 15f, minGainDb = -8f, noiseGateLevel = 0.008f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
             )
             RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.CODEC2,
                 captureRate = CaptureRate.RATE_48K,
+                inputGainPercent = 100f,
                 audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
-                declick = DeclickConfig(enabled = true),
                 rnNoise = when (preset) {
                     RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
                     RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
                     RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
                 },
                 rnNoiseMinRateHz = CaptureRate.RATE_48K,
-                rnNoiseFallback = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -40f, noiseLearnAlpha = 0.2f,
-                        overSubtractionFactor = 1.5f, spectralFloor = 0.04f, minNoiseFrames = 2,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.NOISY -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -38f, noiseLearnAlpha = 0.25f,
-                        overSubtractionFactor = 2.5f, spectralFloor = 0.03f, minNoiseFrames = 2,
-                        adaptiveAggressiveness = true,
-                    )
-                    RecordingEnvironmentPreset.EXTREME -> SpectralSubtractionConfig(
-                        enabled = true, silenceThresholdDbFs = -35f, noiseLearnAlpha = 0.3f,
-                        overSubtractionFactor = 3.0f, spectralFloor = 0.02f, minNoiseFrames = 1,
-                        adaptiveAggressiveness = true,
-                    )
-                },
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.20f, attackMs = 5f, releaseMs = 300f,
                     maxGainDb = 15f, minGainDb = -8f, noiseGateLevel = 0.008f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 3_600f, rollOffDbPerOctave = 48f),
             )
         }
 
@@ -370,16 +320,21 @@ object PttAudioProcessor {
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.AI,
                 captureRate = CaptureRate.RATE_48K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
                     maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
                 ),
+                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
             )
             RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
                 preset = preset,
                 codeType = RecorderUtils.CODE_TYPE.CODEC2,
                 captureRate = CaptureRate.RATE_8K,
+                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
+                inputGainPercent = 100f,
                 highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
                 agc = AGCConfig(
                     enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
@@ -631,7 +586,7 @@ object PttAudioProcessor {
             pcmArray
         }
         return if (nativeRate != targetRate) {
-            AudioDsp.resampleLinear(filtered, nativeRate, targetRate)
+            AudioDsp.resamplePolyphase(filtered, nativeRate, targetRate)
         } else {
             filtered
         }
@@ -684,11 +639,9 @@ object PttAudioProcessor {
             .onFailure { Log.w(TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
-        declickFilter = null
         notchFilter = null
         adaptiveNotchDetector = null
         staticNotchBands = emptyList()
-        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
         lpf = null
@@ -731,10 +684,19 @@ object PttAudioProcessor {
             dbg?.invoke(step++, name, chunk.copyOf())
         }
 
-        declickFilter?.let {
+        // ── Signal path order ───────────────────────────────────────
+        // Each stage is positioned so it sees the cleanest possible
+        // input and doesn't interfere with downstream stages.
+
+        // 1. HPF — remove sub-voice rumble before any other filter sees
+        //    it. Prevents: notch biquad ringing on thumps, spectral sub
+        //    learning rumble as noise, RNNoise wasting spectral budget
+        //    on sub-voice content.
+        hpf?.let {
             it.processInPlace(chunk)
-            debugSnapshot("declick")
+            debugSnapshot("hpf")
         }
+        // 2. Notch — remove tonal interference before RNNoise / AGC.
         notchFilter?.let {
             it.processInPlace(chunk)
             debugSnapshot("notch")
@@ -746,10 +708,7 @@ object PttAudioProcessor {
                 notchFilter?.configure(bands = merged)
             }
         }
-        spectralSubtractionFilter?.let {
-            it.processInPlace(chunk)
-            debugSnapshot("spectral_sub")
-        }
+        // 3. RNNoise — ML broadband denoise.
         rnNoiseProcessor?.let { proc ->
             val needsFloor = rnNoiseAttenFloor > 0f
             val dry = if (needsFloor) chunk.copyOf() else null
@@ -757,23 +716,25 @@ object PttAudioProcessor {
             if (dry != null) softenRnNoise(chunk, dry, rnNoiseAttenFloor)
             debugSnapshot("rnnoise")
         }
-        dynamicsFilter?.let {
-            it.processInPlace(chunk)
-            debugSnapshot("dynamics")
-        }
+        // 6. AGC — normalize level AFTER all noise reduction so it
+        //    boosts clean signal, not noise.
         agcFilter?.let {
             it.processInPlace(chunk)
             debugSnapshot("agc")
         }
+        // 7. Dynamics — multiband compression in a predictable level
+        //    range (after AGC normalized).
+        dynamicsFilter?.let {
+            it.processInPlace(chunk)
+            debugSnapshot("dynamics")
+        }
+        // 8. AI-gain — final makeup gain / soft saturation.
         if (filterAiGain != 1f) {
             if (filterAiGainSoftSat) AudioDsp.applyAiGainSoftSatInPlace(chunk, filterAiGain)
             else AudioDsp.applyAiGainInPlace(chunk, filterAiGain)
             debugSnapshot("ai_gain")
         }
-        hpf?.let {
-            it.processInPlace(chunk)
-            debugSnapshot("hpf")
-        }
+        // 9. LPF — anti-alias, last before resample.
         lpf?.let {
             it.processInPlace(chunk)
             debugSnapshot("lpf")
@@ -794,13 +755,8 @@ object PttAudioProcessor {
             currentFilterRate = sampleRate
             currentFilterKey = profile
 
-            // RNNoise + fallback resolution: if the capture rate is below
-            // the profile's rnNoiseMinRateHz, skip RNNoise and use the
-            // fallback (spectral subtraction) instead — if configured.
             val rnNoiseUsable = profile.rnNoise?.takeIf { it.enabled }
                 ?.takeIf { profile.rnNoiseMinRateHz.hz <= 0 || sampleRate >= profile.rnNoiseMinRateHz.hz }
-            val useFallback = profile.rnNoise?.enabled == true && rnNoiseUsable == null
-            val fallbackSs = if (useFallback) profile.rnNoiseFallback?.takeIf { it.enabled } else null
 
             val rn: RnNoiseConfig? = rnNoiseUsable
             val dp: DynamicsConfig? = profile.dynamics?.takeIf { it.enabled }
@@ -808,11 +764,6 @@ object PttAudioProcessor {
             val hp: HighPassConfig? = profile.highPass?.takeIf { it.enabled }
             val notch: NotchConfig? = profile.notch?.takeIf { it.enabled }
             val agc: AGCConfig? = profile.agc?.takeIf { it.enabled }
-            val declick: DeclickConfig? = profile.declick?.takeIf { it.enabled }
-            // Spectral subtraction: use the profile's own config, OR the
-            // RNNoise fallback if RNNoise was skipped due to low capture rate.
-            val ss: SpectralSubtractionConfig? =
-                profile.spectralSubtraction?.takeIf { it.enabled } ?: fallbackSs
 
             hpf = hp?.let {
                 HighPassFilter(
@@ -821,17 +772,11 @@ object PttAudioProcessor {
                     rollOffDbPerOctave = it.rollOffDbPerOctave,
                 )
             }
-            declickFilter = declick?.let {
-                DeclickFilter(sampleRateHz = sampleRate, config = it)
-            }
             val resolvedBands = notch?.resolveBands() ?: emptyList()
             staticNotchBands = resolvedBands
             notchFilter = notch?.let { NotchFilter(sampleRate, resolvedBands) }
             adaptiveNotchDetector = notch?.adaptive?.let {
                 AdaptiveNotchDetector(sampleRate, it)
-            }
-            spectralSubtractionFilter = ss?.let {
-                SpectralSubtractionFilter(sampleRateHz = sampleRate, config = it)
             }
             rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(sampleRate) } }
             rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
@@ -869,11 +814,9 @@ object PttAudioProcessor {
             .onFailure { Log.w(TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
-        declickFilter = null
         notchFilter = null
         adaptiveNotchDetector = null
         staticNotchBands = emptyList()
-        spectralSubtractionFilter = null
         dynamicsFilter = null
         agcFilter = null
         lpf = null
@@ -991,20 +934,12 @@ object PttAudioProcessor {
         profile.highPass?.takeIf { it.enabled }?.let {
             enabledFilters.add("highPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
         }
-        profile.declick?.takeIf { it.enabled }?.let {
-            enabledFilters.add(
-                "declick(thr=${it.thresholdMad}xMAD, minPk=${it.minPeakDbFs}dBFS, maxRun=${it.maxTickSamples}, dDet=${it.useDerivativeDetection})"
-            )
-        }
         profile.lowPass?.takeIf { it.enabled }?.let {
             enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
         }
         profile.notch?.takeIf { it.enabled }?.let {
             val adaptiveTag = if (it.adaptive != null) "+adaptive" else ""
             enabledFilters.add("notch(harmonics=${it.harmonics?.size ?: 0}$adaptiveTag)")
-        }
-        profile.spectralSubtraction?.takeIf { it.enabled }?.let {
-            enabledFilters.add(it.describe())
         }
         profile.rnNoise?.takeIf { it.enabled }?.let {
             enabledFilters.add("rnNoise(maxAttenDb=${it.maxAttenuationDb})")

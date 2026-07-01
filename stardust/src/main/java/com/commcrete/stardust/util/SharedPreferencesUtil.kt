@@ -7,11 +7,6 @@ import android.media.MediaRecorder
 import android.preference.PreferenceManager
 import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
-import com.commcrete.stardust.AiSourceProfile
-import com.commcrete.stardust.AiSourceProfileDefaults
-import com.commcrete.stardust.AiSourceProfileSettings
-import com.commcrete.stardust.AiTonalWhineSuppressionSettings
-import com.commcrete.stardust.AiAudioSource
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
@@ -73,12 +68,12 @@ object SharedPreferencesUtil {
     //Record type Values
 
     val AUDIO_SOURCE_TO_KEY = mapOf(
-        MediaRecorder.AudioSource.DEFAULT to "Default",
+        //MediaRecorder.AudioSource.DEFAULT to "Default",
         MediaRecorder.AudioSource.MIC to "Mic",
-        MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
-        MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
+        //MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
+        //MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
         //MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
-        MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
+        //MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
     )
 
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
@@ -155,12 +150,7 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-    private const val KEY_AI_SOURCE_PROFILE_SETTINGS = "ai_source_profile_settings"
     private const val KEY_VOICE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
-    private const val KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED = "ai_tonal_whine_suppression_enabled"
-    private const val KEY_AI_TONAL_WHINE_CENTER_HZ = "ai_tonal_whine_center_hz"
-    private const val KEY_AI_TONAL_WHINE_Q = "ai_tonal_whine_q"
-    private const val KEY_AI_TONAL_WHINE_ATTENUATION_DB = "ai_tonal_whine_attenuation_db"
     private const val KEY_AI_RECORDER_PROFILES = "ai_recorder_profiles"
     private const val KEY_ACTIVE_ENVIRONMENT_PRESET = "active_environment_preset"
 
@@ -184,56 +174,6 @@ object SharedPreferencesUtil {
 
     }
 
-    private data class AiSourceProfileSettingsStorage(
-        val useSourceProfile: Boolean,
-        val preferProcessedSource: Boolean,
-        val profiles: Map<String, AiSourceProfile>,
-    )
-
-    fun getAiSourceProfileSettings(context: Context): AiSourceProfileSettings {
-        val json = getPrefs(context).getString(KEY_AI_SOURCE_PROFILE_SETTINGS, null)
-        if (json.isNullOrBlank()) return AiSourceProfileDefaults.settings
-
-        return try {
-            val type = object : TypeToken<AiSourceProfileSettingsStorage>() {}.type
-            val storage = Gson().fromJson<AiSourceProfileSettingsStorage>(json, type)
-                ?: return AiSourceProfileDefaults.settings
-
-            val normalizedProfiles = AiSourceProfileDefaults.profiles.mapValues { (source, defaultProfile) ->
-                val raw = storage.profiles[source.name] ?: defaultProfile
-                normalizeAiSourceProfile(raw)
-            }
-
-            AiSourceProfileSettings(
-                useSourceProfile = storage.useSourceProfile,
-                preferProcessedSource = storage.preferProcessedSource,
-                profiles = normalizedProfiles,
-            )
-        } catch (_: Exception) {
-            AiSourceProfileDefaults.settings
-        }
-    }
-
-    fun setAiSourceProfileSettings(context: Context, settings: AiSourceProfileSettings) {
-        val normalizedProfiles = AiSourceProfileDefaults.profiles.mapValues { (source, defaultProfile) ->
-            val raw = settings.profiles[source] ?: defaultProfile
-            normalizeAiSourceProfile(raw)
-        }
-
-        val storage = AiSourceProfileSettingsStorage(
-            useSourceProfile = settings.useSourceProfile,
-            preferProcessedSource = settings.preferProcessedSource,
-            profiles = normalizedProfiles.mapKeys { it.key.name },
-        )
-
-        getPrefs(context).edit()
-            .putString(KEY_AI_SOURCE_PROFILE_SETTINGS, Gson().toJson(storage))
-            .apply()
-    }
-
-    fun resetAiSourceProfileSettings(context: Context) {
-        getPrefs(context).edit().remove(KEY_AI_SOURCE_PROFILE_SETTINGS).apply()
-    }
 
     /**
      * Load the per-device-type recorder DSP profiles. Keys are stored as
@@ -332,89 +272,6 @@ object SharedPreferencesUtil {
     /** Persists the voice cancellation toggle. */
     fun setVoiceCancellationEnabled(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_VOICE_CANCELLATION_ENABLED, enabled).apply()
-    }
-
-    /** Returns whether tonal-whine suppression (notch stage) is enabled. */
-    fun isAiTonalWhineSuppressionEnabled(context: Context): Boolean {
-        return getPrefs(context).getBoolean(KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED, false)
-    }
-
-    fun setAiTonalWhineSuppressionEnabled(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_AI_TONAL_WHINE_SUPPRESSION_ENABLED, enabled).apply()
-    }
-
-    /** Notch center frequency in Hz. */
-    fun getAiTonalWhineCenterHz(context: Context): Float {
-        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_CENTER_HZ, 1000f)
-    }
-
-    fun setAiTonalWhineCenterHz(context: Context, centerHz: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_CENTER_HZ, centerHz).apply()
-    }
-
-    /** Notch quality factor. */
-    fun getAiTonalWhineQ(context: Context): Float {
-        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_Q, 30f)
-    }
-
-    fun setAiTonalWhineQ(context: Context, q: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_Q, q).apply()
-    }
-
-    /** Notch attenuation depth in dB. */
-    fun getAiTonalWhineAttenuationDb(context: Context): Float {
-        return getPrefs(context).getFloat(KEY_AI_TONAL_WHINE_ATTENUATION_DB, 28f)
-    }
-
-    fun setAiTonalWhineAttenuationDb(context: Context, attenuationDb: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_TONAL_WHINE_ATTENUATION_DB, attenuationDb).apply()
-    }
-
-    fun getAiTonalWhineSuppressionSettings(context: Context): AiTonalWhineSuppressionSettings {
-        return AiTonalWhineSuppressionSettings(
-            enabled = isAiTonalWhineSuppressionEnabled(context),
-            centerHz = getAiTonalWhineCenterHz(context),
-            q = getAiTonalWhineQ(context),
-            attenuationDb = getAiTonalWhineAttenuationDb(context),
-        )
-    }
-
-    fun setAiTonalWhineSuppressionSettings(
-        context: Context,
-        settings: AiTonalWhineSuppressionSettings,
-    ) {
-        setAiTonalWhineSuppressionEnabled(context, settings.enabled)
-        setAiTonalWhineCenterHz(context, settings.centerHz)
-        setAiTonalWhineQ(context, settings.q)
-        setAiTonalWhineAttenuationDb(context, settings.attenuationDb)
-    }
-
-    fun getAiSourceProfile(context: Context, source: AiAudioSource): AiSourceProfile {
-        val settings = getAiSourceProfileSettings(context)
-        return settings.profiles[source] ?: AiSourceProfileDefaults.profiles[source]!!
-    }
-
-    fun setAiSourceProfile(context: Context, source: AiAudioSource, profile: AiSourceProfile) {
-        val currentSettings = getAiSourceProfileSettings(context)
-        val updatedProfiles = currentSettings.profiles.toMutableMap()
-        updatedProfiles[source] = profile
-        val updatedSettings = currentSettings.copy(profiles = updatedProfiles)
-        setAiSourceProfileSettings(context, updatedSettings)
-    }
-
-    private fun normalizeAiSourceProfile(profile: AiSourceProfile): AiSourceProfile {
-        return AiSourceProfile(
-            makeupGain = profile.makeupGain.coerceIn(0.1f, 6.0f),
-            agcTargetRms = profile.agcTargetRms.coerceIn(300f, 10000f),
-            agcMaxGain = profile.agcMaxGain.coerceIn(1f, 20f),
-            agcNoiseFloorRms = profile.agcNoiseFloorRms.coerceIn(0f, 5000f),
-            noiseGateRms = profile.noiseGateRms.coerceIn(0, 5000),
-            expanderRatio = profile.expanderRatio.coerceIn(1.0f, 8.0f),
-            expanderOpenSnr = profile.expanderOpenSnr.coerceIn(1.5f, 10.0f),
-            expanderMinGain = profile.expanderMinGain.coerceIn(0.001f, 1.0f),
-            expanderAttackSec = profile.expanderAttackSec.coerceIn(0.001f, 0.050f),
-            expanderReleaseSec = profile.expanderReleaseSec.coerceIn(0.020f, 0.500f),
-        )
     }
 
     fun getUserID(context: Context): String? {
@@ -1011,24 +868,24 @@ object SharedPreferencesUtil {
 
     @Deprecated("As there is no option to update this value from app now this function is unavailable")
     fun setAudioModelType(context: Context, model: WavTokenizerDecoder.ModelType) {
-//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-//        prefs.edit()
-//            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
-//            .apply()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit()
+            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
+            .apply()
     }
 
     @Deprecated("As there is no option to update this value from app now it will return WavTokenizerDecoder.ModelType.General")
     fun getAudioModelType(context: Context): WavTokenizerDecoder.ModelType {
-//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-//        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
-//
-//        return try {
-//            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
-//            else WavTokenizerDecoder.ModelType.General   // default value
-//        } catch (e: Exception) {
-//            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
-//        }
-        return WavTokenizerDecoder.ModelType.General
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
+
+        return try {
+            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
+            else WavTokenizerDecoder.ModelType.General   // default value
+        } catch (e: Exception) {
+            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
+        }
+        //return WavTokenizerDecoder.ModelType.General
     }
 
 }

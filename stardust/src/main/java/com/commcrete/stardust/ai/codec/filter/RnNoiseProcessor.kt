@@ -2,6 +2,7 @@ package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
 import com.commcrete.stardust.ai.codec.filter.NoiseProcessor
+import com.commcrete.stardust.util.audio.AudioDsp
 import com.commcrete.stardust.util.audio.CaptureRate
 import java.lang.reflect.Method
 
@@ -159,7 +160,7 @@ class RnNoiseProcessor : NoiseProcessor {
 
         // 1) Upsample to 48 kHz.
         val up = if (sampleRate == NATIVE_RATE) buffer.copyOf(length)
-        else resample(buffer, length, sampleRate, NATIVE_RATE)
+        else AudioDsp.resamplePolyphase(buffer.copyOf(length), sampleRate, NATIVE_RATE)
 
         // 2) Concatenate residual + new samples.
         val combined = ShortArray(pending48k.size + up.size)
@@ -194,7 +195,7 @@ class RnNoiseProcessor : NoiseProcessor {
         // 5) Downsample processed prefix back and write into [buffer].
         val processed = combined.copyOfRange(0, off)
         val down = if (sampleRate == NATIVE_RATE) processed
-        else resample(processed, processed.size, NATIVE_RATE, sampleRate)
+        else AudioDsp.resamplePolyphase(processed, NATIVE_RATE, sampleRate)
 
         val toCopy = minOf(down.size, length)
         if (toCopy > 0) System.arraycopy(down, 0, buffer, 0, toCopy)
@@ -227,22 +228,4 @@ class RnNoiseProcessor : NoiseProcessor {
     /** Name of the resolved native wrapper class, or `null` in pass-through mode. */
     fun activeClassName(): String? = nativeInstance?.javaClass?.name
 
-    /** Linear-interpolation resampler. Adequate for ASR; swap for polyphase FIR for max fidelity. */
-    private fun resample(input: ShortArray, length: Int, fromRate: Int, toRate: Int): ShortArray {
-        if (fromRate == toRate || length <= 0) return input.copyOf(length)
-        val outLen = ((length.toLong() * toRate) / fromRate).toInt()
-        val out = ShortArray(outLen)
-        val step = fromRate.toDouble() / toRate.toDouble()
-        var pos = 0.0
-        for (i in 0 until outLen) {
-            val idx = pos.toInt()
-            val frac = pos - idx
-            val a = input[idx.coerceAtMost(length - 1)].toInt()
-            val b = input[(idx + 1).coerceAtMost(length - 1)].toInt()
-            val v = (a + (b - a) * frac).toInt().coerceIn(-32768, 32767)
-            out[i] = v.toShort()
-            pos += step
-        }
-        return out
-    }
 }

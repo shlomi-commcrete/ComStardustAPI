@@ -62,6 +62,7 @@ class PttSession internal constructor(
     internal var lastPCM: ShortArray? = null
     internal var recordingTs: Long = 0L
 
+
     /**
      * Atomic so concurrent calls to [PttSendManager.finish] (e.g. the
      * delayed `finishAIRecording` coroutine racing the legacy
@@ -344,8 +345,8 @@ object PttSendManager {
      * Per-chunk orchestrator inside the session's encode loop.
      *
      * Three sequential phases, each delegated to its own helper:
-     *  1. [encodeAndSendChunk] — encode the captured PCM and ship the
-     *     packed payload over the wire.
+     *  1. [encodeAndSendChunk] — encode the captured PCM (with sliding-
+     *     window context) and ship the packed payload over the wire.
      *  2. [enforceMaxPttTimeout] — count this packet against the
      *     per-session max-PTT-timeout and fire the host callbacks once
      *     when the threshold is crossed.
@@ -363,21 +364,12 @@ object PttSendManager {
         mirrorDecodeChunk(session, packedData)
     }
 
-    /**
-     * Phase 1: encode [pcmArray] via the AI tokenizer, pack the tokens
-     * to bytes, and hand the result to [sendData] for BLE transmission.
-     *
-     * @return the packed payload — passed to [mirrorDecodeChunk] so
-     *         the per-session WAV mirror can self-decode the SAME
-     *         bytes the receiver will see.
-     */
     private fun encodeAndSendChunk(session: PttSession, pcmArray: ShortArray): ByteArray {
         Log.d(TAG_ENCODE, "Session ${session.id}: encoding ${pcmArray.size} samples")
         val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
         Log.d(TAG_ENCODE, "Session ${session.id}: encoded chunk size ${chunkCodes.size}")
 
         val packedData = BitPacking12.pack12(chunkCodes.toList())
-
         sendData(session, packedData)
 
         return packedData

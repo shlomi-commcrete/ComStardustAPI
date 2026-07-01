@@ -145,7 +145,7 @@ internal object AudioDsp {
      * The table is lazily built and cached per (srcRate, dstRate) pair
      * via [getOrBuildKernel].
      */
-    fun resampleLinear(input: ShortArray, srcRate: Int, dstRate: Int): ShortArray {
+    fun resamplePolyphase(input: ShortArray, srcRate: Int, dstRate: Int): ShortArray {
         if (srcRate == dstRate) return input
         if (input.isEmpty()) return input
 
@@ -274,8 +274,6 @@ internal object AudioDsp {
      * so the COLA property holds exactly at 50 % overlap:
      * `w[n]² + w[n + N/2]² = 1.0` for all `n`.
      *
-     * Use this for overlap-add synthesis (e.g. [SpectralSubtractionFilter]);
-     * [hannWindow] (symmetric variant) is kept for the existing analysis paths.
      */
     val hannWindowPeriodic: DoubleArray by lazy {
         DoubleArray(FFT_SIZE) { i -> 0.5 - 0.5 * kotlin.math.cos(2.0 * Math.PI * i / FFT_SIZE) }

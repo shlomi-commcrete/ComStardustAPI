@@ -44,9 +44,6 @@ interface StardustAPI {
     fun getSecurityKey(context: Context) : ByteArray
     fun reconnectToCurrentDevice (context: Context)
     fun canRecord (context: Context) : MutableLiveData<Boolean>
-    fun getAiSourceProfileSettings(context: Context): AiSourceProfileSettings
-    fun updateAiSourceProfileSettings(context: Context, settings: AiSourceProfileSettings)
-    fun resetAiSourceProfileSettings(context: Context)
 }
 
 // Receive from the SDK

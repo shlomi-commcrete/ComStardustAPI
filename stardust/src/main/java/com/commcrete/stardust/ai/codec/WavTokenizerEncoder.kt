@@ -2,8 +2,11 @@ package com.commcrete.stardust.ai.codec
 
 import android.content.Context
 import android.util.Log
+import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.pytorch.*
@@ -23,6 +26,10 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
         val modelAssetName = "wav_to_codes_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
     }
+
+
+
+
 
 //    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
 //        Log.d(TAG, "Loading WavTokenizerEncoder model")
@@ -79,11 +86,8 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
             // Convert ShortArray to FloatArray in range [-1.0, 1.0]
             val floatSamples = shortArrayToFloatArray(safeInput)
 
-            Log.d(TAG, "First 5 float samples before padding: ${floatSamples.take(5)}")
             // Ensure exactly 12,000 samples by padding with zeros or trimming
             val paddedSamples = padOrTrim(floatSamples)
-            Log.d(TAG, "First 5 float samples after padding: ${paddedSamples.take(5)}")
-            // Create samples to input tensor
             val inputTensor = Tensor.fromBlob(paddedSamples, longArrayOf(1, paddedSamples.size.toLong()))
             Log.d(TAG, "Input tensor shape: ${inputTensor.shape().joinToString(",")}")
 
@@ -155,14 +159,18 @@ class WavTokenizerEncoder(context: Context, pluginContext: Context) {
 
     fun getSelectedModule(): Module {
 //        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
-
-        val modelType = module
-//        if(modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
+//        return if (modelTypeSelected == WavTokenizerDecoder.ModelType.English) {
 //            moduleEnglish
 //        } else {
+//            Log.d(TAG, "Model WavTokenizerDecoder.ModelType.General selected, using 500ms module")
 //            module
 //        }
-        return modelType
+        return module
+    }
+
+    fun isWindowModel(): Boolean {
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
+        return modelTypeSelected == WavTokenizerDecoder.ModelType.English
     }
 
     fun initModule(): Job = initJob

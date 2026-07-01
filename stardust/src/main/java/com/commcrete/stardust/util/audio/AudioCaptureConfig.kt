@@ -45,17 +45,12 @@ internal object AudioCaptureConfig {
         val useUsb = usb != null
         val captureRate = pickCaptureRate(selected, requestedRate)
 
-        val source = if (useUsb && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            defaultAudioSource // MediaRecorder.AudioSource.VOICE_RECOGNITION
-        } else {
-            defaultAudioSource
-        }
 
         Timber.tag(TAG).d(
             "capturePlan: requested=%d selectedRate=%d source=%d usb=%b deviceType=%s device=%s",
             requestedRate,
             captureRate,
-            source,
+            defaultAudioSource,
             useUsb,
             selected?.type?.toString() ?: "none",
             selected?.productName?.toString() ?: "none",
@@ -63,7 +58,7 @@ internal object AudioCaptureConfig {
 
         return CapturePlan(
             captureRate = captureRate,
-            audioSource = source,
+            audioSource = defaultAudioSource,
             preferredInputDevice = selected,
             useUsbInput = useUsb,
         )

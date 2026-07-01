@@ -66,61 +66,17 @@ enum class RecordingEnvironmentPreset {
 
 data class RecorderProfile(
     val preset: RecordingEnvironmentPreset = RecordingEnvironmentPreset.DEFAULT,
-    /**
-     * Codec type this profile is designed for. Determines which default
-     * filter configs are applied and which encoder target rate is used.
-     */
     val codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
-    /**
-     * Sample rate to request from the audio capture device. The filter
-     * chain runs at this rate. [PttAudioProcessor] resamples to the
-     * encoder's target rate (24 kHz for AI, 8 kHz for Codec2) after
-     * filtering. Set to the encoder target rate to skip the resample.
-     */
     val captureRate: CaptureRate = CaptureRate.RATE_48K,
-    /**
-     * Android audio source to use for recording. `null` = fall back to
-     * the per-codec SharedPreferences setting (legacy behavior:
-     * `SharedPreferencesUtil.getAIAudioSource` for AI,
-     * `SharedPreferencesUtil.getCodecAudioSource` for Codec2).
-     */
     val audioSource: AiAudioSource? = null,
-    /**
-     * Input gain as a percentage (100 = unity, 50 = -6 dB, 200 = +6 dB).
-     * Applied to raw PCM before the filter chain. `null` = fall back to
-     * the per-codec SharedPreferences setting (legacy behavior:
-     * `SharedPreferencesUtil.getAIGain` for AI,
-     * `SharedPreferencesUtil.getCodecGain` for Codec2).
-     */
     val inputGainPercent: Float? = null,
     val lowPass: LowPassConfig? = null,
     val notch: NotchConfig? = null,
     val rnNoise: RnNoiseConfig? = null,
-    /**
-     * Minimum capture rate (Hz) required for [rnNoise] to run. If the
-     * actual capture rate is below this value, RNNoise is skipped and
-     * [rnNoiseFallback] is used instead (if non-null and enabled).
-     *
-     * RNNoise operates at 48 kHz internally. When capture rate < 48 kHz,
-     * RnNoiseProcessor upsamples → processes → downsamples, which adds
-     * artifacts on band-limited signals (e.g. 16 kHz BLE). Set this to
-     * `48000` to skip RNNoise when the capture rate is below 48 kHz.
-     *
-     * Default `0` = always run RNNoise regardless of capture rate.
-     */
     val rnNoiseMinRateHz: CaptureRate = CaptureRate.RATE_48K,
-    /**
-     * Fallback noise reduction when [rnNoise] is skipped due to
-     * [rnNoiseMinRateHz]. `null` = no fallback (no noise reduction if
-     * RNNoise can't run). If the user disables this, no fallback is
-     * applied — the audio passes through without noise reduction.
-     */
-    val rnNoiseFallback: SpectralSubtractionConfig? = null,
     val agc: AGCConfig? = null,
     val dynamics: DynamicsConfig? = null,
     val highPass: HighPassConfig? = null,
-    val declick: DeclickConfig? = null,
-    val spectralSubtraction: SpectralSubtractionConfig? = null,
 ) {
     /**
      * Resolve [audioSource] to the Android `MediaRecorder.AudioSource` int,

@@ -18,7 +18,6 @@ import com.commcrete.bittell.util.text_utils.splitMessage
 import com.commcrete.stardust.StardustAPI
 import com.commcrete.stardust.StardustAPICallbacks
 import com.commcrete.stardust.StardustAPIPackage
-import com.commcrete.stardust.AiSourceProfileSettings
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
@@ -64,8 +63,6 @@ import java.io.RandomAccessFile
 import java.util.Date
 import kotlin.random.Random
 
-import com.commcrete.stardust.AiAudioSource
-import com.commcrete.stardust.AiSourceProfile
 import com.commcrete.stardust.util.audio.PttAudioProcessor
 
 @SuppressLint("StaticFieldLeak")
@@ -313,32 +310,6 @@ object DataManager : StardustAPI, PttInterface{
     override fun canRecord(context: Context): MutableLiveData<Boolean> {
         return RecorderUtils.canRecord
     }
-
-    override fun getAiSourceProfileSettings(context: Context): AiSourceProfileSettings {
-        requireContext(context)
-        return SharedPreferencesUtil.getAiSourceProfileSettings(context)
-    }
-
-    override fun updateAiSourceProfileSettings(context: Context, settings: AiSourceProfileSettings) {
-        requireContext(context)
-        SharedPreferencesUtil.setAiSourceProfileSettings(context, settings)
-    }
-
-    override fun resetAiSourceProfileSettings(context: Context) {
-        requireContext(context)
-        SharedPreferencesUtil.resetAiSourceProfileSettings(context)
-    }
-
-    fun getAiSourceProfile(context: Context, source: AiAudioSource): AiSourceProfile {
-        requireContext(context)
-        return SharedPreferencesUtil.getAiSourceProfile(context, source)
-    }
-
-    fun updateAiSourceProfile(context: Context, source: AiAudioSource, profile: AiSourceProfile) {
-        requireContext(context)
-        SharedPreferencesUtil.setAiSourceProfile(context, source, profile)
-    }
-
 
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)

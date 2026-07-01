@@ -247,7 +247,7 @@ object RecorderUtils {
      * `SD-100*` -> [RecordingDeviceType.JBOX_INTERNAL]
      * `SD-200*` -> [RecordingDeviceType.JBOX_EXTERNAL]
      */
-    private fun inferDeviceType(actualInputType: Int? = null): RecordingDeviceType {
+    fun inferDeviceType(actualInputType: Int? = null): RecordingDeviceType {
         val hasActualUsbRoute = actualInputType == AudioDeviceInfo.TYPE_USB_DEVICE ||
             actualInputType == AudioDeviceInfo.TYPE_USB_HEADSET ||
             actualInputType == AudioDeviceInfo.TYPE_USB_ACCESSORY
