@@ -112,53 +112,5 @@ data class NotchConfig(
         "${fundamentalHz.toInt()}Hz/Q=${q.toInt()}/x${numHarmonics}"
     }
 
-
-
-
-    companion object {
-        /** Default notch config for AI path (48 kHz capture). */
-        fun getDefault(deviceType: RecordingDeviceType): NotchConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> NotchConfig(
-                enabled = true,
-                harmonics = mutableListOf<Harmonic>().also { list ->
-                    list.add(Harmonic(frequencyHz = 375f, q = 80f))
-                    list.add(Harmonic(frequencyHz = (1_000).toFloat(), q = 120f))
-                    for (i in 2..8) list.add(Harmonic(frequencyHz = (i * 1_000).toFloat(), q = i * 50f))
-                }
-            )
-            RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
-                enabled = true,
-                harmonics = listOf(
-                    Harmonic(frequencyHz = 375f, q = 150f),
-                    Harmonic(frequencyHz = 1000f, q = 300f),
-                    Harmonic(frequencyHz = 2000f, q = 300f),
-                    Harmonic(frequencyHz = 3000f, q = 300f),
-                ),
-            )
-            else -> NotchConfig(enabled = false)
-        }
-
-        /**
-         * Default notch config for Codec2 path (8 kHz native capture).
-         * At 8 kHz, the PCM2900 ADC produces a 1000 Hz clock artifact.
-         * Tones at 2000+ Hz are above 4 kHz Nyquist and are killed by
-         * the hardware decimation filter — no software notch needed.
-         */
-        fun getDefaultForCodec2(deviceType: RecordingDeviceType): NotchConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> NotchConfig(
-                enabled = true,
-                harmonics = listOf(
-                    Harmonic(frequencyHz = 1000f, q = 200f),
-                ),
-            )
-            RecordingDeviceType.JBOX_EXTERNAL -> NotchConfig(
-                enabled = true,
-                harmonics = listOf(
-                    Harmonic(frequencyHz = 1000f, q = 200f),
-                ),
-            )
-            else -> NotchConfig(enabled = false)
-        }
-    }
 }
 

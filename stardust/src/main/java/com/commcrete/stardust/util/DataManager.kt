@@ -316,7 +316,6 @@ object DataManager : StardustAPI, PttInterface{
         requireFileLocation(fileLocation)
         UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
         GroupsUtils.resetGroupIds(context)
-        PttAudioProcessor.loadProfiles(DataManager.context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {

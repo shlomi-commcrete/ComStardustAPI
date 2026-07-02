@@ -46,7 +46,7 @@ data class RnNoiseConfig(
      * output is used as-is. Set to e.g. `-6f` if RNNoise sounds hollow
      * on quiet voice content.
      */
-    val maxAttenuationDb: Float = Float.NEGATIVE_INFINITY,
+    val maxAttenuationDb: Float = -20f,
 ) {
     /**
      * Linear floor derived from [maxAttenuationDb]. `0.0` if no floor is
@@ -64,14 +64,4 @@ data class RnNoiseConfig(
         return "rnnoise($floorTxt)"
     }
 
-    companion object {
-        fun getDefault(deviceType: RecordingDeviceType): RnNoiseConfig? = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL -> null // digital USB audio — no broadband noise to remove
-            RecordingDeviceType.JBOX_EXTERNAL -> RnNoiseConfig(
-                enabled = true,
-                maxAttenuationDb = Float.NEGATIVE_INFINITY,
-            )
-            else -> null
-        }
-    }
 }

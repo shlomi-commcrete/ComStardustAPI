@@ -145,7 +145,6 @@ object AudioTestFeeder {
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         sources: List<Source>,
-        profile: RecorderProfile? = null,
         realtimePacing: Boolean = true,
         outputDir: File? = null,
         destinationId: String? = null,
@@ -182,8 +181,6 @@ object AudioTestFeeder {
             val debugWriters = if (savePerFilterStage)
                 LinkedHashMap<String, com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter>()
             else null
-            // Capture rate from the profile for debug WAV headers.
-            val debugSampleRate = profile?.captureRate?.hz ?: 48_000
 
             try {
                 sources.forEachIndexed { idx, src ->
@@ -196,13 +193,13 @@ object AudioTestFeeder {
                         debugWriters?.values?.forEach { runCatching { it.stop() } }
                         debugWriters?.clear()
 
-                        PttAudioProcessor.onFilterStepDebug = { stepIdx, filterName, snapshot ->
+                        PttAudioProcessor.onFilterStepDebug = { sampleRate, stepIdx, filterName, snapshot ->
                             val key = "%02d-%s".format(stepIdx, filterName)
                             val writer = debugWriters!!.getOrPut(key) {
                                 com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
                                     start(
                                         context = context,
-                                        sampleRate = debugSampleRate,
+                                        sampleRate = sampleRate,
                                         channels = 1,
                                         bitsPerSample = 16,
                                         fileNamePrefix = "${src.label}-$key",
@@ -255,7 +252,6 @@ object AudioTestFeeder {
                         codec2Pipeline = codec2Pipeline,
                         realtimePacing = realtimePacing,
                         artifactDir = effectiveOutputDir,
-                        profile = profile,
                         onStats = { lastRunStats[src.label] = it },
                     )
 
@@ -401,11 +397,9 @@ object AudioTestFeeder {
     /** Convenience: feed a list of file paths without building [Source] manually. */
     fun feedFiles(
         context: Context,
-        destination: String,
         carrier: Carrier?,
         codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
         files: List<File>,
-        profile: RecorderProfile? = null,
         realtimePacing: Boolean = true,
         outputDir: File? = null,
         destinationId: String? = null,
@@ -415,7 +409,6 @@ object AudioTestFeeder {
         carrier = carrier,
         codeType = codeType,
         sources = files.map { Source(it) },
-        profile = profile,
         realtimePacing = realtimePacing,
         outputDir = outputDir,
         destinationId = destinationId,

@@ -1,9 +1,7 @@
 package com.commcrete.stardust.util.audio
 
-import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
-import com.commcrete.stardust.util.SharedPreferencesUtil
 import timber.log.Timber
 
 /**
@@ -79,447 +77,9 @@ object PttAudioProcessor {
     /** Sample rate the currently-built chain runs at. `-1` = no chain yet. */
     @Volatile private var currentFilterRate: Int = -1
 
-    /** Profile the currently-built chain was built for. */
-    @Volatile private var currentFilterKey: RecorderProfile? = null
 
     @Volatile private var filtersBuilt: Boolean = false
 
-    // ── Diagnostic logging dedupe (per flow / encoder type) ───────────────
-
-    private val lastLoggedFilterSignatureByFlow: MutableMap<String, String> = mutableMapOf()
-    private val lastLoggedChunkShapeByFlow: MutableMap<String, String> = mutableMapOf()
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Per-device-type DSP profile registry
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Per-(device, codec) DSP profile presets keyed by [ProfileKey].
-     * Each key can have multiple presets (user-selectable); exactly one
-     * is `isActive = true` at a time. The active profile is resolved at
-     * recording time via [resolveActiveProfile].
-     *
-     * Seeded lazily with [getDefaultProfile] on first access per key.
-     * Persisted overrides loaded via [loadProfiles] (called from
-     * `RecorderUtils.init`).
-     */
-    private val profileMap: MutableMap<ProfileKey, List<RecorderProfile>> = mutableMapOf()
-
-    /**
-     * Build the built-in default DSP preset for the given device +
-     * codec combination. Each codec type gets filter configs optimized
-     * for its encoder:
-     *
-     *  - **AI**: capture at 48 kHz (RNNoise/spectral-sub at full bandwidth),
-     *    resample to 24 kHz. Notch for 48 kHz tones.
-     *  - **Codec2**: capture at 8 kHz (hardware decimation), no resample.
-     *    Minimal filters — notch for 8 kHz-mode tones only.
-     */
-    /**
-     * Build all three [RecordingEnvironmentPreset] profiles for the given
-     * device + codec combination. Each preset escalates noise reduction
-     * aggressiveness while keeping the signal path minimal.
-     */
-    fun getDefaultProfiles(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE,
-    ): List<RecorderProfile> = RecordingEnvironmentPreset.entries.map { preset ->
-        getDefaultProfile(deviceType, codeType, preset)
-    }
-
-    /**
-     * Build one default profile for the given device + codec + preset.
-     */
-    fun getDefaultProfile(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
-        preset: RecordingEnvironmentPreset = RecordingEnvironmentPreset.DEFAULT,
-    ): RecorderProfile = when (deviceType) {
-
-        // ════════════════════════════════════════════════════════════════
-        // JBOX_INTERNAL — digital USB audio from PCM2900.
-        // Noise: clicks + device tones. NO broadband noise.
-        // RNNoise harmful. Use surgical filters only.
-        // AI: capture 24kHz (close to encoder target, minimal resample).
-        // Codec2: capture 8kHz native (hardware decimation, notch 1kHz).
-        // ════════════════════════════════════════════════════════════════
-        RecordingDeviceType.JBOX_INTERNAL -> when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_32K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-
-                notch = NotchConfig(enabled = true, harmonics = listOf(
-                    NotchConfig.Harmonic(375f, 150f),
-                )),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
-            )
-            RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.CODEC2,
-                captureRate = CaptureRate.RATE_8K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                notch = NotchConfig(enabled = true, harmonics = listOf(
-                    NotchConfig.Harmonic(1000f, 200f),
-                )),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-            )
-        }
-
-        // ════════════════════════════════════════════════════════════════
-        // JBOX_EXTERNAL — digital USB audio, noisier signal.
-        // Same digital path as INTERNAL but external mic picks up more
-        // ambient noise and clicks (~76% of INTERNAL rate).
-        // Still digital — no RNNoise.
-        // AI: capture 32kHz. Codec2: capture 8kHz, notch 1kHz.
-        // ════════════════════════════════════════════════════════════════
-        RecordingDeviceType.JBOX_EXTERNAL -> when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_32K, // closest PCM2900C rate above 24kHz
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-
-                notch = NotchConfig(enabled = true, harmonics = listOf(
-                    NotchConfig.Harmonic(375f, 150f),
-                )),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
-            )
-            RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.CODEC2,
-                captureRate = CaptureRate.RATE_8K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                notch = NotchConfig(enabled = true, harmonics = listOf(
-                    NotchConfig.Harmonic(1000f, 200f),
-                )),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-            )
-        }
-
-        // ════════════════════════════════════════════════════════════════
-        // PHONE_MIC — built-in phone microphone. Analog audio.
-        // AudioSource MIC (not VOICE_RECOGNITION — dataset shows VR at
-        // 48kHz causes 78k clips vs 237 for MIC). RNNoise handles noise.
-        // ════════════════════════════════════════════════════════════════
-        RecordingDeviceType.PHONE_MIC -> when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_48K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f),
-
-                rnNoise = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
-                    RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
-                    RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
-                },
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
-            )
-            RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.CODEC2,
-                captureRate = CaptureRate.RATE_48K, // need 48kHz for RNNoise, resample to 8kHz
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f),
-
-                rnNoise = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
-                    RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
-                    RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
-                },
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 3_600f, rollOffDbPerOctave = 48f),
-            )
-        }
-
-        // ════════════════════════════════════════════════════════════════
-        // BLE_MIC — Bluetooth SCO mic (car, headset). Analog noise.
-        // VOICE_COMMUNICATION required for SCO routing.
-        // Request 48kHz for RNNoise.
-        // ════════════════════════════════════════════════════════════════
-        RecordingDeviceType.BLE_MIC -> when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_48K,
-                inputGainPercent = 100f,
-                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
-                rnNoise = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
-                    RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
-                    RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
-                },
-                rnNoiseMinRateHz = CaptureRate.RATE_48K,
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.20f, attackMs = 5f, releaseMs = 300f,
-                    maxGainDb = 15f, minGainDb = -8f, noiseGateLevel = 0.008f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
-            )
-            RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.CODEC2,
-                captureRate = CaptureRate.RATE_48K,
-                inputGainPercent = 100f,
-                audioSource = com.commcrete.stardust.AiAudioSource.VOICE_COMMUNICATION,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 150f, rollOffDbPerOctave = 24f),
-                rnNoise = when (preset) {
-                    RecordingEnvironmentPreset.DEFAULT -> RnNoiseConfig(enabled = true, maxAttenuationDb = -6f)
-                    RecordingEnvironmentPreset.NOISY -> RnNoiseConfig(enabled = true, maxAttenuationDb = -10f)
-                    RecordingEnvironmentPreset.EXTREME -> RnNoiseConfig(enabled = true, maxAttenuationDb = Float.NEGATIVE_INFINITY)
-                },
-                rnNoiseMinRateHz = CaptureRate.RATE_48K,
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.20f, attackMs = 5f, releaseMs = 300f,
-                    maxGainDb = 15f, minGainDb = -8f, noiseGateLevel = 0.008f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 3_600f, rollOffDbPerOctave = 48f),
-            )
-        }
-
-        // ════════════════════════════════════════════════════════════════
-        // OTHER — unknown device. Conservative: HPF + AGC only.
-        // ════════════════════════════════════════════════════════════════
-        RecordingDeviceType.OTHER -> when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.AI,
-                captureRate = CaptureRate.RATE_48K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-                lowPass = LowPassConfig(enabled = true, cutoffHz = 10_800f, rollOffDbPerOctave = 48f),
-            )
-            RecorderUtils.CODE_TYPE.CODEC2 -> RecorderProfile(
-                preset = preset,
-                codeType = RecorderUtils.CODE_TYPE.CODEC2,
-                captureRate = CaptureRate.RATE_8K,
-                audioSource = com.commcrete.stardust.AiAudioSource.MIC,
-                inputGainPercent = 100f,
-                highPass = HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f),
-                agc = AGCConfig(
-                    enabled = true, targetLevel = 0.18f, attackMs = 5f, releaseMs = 400f,
-                    maxGainDb = 12f, minGainDb = -8f, noiseGateLevel = 0.004f,
-                ),
-            )
-        }
-    }
-
-    /** @deprecated Use [getDefaultProfile] with explicit codeType. */
-    @Deprecated("Use getDefaultProfile(deviceType, codeType)",
-        replaceWith = ReplaceWith("getDefaultProfile(recordingDeviceType)"))
-    fun getAiRecorderDefaultProfilePreset(recordingDeviceType: RecordingDeviceType): RecorderProfile =
-        getDefaultProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
-
-    /** All presets registered for the given key, or null if none. */
-    fun getProfiles(key: ProfileKey): List<RecorderProfile>? =
-        profileMap[key]
-
-    /** All presets for a device + codec combination. */
-    fun getProfiles(deviceType: RecordingDeviceType, codeType: RecorderUtils.CODE_TYPE): List<RecorderProfile>? =
-        profileMap[ProfileKey(deviceType, codeType)]
-
-    /** @deprecated Use [getProfiles] with explicit codeType. */
-    @Deprecated("Use getProfiles(deviceType, codeType)",
-        replaceWith = ReplaceWith("getProfiles(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)"))
-    fun getAiRecorderProfiles(recordingDeviceType: RecordingDeviceType): List<RecorderProfile>? =
-        getProfiles(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
-
-    /**
-     * The profile matching the active [RecordingEnvironmentPreset] from
-     * SharedPreferences, or `null` if the preset is `null` (all
-     * profiles disabled — no filters applied).
-     */
-    fun getActiveProfile(key: ProfileKey): RecorderProfile? {
-        val activePreset = SharedPreferencesUtil.getActiveRecordingEnvironmentPreset(
-            com.commcrete.stardust.util.DataManager.context
-        ) ?: return null
-        return profileMap[key]?.firstOrNull { it.preset == activePreset }
-    }
-
-    /** The active profile for a device + codec combination. */
-    fun getActiveProfile(deviceType: RecordingDeviceType, codeType: RecorderUtils.CODE_TYPE): RecorderProfile? =
-        getActiveProfile(ProfileKey(deviceType, codeType))
-
-    /** @deprecated Use [getActiveProfile] with explicit codeType. */
-    @Deprecated("Use getActiveProfile(deviceType, codeType)",
-        replaceWith = ReplaceWith("getActiveProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)"))
-    fun getAiActiveRecorderProfile(recordingDeviceType: RecordingDeviceType): RecorderProfile? =
-        getActiveProfile(recordingDeviceType, RecorderUtils.CODE_TYPE.AI)
-
-    /**
-     * Update (or add) the full preset list for [key] and persist.
-     */
-    fun setProfiles(
-        context: Context,
-        key: ProfileKey,
-        profiles: List<RecorderProfile>,
-    ) {
-        profileMap[key] = profiles
-        persistAllProfiles(context)
-    }
-
-    /** @deprecated Use [setProfiles] with a [ProfileKey]. */
-    @Deprecated("Use setProfiles(context, ProfileKey, profiles)")
-    fun setAiRecorderProfiles(
-        context: Context,
-        recordingDeviceType: RecordingDeviceType,
-        profiles: List<RecorderProfile>,
-    ) {
-        setProfiles(context, ProfileKey(recordingDeviceType, RecorderUtils.CODE_TYPE.AI), profiles)
-    }
-
-    /**
-     * Convenience: update a single preset at [presetIndex] (or append as
-     * a new preset when [presetIndex] is past the end) and persist.
-     */
-    fun setProfile(
-        context: Context,
-        key: ProfileKey,
-        profile: RecorderProfile,
-        presetIndex: Int = 0,
-    ) {
-        val profiles = profileMap[key]?.toMutableList() ?: mutableListOf()
-        if (presetIndex < profiles.size) {
-            profiles[presetIndex] = profile
-        } else {
-            profiles.add(profile)
-        }
-        setProfiles(context, key, profiles)
-    }
-
-    /** @deprecated Use [setProfile] with a [ProfileKey]. */
-    @Deprecated("Use setProfile(context, ProfileKey, profile, presetIndex)")
-    fun setAiRecorderProfile(
-        context: Context,
-        recordingDeviceType: RecordingDeviceType,
-        profile: RecorderProfile,
-        presetIndex: Int = 0,
-    ) {
-        setProfile(
-            context,
-            ProfileKey(recordingDeviceType, profile.codeType),
-            profile,
-            presetIndex,
-        )
-    }
-
-    /**
-     * Overlay persisted profiles onto the in-memory defaults. Call once
-     * during SDK init (from `RecorderUtils.init`) so any saved overrides
-     * are picked up. Keys with no saved entry keep their built-in
-     * defaults seeded lazily by [resolveActiveProfile].
-     *
-     * Backward-compatible: old SharedPreferences entries keyed by device
-     * type alone (no codec type) are imported as AI profiles.
-     */
-    fun loadProfiles(context: Context) {
-        val saved = SharedPreferencesUtil.getRecorderProfiles(context)
-        saved.forEach { (key, profile) ->
-            profileMap[key] = listOf(profile)
-        }
-    }
-
-    /**
-     * Active preset for [deviceType] + [codeType] — picked up by
-     * [process] internally. Returns `null` when:
-     *  - The active [RecordingEnvironmentPreset] in SharedPreferences is `null`
-     *    (user disabled all profiles → no filters).
-     *  - No profile with the matching preset is registered for the key.
-     *
-     * `null` tells [process] to skip all filters and only resample.
-     */
-    fun resolveActiveProfile(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
-    ): RecorderProfile? {
-        val activePreset = SharedPreferencesUtil.getActiveRecordingEnvironmentPreset(
-            com.commcrete.stardust.util.DataManager.context
-        ) ?: return null
-        val key = ProfileKey(deviceType, codeType)
-        return profileMap[key]?.firstOrNull { it.preset == activePreset }
-    }
-
-    /**
-     * Resolve the audio source (Android `MediaRecorder.AudioSource` int)
-     * for a recording session. Checks the active profile first; if the
-     * profile doesn't specify an audio source, returns `null` so the
-     * caller can fall back to the legacy SharedPreferences setting.
-     */
-    fun resolveAudioSource(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE,
-    ): Int? = resolveActiveProfile(deviceType, codeType)?.resolveAudioSourceInt()
-
-    /**
-     * Resolve the requested capture sample rate from the active profile.
-     * Returns `null` if no profile is registered, so the caller can fall
-     * back to the recorder's default rate.
-     */
-    fun resolveRequestedSampleRate(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE,
-    ): Int? = resolveActiveProfile(deviceType, codeType)?.captureRate?.hz
-
-    /**
-     * Resolve the input gain (linear multiplier) from the active profile.
-     * Returns `null` if no profile is registered or the profile doesn't
-     * specify a gain, so the caller can fall back to the legacy
-     * SharedPreferences setting.
-     */
-    fun resolveInputGain(
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE,
-    ): Float? = resolveActiveProfile(deviceType, codeType)
-        ?.inputGainPercent
-        ?.let { it / 100f }
-
-    /** Persist the full profileMap to SharedPreferences. */
-    private fun persistAllProfiles(context: Context) {
-        val flat = profileMap.flatMap { (key, profs) ->
-            profs.map { key to it }
-        }.toMap()
-        SharedPreferencesUtil.setRecorderProfiles(context, flat)
-    }
 
     // ──────────────────────────────────────────────────────────────────────
     // Public API
@@ -567,20 +127,12 @@ object PttAudioProcessor {
         pcmArray: ShortArray,
         nativeRate: Int,
         targetRate: Int,
-        profile: RecorderProfile?,
-        flowKey: String = DEFAULT_FLOW_KEY,
-        chunkIndex: Int = 0,
-        chunkDurationMs: Int? = null,
+        enableNoiseCancellation: Boolean
     ): ShortArray {
-        logFilterSignature(flowKey, chunkIndex, profile)
-        logChunkShape(flowKey, chunkIndex, pcmArray.size, nativeRate, chunkDurationMs)
 
-        // profile is non-null only when resolveActiveProfile found a
-        // matching preset in SharedPreferences. null = no filters.
-        val shouldFilter = profile != null
-        val filtered: ShortArray = if (shouldFilter) {
+        val filtered: ShortArray = if (enableNoiseCancellation) {
             val mutable = pcmArray.copyOf()
-            applyFilterChain(mutable, nativeRate, profile!!)
+            applyFilterChain(mutable, nativeRate, RecorderFiltersProfile(rnNoise = RnNoiseConfig(enabled = true, maxAttenuationDb = -20f)))
             mutable
         } else {
             pcmArray
@@ -591,35 +143,6 @@ object PttAudioProcessor {
             filtered
         }
     }
-
-    /**
-     * Device-aware overload of [process]: resolves the active DSP profile
-     * for [deviceType] + [codeType] internally via [resolveActiveProfile],
-     * then forwards to the main [process] entry point.
-     *
-     * Use this from recording paths that already infer the device route
-     * (e.g. `RecorderUtils.preprocessChunkForEncoding`) so neither the
-     * profile registry nor the resolve step has to leak outside this
-     * processor.
-     */
-    fun process(
-        pcmArray: ShortArray,
-        nativeRate: Int,
-        targetRate: Int,
-        deviceType: RecordingDeviceType,
-        codeType: RecorderUtils.CODE_TYPE = RecorderUtils.CODE_TYPE.AI,
-        flowKey: String = DEFAULT_FLOW_KEY,
-        chunkIndex: Int = 0,
-        chunkDurationMs: Int? = null,
-    ): ShortArray = process(
-        pcmArray = pcmArray,
-        nativeRate = nativeRate,
-        targetRate = targetRate,
-        profile = resolveActiveProfile(deviceType, codeType),
-        flowKey = flowKey,
-        chunkIndex = chunkIndex,
-        chunkDurationMs = chunkDurationMs,
-    )
 
     /**
      * Tear down the filter chain so the next [process] call rebuilds it
@@ -649,10 +172,7 @@ object PttAudioProcessor {
         filterAiGain = 1f
         filterAiGainSoftSat = false
         currentFilterRate = -1
-        currentFilterKey = null
         filtersBuilt = false
-        lastLoggedFilterSignatureByFlow.clear()
-        lastLoggedChunkShapeByFlow.clear()
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -665,23 +185,23 @@ object PttAudioProcessor {
      * per-filter WAV artifacts; `null` during live recording (zero
      * overhead — the snapshot copy is skipped entirely).
      *
-     * Callback signature: `(stepIndex: Int, filterName: String, chunk: ShortArray) -> Unit`
+     * Callback signature: `(sampleRate: Int, stepIndex: Int, filterName: String, chunk: ShortArray) -> Unit`
      */
     @Volatile
-    var onFilterStepDebug: ((Int, String, ShortArray) -> Unit)? = null
+    var onFilterStepDebug: ((Int, Int, String, ShortArray) -> Unit)? = null
 
     /**
      * Run the full DSP chain on [chunk] in place. Synchronized on `this`
      * so [reset] (called from the restart thread) cannot destroy native
      * filter state while the audio thread is mid-chunk.
      */
-    private fun applyFilterChain(chunk: ShortArray, sampleRate: Int, profile: RecorderProfile) = synchronized(this) {
+    private fun applyFilterChain(chunk: ShortArray, sampleRate: Int, profile: RecorderFiltersProfile) = synchronized(this) {
         ensureFiltersBuilt(sampleRate, profile)
         val dbg = onFilterStepDebug
         var step = 0
 
         fun debugSnapshot(name: String) {
-            dbg?.invoke(step++, name, chunk.copyOf())
+            dbg?.invoke(sampleRate, step++, name, chunk.copyOf())
         }
 
         // ── Signal path order ───────────────────────────────────────
@@ -741,24 +261,16 @@ object PttAudioProcessor {
         }
     }
 
-    private fun ensureFiltersBuilt(sampleRate: Int, profile: RecorderProfile) {
-        if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
+    private fun ensureFiltersBuilt(sampleRate: Int, profile: RecorderFiltersProfile) {
+        if (filtersBuilt && currentFilterRate == sampleRate) return
         synchronized(this) {
-            if (filtersBuilt && currentFilterRate == sampleRate && currentFilterKey == profile) return
+            if (filtersBuilt && currentFilterRate == sampleRate) return
             if (filtersBuilt) {
-                Log.i(
-                    TAG,
-                    "Filter chain changed (rate=${currentFilterRate}Hz→${sampleRate}Hz / profile=${currentFilterKey?.preset}→${profile.preset}) — rebuilding",
-                )
                 releaseFiltersInternal()
             }
             currentFilterRate = sampleRate
-            currentFilterKey = profile
 
-            val rnNoiseUsable = profile.rnNoise?.takeIf { it.enabled }
-                ?.takeIf { profile.rnNoiseMinRateHz.hz <= 0 || sampleRate >= profile.rnNoiseMinRateHz.hz }
-
-            val rn: RnNoiseConfig? = rnNoiseUsable
+            val rn: RnNoiseConfig? = profile.rnNoise?.takeIf { it.enabled }
             val dp: DynamicsConfig? = profile.dynamics?.takeIf { it.enabled }
             val lp: LowPassConfig? = profile.lowPass?.takeIf { it.enabled }
             val hp: HighPassConfig? = profile.highPass?.takeIf { it.enabled }
@@ -824,7 +336,6 @@ object PttAudioProcessor {
         filterAiGain = 1f
         filterAiGainSoftSat = false
         currentFilterRate = -1
-        currentFilterKey = null
         filtersBuilt = false
     }
 
@@ -893,68 +404,5 @@ object PttAudioProcessor {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Diagnostic logging
-    // ──────────────────────────────────────────────────────────────────────
-
-    private fun logFilterSignature(flowKey: String, chunkIndex: Int, profile: RecorderProfile?) {
-        val signature = buildFilterSignature(profile)
-        val previous = lastLoggedFilterSignatureByFlow[flowKey]
-        if (chunkIndex == 0 || previous != signature) {
-            Log.d(TAG, "$flowKey filter preset for chunk=$chunkIndex -> $signature")
-            lastLoggedFilterSignatureByFlow[flowKey] = signature
-        }
-    }
-
-    private fun logChunkShape(
-        flowKey: String,
-        chunkIndex: Int,
-        actualSize: Int,
-        nativeRate: Int,
-        chunkDurationMs: Int?,
-    ) {
-        val expectedSamples = chunkDurationMs?.let { (nativeRate * it) / 1000 }
-        val shape = if (expectedSamples != null) {
-            "rate=${nativeRate}Hz size=$actualSize expected=$expectedSamples"
-        } else {
-            "rate=${nativeRate}Hz size=$actualSize"
-        }
-        val previous = lastLoggedChunkShapeByFlow[flowKey]
-        val mismatch = expectedSamples != null && actualSize != expectedSamples
-        if (chunkIndex <= 1 || previous != shape || mismatch) {
-            val message = "$flowKey chunk shape chunk=$chunkIndex -> $shape"
-            if (mismatch) Timber.w(message) else Timber.d(message)
-            lastLoggedChunkShapeByFlow[flowKey] = shape
-        }
-    }
-
-    private fun buildFilterSignature(profile: RecorderProfile?): String {
-        if (profile == null) return "preset=<none>; filters=[] (no active preset — DSP bypassed)"
-        val enabledFilters = mutableListOf<String>()
-        profile.highPass?.takeIf { it.enabled }?.let {
-            enabledFilters.add("highPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
-        }
-        profile.lowPass?.takeIf { it.enabled }?.let {
-            enabledFilters.add("lowPass(cutoff=${it.cutoffHz}, rollOff=${it.rollOffDbPerOctave})")
-        }
-        profile.notch?.takeIf { it.enabled }?.let {
-            val adaptiveTag = if (it.adaptive != null) "+adaptive" else ""
-            enabledFilters.add("notch(harmonics=${it.harmonics?.size ?: 0}$adaptiveTag)")
-        }
-        profile.rnNoise?.takeIf { it.enabled }?.let {
-            enabledFilters.add("rnNoise(maxAttenDb=${it.maxAttenuationDb})")
-        }
-        profile.agc?.takeIf { it.enabled }?.let {
-            enabledFilters.add(
-                "agc(target=${it.targetLevel}, atk=${it.attackMs}, rel=${it.releaseMs}, +${it.maxGainDb}/${it.minGainDb}, gate=${it.noiseGateLevel})"
-            )
-        }
-        profile.dynamics?.takeIf { it.enabled }?.let {
-            enabledFilters.add(
-                "dynamics(in=${it.inputGainDb}, b0Gate=${it.band0.noiseGateDb}, b1Gate=${it.band1.noiseGateDb}, b2Gate=${it.band2.noiseGateDb}, lim=${it.limiter.thresholdDb})"
-            )
-        }
-        return "preset=${profile.preset}; active=true; filters=[${enabledFilters.joinToString()}]"
-    }
 }
 

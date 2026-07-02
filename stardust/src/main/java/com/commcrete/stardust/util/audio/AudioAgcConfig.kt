@@ -34,20 +34,5 @@ data class AGCConfig(
             targetLevel, attackMs, releaseMs, maxGainDb, minGainDb, noiseGateLevel
         )
 
-    companion object {
-        fun getDefault(deviceType: RecordingDeviceType): AGCConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_INTERNAL,
-            RecordingDeviceType.PHONE_MIC -> AGCConfig(
-                enabled = true,
-                targetLevel = 0.18f,
-                attackMs = 5f,
-                releaseMs = 400f,
-                maxGainDb = 12f,
-                minGainDb = -8f,
-                noiseGateLevel = 0.004f,
-            )
-            else -> AGCConfig(enabled = false)
-        }
-    }
 }
 

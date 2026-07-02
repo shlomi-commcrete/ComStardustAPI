@@ -3,20 +3,18 @@ package com.commcrete.stardust.util.audio
 import android.annotation.SuppressLint
 import android.Manifest.permission.RECORD_AUDIO
 import android.content.Context
-import android.media.AudioDeviceInfo
 import android.os.Environment
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ai.codec.PttSession
-import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.Carrier
-import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.ai.codec.AudioRecorderAI
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.ustadmobile.codec2.Codec2
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -113,29 +111,14 @@ object RecorderUtils {
     }
 
     private fun setupAIRecorder(file: File, destination: String, carrier: Carrier?) {
-        // Begin a new isolated session. This session owns its own queue,
-        // frame buffer and target file — a previous session that hasn't
-        // finished encoding/saving yet keeps running independently and
-        // will not be corrupted by this one. Capture the handle so the
-        // delayed finishAIRecording finalizes THIS session, even if the
-        // user starts another recording before the 3 s grace expires.
-        //
-        // The `onMaxTimeoutReached` lambda mirrors what
-        // [AudioRecorderCodec2.onPipelinePacketSent] does inline: when
-        // the session crosses [SharedPreferencesUtil.getPTTTimeout],
-        // PttSendManager has already fired the SDK / viewModel
-        // callbacks; we just need to stop the recorder itself, which
-        // PttSendManager can't reach because it lives here. Calling
-        // `aiRecorder?.stop()` cancels the capture coroutine, which
-        // fires `onStateChanged(false)` → `finishAIRecording(...)` →
-        // [PttSendManager.finish] downstream so the session finalizes
-        // cleanly.
         val session = PttSendManager.restart(
             onMaxTimeoutReached = {
                 Log.d(LOG_TAG, "AI session: max PTT timeout reached — stopping recorder")
                 aiRecorder?.stop()
             }
         )
+
+        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState(DataManager.context)
 
         aiRecorder = AudioRecorderAI(
             context = DataManager.context,
@@ -145,23 +128,21 @@ object RecorderUtils {
             onChunkReady = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
                 forwardAiChunk(
                     pcmArray = pcmArray,
-                    chunkIndex = chunkIndex,
                     captureRate = captureRate,
-                    deviceType = deviceType,
                     file = file,
                     carrier = carrier,
                     destination = destination,
+                    enableNoiseCancellation = enableNoiseCancellation
                 )
             }
             onPartialFinalChunk = { pcmArray, chunkIndex, captureRate, deviceType: Int? ->
                 forwardAiChunk(
                     pcmArray = pcmArray,
-                    chunkIndex = chunkIndex,
                     captureRate = captureRate,
-                    deviceType = deviceType,
                     file = file,
                     carrier = carrier,
                     destination = destination,
+                    enableNoiseCancellation = enableNoiseCancellation
                 )
             }
             onError = { throwable ->
@@ -180,20 +161,17 @@ object RecorderUtils {
 
     private fun forwardAiChunk(
         pcmArray: ShortArray,
-        chunkIndex: Int,
         captureRate: Int,
-        deviceType: Int?,
         file: File,
         carrier: Carrier?,
         destination: String,
+        enableNoiseCancellation: Boolean
     ) {
         val prepared = preprocessChunkForEncoding(
             pcmArray = pcmArray,
             nativeRate = captureRate,
-            actualInputType = deviceType,
-            chunkIndex = chunkIndex,
             encodingType = CODE_TYPE.AI,
-            chunkDurationMs = 500,
+            enableNoiseCancellation = enableNoiseCancellation
         )
         PttSendManager.addNewFrame(
             pcmArray = prepared,
@@ -204,7 +182,7 @@ object RecorderUtils {
     }
 
     /**
-     * Resolve the current input route to a [RecordingDeviceType] and
+     * Resolve the current input route to a [RecordingProfileType] and
      * delegate the actual filtering + resampling to [PttAudioProcessor].
      *
      * Both encoder paths (AI / CODEC2) come through here so they share
@@ -216,12 +194,9 @@ object RecorderUtils {
     fun preprocessChunkForEncoding(
         pcmArray: ShortArray,
         nativeRate: Int,
-        actualInputType: Int?,
-        chunkIndex: Int,
         encodingType: CODE_TYPE,
-        chunkDurationMs: Int? = null,
+        enableNoiseCancellation: Boolean
     ): ShortArray {
-        val recordingDeviceType = inferDeviceType(actualInputType)
         val targetRate = when (encodingType) {
             CODE_TYPE.AI -> PttAudioProcessor.AI_TARGET_SAMPLE_RATE
             CODE_TYPE.CODEC2 -> PttAudioProcessor.CODEC2_TARGET_SAMPLE_RATE
@@ -230,52 +205,12 @@ object RecorderUtils {
             pcmArray = pcmArray,
             nativeRate = nativeRate,
             targetRate = targetRate,
-            deviceType = recordingDeviceType,
-            codeType = encodingType,
-            flowKey = encodingType.name,
-            chunkIndex = chunkIndex,
-            chunkDurationMs = chunkDurationMs,
+            enableNoiseCancellation = enableNoiseCancellation
         )
     }
 
 
-    /**
-     * Infer [RecordingDeviceType] from actual route when available,
-     * then input-device preference as fallback.
-     *
-     * USB routes can represent jbox hardware; model prefixes map to:
-     * `SD-100*` -> [RecordingDeviceType.JBOX_INTERNAL]
-     * `SD-200*` -> [RecordingDeviceType.JBOX_EXTERNAL]
-     */
-    fun inferDeviceType(actualInputType: Int? = null): RecordingDeviceType {
-        val hasActualUsbRoute = actualInputType == AudioDeviceInfo.TYPE_USB_DEVICE ||
-            actualInputType == AudioDeviceInfo.TYPE_USB_HEADSET ||
-            actualInputType == AudioDeviceInfo.TYPE_USB_ACCESSORY
 
-        if(BittelUsbManager2.isJboxAudioConnected() && hasActualUsbRoute) {
-            val model = ConfigurationUtils.bittelConfiguration.value?.deviceModel
-            return when {
-                model?.startsWith("SD-100", ignoreCase = true) == true -> RecordingDeviceType.JBOX_EXTERNAL
-                model?.startsWith("SD-200", ignoreCase = true) == true -> RecordingDeviceType.JBOX_INTERNAL
-                else -> RecordingDeviceType.OTHER
-            }
-        }
-
-        // Bluetooth SCO mic (car kit, BLE headset).
-        val isBleMic = actualInputType == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-            actualInputType == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-            (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S &&
-                actualInputType == AudioDeviceInfo.TYPE_BLE_HEADSET)
-        if (isBleMic) return RecordingDeviceType.BLE_MIC
-
-        // Phone's built-in mic.
-        val isBuiltInMic = actualInputType == null ||
-            actualInputType == AudioDeviceInfo.TYPE_BUILTIN_MIC ||
-            actualInputType == AudioDeviceInfo.TYPE_UNKNOWN
-        if (isBuiltInMic) return RecordingDeviceType.PHONE_MIC
-
-        return RecordingDeviceType.OTHER
-    }
 
     // ----------------------------------------
     // Stop Recording

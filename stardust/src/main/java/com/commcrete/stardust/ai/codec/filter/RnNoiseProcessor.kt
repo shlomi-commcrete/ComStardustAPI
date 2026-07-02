@@ -1,54 +1,9 @@
 package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
-import com.commcrete.stardust.ai.codec.filter.NoiseProcessor
 import com.commcrete.stardust.util.audio.AudioDsp
-import com.commcrete.stardust.util.audio.CaptureRate
 import java.lang.reflect.Method
 
-/**
- * RNNoise-based [NoiseProcessor] adapter.
- *
- * RNNoise (xiph) operates on **480-sample int16 frames at 48 kHz mono**.
- * This adapter:
- *  - upsamples the recorder's PCM to 48 kHz (linear; cheap 1:2 when sampleRate=24000)
- *  - accumulates 480-sample frames and feeds them to the native denoiser
- *  - downsamples cleaned audio back to the original sample rate
- *  - keeps a residual queue for the partial frame at the end of each buffer
- *
- * ## Why reflection?
- * Multiple Android RNNoise wrappers exist with slightly different package /
- * method names. To avoid pinning :stardust to one specific artifact, this
- * adapter discovers the native API at runtime. If no wrapper is on the
- * classpath, it transparently falls back to pass-through — recording is
- * never broken by a denoiser issue.
- *
- * ## How to enable real denoising
- * Add ONE of these to `stardust/build.gradle.kts`:
- * ```
- * // JitPack wrapper (drop-in, no NDK setup):
- * implementation("com.github.theeasiestway:android-rnnoise:1.0.4")
- * // …or your own JNI shim around xiph/rnnoise (place .so under jniLibs/<abi>/)
- * ```
- *
- * ## Custom integration
- * If your wrapper class/methods aren't auto-discovered, set the override
- * fields before [init]:
- * ```
- * val np = RnNoiseProcessor().apply {
- *     classNameOverride   = "my.pkg.MyRnNoise"
- *     processMethodOverride = "denoise"
- * }
- * ```
- *
- * Auto-discovery candidates:
- *  - class:   `com.theeasiestway.rnnoise.Rnnoise`,
- *             `com.commcrete.rnnoise.RnNoise`,
- *             `org.xiph.rnnoise.RNNoise`
- *  - init:    `initialize` | `init` (optional)
- *  - process: `processFrame(short[]) : short[]` | `process` | `denoise`
- *  - release: `deinitialize` | `release` | `destroy` | `deInit` (optional)
- */
 class RnNoiseProcessor : NoiseProcessor {
 
     companion object {

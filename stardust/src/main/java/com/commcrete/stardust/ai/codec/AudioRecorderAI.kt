@@ -10,7 +10,6 @@ import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.AudioCaptureConfig
 import com.commcrete.stardust.util.audio.PttAudioProcessor
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.util.audio.RecordingDeviceType
 import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
 import kotlinx.coroutines.*
@@ -129,36 +128,13 @@ class AudioRecorderAI(
     private suspend fun recordLoop() = withContext(Dispatchers.IO) {
         Log.d("AudioRecorder", "recordLoop")
 
-        // Resolve actual device type BEFORE creating AudioRecord so we use
-        // the correct profile for capture rate, gain, and audio source.
-        // inferDeviceType(null) checks USB/BLE connection state; the
-        // AudioRecord route refines it after creation.
-        val inferredDevice = RecorderUtils.inferDeviceType()
-
         // Input gain: profile setting takes precedence, then SharedPreferences.
-        val gain = PttAudioProcessor.resolveInputGain(
-            inferredDevice,
-            RecorderUtils.CODE_TYPE.AI,
-        ) ?: (SharedPreferencesUtil.getAIGain(context) / 100f)
+        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
 
-        // Capture rate: profile setting takes precedence, then the
-        // recorder's default (24 kHz). PHONE_MIC needs 48 kHz for RNNoise;
-        // JBOX needs 32 kHz (closest PCM2900C rate above 24 kHz).
-        val profileCaptureRate = PttAudioProcessor.resolveRequestedSampleRate(
-            inferredDevice,
-            RecorderUtils.CODE_TYPE.AI,
-        ) ?: sampleRate
-
-        // Audio source: profile setting takes precedence, then SharedPreferences.
-        val profileAudioSource = PttAudioProcessor.resolveAudioSource(
-            inferredDevice,
-            RecorderUtils.CODE_TYPE.AI,
-        )
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
             context = context,
-            requestedRate = profileCaptureRate,
-            defaultAudioSource = profileAudioSource
-                ?: SharedPreferencesUtil.getAIAudioSource(context),
+            requestedRate = sampleRate,
+            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource(context)
         )
         val captureRate = capturePlan.captureRate
         val audioSource = capturePlan.audioSource

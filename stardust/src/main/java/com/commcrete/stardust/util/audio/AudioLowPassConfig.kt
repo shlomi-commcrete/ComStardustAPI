@@ -23,7 +23,7 @@ package com.commcrete.stardust.util.audio
  * above the voice band. 24 dB/octave is gentle enough that consonant
  * transients don't ring or pre-echo.
  *
- * The no-arg constructor is equivalent to [voiceBand].
+ *
  */
 data class LowPassConfig(
     val enabled: Boolean = true,
@@ -37,10 +37,5 @@ data class LowPassConfig(
         else "%.0fHz @ %.0fdB/oct".format(cutoffHz, rollOffDbPerOctave)
             .replace(',', '.')
 
-    companion object {
-        fun voiceBand() = LowPassConfig()
-
-        fun getDefault(deviceType: RecordingDeviceType): LowPassConfig = LowPassConfig(enabled = false)
-    }
 }
 

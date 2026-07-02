@@ -33,37 +33,6 @@ data class HighPassConfig(
         else "%.0fHz @ %.0fdB/oct".format(cutoffHz, rollOffDbPerOctave)
             .replace(',', '.')
 
-    companion object {
-        /**
-         * Standard rumble killer — 80 Hz / 24 dB/oct. Equivalent to the
-         * no-arg [HighPassConfig] constructor; named for intent.
-         * Removes HVAC, traffic, table thump, mic stand vibration while
-         * preserving every voice fundamental.
-         */
-        @Suppress("unused")
-        fun rumbleKill() = HighPassConfig()
 
-        /**
-         * Tighter telephony-style HP at 150 Hz. Use when capture
-         * environment has very loud low-frequency content (vehicle
-         * cabin, near A/C unit) AND only male voices won't be present.
-         * Female voice fundamentals start to thin out near this cutoff.
-         */
-        @Suppress("unused")
-        fun telephony() = HighPassConfig(cutoffHz = 150f, rollOffDbPerOctave = 24f)
-
-        /**
-         * Per-device default. JBOX captures via USB UART tend to pick up
-         * board-level low-frequency noise; phone built-in mics are
-         * cleaner at the bottom but also benefit from a gentle HP. The
-         * preset is on for both with the same conservative 80 Hz / 24
-         * dB/oct setting; tighten via [telephony] for hostile rooms.
-         */
-        fun getDefault(deviceType: RecordingDeviceType): HighPassConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> HighPassConfig(enabled = true, cutoffHz = 60f, rollOffDbPerOctave = 12f)
-            RecordingDeviceType.PHONE_MIC -> HighPassConfig(enabled = true, cutoffHz = 100f, rollOffDbPerOctave = 24f)
-            else -> HighPassConfig(enabled = true, cutoffHz = 80f, rollOffDbPerOctave = 24f)
-        }
-    }
 }
 

@@ -13,10 +13,6 @@ import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.util.audio.RecordingEnvironmentPreset
-import com.commcrete.stardust.util.audio.ProfileKey
-import com.commcrete.stardust.util.audio.RecorderProfile
-import com.commcrete.stardust.util.audio.RecordingDeviceType
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
@@ -150,17 +146,7 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-    private const val KEY_VOICE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
-    private const val KEY_AI_RECORDER_PROFILES = "ai_recorder_profiles"
-    private const val KEY_ACTIVE_ENVIRONMENT_PRESET = "active_environment_preset"
-
-    // Recorder profiles may intentionally carry special float values
-    // (e.g. RNNoise maxAttenuationDb = -Infinity), so use a Gson instance
-    // that can serialize them safely.
-    private val aiRecorderProfilesGson: Gson = GsonBuilder()
-        .serializeSpecialFloatingPointValues()
-        .create()
-
+    private const val KEY_NOISE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -176,102 +162,16 @@ object SharedPreferencesUtil {
 
 
     /**
-     * Load the per-device-type recorder DSP profiles. Keys are stored as
-     * [RecordingDeviceType.name] strings so the JSON is human-readable.
-     * Returns an empty map (callers should fall back to their own defaults)
-     * when nothing has been persisted yet.
-     */
-    /**
-     * Load recorder profiles keyed by [ProfileKey] (device type + codec type).
-     *
-     * Backward-compatible: old entries keyed by device-type name alone
-     * (e.g. `"JBOX_INTERNAL"`) are parsed via [ProfileKey.fromStorageKeyCompat]
-     * and imported as AI profiles.
-     */
-    fun getRecorderProfiles(context: Context): Map<ProfileKey, RecorderProfile> {
-        val json = getPrefs(context).getString(KEY_AI_RECORDER_PROFILES, null)
-            ?: return emptyMap()
-        return try {
-            val type = object : TypeToken<Map<String, RecorderProfile>>() {}.type
-            val raw = aiRecorderProfilesGson.fromJson<Map<String, RecorderProfile>>(json, type)
-                ?: return emptyMap()
-            raw.mapNotNull { (key, profile) ->
-                ProfileKey.fromStorageKeyCompat(key)?.let { it to profile }
-            }.toMap()
-        } catch (_: Exception) {
-            emptyMap()
-        }
-    }
-
-    /**
-     * Persist the full [profiles] map. Keys are serialized as
-     * `"DEVICE_TYPE:CODE_TYPE"` (e.g. `"JBOX_INTERNAL:AI"`).
-     */
-    fun setRecorderProfiles(
-        context: Context,
-        profiles: Map<ProfileKey, RecorderProfile>,
-    ) {
-        val serializable = profiles.map { (key, profile) ->
-            key.toStorageKey() to profile
-        }.toMap()
-        getPrefs(context).edit()
-            .putString(KEY_AI_RECORDER_PROFILES, aiRecorderProfilesGson.toJson(serializable))
-            .apply()
-    }
-
-    /** @deprecated Use [getRecorderProfiles]. */
-    @Deprecated("Use getRecorderProfiles", replaceWith = ReplaceWith("getRecorderProfiles(context)"))
-    fun getAiRecorderProfiles(context: Context): Map<RecordingDeviceType, RecorderProfile> {
-        return getRecorderProfiles(context).mapNotNull { (key, profile) ->
-            if (key.codeType == RecorderUtils.CODE_TYPE.AI) key.deviceType to profile
-            else null
-        }.toMap()
-    }
-
-    /** @deprecated Use [setRecorderProfiles]. */
-    @Deprecated("Use setRecorderProfiles")
-    fun setAiRecorderProfiles(
-        context: Context,
-        profiles: Map<RecordingDeviceType, RecorderProfile>,
-    ) {
-        val keyed = profiles.map { (type, profile) ->
-            ProfileKey(type, RecorderUtils.CODE_TYPE.AI) to profile
-        }.toMap()
-        setRecorderProfiles(context, keyed)
-    }
-
-    /**
-     * Get the active [RecordingEnvironmentPreset], or `null` if no preset is
-     * selected (all profiles disabled — no filters applied).
-     */
-    fun getActiveRecordingEnvironmentPreset(context: Context): RecordingEnvironmentPreset? {
-        val name = getPrefs(context).getString(KEY_ACTIVE_ENVIRONMENT_PRESET, null)
-            ?: return RecordingEnvironmentPreset.DEFAULT
-        if (name == "null") return null
-        return runCatching { RecordingEnvironmentPreset.valueOf(name) }.getOrNull()
-    }
-
-    /**
-     * Set the active [RecordingEnvironmentPreset]. Pass `null` to disable all
-     * profiles (no filters applied — raw audio to encoder).
-     */
-    fun setActiveRecordingEnvironmentPreset(context: Context, preset: RecordingEnvironmentPreset?) {
-        getPrefs(context).edit()
-            .putString(KEY_ACTIVE_ENVIRONMENT_PRESET, preset?.name ?: "null")
-            .apply()
-    }
-
-    /**
      * Returns whether voice cancellation (noise/voice suppression on the
      * recording pipeline) is enabled. Defaults to false when not set.
      */
     fun isVoiceCancellationEnabled(context: Context): Boolean {
-        return getPrefs(context).getBoolean(KEY_VOICE_CANCELLATION_ENABLED, false)
+        return getPrefs(context).getBoolean(KEY_NOISE_CANCELLATION_ENABLED, false)
     }
 
     /** Persists the voice cancellation toggle. */
     fun setVoiceCancellationEnabled(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_VOICE_CANCELLATION_ENABLED, enabled).apply()
+        getPrefs(context).edit().putBoolean(KEY_NOISE_CANCELLATION_ENABLED, enabled).apply()
     }
 
     fun getUserID(context: Context): String? {
@@ -460,45 +360,12 @@ object SharedPreferencesUtil {
         getPrefs(context).edit().putFloat(KEY_AI_HANDLE_GAIN, gain).apply()
     }
 
-    fun getAutoGainControl(context: Context) : Boolean{
-        return getPreferencesBoolean(context, KEY_ENABLE_AUTO_GAIN_CONTROL)
-    }
-
-    fun getNoiseSuppressor(context: Context) : Boolean {
+    fun getNoiseSuppressorEnableState(context: Context) : Boolean {
         return getPreferencesBoolean(context, KEY_ENABLE_NOISE_SUPPRESSOR)
     }
 
-    fun getAcousticEchoControl(context: Context) : Boolean {
-        return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
-    }
-
-    /**
-     * Whether to attach `android.media.audiofx.DynamicsProcessing` (multiband
-     * compressor + limiter + makeup gain) to the recording session. When
-     * enabled, this takes precedence over the platform [getAutoGainControl]
-     * since both are gain-modifying effects on the same chain.
-     *
-     * Defaults to false. Requires API 28+.
-     */
-    fun getDynamicsProcessingEnabled(context: Context): Boolean {
-        return getPreferencesBoolean(context, KEY_ENABLE_DYNAMICS_PROCESSING)
-    }
-
-    fun setDynamicsProcessingEnabled(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_ENABLE_DYNAMICS_PROCESSING, enabled).apply()
-    }
-
-    /**
-     * Make-up gain (dB) injected at the input of the DynamicsProcessing
-     * chain. Reasonable range: 0 .. +18 dB. Default +6 dB which roughly
-     * compensates for the PCM2900C's quiet analog input stage.
-     */
-    fun getDynamicsProcessingInputGainDb(context: Context): Float {
-        return getPrefs(context).getFloat(KEY_DP_INPUT_GAIN_DB, 6f)
-    }
-
-    fun setDynamicsProcessingInputGainDb(context: Context, gainDb: Float) {
-        getPrefs(context).edit().putFloat(KEY_DP_INPUT_GAIN_DB, gainDb).apply()
+    fun setNoiseSuppressorEnableState(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_ENABLE_NOISE_SUPPRESSOR, enabled).apply()
     }
 
     fun getCodecAudioSource(context: Context): Int {

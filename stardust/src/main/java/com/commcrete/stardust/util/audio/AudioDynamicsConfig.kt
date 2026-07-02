@@ -195,58 +195,5 @@ data class DynamicsConfig(
             limiter.thresholdDb, limiter.ratio,
         ).replace(',', '.')
 
-    companion object {
-        /**
-         * Voice-focus preset for **DP-only mode** (AGC disabled). This is
-         * the only preset and is equivalent to the no-arg [DynamicsConfig]
-         * constructor — it exists so callers can name the intent
-         * explicitly. Aggressive multiband downward expansion + gentle
-         * speech-band compression with heavy make-up gain so DP alone
-         * handles level control. Designed to run **after** RNNoise so it
-         * doesn't undo RNNoise's cleanup.
-         *
-         * Use when:
-         *  - You're disabling AGC for CPU / latency reasons.
-         *  - You want a more "broadcast-style" flat voice dynamic.
-         *  - The chain feeds something with its own AGC downstream
-         *    (e.g. a codec that normalizes).
-         *
-         * Do NOT pair with AGC enabled — the two compress in series and
-         * over-flatten voice.
-         */
-        @Suppress("unused")
-        fun voiceFocusDpOnlyPreset() = DynamicsConfig()
-
-        fun getDefault(deviceType: RecordingDeviceType): DynamicsConfig = when (deviceType) {
-            RecordingDeviceType.JBOX_EXTERNAL -> DynamicsConfig(
-                enabled = false,
-                inputGainDb = 2f,
-                band0 = Band.subBassVoiceFocus(),
-                band1 = Band(
-                    highEdgeHz = 4_500f,
-                    attackMs = 5f,
-                    releaseMs = 35f,
-                    ratio = 2.5f,
-                    thresholdDb = -22f,
-                    kneeWidthDb = 6f,
-                    noiseGateDb = -48f,
-                    expanderRatio = 4f,
-                    preGainDb = 0f,
-                    postGainDb = 4f,
-                ),
-                band2 = Band.highsVoiceFocus(),
-                limiter = Limiter.defaultPreset(),
-            )
-            RecordingDeviceType.JBOX_INTERNAL -> DynamicsConfig(
-                enabled = false,
-                inputGainDb = 0f,
-                band0 = Band.subBassVoiceFocus(),
-                band1 = Band.speechVoiceFocusDpOnly(),
-                band2 = Band.highsVoiceFocus(),
-                limiter = Limiter.defaultPreset(),
-            )
-            else -> DynamicsConfig(enabled = false)
-        }
-    }
 }
 

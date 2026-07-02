@@ -64,7 +64,7 @@ internal object AudioFeederEngine {
         codec2Pipeline: Codec2SendPipeline?,
         realtimePacing: Boolean,
         artifactDir: File,
-        profile: RecorderProfile?,
+        enableNoiseCancellation: Boolean = false,
         onStats: (AudioStats) -> Unit,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
@@ -146,14 +146,10 @@ internal object AudioFeederEngine {
             null
         }
 
-        // Input gain: resolve from profile the same way live recorders do.
-        // AI uses soft-clip (tanh), Codec2 uses hard-clip — matching
-        // AudioRecorderAI.processSamples / AudioRecorderCodec2 gain paths.
-        val inputGain = profile?.inputGainPercent?.let { it / 100f }
-            ?: when (codeType) {
-                RecorderUtils.CODE_TYPE.AI -> com.commcrete.stardust.util.SharedPreferencesUtil.getAIGain(context) / 100f
-                RecorderUtils.CODE_TYPE.CODEC2 -> com.commcrete.stardust.util.SharedPreferencesUtil.getCodecGain(context) / 100f
-            }
+        val inputGain = when (codeType) {
+            RecorderUtils.CODE_TYPE.AI -> com.commcrete.stardust.util.SharedPreferencesUtil.getAIGain(context)
+            RecorderUtils.CODE_TYPE.CODEC2 -> com.commcrete.stardust.util.SharedPreferencesUtil.getCodecGain(context)
+        } / 100f
 
         val emission = try {
             streamPcmAsChunks(
@@ -180,10 +176,7 @@ internal object AudioFeederEngine {
                     pcmArray = gained,
                     nativeRate = nativeRate,
                     targetRate = targetRate,
-                    profile = profile,
-                    flowKey = flowKey,
-                    chunkIndex = chunkIndex,
-                    chunkDurationMs = AudioTestFeeder.CHUNK_DURATION_MS,
+                    enableNoiseCancellation = enableNoiseCancellation,
                 )
                 if (codeType == RecorderUtils.CODE_TYPE.AI) {
                     routeChunkToAi(
