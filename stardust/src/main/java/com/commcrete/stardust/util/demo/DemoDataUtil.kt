@@ -95,6 +95,9 @@ object DemoDataUtil {
             ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChats(demoUsers.mutableUserList)
             DataManager.getMessagesRepo(DataManager.context).addMessages(demoUsers.mutableMessagesList)
             ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addAllContacts(demoUsers.mutableContactsList)
+            val HQ_NAME_REGEX = Regex("\\bHQ\\b", RegexOption.IGNORE_CASE)
+            SharedPreferencesUtil.setRSSIReportSource(DataManager.context, "${demoUsers.mutableContactsList.find { it.displayName.let(HQ_NAME_REGEX::containsMatchIn) }?.contactId ?: demoUsers.mutableContactsList.firstOrNull()?.contactId}")
+            SharedPreferencesUtil.setAlertDest(DataManager.context, "${demoUsers.mutableContactsList.find { it.isGroup }?.contactId ?: demoUsers.mutableContactsList.firstOrNull()?.contactId}")
             onFinishLoadData()
         }
     }
