@@ -14,8 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.lifecycle.Observer
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.AckSystem
 import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -315,7 +313,7 @@ internal class ClientConnection(
                         // Handle the RSSI value
                         Scopes.getMainCoroutine().launch {
                             com.commcrete.stardust.ble.BleManager.rssi.value = rssi
-                            DataManager.getCallbacks()?.onRSSIChanged(rssi)
+                            DataManager.getCallbacks()?.onDeviceConnectionRSSIChanged(rssi)
                         }
                     }
                 }

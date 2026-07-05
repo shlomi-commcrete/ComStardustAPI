@@ -7,7 +7,7 @@ data class StardustAppEventPackage(
     var preset: Int? = null,
     var armDelete: Int = 0,
     var senderID: String = "",
-    var rssi: Int = 0,
+    var deviceConnectionRssi: Int = 0,
     var signalRssi: Int = 0,
     var snr: Int = 0
 ) {
@@ -34,9 +34,4 @@ data class StardustAppEventPackage(
         return preset?.let { StardustConfigurationParser.CurrentPreset.fromValue(it) }
     }
 
-    data class RSSIPackage (
-        var rssi : Int = 0,
-        var snr : Int = 0,
-        var signalRssi : Int = 0
-    )
 }
