@@ -8,10 +8,6 @@ import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.AudioCaptureConfig
-import com.commcrete.stardust.util.audio.PttAudioProcessor
-import com.commcrete.stardust.util.audio.RecorderUtils
-import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
-import com.commcrete.stardust.ai.codec.testing.StreamingAudioStatsLogger
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -129,7 +125,7 @@ class AudioRecorderAI(
         Log.d("AudioRecorder", "recordLoop")
 
         // Input gain: profile setting takes precedence, then SharedPreferences.
-        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
+        val gain = SharedPreferencesUtil.getAudioGain(context) / 100f
 
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
             context = context,
@@ -295,7 +291,7 @@ class AudioRecorderAI(
      *    ±32767, so transients are rounded rather than chopped.
      *
      * If you want a louder signal: bump
-     * [SharedPreferencesUtil.setAIGain] to e.g. 200f (2.0×) or 400f (4.0×).
+     * [SharedPreferencesUtil.setAudioGain] to e.g. 200f (2.0×) or 400f (4.0×).
      */
     private fun processSamples(samples: ShortArray, gain: Float): ShortArray {
         if (gain == 1f) return samples.copyOf()

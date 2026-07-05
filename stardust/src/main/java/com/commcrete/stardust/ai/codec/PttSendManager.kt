@@ -31,6 +31,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -177,6 +178,16 @@ object PttSendManager {
     private val TAG_LATENCY = "PttManager_Latency"
 
     private const val AI_PACKET_DURATION_MS = 500
+
+    /**
+     * Deadlock-breaker for the single-session barrier in [launchSessionJob]:
+     * the longest a new session will wait for the previous one to finalize
+     * before proceeding anyway. The orphan's rawQueue is always closed by
+     * [restart] before the wait begins, so a properly-behaving session
+     * drains in well under this bound — it exists only so a pathological
+     * finalize hang can't permanently wedge recording.
+     */
+    private const val PREVIOUS_SESSION_DRAIN_TIMEOUT_MS = 10_000L
 
     /** Coroutine scope owning every per-session encoding job. */
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -352,17 +363,21 @@ object PttSendManager {
         }
 
         // NOTE: PttAudioProcessor.reset() is NOT called here — it runs
-        // inside launchSessionJob, after the codecMutex is acquired. This
-        // guarantees the previous session's encode loop has fully drained
-        // (all queued chunks processed through filters + encoder) before
-        // the filter chain's native state (RNNoise, biquads) is torn down.
-        newSession.job = launchSessionJob(newSession)
+        // inside launchSessionJob, which first *joins* the previous
+        // session's job (see the `previous` parameter). Only one send
+        // session may be active at a time: the new session blocks on the
+        // orphan's full drain + finalize before it touches the shared
+        // PttAudioProcessor / codec, so the old tail's filter+encode
+        // processing can never overlap this session's reset() or its own
+        // processing. `finishSession(orphan)` above closes the orphan's
+        // rawQueue so that join is guaranteed to complete rather than hang.
+        newSession.job = launchSessionJob(newSession, previous = orphan)
         Log.d(TAG, "restart() -> new session ${newSession.id}")
         return newSession
     }
 
 
-    private fun launchSessionJob(session: PttSession): Job {
+    private fun launchSessionJob(session: PttSession, previous: PttSession?): Job {
         return coroutineScope.launch {
             // Hold a wake lock for the duration of encode + finalize so
             // screen-off / background does not suspend the codec coroutine
@@ -370,6 +385,36 @@ object PttSendManager {
             // makes both safe.
             AudioRecordingKeepAlive.acquire(session.context)
             try {
+                // Single-session-at-a-time barrier: wait for the previous
+                // session to fully finalize before this one touches any
+                // shared state (PttAudioProcessor, the PyTorch encoder
+                // Module, the shared decoder). Without this, a rapid
+                // stop→re-press lets the orphan's still-draining DSP/encode
+                // tail run concurrently with this session's reset() +
+                // processing on the singleton PttAudioProcessor — a data
+                // race + use-after-free on the native RNNoise state.
+                //
+                // [restart] already closed the orphan's rawQueue via
+                // finishSession(), so its job is guaranteed to drain and
+                // complete; the timeout is a pure deadlock-breaker for a
+                // pathological finalize hang, never expected to fire in
+                // normal operation. Meanwhile the recorder keeps buffering
+                // raw frames into this session's UNLIMITED rawQueue, so no
+                // audio is lost while we wait.
+                previous?.job?.let { prevJob ->
+                    Log.d(TAG, "Session ${session.id}: awaiting previous session ${previous.id} to finalize")
+                    val drained = withTimeoutOrNull(PREVIOUS_SESSION_DRAIN_TIMEOUT_MS) {
+                        prevJob.join()
+                        true
+                    }
+                    if (drained == null) {
+                        Log.w(
+                            TAG,
+                            "Session ${session.id}: previous session ${previous.id} did not " +
+                                "finalize within ${PREVIOUS_SESSION_DRAIN_TIMEOUT_MS}ms — proceeding anyway"
+                        )
+                    }
+                }
                 // OUTER try-finally: guarantees [finalizeSession] runs no
                 // matter how the inner block exits — including when the
                 // codec mutex acquisition itself was cancelled (in which

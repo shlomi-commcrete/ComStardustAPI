@@ -274,7 +274,7 @@ class AudioRecorderCodec2(val context: Context, private val viewModel : PttInter
 
     private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
         // Input gain: profile setting takes precedence, then SharedPreferences.
-        val targetGain = SharedPreferencesUtil.getCodecGain(DataManager.context) / 100f
+        val targetGain = SharedPreferencesUtil.getAudioGain(DataManager.context) / 100f
         val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState(DataManager.context)
         val sData = ShortArray(nativeFrameSamples)
         val nativePending = ArrayList<Short>(nativeFrameSamples * 2)

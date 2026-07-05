@@ -37,7 +37,7 @@ object SharedPreferencesUtil {
 
     //Preferences
     private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
-    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
+    private const val KEY_AUDIO_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
@@ -94,6 +94,8 @@ object SharedPreferencesUtil {
 
     private const val KEY_LAST_USER = "last_user"
     private const val KEY_ALERT_DEST = "alert_dest"
+
+    private const val KEY_RSSI_SOURCE = "rssi_source"
 
     //Output Values
     private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
@@ -330,20 +332,12 @@ object SharedPreferencesUtil {
         return getPrefs(context).getString(key, default)
     }
 
-    fun getCodecGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 100.toFloat())
+    fun getAudioGain(context: Context) : Float{
+        return getPrefs(context).getFloat( KEY_AUDIO_GAIN, 50.toFloat())
     }
 
-    fun setCodecGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_CODEC_HANDLE_GAIN, gain).apply()
-    }
-
-    fun getAIGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 50.toFloat())
-    }
-
-    fun setAIGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_HANDLE_GAIN, gain).apply()
+    fun setAudioGain(context: Context, gain: Float) {
+        getPrefs(context).edit().putFloat(KEY_AUDIO_GAIN, gain).apply()
     }
 
     fun getNoiseSuppressorEnableState(context: Context) : Boolean {
@@ -634,6 +628,15 @@ object SharedPreferencesUtil {
     fun setAlertDest (context: Context, dest : String)  {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         getPrefs(context).edit().putString(KEY_ALERT_DEST, dest).apply()
+
+    }
+
+    fun getRSSIReportSource(context: Context) : String {
+        return getPrefs(context).getString(KEY_RSSI_SOURCE, "") ?: ""
+    }
+
+    fun setRSSIReportSource(context: Context, dest: String)  {
+        getPrefs(context).edit().putString(KEY_RSSI_SOURCE, dest).apply()
 
     }
 

@@ -4,6 +4,7 @@ import android.content.Context
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -143,10 +144,7 @@ internal object AudioFeederEngine {
             null
         }
 
-        val inputGain = when (codeType) {
-            RecorderUtils.CODE_TYPE.AI -> com.commcrete.stardust.util.SharedPreferencesUtil.getAIGain(context)
-            RecorderUtils.CODE_TYPE.CODEC2 -> com.commcrete.stardust.util.SharedPreferencesUtil.getCodecGain(context)
-        } / 100f
+        val inputGain = SharedPreferencesUtil.getAudioGain(context) / 100f
 
         val emission = try {
             streamPcmAsChunks(
