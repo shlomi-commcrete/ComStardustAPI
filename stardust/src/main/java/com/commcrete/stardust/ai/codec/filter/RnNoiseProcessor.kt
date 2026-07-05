@@ -1,13 +1,14 @@
 package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
-import com.commcrete.stardust.util.audio.AudioDsp
+import com.commcrete.stardust.util.audio.StreamingPolyphaseResampler
 import java.lang.reflect.Method
 
 class RnNoiseProcessor : NoiseProcessor {
 
     companion object {
         private const val TAG = "RnNoiseProcessor"
+        private const val TAG_LATENCY = "RnNoise_Latency"
         private const val NATIVE_RATE = 48_000
         private const val FRAME_SIZE = 480 // 10 ms @ 48 kHz, RNNoise's required frame size
 
@@ -30,6 +31,12 @@ class RnNoiseProcessor : NoiseProcessor {
     private var sampleRate: Int = 0
     private var pending48k: ShortArray = ShortArray(0)
 
+    // Stateful resamplers for the native<->48kHz round-trip: carry history across process()
+    // calls so this doesn't get a truncated-kernel gain dip at every chunk boundary the way a
+    // fresh AudioDsp.resamplePolyphase() call per chunk would. Rebuilt in init() for each session.
+    private var upsampler: StreamingPolyphaseResampler? = null
+    private var downsampler: StreamingPolyphaseResampler? = null
+
     // Reflected native handles
     private var nativeInstance: Any? = null
     private var processMethod: Method? = null
@@ -38,6 +45,8 @@ class RnNoiseProcessor : NoiseProcessor {
     override fun init(sampleRate: Int) {
         this.sampleRate = sampleRate
         pending48k = ShortArray(0)
+        upsampler = if (sampleRate == NATIVE_RATE) null else StreamingPolyphaseResampler(sampleRate, NATIVE_RATE)
+        downsampler = if (sampleRate == NATIVE_RATE) null else StreamingPolyphaseResampler(NATIVE_RATE, sampleRate)
         nativeInstance = null
         processMethod = null
         releaseMethod = null
@@ -113,9 +122,11 @@ class RnNoiseProcessor : NoiseProcessor {
         val instance = nativeInstance ?: return
         val proc = processMethod ?: return
 
+        val processStartMs = System.currentTimeMillis()
+
         // 1) Upsample to 48 kHz.
         val up = if (sampleRate == NATIVE_RATE) buffer.copyOf(length)
-        else AudioDsp.resamplePolyphase(buffer.copyOf(length), sampleRate, NATIVE_RATE)
+        else upsampler?.process(buffer.copyOf(length)) ?: return
 
         // 2) Concatenate residual + new samples.
         val combined = ShortArray(pending48k.size + up.size)
@@ -124,11 +135,16 @@ class RnNoiseProcessor : NoiseProcessor {
 
         // 3) Run RNNoise frame-by-frame.
         var off = 0
+        var frameCount = 0
+        var nativeCallMs = 0L
         val frame = ShortArray(FRAME_SIZE)
         while (off + FRAME_SIZE <= combined.size) {
             try {
                 System.arraycopy(combined, off, frame, 0, FRAME_SIZE)
+                val frameStartMs = System.currentTimeMillis()
                 val cleaned = proc.invoke(instance, frame) as? ShortArray
+                nativeCallMs += System.currentTimeMillis() - frameStartMs
+                frameCount++
                 if (cleaned != null && cleaned.size >= FRAME_SIZE) {
                     System.arraycopy(cleaned, 0, combined, off, FRAME_SIZE)
                 }
@@ -150,12 +166,19 @@ class RnNoiseProcessor : NoiseProcessor {
         // 5) Downsample processed prefix back and write into [buffer].
         val processed = combined.copyOfRange(0, off)
         val down = if (sampleRate == NATIVE_RATE) processed
-        else AudioDsp.resamplePolyphase(processed, NATIVE_RATE, sampleRate)
+        else downsampler?.process(processed) ?: return
 
         val toCopy = minOf(down.size, length)
         if (toCopy > 0) System.arraycopy(down, 0, buffer, 0, toCopy)
         // Trailing [length - toCopy] samples retain their pre-NS values
         // (sub-frame shortfall); they get denoised on the next call.
+
+        val totalMs = System.currentTimeMillis() - processStartMs
+        Log.d(
+            TAG_LATENCY,
+            "process(): $frameCount frame(s) of $FRAME_SIZE, total ${totalMs}ms " +
+                "(native RNNoise calls ${nativeCallMs}ms, resample+overhead ${totalMs - nativeCallMs}ms)"
+        )
     }
 
     override fun release() {
@@ -168,6 +191,8 @@ class RnNoiseProcessor : NoiseProcessor {
         processMethod = null
         releaseMethod = null
         pending48k = ShortArray(0)
+        upsampler = null
+        downsampler = null
     }
 
     /**

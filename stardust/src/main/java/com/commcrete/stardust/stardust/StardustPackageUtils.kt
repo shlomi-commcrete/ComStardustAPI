@@ -726,22 +726,22 @@ object StardustPackageUtils {
         val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(context, byteArray)
         Log.d("handlePackageReceived $randomID", "isFinished")
         val mPackage =  packagesList[packagesList.lastIndex]
-            if(isFinished == StardustPackageParser.PackageState.VALID){
-                val dataForStardustPackage = packagesList[packagesList.lastIndex]
-                val bittelPackage = dataForStardustPackage.mPackage
-                dataForStardustPackage.spareData?.let {
-                    if(it.isNotEmpty()){
-                        handlePackageReceived(context, it, randomID)
-                    }
+        if(isFinished == StardustPackageParser.PackageState.VALID){
+            val dataForStardustPackage = packagesList[packagesList.lastIndex]
+            val bittelPackage = dataForStardustPackage.mPackage
+            dataForStardustPackage.spareData?.let {
+                if(it.isNotEmpty()){
+                    handlePackageReceived(context, it, randomID)
                 }
-                bittelPackage?.let {
-                    bittelPackageHandler?.handleStardustPackage(context, it, randomID)
-                    packagesList.remove(mPackage)
-                }
-            } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
-                packagesList.remove(mPackage)
-
             }
+            bittelPackage?.let {
+                bittelPackageHandler?.handleStardustPackage(context, it, randomID)
+                packagesList.remove(mPackage)
+            }
+        } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
+            packagesList.remove(mPackage)
+
+        }
 //        }
         resetTimer()
         resetTimerByteArray()

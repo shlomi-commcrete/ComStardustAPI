@@ -160,20 +160,6 @@ object SharedPreferencesUtil {
 
     }
 
-
-    /**
-     * Returns whether voice cancellation (noise/voice suppression on the
-     * recording pipeline) is enabled. Defaults to false when not set.
-     */
-    fun isVoiceCancellationEnabled(context: Context): Boolean {
-        return getPrefs(context).getBoolean(KEY_NOISE_CANCELLATION_ENABLED, false)
-    }
-
-    /** Persists the voice cancellation toggle. */
-    fun setVoiceCancellationEnabled(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_NOISE_CANCELLATION_ENABLED, enabled).apply()
-    }
-
     fun getUserID(context: Context): String? {
         return getPrefs(context).getString(KEY_USER_ID, null)
     }

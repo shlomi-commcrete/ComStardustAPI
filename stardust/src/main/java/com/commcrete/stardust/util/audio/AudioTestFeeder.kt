@@ -37,7 +37,7 @@ import java.io.File
  *  - [AudioDsp]               — down-mix, resample, anti-alias, AI gain, FFT.
  *  - [AudioStatsAnalyzer]     — PCM stats + spectral fingerprint + tone alert.
  *  - [AudioArtifactWriter]    — WAV + token (txt/bin) writers.
- *  - [AudioTestFeederLogger]  — all human-readable diagnostics formatting.
+ *
  *
  * Usage:
  * ```
@@ -68,22 +68,9 @@ object AudioTestFeeder {
     const val CHUNK_DURATION_MS = 500
     const val SAMPLES_PER_CHUNK = (TARGET_SAMPLE_RATE * CHUNK_DURATION_MS / 1000L).toInt() // 12 000
 
-    /** Frequency bands used for [AudioStats.subBandEnergyPct]. Edges in Hz at 24 kHz Fs. */
-    val BAND_EDGES_HZ = doubleArrayOf(0.0, 300.0, 1_000.0, 3_400.0, 8_000.0, 12_000.0)
-    val BAND_LABELS = arrayOf(
-        "0–300 Hz",     // DC / rumble
-        "300–1k",       // voice fundamental
-        "1k–3.4k",      // telephony band (≤ this = BLE SCO / CVSD)
-        "3.4k–8k",      // adds intelligibility ("wideband")
-        "8k–12k",       // air / sibilance (only true fullband mics)
-    )
-
     private val feederScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var currentJob: Job? = null
 
-    /** Per-source stats from the most recent [feed] call, in feed order. */
-    private val lastRunStats = LinkedHashMap<String, AudioStats>()
-    fun lastRunStats(): Map<String, AudioStats> = lastRunStats.toMap()
 
     // ---------------- Public model types ----------------
     //
@@ -170,7 +157,6 @@ object AudioTestFeeder {
         }
 
         val job = feederScope.launch {
-            lastRunStats.clear()
             val effectiveOutputDir = outputDir ?: AudioArtifactWriter.defaultArtifactDir(context, sendTo ?: "artifact-only")
             effectiveOutputDir.mkdirs()
 
@@ -252,7 +238,6 @@ object AudioTestFeeder {
                         codec2Pipeline = codec2Pipeline,
                         realtimePacing = realtimePacing,
                         artifactDir = effectiveOutputDir,
-                        onStats = { lastRunStats[src.label] = it },
                     )
 
                     // ── Finalize this source's session before the next.
@@ -283,7 +268,6 @@ object AudioTestFeeder {
                         }
                     }
                 }
-                AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "Feeder failed")
             } finally {
@@ -361,7 +345,6 @@ object AudioTestFeeder {
         stop()
         DataManager.requireContext(context)
         val job = feederScope.launch {
-            lastRunStats.clear()
             val effectiveOutputDir = outputDir
                 ?: AudioArtifactWriter.defaultArtifactDir(context, "saved-recordings")
             effectiveOutputDir.mkdirs()
@@ -373,10 +356,8 @@ object AudioTestFeeder {
                     AudioFeederEngine.saveOnly(
                         source = src,
                         artifactDir = effectiveOutputDir,
-                        onStats = { lastRunStats[src.label] = it },
                     )
                 }
-                AudioTestFeederLogger.logCrossSourceSummary(lastRunStats)
             } catch (t: Throwable) {
                 Timber.tag(TAG).e(t, "saveOnly failed")
             } finally {

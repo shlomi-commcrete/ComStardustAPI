@@ -39,6 +39,18 @@ import com.commcrete.stardust.util.audio.PttAudioProcessor
 import com.commcrete.stardust.util.audio.SoundPlayer
 
 /**
+ * Immutable snapshot of one recorder chunk awaiting pre-encode DSP processing —
+ * queued by [PttSendManager.addRawFrame], consumed by
+ * [PttSendManager.launchDspProcessingLoop].
+ */
+internal data class RawAiChunk(
+    val pcmArray: ShortArray,
+    val nativeRate: Int,
+    val enableNoiseCancellation: Boolean,
+    val isFinal: Boolean,
+)
+
+/**
  * Per-recording session handle returned by [PttSendManager.restart].
  *
  * Each session owns its own encode queue, frame buffer, decoder continuity
@@ -53,6 +65,23 @@ class PttSession internal constructor(
     val id: Long,
     internal val context: Context,
 ) {
+    /**
+     * Raw (not yet DSP-processed) chunks handed off by the live recorder via
+     * [PttSendManager.addRawFrame]. Drained by this session's own [dspJob]
+     * ([PttSendManager.launchDspProcessingLoop]), which runs the full
+     * [com.commcrete.stardust.util.audio.PttAudioProcessor.process] chain
+     * (HPF/Notch/RNNoise/AGC/Dynamics/resample) off the recorder's own
+     * capture thread — so a slow RNNoise forward pass delays only this
+     * session's own encode+send pipeline, never the next `AudioRecord.read()`
+     * on the live mic. Feeds [queue] once processed.
+     */
+    internal val rawQueue = Channel<RawAiChunk>(Channel.UNLIMITED)
+    internal var dspJob: Job? = null
+
+    /** Fed by [dspJob] (live recording) or directly by [PttSendManager.addNewFrame]
+     * (the [com.commcrete.stardust.util.audio.AudioFeederEngine] test-feeder path,
+     * which already runs [com.commcrete.stardust.util.audio.PttAudioProcessor.process]
+     * itself off the live mic path). */
     internal val queue = Channel<ShortArray>(Channel.UNLIMITED)
     internal val frameBuffer = mutableListOf<ShortArray>()
     @Volatile internal var file: File? = null
@@ -61,6 +90,25 @@ class PttSession internal constructor(
     internal var lastTokens: List<Long>? = null
     internal var lastPCM: ShortArray? = null
     internal var recordingTs: Long = 0L
+
+    /**
+     * Packed chunks awaiting mirror-decode, drained by [PttSendManager]'s
+     * per-session mirror job. Kept off the main encode/send loop so a slow
+     * decoder forward pass can't delay the next chunk's transmission — see
+     * [PttSendManager.launchMirrorDecodeLoop].
+     */
+    internal val mirrorQueue = Channel<ByteArray>(Channel.UNLIMITED)
+    internal var mirrorJob: Job? = null
+
+    /**
+     * This session's own snapshot of [WavTokenizerDecoder]'s internal
+     * state (`index`/`cutTokens`/`loop`), saved/restored around every
+     * mirror-decode call so it can multiplex over the shared decoder
+     * singleton alongside concurrent [PttReceiveManager] streams and the
+     * encode loop, the same way [PttReceiveManager]'s `ReceiveStream`
+     * does for incoming audio.
+     */
+    internal var decoderState: WavTokenizerDecoder.InternalState = WavTokenizerDecoder.InternalState.INITIAL
 
 
     /**
@@ -86,6 +134,14 @@ class PttSession internal constructor(
      * `AudioRecorderCodec2.numOfPackage`.
      */
     internal var numPacketsSent: Int = 0
+
+    /**
+     * Wall-clock time the session's encode loop started consuming chunks.
+     * Used by [PttSendManager.handleTokenizerChunk] to compute how far
+     * real-time processing has drifted behind the audio it's processing
+     * (diagnostic only — see PTT_LATENCY_TRACE_TAG logs).
+     */
+    internal var loopStartMs: Long = 0L
 
     /**
      * Single-shot hook fired when the session's accumulated wall-clock
@@ -118,6 +174,7 @@ object PttSendManager {
     private val TAG = "PttManager"
     private val TAG_DECODE = "PttManager_Decode"
     private val TAG_ENCODE = "PttManager_Encode"
+    private val TAG_LATENCY = "PttManager_Latency"
 
     private const val AI_PACKET_DURATION_MS = 500
 
@@ -163,6 +220,42 @@ object PttSendManager {
         session.chatID = chatID
         if (!session.queue.trySend(pcmArray).isSuccess) {
             Log.w(TAG, "Session ${session.id}: queue trySend failed (queue closed?)")
+        }
+    }
+
+    /**
+     * Queue a RAW (not yet DSP-processed) chunk from the live recorder for
+     * asynchronous pre-encode processing + send. [RecorderUtils.forwardAiChunk]
+     * uses this so a slow RNNoise/filter/resample pass runs on this session's
+     * own [PttSession.dspJob] instead of blocking the recorder's own capture
+     * thread — see [launchDspProcessingLoop].
+     *
+     * The [com.commcrete.stardust.util.audio.AudioFeederEngine] test-feeder
+     * path does NOT use this: it already runs
+     * [com.commcrete.stardust.util.audio.PttAudioProcessor.process] itself,
+     * synchronously, off the live mic path, and calls [addNewFrame] directly
+     * with the already-processed chunk.
+     */
+    fun addRawFrame(
+        pcmArray: ShortArray,
+        nativeRate: Int,
+        enableNoiseCancellation: Boolean,
+        isFinal: Boolean,
+        file: File,
+        carrier: Carrier? = null,
+        chatID: String? = null
+    ) {
+        val session = synchronized(sessionsLock) { currentSession } ?: run {
+            Log.w(TAG, "addRawFrame: no active session — dropping ${pcmArray.size}-sample chunk")
+            return
+        }
+
+        session.file = file
+        session.carrier = carrier
+        session.chatID = chatID
+        val chunk = RawAiChunk(pcmArray, nativeRate, enableNoiseCancellation, isFinal)
+        if (!session.rawQueue.trySend(chunk).isSuccess) {
+            Log.w(TAG, "Session ${session.id}: raw queue trySend failed (queue closed?)")
         }
     }
 
@@ -220,12 +313,13 @@ object PttSendManager {
             Log.d(TAG, "finish(${session.id}): already finished — ignoring")
             return
         }
-        // Closing the channel ends the per-session for-loop in
-        // launchSessionJob; the job then runs finalizeSession exactly once
-        // and releases [codecMutex] so any newer session can start using
-        // the shared codec.
-        session.queue.close()
-        Log.d(TAG, "finish(${session.id}): queue closed — awaiting drain")
+        // Closing the raw queue lets [launchDspProcessingLoop] drain whatever raw chunks are
+        // still pending (still running the full DSP chain on each), then close the encode
+        // queue itself once done — which in turn ends the per-session for-loop in
+        // launchSessionJob. The job then runs finalizeSession exactly once and releases
+        // [codecMutex] so any newer session can start using the shared codec.
+        session.rawQueue.close()
+        Log.d(TAG, "finish(${session.id}): raw queue closed — awaiting DSP + encode drain")
     }
 
     fun restart(onMaxTimeoutReached: (() -> Unit)? = null): PttSession {
@@ -284,28 +378,50 @@ object PttSendManager {
                 // cancelled while waiting on [codecMutex] would silently
                 // skip finalization, leaving its file unwritten.
                 try {
+                    // Brief exclusive section: reset cross-session filter
+                    // state and seed this session's own decode continuity.
+                    // The encode loop below never touches the shared
+                    // decoder, so it doesn't hold this lock — only
+                    // [mirrorDecodeChunk] does, per chunk, via its own
+                    // mirror job, so a slow decode pass can never delay
+                    // this loop's next encode+send.
                     codecMutex.withLock {
                         Log.d(TAG, "Session ${session.id}: codec acquired")
-                        // Previous session's encode loop has now fully
-                        // drained (it held this mutex until its queue was
-                        // empty). Safe to tear down filter + encoder state.
                         PttAudioProcessor.reset()
-                        wavTokenizerDecoder.reset()
                         session.lastTokens = null
                         session.lastPCM = null
-
-                        for (pcmArray in session.queue) {
-                            if (!isActive) break
-                            try {
-                                handleTokenizerChunk(session, pcmArray)
-                            } catch (e: MediaCodec.CodecException) {
-                                Log.e(TAG, "Session ${session.id}: codec exception", e)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Session ${session.id}: chunk error", e)
-                            }
-                        }
-                        Log.d(TAG, "Session ${session.id}: codec releasing")
+                        session.decoderState = WavTokenizerDecoder.InternalState.INITIAL
+                        session.loopStartMs = System.currentTimeMillis()
                     }
+
+                    session.mirrorJob = coroutineScope.launch {
+                        launchMirrorDecodeLoop(session)
+                    }
+                    // Dispatchers.IO, NOT the scope's default Dispatchers.Default: the encode
+                    // loop above and launchMirrorDecodeLoop both run PyTorch Module.forward()
+                    // calls on Default's CPU-core-bounded pool, which is shared app-wide (this
+                    // runs inside a much larger host app). Launching the DSP/RNNoise job on
+                    // that same pool adds a third steady CPU-bound consumer and measurably
+                    // slows down the other two (observed: WavTokenizerEncoder/Decoder calls
+                    // that used to take <400ms climbing past 800ms once this job was added).
+                    // IO's much larger, less-contended thread pool avoids that competition,
+                    // matching where this processing already ran before it was decoupled from
+                    // AudioRecorderAI's capture loop (that loop is Dispatchers.IO too).
+                    session.dspJob = coroutineScope.launch(Dispatchers.IO) {
+                        launchDspProcessingLoop(session)
+                    }
+
+                    for (pcmArray in session.queue) {
+                        if (!isActive) break
+                        try {
+                            handleTokenizerChunk(session, pcmArray)
+                        } catch (e: MediaCodec.CodecException) {
+                            Log.e(TAG, "Session ${session.id}: codec exception", e)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Session ${session.id}: chunk error", e)
+                        }
+                    }
+                    Log.d(TAG, "Session ${session.id}: encode loop done — draining mirror decode")
                 } finally {
                     // Atomic CAS guarantees finalize runs at most once
                     // per session even if some future code path adds
@@ -317,6 +433,27 @@ object PttSendManager {
                         // be lost on app shutdown / scope cancel.
                         withContext(NonCancellable) {
                             try {
+                                // The encode loop above only ends once launchDspProcessingLoop
+                                // closes session.queue (after draining rawQueue), so dspJob is
+                                // normally already complete here — this join is a defensive
+                                // no-op in that case, and a real wait if the for-loop above
+                                // instead exited via the `!isActive` break.
+                                session.dspJob?.join()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Session ${session.id}: DSP loop drain failed", e)
+                            }
+                            try {
+                                // Every packedData chunk was pushed to
+                                // mirrorQueue before the encode loop above
+                                // finished, so closing it now and joining
+                                // is safe: the mirror job will drain
+                                // whatever's buffered and stop.
+                                session.mirrorQueue.close()
+                                session.mirrorJob?.join()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Session ${session.id}: mirror decode drain failed", e)
+                            }
+                            try {
                                 finalizeSession(session)
                             } catch (e: Exception) {
                                 Log.e(TAG, "Session ${session.id}: finalize failed", e)
@@ -326,6 +463,7 @@ object PttSendManager {
                     // Idempotent: ensures any producer that races a
                     // finished session sees a fast-failing trySend
                     // instead of silently buffering into a dead queue.
+                    session.rawQueue.close()
                     session.queue.close()
                 }
             } catch (t: Throwable) {
@@ -344,24 +482,43 @@ object PttSendManager {
     /**
      * Per-chunk orchestrator inside the session's encode loop.
      *
-     * Three sequential phases, each delegated to its own helper:
      *  1. [encodeAndSendChunk] — encode the captured PCM (with sliding-
      *     window context) and ship the packed payload over the wire.
      *  2. [enforceMaxPttTimeout] — count this packet against the
      *     per-session max-PTT-timeout and fire the host callbacks once
      *     when the threshold is crossed.
-     *  3. [mirrorDecodeChunk] — optionally self-decode the just-shipped
-     *     payload to feed the WAV mirror / debug hook.
-     *
-     * Phases run unconditionally even if step 2 fires the timeout —
-     * the chunk was already encoded and transmitted in step 1, so its
-     * mirror PCM is still wanted in the local WAV. The timeout only
-     * stops *future* chunks (via the recorder-stop hook).
+     *  3. Hand the packed payload to [PttSession.mirrorQueue] for
+     *     [launchMirrorDecodeLoop] to self-decode asynchronously. This
+     *     loop only ever waits on steps 1-2 — mirror-decode (a second ML
+     *     forward pass, needed only for the optional local WAV / debug
+     *     hook) runs on its own consumer so it can never delay the next
+     *     chunk's encode+send.
      */
     private fun handleTokenizerChunk(session: PttSession, pcmArray: ShortArray) {
+        val chunkStartMs = System.currentTimeMillis()
         val packedData = encodeAndSendChunk(session, pcmArray)
         enforceMaxPttTimeout(session)
-        mirrorDecodeChunk(session, packedData)
+
+        if (!session.mirrorQueue.trySend(packedData).isSuccess) {
+            Log.w(TAG_DECODE, "Session ${session.id}: mirror queue trySend failed (queue closed?)")
+        }
+
+        // Diagnostic: this loop iteration must finish inside
+        // AI_PACKET_DURATION_MS or the consumer falls behind the recorder,
+        // which queues (Channel.UNLIMITED) rather than blocks — so a chunk
+        // that took too long doesn't error, it just makes every later
+        // chunk in this session sit longer before being sent. `backlogMs`
+        // is the running drift: how far real elapsed time has pulled ahead
+        // of the audio-time this session has actually processed.
+        val chunkTotalMs = System.currentTimeMillis() - chunkStartMs
+        val expectedElapsedMs = session.numPacketsSent.toLong() * AI_PACKET_DURATION_MS
+        val actualElapsedMs = System.currentTimeMillis() - session.loopStartMs
+        val backlogMs = actualElapsedMs - expectedElapsedMs
+        Log.d(
+            TAG_LATENCY,
+            "Session ${session.id}: chunk #${session.numPacketsSent} loop took ${chunkTotalMs}ms " +
+                "(budget ${AI_PACKET_DURATION_MS}ms), backlog vs real-time = ${backlogMs}ms"
+        )
     }
 
     private fun encodeAndSendChunk(session: PttSession, pcmArray: ShortArray): ByteArray {
@@ -416,24 +573,79 @@ object PttSendManager {
     }
 
     /**
-     * Phase 3: optional per-chunk self-decode for the local WAV mirror
-     * and the [onDecodedChunk] debug hook.
+     * Per-session raw-chunk consumer, run as its own coroutine
+     * ([PttSession.dspJob]) alongside the encode loop and mirror-decode loop.
+     * Runs the full pre-encode DSP chain
+     * ([com.commcrete.stardust.util.audio.PttAudioProcessor.process] —
+     * HPF/Notch/RNNoise/AGC/Dynamics/resample) off the recorder's own capture
+     * thread, so a slow RNNoise forward pass delays only this session's own
+     * encode+send pipeline, never the next `AudioRecord.read()` on the live
+     * mic. A [Channel] with exactly one consumer preserves FIFO order, so
+     * chunks are still processed strictly in the order they were captured.
      *
-     * Both consumers (the `onDecodedChunk` debug hook AND the
-     * per-session saved WAV) need the decoded PCM for THIS encoded
-     * chunk. We MUST run that decode **at most once** per chunk
-     * because [WavTokenizerDecoder] is a shared singleton that mutates
-     * private instance state (`cutTokens`, `index`) on every call —
-     * doing it twice in two independent passes corrupts the shared
-     * decoder state, because each pass reads what the OTHER pass
-     * wrote on the previous chunk and produces garbled output even
-     * though each stream's own continuity (`lastTokens` / `lastPCM`)
-     * looks fine.
+     * Closes [PttSession.queue] once drained — the head of the "no more
+     * data" chain that [finishSession] kicks off by closing
+     * [PttSession.rawQueue], ending the encode loop in [launchSessionJob] in
+     * turn.
+     */
+    private suspend fun launchDspProcessingLoop(session: PttSession) {
+        for (raw in session.rawQueue) {
+            try {
+                val processed = PttAudioProcessor.process(
+                    pcmArray = raw.pcmArray,
+                    nativeRate = raw.nativeRate,
+                    targetRate = PttAudioProcessor.AI_TARGET_SAMPLE_RATE,
+                    enableNoiseCancellation = raw.enableNoiseCancellation,
+                    isFinal = raw.isFinal,
+                )
+                if (!session.queue.trySend(processed).isSuccess) {
+                    Log.w(TAG, "Session ${session.id}: encode queue trySend failed after DSP (queue closed?)")
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Session ${session.id}: DSP processing failed", t)
+            }
+        }
+        Log.d(TAG, "Session ${session.id}: DSP loop drained — closing encode queue")
+        session.queue.close()
+    }
+
+    /**
+     * Per-session mirror-decode consumer, run as its own coroutine
+     * ([PttSession.mirrorJob]) alongside the encode loop. A [Channel] with
+     * exactly one consumer preserves FIFO order, so chunks are still
+     * decoded strictly in the order they were encoded — just without
+     * blocking [handleTokenizerChunk] on a second model forward pass.
+     */
+    private suspend fun launchMirrorDecodeLoop(session: PttSession) {
+        for (packedData in session.mirrorQueue) {
+            try {
+                mirrorDecodeChunk(session, packedData)
+            } catch (t: Throwable) {
+                Log.w(TAG_DECODE, "Session ${session.id}: mirror decode loop error", t)
+            }
+        }
+        Log.d(TAG_DECODE, "Session ${session.id}: mirror decode loop drained")
+    }
+
+    /**
+     * Optional per-chunk self-decode for the local WAV mirror and the
+     * [onDecodedChunk] debug hook. Runs on [PttSession.mirrorJob], never
+     * on the encode/send loop.
+     *
+     * [WavTokenizerDecoder] is a shared singleton whose instance state
+     * (`cutTokens`, `index`, `loop`) would otherwise be corrupted by
+     * concurrent callers — this session's own mirror loop, another
+     * session's, and every live [PttReceiveManager] stream all share it.
+     * We multiplex the same way [PttReceiveManager] does for incoming
+     * audio: save → restore → decode → save this session's own
+     * [PttSession.decoderState] under [codecMutex], scoped to just this
+     * one decode call rather than the whole session, so it can interleave
+     * freely with everything else touching the decoder.
      *
      * No-op when neither consumer is interested — saves a model
      * forward pass on every chunk.
      */
-    private fun mirrorDecodeChunk(session: PttSession, packedData: ByteArray) {
+    private suspend fun mirrorDecodeChunk(session: PttSession, packedData: ByteArray) {
         val decodedSink = onDecodedChunk
         val savingToFile = DataManager.getSavePTTFilesRequired(session.context)
         if (decodedSink == null && !savingToFile) return
@@ -442,7 +654,12 @@ object PttSendManager {
             val unpack = BitPacking12.unpack12(packedData)
             @Suppress("DEPRECATION")
             val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-            val pcm = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
+            val pcm = codecMutex.withLock {
+                wavTokenizerDecoder.restoreInternalState(session.decoderState)
+                val decoded = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
+                session.decoderState = wavTokenizerDecoder.snapshotInternalState()
+                decoded
+            }
             session.lastTokens = unpack
             session.lastPCM = pcm
             decodedSink?.invoke(pcm)
@@ -476,7 +693,7 @@ object PttSendManager {
             
 
             bittelPackage?.let { bittelPackage ->
-                bittelPackage.stardustControlByte.stardustPartType = if( isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
+                bittelPackage.stardustControlByte.stardustPartType = if(isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
                 bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
                 bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
                 DataManager.sendDataToBle(bittelPackage)

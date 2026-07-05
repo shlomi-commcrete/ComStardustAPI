@@ -703,8 +703,15 @@ internal class ClientConnection(
             Log.d("isAbleToSendAgain $randomID", "sendMessage")
 
             Timber.tag(LOG_TAG).d("Sending Package $randomID")
-            Scopes.getDefaultCoroutine().launch {
-                resetTimer(bittelPackage)
+            if (isNeedAck(bittelPackage.stardustOpCode)) {
+                // The watchdog's only cancellation path is clearTimer(), fired from an
+                // incoming BLE response. Opcodes that never get one (PTT_AI) would have
+                // this fire unconditionally 15ms after every send, and — if system load
+                // delays the synchronous write+dequeue below past that window — resend
+                // whatever is still at mutableMessageList[0], duplicating that packet.
+                Scopes.getDefaultCoroutine().launch {
+                    resetTimer(bittelPackage)
+                }
             }
             SharedPreferencesUtil.getAppUser(context)?.let {
                 Log.d("getAppUser $randomID", "sendMessage")

@@ -192,24 +192,28 @@ internal object AudioDsp {
     /** Kaiser window β. 9.0 → ~80 dB stopband. */
     private const val KAISER_BETA = 9.0
 
-    private data class PolyphaseKernel(
+    /** Visibility is `internal`, not `private`, so [StreamingPolyphaseResampler] can reuse the same kernel cache. */
+    internal data class PolyphaseKernel(
         val halfLen: Int,
         val tapsPerPhase: Int,   // = 2 * halfLen + 1
         val numPhases: Int,
         val table: DoubleArray,  // [numPhases × tapsPerPhase], pre-normalized
     )
 
-    private val kernelCache = HashMap<Long, PolyphaseKernel>()
+    // ConcurrentHashMap + computeIfAbsent: getOrBuildKernel/clearResamplerCache are called from
+    // whichever thread each recorder/processor runs on (e.g. the AI recorder's Dispatchers.IO
+    // coroutine and the CODEC2 recorder's dedicated Thread can both race a cache miss here). A
+    // plain HashMap is not safe under concurrent put()/put() or put()/clear() — see the resampler
+    // review notes. computeIfAbsent is atomic per key, so concurrent misses for the same
+    // (srcRate,dstRate) build the kernel once and never corrupt the map's internal structure.
+    private val kernelCache = java.util.concurrent.ConcurrentHashMap<Long, PolyphaseKernel>()
 
     /** Clear cached resampler kernels. Call only if memory pressure requires it. */
     fun clearResamplerCache() { kernelCache.clear() }
 
-    private fun getOrBuildKernel(srcRate: Int, dstRate: Int): PolyphaseKernel {
+    internal fun getOrBuildKernel(srcRate: Int, dstRate: Int): PolyphaseKernel {
         val key = srcRate.toLong() shl 32 or dstRate.toLong()
-        kernelCache[key]?.let { return it }
-        val kernel = buildPolyphaseKernel(srcRate, dstRate)
-        kernelCache[key] = kernel
-        return kernel
+        return kernelCache.computeIfAbsent(key) { buildPolyphaseKernel(srcRate, dstRate) }
     }
 
     private fun buildPolyphaseKernel(srcRate: Int, dstRate: Int): PolyphaseKernel {

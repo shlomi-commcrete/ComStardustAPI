@@ -41,6 +41,7 @@ import timber.log.Timber
 object PttAudioProcessor {
 
     private const val TAG = "PttAudioProcessor"
+    private const val TAG_LATENCY = "PttAudioProcessor_Latency"
 
     /** Sample rate the AI tokenizer encoder consumes. */
     const val AI_TARGET_SAMPLE_RATE: Int = 24_000
@@ -62,6 +63,11 @@ object PttAudioProcessor {
     private var dynamicsFilter: DynamicsProcessingFilter? = null
     private var agcFilter: AGCFilter? = null
     private var lpf: LowPassFilter? = null
+
+    /** Carries resample history across chunk boundaries — see [StreamingPolyphaseResampler]. */
+    private var resampler: StreamingPolyphaseResampler? = null
+    private var resamplerSrcRate: Int = -1
+    private var resamplerDstRate: Int = -1
 
     // ── Tuning knobs derived from the current profile ─────────────────────
 
@@ -119,6 +125,14 @@ object PttAudioProcessor {
      *                        ms; when set, an "expected sample count"
      *                        diagnostic is included so size mismatches
      *                        surface clearly.
+     * @param isFinal         `true` for the last chunk of a recording (e.g.
+     *                        `AudioRecorderAI.onPartialFinalChunk`, or the
+     *                        drained tail after `AudioRecorderCodec2`'s
+     *                        recording loop exits). Flushes the resampler's
+     *                        held-back tail into the returned array instead
+     *                        of carrying it forward as history that would
+     *                        never be consumed. Defaults to `false` for
+     *                        regular mid-stream chunks.
      * @return the processed PCM ready for the encoder. May be the same
      *         array instance as [pcmArray] when [applyFilters] is `false`
      *         and no resample is needed; otherwise a fresh array.
@@ -127,8 +141,10 @@ object PttAudioProcessor {
         pcmArray: ShortArray,
         nativeRate: Int,
         targetRate: Int,
-        enableNoiseCancellation: Boolean
+        enableNoiseCancellation: Boolean,
+        isFinal: Boolean = false
     ): ShortArray {
+        val startMs = System.currentTimeMillis()
 
         val filtered: ShortArray = if (enableNoiseCancellation) {
             val mutable = pcmArray.copyOf()
@@ -137,11 +153,41 @@ object PttAudioProcessor {
         } else {
             pcmArray
         }
-        return if (nativeRate != targetRate) {
-            AudioDsp.resamplePolyphase(filtered, nativeRate, targetRate)
-        } else {
-            filtered
+        val filterChainMs = System.currentTimeMillis() - startMs
+
+        if (nativeRate == targetRate) {
+            Log.d(TAG_LATENCY, "process(): ${pcmArray.size} samples, filterChain ${filterChainMs}ms, no resample needed")
+            return filtered
         }
+
+        val resampleStartMs = System.currentTimeMillis()
+        val res = ensureResampler(nativeRate, targetRate)
+        val head = res.process(filtered)
+        val result = if (!isFinal) head else {
+            val tail = res.flush()
+            if (tail.isEmpty()) head else head + tail
+        }
+        val resampleMs = System.currentTimeMillis() - resampleStartMs
+        val totalMs = System.currentTimeMillis() - startMs
+        Log.d(
+            TAG_LATENCY,
+            "process(): ${pcmArray.size} samples $nativeRate->$targetRate, total ${totalMs}ms " +
+                "(filterChain ${filterChainMs}ms incl. RNNoise, resample ${resampleMs}ms)"
+        )
+        return result
+    }
+
+    /**
+     * Fetch the resampler for the current (nativeRate, targetRate) pair, rebuilding it —
+     * and discarding any carried history — when either rate changes. Synchronized on `this`,
+     * same lock as [reset]/[ensureFiltersBuilt], so a concurrent session reset can't null this
+     * out mid-chunk.
+     */
+    private fun ensureResampler(srcRate: Int, dstRate: Int): StreamingPolyphaseResampler = synchronized(this) {
+        resampler?.takeIf { resamplerSrcRate == srcRate && resamplerDstRate == dstRate }?.let { return@synchronized it }
+        resamplerSrcRate = srcRate
+        resamplerDstRate = dstRate
+        StreamingPolyphaseResampler(srcRate, dstRate).also { resampler = it }
     }
 
     /**
@@ -173,6 +219,9 @@ object PttAudioProcessor {
         filterAiGainSoftSat = false
         currentFilterRate = -1
         filtersBuilt = false
+        resampler = null
+        resamplerSrcRate = -1
+        resamplerDstRate = -1
     }
 
     // ──────────────────────────────────────────────────────────────────────

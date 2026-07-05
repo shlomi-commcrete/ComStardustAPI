@@ -1,6 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
 import android.content.Context
+import android.util.Log
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils.Ack
@@ -32,6 +33,7 @@ data class StardustPackage(
     companion object{
         const val MAX_RETRY_COUNTER = 0
         const val DELAY_TS = 15L
+        const val PTT_TRACE_TAG = "PttDataTrace"
 
         fun isDifferentLengthCheck(
             StardustControlByte: StardustControlByte,
@@ -44,6 +46,11 @@ data class StardustPackage(
 
     private fun encryptData (context: Context) {
         val byteArray = getDataForEncryption()
+        if (stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_PTT_AI) {
+            Log.d(PTT_TRACE_TAG, "TX pre-encrypt src=${getSourceAsString()} dst=${getDestAsString()} " +
+                "part=${stardustControlByte.stardustPartType} size=${byteArray.size} " +
+                "hex=${byteArray.joinToString("") { "%02x".format(it) }}")
+        }
         val encrypted = CryptoUtils.encryptData(context, byteArray)
         lengthForCrypt = byteArray.size
         cryptData = byteArrayToIntArray(encrypted)

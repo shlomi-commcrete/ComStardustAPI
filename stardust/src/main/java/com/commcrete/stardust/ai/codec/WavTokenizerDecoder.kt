@@ -106,7 +106,7 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
             val duration = measureTime {
                 output = selectedModule.forward(IValue.from(codes)).toTensor()
             }
-            //Log.d(TAG, "Decoding took $duration")
+            Log.d(TAG, "Decoding took $duration")
 
             val modelOut = output.dataAsFloatArray
             // Decoder normally appends ~2400 tail samples we trim off. If a
@@ -118,8 +118,8 @@ class WavTokenizerDecoder(val context: Context, pluginContext: Context) {
             }
 
             NotchFilter(24000, NotchConfig(harmonics = mutableListOf<Harmonic>().also { list ->
-                list.add(Harmonic(frequencyHz = 120f, q = 50f))
-                list.add(Harmonic(frequencyHz = 200f, q = 50f))
+                list.add(Harmonic(frequencyHz = 120f, q = 150f))
+                list.add(Harmonic(frequencyHz = 200f, q = 150f))
             }).resolveBands()).processInPlace(audioData)
 
             // Return only the new part after alignment

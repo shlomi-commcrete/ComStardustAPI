@@ -176,17 +176,17 @@ class AudioRecorderAI(
 
 
         // 7) Comprehensive AI-relevant stream logger (unchanged).
-        val streamStats = StreamingAudioStatsLogger(
-            sampleRate = captureRate,
-            channels = channels,
-            bitsPerSample = bitsPerSample,
-        ).also {
-            it.onStart(
-                deviceName = capturePlan.preferredInputDevice?.productName?.toString(),
-                deviceType = capturePlan.preferredInputDevice?.type ?: -1,
-                deviceRates = capturePlan.preferredInputDevice?.sampleRates?.toList() ?: emptyList(),
-            )
-        }
+//        val streamStats = StreamingAudioStatsLogger(
+//            sampleRate = captureRate,
+//            channels = channels,
+//            bitsPerSample = bitsPerSample,
+//        ).also {
+//            it.onStart(
+//                deviceName = capturePlan.preferredInputDevice?.productName?.toString(),
+//                deviceType = capturePlan.preferredInputDevice?.type ?: -1,
+//                deviceRates = capturePlan.preferredInputDevice?.sampleRates?.toList() ?: emptyList(),
+//            )
+//        }
 
         // Force AudioRecord to unblock when coroutine is cancelled.
         coroutineContext.job.invokeOnCompletion {
@@ -209,15 +209,15 @@ class AudioRecorderAI(
 
         // Save bit-exact PCM straight from the ADC, BEFORE gain / decimation,
         // tagged with the *real* capture rate so the file is meaningful.
-        val debugRawWriter = DebugRawWavWriter().also {
-            it.start(
-                context = context,
-                sampleRate = captureRate,
-                channels = channels,
-                bitsPerSample = bitsPerSample,
-                fileNamePrefix = "pcm_raw_${deviceTag}_${captureRate}",
-            )
-        }
+//        val debugRawWriter = DebugRawWavWriter().also {
+//            it.start(
+//                context = context,
+//                sampleRate = captureRate,
+//                channels = channels,
+//                bitsPerSample = bitsPerSample,
+//                fileNamePrefix = "pcm_raw_${deviceTag}_${captureRate}",
+//            )
+//        }
 
         try {
             while (isActive) {
@@ -225,10 +225,10 @@ class AudioRecorderAI(
                 if (read <= 0) continue
 
                 // RAW capture — must happen BEFORE filtering / gain.
-                debugRawWriter.append(shortBuffer, read)
+                //debugRawWriter.append(shortBuffer, read)
 
                 // Per-buffer stats on the native-rate stream.
-                streamStats.onBufferRead(shortBuffer, read)
+                //streamStats.onBufferRead(shortBuffer, read)
 
                 var consumed = 0
                 while (consumed < read && isActive) {
@@ -249,7 +249,7 @@ class AudioRecorderAI(
                     if (chunkSampleIndex == captureSamplesPerChunk) {
                         val processed = processSamples(chunkSamples, gain)
                         onChunkReady?.invoke(processed, chunkIndex, captureRate, resolvedInputType)
-                        streamStats.onChunkCompleted(chunkIndex)
+                        //streamStats.onChunkCompleted(chunkIndex)
                         chunkIndex++
                         chunkSampleIndex = 0
                     }
@@ -266,8 +266,8 @@ class AudioRecorderAI(
                 }
             } catch (_: Exception) {}
 
-            try { streamStats.onStop() } catch (_: Throwable) {}
-            try { debugRawWriter.stop() } catch (_: Throwable) {}
+            //try { streamStats.onStop() } catch (_: Throwable) {}
+            //try { debugRawWriter.stop() } catch (_: Throwable) {}
 
             try { audioRecord.stop() } catch (_: Exception) {}
             audioRecord.release()

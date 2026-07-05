@@ -35,6 +35,18 @@ object RecorderUtils {
 
     val canRecord : MutableLiveData<Boolean> = MutableLiveData(true)
 
+    /**
+     * True while an AI or CODEC2 recording session is in flight. Guards [startRecording]
+     * against a second, overlapping session: [PttAudioProcessor] is a process-wide singleton
+     * (shared filter chain + resampler state) and [AudioDsp]'s kernel cache is likewise
+     * process-wide, so two concurrent recordings — one on the AI recorder's coroutine, one on
+     * CODEC2's dedicated recording thread — would drive both through the same unguarded state.
+     * Plain [java.util.concurrent.atomic.AtomicBoolean] rather than [canRecord] itself: this
+     * must be checked/set atomically from whatever thread calls [startRecording], while
+     * [canRecord] is `MutableLiveData` and can only be mutated from the main thread.
+     */
+    private val recordingInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
+
     var dirToSaveFile: File =
         File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Stardust_ptt_files")
             .also { it.mkdirs() }
@@ -58,12 +70,24 @@ object RecorderUtils {
     ): File? {
         Log.d("AudioRecorder", "Start recording")
 
-        Scopes.getMainCoroutine().launch { canRecord.value = false }
+        if (!recordingInProgress.compareAndSet(false, true)) {
+            Log.w("AudioRecorder", "startRecording ignored: a recording session is already in progress")
+            return null
+        }
 
-        return if (codeType == CODE_TYPE.CODEC2) {
-            startCodec2Recording(destination, carrier)
-        } else {
-            startAIRecording(destination, carrier)
+        try {
+            Scopes.getMainCoroutine().launch { canRecord.value = false }
+
+            return if (codeType == CODE_TYPE.CODEC2) {
+                startCodec2Recording(destination, carrier)
+            } else {
+                startAIRecording(destination, carrier)
+            }
+        } catch (t: Throwable) {
+            // Don't leave the guard stuck on if the start path itself throws before a
+            // matching stopRecording() call would otherwise clear it.
+            recordingInProgress.set(false)
+            throw t
         }
     }
 
@@ -142,7 +166,8 @@ object RecorderUtils {
                     file = file,
                     carrier = carrier,
                     destination = destination,
-                    enableNoiseCancellation = enableNoiseCancellation
+                    enableNoiseCancellation = enableNoiseCancellation,
+                    isFinal = true
                 )
             }
             onError = { throwable ->
@@ -159,22 +184,31 @@ object RecorderUtils {
         Timber.d("AudioRecorderAI started for session ${session.id}")
     }
 
+    /**
+     * Hand [pcmArray] straight off to [PttSendManager.addRawFrame] — DSP
+     * processing (HPF/Notch/RNNoise/AGC/Dynamics/resample, via
+     * [PttAudioProcessor.process]) now runs on that session's own
+     * [com.commcrete.stardust.ai.codec.PttSession.dspJob], not here. This
+     * function is called synchronously from [AudioRecorderAI]'s capture
+     * loop (`Dispatchers.IO`, in between `AudioRecord.read()` calls), so it
+     * must stay non-blocking: a slow RNNoise forward pass must never delay
+     * draining the microphone, or the whole recording falls behind
+     * real-time. See [PttSendManager.launchDspProcessingLoop].
+     */
     private fun forwardAiChunk(
         pcmArray: ShortArray,
         captureRate: Int,
         file: File,
         carrier: Carrier?,
         destination: String,
-        enableNoiseCancellation: Boolean
+        enableNoiseCancellation: Boolean,
+        isFinal: Boolean = false
     ) {
-        val prepared = preprocessChunkForEncoding(
+        PttSendManager.addRawFrame(
             pcmArray = pcmArray,
             nativeRate = captureRate,
-            encodingType = CODE_TYPE.AI,
-            enableNoiseCancellation = enableNoiseCancellation
-        )
-        PttSendManager.addNewFrame(
-            pcmArray = prepared,
+            enableNoiseCancellation = enableNoiseCancellation,
+            isFinal = isFinal,
             file = file,
             carrier = carrier,
             chatID = destination
@@ -195,7 +229,8 @@ object RecorderUtils {
         pcmArray: ShortArray,
         nativeRate: Int,
         encodingType: CODE_TYPE,
-        enableNoiseCancellation: Boolean
+        enableNoiseCancellation: Boolean,
+        isFinal: Boolean = false
     ): ShortArray {
         val targetRate = when (encodingType) {
             CODE_TYPE.AI -> PttAudioProcessor.AI_TARGET_SAMPLE_RATE
@@ -205,7 +240,8 @@ object RecorderUtils {
             pcmArray = pcmArray,
             nativeRate = nativeRate,
             targetRate = targetRate,
-            enableNoiseCancellation = enableNoiseCancellation
+            enableNoiseCancellation = enableNoiseCancellation,
+            isFinal = isFinal
         )
     }
 
@@ -229,6 +265,7 @@ object RecorderUtils {
         Scopes.getMainCoroutine().launch {
             delay(300)
             canRecord.value = true
+            recordingInProgress.set(false)
         }
     }
 

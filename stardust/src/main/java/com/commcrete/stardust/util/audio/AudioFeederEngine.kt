@@ -65,7 +65,6 @@ internal object AudioFeederEngine {
         realtimePacing: Boolean,
         artifactDir: File,
         enableNoiseCancellation: Boolean = false,
-        onStats: (AudioStats) -> Unit,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
             Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
@@ -83,10 +82,8 @@ internal object AudioFeederEngine {
         //    native-rate buffer so the analyzer is comparing apples to apples
         //    across devices (24 kHz mic vs 48 kHz jbox).
         val (info, nativeRate, monoNative) = AudioFileLoader.loadMono(source)
-        AudioTestFeederLogger.logAudioInfo(info)
-        val stats = AudioStatsAnalyzer.computeStats(monoNative, source)
-        AudioTestFeederLogger.logAudioStats(source.label, stats)
-        onStats(stats)
+
+
 
         // 2. Stream the PCM as chunks at native rate. Each raw chunk is
         //    handed to [PttAudioProcessor.process] which applies the same
@@ -225,7 +222,6 @@ internal object AudioFeederEngine {
     suspend fun saveOnly(
         source: Source,
         artifactDir: File,
-        onStats: (AudioStats) -> Unit = {},
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
             Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
@@ -234,12 +230,6 @@ internal object AudioFeederEngine {
 
         artifactDir.mkdirs()
         persistOriginalSourceFile(source, artifactDir)
-
-        val (info, _, monoNative) = AudioFileLoader.loadMono(source)
-        AudioTestFeederLogger.logAudioInfo(info)
-        val stats = AudioStatsAnalyzer.computeStats(monoNative, source)
-        AudioTestFeederLogger.logAudioStats(source.label, stats)
-        onStats(stats)
 
         Timber.tag(TAG).i("  ✓ saveOnly %s → %s", source.label, artifactDir.absolutePath)
     }
@@ -372,7 +362,7 @@ internal object AudioFeederEngine {
                 if (chunkSampleIndex == samplesPerChunk) {
                     emitOneChunk(
                         chunkSamples, samplesPerChunk,
-                        chunkIndex, isPartial = false, onChunk,
+                        chunkIndex, onChunk,
                     )
                     chunkIndex++
                     chunkSampleIndex = 0
@@ -388,7 +378,7 @@ internal object AudioFeederEngine {
         if (chunkSampleIndex > 0 && isActive) {
             emitOneChunk(
                 chunkSamples, chunkSampleIndex,
-                chunkIndex, isPartial = true, onChunk,
+                chunkIndex, onChunk,
             )
             chunkIndex++
         }
@@ -411,18 +401,9 @@ internal object AudioFeederEngine {
         buffer: ShortArray,
         length: Int,
         chunkIndex: Int,
-        isPartial: Boolean,
         onChunk: (ShortArray, Int) -> Unit,
     ) {
         val chunk = if (length == buffer.size) buffer.copyOf() else buffer.copyOf(length)
-
-        val raw = AudioStatsAnalyzer.quickChunkStats(chunk)
-        Timber.tag(TAG).d(
-            "    chunk #%03d len=%d peak=%d (%.1f dBFS) rms=%.1f (%.1f dBFS) zcr=%.3f%s [pre-chain]",
-            chunkIndex, chunk.size, raw.peak, raw.peakDbFs,
-            raw.rms, raw.rmsDbFs, raw.zeroCrossingRate,
-            if (isPartial) "  [PARTIAL/FINAL]" else "",
-        )
 
         onChunk(chunk, chunkIndex)
     }

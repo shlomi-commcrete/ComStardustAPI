@@ -79,7 +79,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE){
                     savedPackage = mPackage
                 }
-                Log.i("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
+                Log.d("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
                 Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray $randomID: ${bittelPackage.stardustOpCode}")
 //                SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
 //                    if(mPackage.getDestAsString() != it && mPackage.getSourceAsString() != it
