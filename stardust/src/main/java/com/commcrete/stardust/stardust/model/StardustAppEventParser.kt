@@ -1,5 +1,8 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.SharedPreferencesUtil
+
 
 class StardustAppEventParser : StardustParser(){
 
@@ -62,29 +65,41 @@ class StardustAppEventParser : StardustParser(){
         offset: Int,
         deviceEventPackage: StardustAppEventPackage
     ) {
+        val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
+        parseIDSender(appIDBytes, deviceEventPackage)
+        val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+        if(deviceEventPackage.senderID.equals(rssiReportSource, true)) {
+            val rssi = cutByteArray(byteArray, RSSI_LENGTH, offset)
+            parseRSSI(rssi, deviceEventPackage)
 
-        when (eventType) {
-            StardustAppEventPackage.StardustAppEventType.RXSuccess -> {
+            val snr = cutByteArray(byteArray, SNR_LENGTH, offset)
+            parseSnr(snr, deviceEventPackage)
 
-                val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
-                parseIDSender(appIDBytes, deviceEventPackage)
-
-                val rssi = cutByteArray(byteArray, RSSI_LENGTH, offset)
-                parseRSSI(rssi, deviceEventPackage)
-
-                val snr = cutByteArray(byteArray, SNR_LENGTH, offset)
-                parseSnr(snr, deviceEventPackage)
-
-                val signalRssi = cutByteArray(byteArray, SIGNAL_RSSI_LENGTH, offset)
-                parseSignalRssi(signalRssi, deviceEventPackage)
-            }
-            StardustAppEventPackage.StardustAppEventType.ArmDelete,
-            StardustAppEventPackage.StardustAppEventType.Delete -> {
-                val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
-                parseIDSender(appIDBytes, deviceEventPackage)
-            }
-            else -> {}
+            val signalRssi = cutByteArray(byteArray, SIGNAL_RSSI_LENGTH, offset)
+            parseSignalRssi(signalRssi, deviceEventPackage)
         }
+//        when (eventType) {
+//            StardustAppEventPackage.StardustAppEventType.RXSuccess -> {
+//
+//                val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
+//                parseIDSender(appIDBytes, deviceEventPackage)
+//
+//                val rssi = cutByteArray(byteArray, RSSI_LENGTH, offset)
+//                parseRSSI(rssi, deviceEventPackage)
+//
+//                val snr = cutByteArray(byteArray, SNR_LENGTH, offset)
+//                parseSnr(snr, deviceEventPackage)
+//
+//                val signalRssi = cutByteArray(byteArray, SIGNAL_RSSI_LENGTH, offset)
+//                parseSignalRssi(signalRssi, deviceEventPackage)
+//            }
+//            StardustAppEventPackage.StardustAppEventType.ArmDelete,
+//            StardustAppEventPackage.StardustAppEventType.Delete -> {
+//                val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
+//                parseIDSender(appIDBytes, deviceEventPackage)
+//            }
+//            else -> {}
+//        }
     }
 
     private fun parseSignalRssi(

@@ -70,7 +70,7 @@ interface StardustAPICallbacks {
     )
     fun connectionStatusChanged (connectionType: ConnectionType?)
     fun onDeviceConnectionRSSIChanged (rssi : Int)
-    fun onSignalRSSIChanged()
+    fun onSignalRSSIChanged(rssiData: StardustAppEventPackage.RSSIPackage) // called with snr = null if no refresh arrives within 15s (see AppEvents.updateRssiSignalChanged)
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)

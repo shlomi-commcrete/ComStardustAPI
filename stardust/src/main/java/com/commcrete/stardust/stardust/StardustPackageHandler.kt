@@ -29,6 +29,7 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -237,6 +238,15 @@ internal class StardustPackageHandler(private val context: Context ,
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
+            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+            if(sdPackage.senderID.equals(rssiReportSource, true)) {
+                AppEvents.updateRssiSignalChanged(
+                    StardustAppEventPackage.RSSIPackage(
+                        rssi = sdPackage.deviceConnectionRssi,
+                        signalRssi = sdPackage.signalRssi,
+                        snr = sdPackage.snr
+                ))
+            }
         }
     }
 
