@@ -38,7 +38,6 @@ import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.friends.FriendsDatabase
 import com.commcrete.stardust.room.friends.FriendsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
 import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -62,8 +61,6 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.util.Date
 import kotlin.random.Random
-
-import com.commcrete.stardust.util.audio.PttAudioProcessor
 
 @SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface{

@@ -11,12 +11,15 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
+import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlin.collections.get
 
 object SharedPreferencesUtil {
