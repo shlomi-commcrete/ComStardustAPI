@@ -1,11 +1,13 @@
 package com.commcrete.bittell.util.demo
 
+import android.content.Context
 import androidx.navigation.NavController
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.contacts.ChatContact
 import com.commcrete.stardust.room.contacts.ContactsDatabase
 import com.commcrete.stardust.room.contacts.ContactsRepository
 import com.commcrete.stardust.room.messages.MessagesDatabase
@@ -14,6 +16,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.DataManager.getChatsRepo
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.FolderReader
 import com.commcrete.stardust.util.Scopes
@@ -94,9 +97,19 @@ object DemoDataUtil {
         Scopes.getDefaultCoroutine().launch {
             ChatsRepository(ChatsDatabase.getDatabase(DataManager.context).chatsDao()).addChats(demoUsers.mutableUserList)
             DataManager.getMessagesRepo(DataManager.context).addMessages(demoUsers.mutableMessagesList)
-            ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addAllContacts(demoUsers.mutableContactsList)
+            val sortedContacts = demoUsers.mutableContactsList.sortedBy { it.displayName }
+            ContactsRepository(ContactsDatabase.getDatabase(DataManager.context).contactsDao()).addAllContacts(sortedContacts)
+            setRSSIReportSourcePresetValue(sortedContacts)
             onFinishLoadData()
         }
+    }
+
+    fun setRSSIReportSourcePresetValue(contactsList: List<ChatContact>) {
+        val presetSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+        if(presetSource.isNotBlank() && contactsList.find { it.chatUserId.equals(presetSource, true) } != null) return
+        val HQ_NAME_REGEX = Regex("\\bHQ\\b", RegexOption.IGNORE_CASE)
+        (contactsList.find { it.displayName.let(HQ_NAME_REGEX::containsMatchIn) } ?: contactsList.firstOrNull())
+            ?.also { SharedPreferencesUtil.setRSSIReportSource(DataManager.context, it.chatUserId ?: "") }
     }
 
     private fun setLocalUser(chatItem: ChatItem) {

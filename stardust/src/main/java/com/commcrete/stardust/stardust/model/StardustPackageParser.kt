@@ -1,6 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
 import android.content.Context
+import android.util.Log
 import com.commcrete.stardust.crypto.CryptoUtils
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import timber.log.Timber
@@ -123,6 +124,11 @@ class StardustPackageParser : StardustParser() {
                 val realLength = dataBytes[0].toUByte().toInt()
                 dataBytes = dataBytes.copyOfRange(1, realLength+1)
                 length = realLength
+            }
+            if (opcode == StardustPackageUtils.StardustOpCode.SEND_PTT_AI) {
+                Log.d(StardustPackage.PTT_TRACE_TAG, "RX post-decrypt src=${sourceBytes.joinToString("") { "%02x".format(it) }} " +
+                    "part=${controlByte.stardustPartType} size=${dataBytes.size} " +
+                    "hex=${dataBytes.joinToString("") { "%02x".format(it) }}")
             }
             if(length > dataBytes.size) {
                 packageState = PackageState.NOT_ENOUGH_DATA

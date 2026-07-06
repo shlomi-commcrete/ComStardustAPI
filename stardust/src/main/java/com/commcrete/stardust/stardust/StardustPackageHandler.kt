@@ -29,10 +29,12 @@ import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
+import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
@@ -79,7 +81,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE){
                     savedPackage = mPackage
                 }
-                Log.i("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
+                Log.d("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
                 Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray $randomID: ${bittelPackage.stardustOpCode}")
 //                SharedPreferencesUtil.getAppUser(DataManager.context)?.appId?.let {
 //                    if(mPackage.getDestAsString() != it && mPackage.getSourceAsString() != it
@@ -107,6 +109,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     return
                 }
                 Timber.tag("InitHandler").d("not handled by init handler")
+
                 when(mPackageOpCode){
                     StardustPackageUtils.StardustOpCode.SEND_MESSAGE -> {
                         if(mPackageControl.stardustPackageType == StardustControlByte.StardustPackageType.DATA) {
@@ -124,15 +127,14 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.REQUEST_LOCATION -> {
                         handleLocationRequested(context, mPackage, randomID)
                     }
-
                     StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION -> {
                         handleLocationReceived(context, mPackage)
                     }
-
                     StardustPackageUtils.StardustOpCode.GET_ADDRESSES -> {
                         handleAddressesReceived(context, mPackage)
                     }
-                    StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE -> {
+                    StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE,
+                    StardustPackageUtils.StardustOpCode.READ_STATUS -> {
                         handleConfiguration(context, mPackage)
                     }
                     StardustPackageUtils.StardustOpCode.RECEIVE_VERSION -> {
@@ -193,6 +195,13 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT -> {
                         handleAppEvent(context, mPackage)
                     }
+
+                    StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
+                    StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION -> {
+                        getConfiguration(context)
+                    }
+
+
                     else -> {}
                 } }
             resetTimer()
@@ -201,17 +210,18 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleAppEvent(context: Context, mPackage: StardustPackage) {
         val bittelAppEventPackage = StardustAppEventParser().parseAppEvent(mPackage)
+
         bittelAppEventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
-                RXSuccess -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                RXFail -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXStart -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXFinish -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                TXBufferFull -> {ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)}
-                PresetChange -> {sdPackage.getCurrentPreset()?.let {
-                    ConfigurationUtils.setCurrentPresetLocal(it)
-                    ConfigurationUtils.setDefaults(context)
-                }}
+                RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, RxFinish -> {
+                    ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)
+                }
+                PresetChange -> {
+                    sdPackage.getCurrentPreset()?.let {
+                        ConfigurationUtils.setCurrentPresetLocal(it)
+                        ConfigurationUtils.setDefaults(context)
+                    }
+                }
                 ArmDelete -> {
                     if(sdPackage.armDelete == ArmDelete.type) {
                         EraseUtils.handleArm()
@@ -222,11 +232,21 @@ internal class StardustPackageHandler(private val context: Context ,
                         EraseUtils.handleDelete()
                     }
                 }
-                null -> {}
+                PartialEraseFinished -> {}
 
+                null -> {}
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
+            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+            if(sdPackage.senderID.equals(rssiReportSource, true)) {
+                AppEvents.updateRssiSignalChanged(
+                    StardustAppEventPackage.RSSIPackage(
+                        rssi = sdPackage.deviceConnectionRssi,
+                        signalRssi = sdPackage.signalRssi,
+                        snr = sdPackage.snr
+                ))
+            }
         }
     }
 
@@ -289,7 +309,7 @@ internal class StardustPackageHandler(private val context: Context ,
         getConfiguration(context)
     }
 
-    private fun getConfiguration (context: Context, ) {
+    private fun getConfiguration(context: Context) {
         SharedPreferencesUtil.getAppUser(context)?.let {
             val src = it.appId
             val dst = it.bittelId
@@ -298,7 +318,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     context = context,
                     source = src,
                     destenation = dst,
-                    stardustOpCode =StardustPackageUtils.StardustOpCode.READ_STATUS)
+                    stardustOpCode = StardustPackageUtils.StardustOpCode.READ_STATUS)
                 clientConnection?.addMessageToQueue(configurationPackage)
             }
         }
@@ -379,17 +399,25 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleConfiguration(context: Context, mPackage: StardustPackage) {
         Scopes.getMainCoroutine().launch {
-            val bittelConfigurationPackage = StardustConfigurationParser().parseConfiguration(mPackage)
+            val bittelConfigurationPackage =
+                StardustConfigurationParser().parseConfiguration(mPackage)
 
             bittelConfigurationPackage?.let {
-                if(it.presetsWithoutConfig(context).isNotEmpty() && StardustInitConnectionHandler.isConnectedSuccessfully()) { listener?.onInitDone(StardustInitConnectionHandler.State.PRESET_ERROR) }
+                if (it.presetsWithoutConfig(context)
+                        .isNotEmpty() && StardustInitConnectionHandler.isConnectedSuccessfully()
+                ) {
+                    listener?.onInitDone(StardustInitConnectionHandler.State.PRESET_ERROR)
+                }
                 ConfigurationUtils.bittelConfiguration.value = bittelConfigurationPackage
-                ConfigurationUtils.licensedFunctionalities = LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(bittelConfigurationPackage.licenseType)
+                ConfigurationUtils.licensedFunctionalities =
+                    LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(
+                        bittelConfigurationPackage.licenseType
+                    )
                 ConfigurationUtils.setConfigFile(it)
                 setNewLocals(it)
                 AdminUtils.updateBittelAdminMode(context)
             }
-    }
+        }
     }
 
     private fun handleSOS (mPackage: StardustPackage) {

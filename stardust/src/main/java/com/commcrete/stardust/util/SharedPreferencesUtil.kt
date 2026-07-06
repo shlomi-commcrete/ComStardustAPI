@@ -11,12 +11,15 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
+import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlin.collections.get
 
 object SharedPreferencesUtil {
@@ -37,10 +40,20 @@ object SharedPreferencesUtil {
 
     //Preferences
     private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
-    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
+    private const val KEY_AUDIO_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
+    // Configurable, multiband alternative to platform AGC. When true, the
+    // recorder attaches an `android.media.audiofx.DynamicsProcessing` effect
+    // to the AudioRecord session instead of the boolean platform AGC.
+    // API 28+; falls back to AGC on older devices or when the effect is
+    // not available on the device.
+    private const val KEY_ENABLE_DYNAMICS_PROCESSING = "enable_dynamics_processing"
+    // Input gain (dB) applied at the head of the DynamicsProcessing chain.
+    // Used as the primary "make-up gain" knob — the PCM2900C in the jbox has
+    // a quiet fixed analog stage and benefits from +6 to +12 dB here.
+    private const val KEY_DP_INPUT_GAIN_DB = "dp_input_gain_db"
     private const val KEY_CODEC_RECORDING_TYPE = "recording_type"
     private const val KEY_AI_RECORDING_TYPE = "ai_recording_type"
     private const val KEY_BITTEL_BIT_SERVER = "enable_bittel_server"
@@ -54,12 +67,12 @@ object SharedPreferencesUtil {
     //Record type Values
 
     val AUDIO_SOURCE_TO_KEY = mapOf(
-        MediaRecorder.AudioSource.DEFAULT to "Default",
+        //MediaRecorder.AudioSource.DEFAULT to "Default",
         MediaRecorder.AudioSource.MIC to "Mic",
-        MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
-        MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
+        //MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
+        //MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
         //MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
-        MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
+        //MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
     )
 
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
@@ -84,6 +97,8 @@ object SharedPreferencesUtil {
 
     private const val KEY_LAST_USER = "last_user"
     private const val KEY_ALERT_DEST = "alert_dest"
+
+    private const val KEY_RSSI_SOURCE = "rssi_source"
 
     //Output Values
     private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
@@ -136,7 +151,7 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-
+    private const val KEY_NOISE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -320,32 +335,20 @@ object SharedPreferencesUtil {
         return getPrefs(context).getString(key, default)
     }
 
-    fun getCodecGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 100.toFloat())
+    fun getAudioGain(context: Context) : Float{
+        return getPrefs(context).getFloat( KEY_AUDIO_GAIN, 50.toFloat())
     }
 
-    fun setCodecGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_CODEC_HANDLE_GAIN, gain).apply()
+    fun setAudioGain(context: Context, gain: Float) {
+        getPrefs(context).edit().putFloat(KEY_AUDIO_GAIN, gain).apply()
     }
 
-    fun getAIGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 100.toFloat())
-    }
-
-    fun setAIGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_HANDLE_GAIN, gain).apply()
-    }
-
-    fun getAutoGainControl(context: Context) : Boolean{
-        return getPreferencesBoolean(context, KEY_ENABLE_AUTO_GAIN_CONTROL)
-    }
-
-    fun getNoiseSuppressor(context: Context) : Boolean {
+    fun getNoiseSuppressorEnableState(context: Context) : Boolean {
         return getPreferencesBoolean(context, KEY_ENABLE_NOISE_SUPPRESSOR)
     }
 
-    fun getAcousticEchoControl(context: Context) : Boolean {
-        return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
+    fun setNoiseSuppressorEnableState(context: Context, enabled: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_ENABLE_NOISE_SUPPRESSOR, enabled).apply()
     }
 
     fun getCodecAudioSource(context: Context): Int {
@@ -631,6 +634,15 @@ object SharedPreferencesUtil {
 
     }
 
+    fun getRSSIReportSource(context: Context) : String {
+        return getPrefs(context).getString(KEY_RSSI_SOURCE, "") ?: ""
+    }
+
+    fun setRSSIReportSource(context: Context, dest: String)  {
+        getPrefs(context).edit().putString(KEY_RSSI_SOURCE, dest).apply()
+
+    }
+
     fun getKeyNameCrypto (context: Context) : String {
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(KEY_KEY_NAME, "Default") ?: "Default"
@@ -715,24 +727,24 @@ object SharedPreferencesUtil {
 
     @Deprecated("As there is no option to update this value from app now this function is unavailable")
     fun setAudioModelType(context: Context, model: WavTokenizerDecoder.ModelType) {
-//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-//        prefs.edit()
-//            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
-//            .apply()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit()
+            .putString(KEY_DEFAULT_AUDIO_MODEL_TYPE, model.name) // save enum as string
+            .apply()
     }
 
     @Deprecated("As there is no option to update this value from app now it will return WavTokenizerDecoder.ModelType.General")
     fun getAudioModelType(context: Context): WavTokenizerDecoder.ModelType {
-//        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-//        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
-//
-//        return try {
-//            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
-//            else WavTokenizerDecoder.ModelType.General   // default value
-//        } catch (e: Exception) {
-//            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
-//        }
-        return WavTokenizerDecoder.ModelType.General
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val saved = prefs.getString(KEY_DEFAULT_AUDIO_MODEL_TYPE, null)
+
+        return try {
+            if (saved != null) WavTokenizerDecoder.ModelType.valueOf(saved)
+            else WavTokenizerDecoder.ModelType.General   // default value
+        } catch (e: Exception) {
+            WavTokenizerDecoder.ModelType.General        // fallback if corrupted
+        }
+        //return WavTokenizerDecoder.ModelType.General
     }
 
 }

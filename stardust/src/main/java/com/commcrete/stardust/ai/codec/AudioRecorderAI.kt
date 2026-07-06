@@ -1,24 +1,16 @@
-package com.example.chunkrecorder
+package com.commcrete.stardust.ai.codec
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
-import android.os.Build
 import android.util.Log
-import androidx.core.content.ContextCompat.getSystemService
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.audio.AudioRecordManager
+import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
+import com.commcrete.stardust.util.audio.AudioCaptureConfig
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.coroutines.coroutineContext
 
 
 /**
@@ -41,7 +33,7 @@ class AudioRecorderAI(
     private val context: Context,
     private val chunkDurationMs: Long,
     private val filesDirProvider: () -> File,
-    private val sampleRate: Int = 24_000,
+    private val sampleRate: Int = RECORDER_SAMPLE_RATE,
     private val bitsPerSample: Int = 16,
     private val channels: Int = 1,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -50,8 +42,8 @@ class AudioRecorderAI(
 ) {
 
     // Callbacks
-    var onChunkReady: ((pcmArray: ShortArray, chunkIndex: Int) -> Unit)? = null
-    var onPartialFinalChunk: ((pcmArray: ShortArray, chunkIndex: Int) -> Unit)? = null
+    var onChunkReady: ((pcmArray: ShortArray, chunkIndex: Int, captureRate: Int, deviceType: Int?) -> Unit)? = null
+    var onPartialFinalChunk: ((pcmArray: ShortArray, chunkIndex: Int, captureRate: Int, deviceType: Int?) -> Unit)? = null
     var onStateChanged: ((recording: Boolean) -> Unit)? = null
     var onError: ((Throwable) -> Unit)? = null
 
@@ -76,6 +68,7 @@ class AudioRecorderAI(
         synchronized(this) {
             // Already running or cancelling
             if (job?.isActive == true) return
+            AudioRecordingKeepAlive.acquire(context)
 
             job = scope.launch {
                 onStateChanged?.invoke(true)
@@ -97,8 +90,7 @@ class AudioRecorderAI(
         synchronized(this) {
             job?.cancel()
         }
-
-        disableBluetoothSco()
+        AudioCaptureConfig.clearInputRoute(context)
     }
 
 //    fun start() {
@@ -132,23 +124,32 @@ class AudioRecorderAI(
     private suspend fun recordLoop() = withContext(Dispatchers.IO) {
         Log.d("AudioRecorder", "recordLoop")
 
-        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
-        enableBluetoothSco()
+        // Input gain: profile setting takes precedence, then SharedPreferences.
+        val gain = SharedPreferencesUtil.getAudioGain(context) / 100f
+
+        val capturePlan = AudioCaptureConfig.buildCapturePlan(
+            context = context,
+            requestedRate = sampleRate,
+            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource(context)
+        )
+        val captureRate = capturePlan.captureRate
+        val audioSource = capturePlan.audioSource
 
         val minBuffer = AudioRecord.getMinBufferSize(
-            sampleRate,
+            captureRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT
         )
 
-        require(minBuffer > 0) { "Unsupported sample rate or format" }
+        require(minBuffer > 0) { "Unsupported sample rate or format ($captureRate Hz)" }
 
+        // Buffer at least ~250 ms at the capture rate to absorb USB jitter.
         val recordBufferSize =
-            (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
+            maxOf((minBuffer * 2), captureRate * channels * bytesPerSample / 4)
 
         val audioRecord = AudioRecord(
-            SharedPreferencesUtil.getAIAudioSource(context),
-            sampleRate,
+            audioSource,
+            captureRate,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,
             recordBufferSize
@@ -156,31 +157,78 @@ class AudioRecorderAI(
 
         if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
             audioRecord.release()
-            throw IllegalStateException("AudioRecord initialization failed")
+            throw IllegalStateException(
+                "AudioRecord initialization failed (rate=$captureRate, source=$audioSource)"
+            )
         }
 
-        // 🔑 Force AudioRecord to unblock when coroutine is cancelled
+        AudioCaptureConfig.applyInputRoute(context, audioRecord, capturePlan.preferredInputDevice)
+
+        val deviceTag = capturePlan.preferredInputDevice?.let { sanitizeDeviceName(it.productName?.toString()) }
+            ?: "default-mic"
+
+        // Emit chunks at native capture rate (no pre-callback decimation).
+        val captureSamplesPerChunk = (captureRate * chunkDurationMs / 1000.0).toInt()
+
+
+        // 7) Comprehensive AI-relevant stream logger (unchanged).
+//        val streamStats = StreamingAudioStatsLogger(
+//            sampleRate = captureRate,
+//            channels = channels,
+//            bitsPerSample = bitsPerSample,
+//        ).also {
+//            it.onStart(
+//                deviceName = capturePlan.preferredInputDevice?.productName?.toString(),
+//                deviceType = capturePlan.preferredInputDevice?.type ?: -1,
+//                deviceRates = capturePlan.preferredInputDevice?.sampleRates?.toList() ?: emptyList(),
+//            )
+//        }
+
+        // Force AudioRecord to unblock when coroutine is cancelled.
         coroutineContext.job.invokeOnCompletion {
-            try {
-                audioRecord.stop()
-            } catch (_: Exception) {}
+            try { audioRecord.stop() } catch (_: Exception) {}
         }
 
-        val shortBuffer = ShortArray(sampleRate / 100)
-        val chunkSamples = ShortArray(samplesPerChunk)
+        // Read ~20 ms at the *capture* rate. Larger than 10 ms to reduce
+        // syscall overhead which on some devices was contributing pops.
+        val readChunkSamples = (captureRate / 50).coerceAtLeast(16)
+        val shortBuffer = ShortArray(readChunkSamples)
+
+        val chunkSamples = ShortArray(captureSamplesPerChunk)
         var chunkSampleIndex = 0
         var chunkIndex = 1
 
         audioRecord.startRecording()
+
+        // Report the actual route chosen by AudioRecord when available.
+        val resolvedInputType = audioRecord.routedDevice?.type ?: capturePlan.preferredInputDevice?.type
+
+        // Save bit-exact PCM straight from the ADC, BEFORE gain / decimation,
+        // tagged with the *real* capture rate so the file is meaningful.
+//        val debugRawWriter = DebugRawWavWriter().also {
+//            it.start(
+//                context = context,
+//                sampleRate = captureRate,
+//                channels = channels,
+//                bitsPerSample = bitsPerSample,
+//                fileNamePrefix = "pcm_raw_${deviceTag}_${captureRate}",
+//            )
+//        }
 
         try {
             while (isActive) {
                 val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
                 if (read <= 0) continue
 
+                // RAW capture — must happen BEFORE filtering / gain.
+                //debugRawWriter.append(shortBuffer, read)
+
+                // Per-buffer stats on the native-rate stream.
+                //streamStats.onBufferRead(shortBuffer, read)
+
                 var consumed = 0
                 while (consumed < read && isActive) {
-                    val remaining = samplesPerChunk - chunkSampleIndex
+                    val remaining = captureSamplesPerChunk - chunkSampleIndex
                     val toCopy = minOf(remaining, read - consumed)
 
                     System.arraycopy(
@@ -194,9 +242,11 @@ class AudioRecorderAI(
                     chunkSampleIndex += toCopy
                     consumed += toCopy
 
-                    if (chunkSampleIndex == samplesPerChunk) {
+                    if (chunkSampleIndex == captureSamplesPerChunk) {
                         val processed = processSamples(chunkSamples, gain)
-                        onChunkReady?.invoke(processed, chunkIndex++)
+                        onChunkReady?.invoke(processed, chunkIndex, captureRate, resolvedInputType)
+                        //streamStats.onChunkCompleted(chunkIndex)
+                        chunkIndex++
                         chunkSampleIndex = 0
                     }
                 }
@@ -208,216 +258,71 @@ class AudioRecorderAI(
                         chunkSamples.copyOf(chunkSampleIndex),
                         gain
                     )
-                    onPartialFinalChunk?.invoke(partial, chunkIndex)
+                    onPartialFinalChunk?.invoke(partial, chunkIndex, captureRate, resolvedInputType)
                 }
             } catch (_: Exception) {}
 
-            try {
-                audioRecord.stop()
-            } catch (_: Exception) {}
+            //try { streamStats.onStop() } catch (_: Throwable) {}
+            //try { debugRawWriter.stop() } catch (_: Throwable) {}
 
+            try { audioRecord.stop() } catch (_: Exception) {}
             audioRecord.release()
-            disableBluetoothSco()
+            AudioCaptureConfig.clearInputRoute(context)
         }
     }
 
-//    @SuppressLint("MissingPermission")
-//    private suspend fun recordLoop() {
-//        Log.d("AudioRecorder", "recordLoop")
-//
-//        val gain = SharedPreferencesUtil.getAIGain(context) / 100f
-//        enableBluetoothSco()
-//
-//        val minBuffer = AudioRecord.getMinBufferSize(
-//            sampleRate,
-//            AudioFormat.CHANNEL_IN_MONO,
-//            AudioFormat.ENCODING_PCM_16BIT
-//        )
-//
-//        if (minBuffer == AudioRecord.ERROR || minBuffer == AudioRecord.ERROR_BAD_VALUE) {
-//            throw IllegalStateException("Unsupported sample rate or format")
-//        }
-//
-//        val recordBufferSize = (minBuffer * 1.5).toInt().coerceAtLeast(bytesPerChunk)
-//        val audioRecord = AudioRecord(
-//            SharedPreferencesUtil.getAIAudioSource(context),
-//            sampleRate,
-//            AudioFormat.CHANNEL_IN_MONO,
-//            AudioFormat.ENCODING_PCM_16BIT,
-//            recordBufferSize
-//        )
-//
-////        try {
-////            val sessionId = audioRecord.audioSessionId
-////
-////            if (AutomaticGainControl.isAvailable()) {
-////                AutomaticGainControl.create(sessionId)?.enabled = false
-////            }
-////            if (NoiseSuppressor.isAvailable()) {
-////                NoiseSuppressor.create(sessionId)?.enabled = false
-////            }
-////            if (AcousticEchoCanceler.isAvailable()) {
-////                AcousticEchoCanceler.create(sessionId)?.enabled = false
-////            }
-////        }catch ( e : Exception) {
-////            e.printStackTrace()
-////        }
-//        if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
-//            audioRecord.release()
-//            throw IllegalStateException("AudioRecord initialization failed")
-//        }
-//
-//        val shortBuffer = ShortArray(sampleRate / 100)
-//        val chunkSamples = ShortArray(samplesPerChunk)
-//        var chunkSampleIndex = 0
-//        var chunkIndex = 1
-//        Log.d("AudioRecorder", "startRecording")
-//
-//        audioRecord.startRecording()
-//
-//        try {
-//
-//            while (coroutineContext.isActive && running.get()) {
-////                Log.d("AudioRecorder", "while recording")
-//                val read = audioRecord.read(shortBuffer, 0, shortBuffer.size)
-//                if (read <= 0) continue
-//
-//                var consumed = 0
-//                while (consumed < read) {
-//                    val remainingInChunk = samplesPerChunk - chunkSampleIndex
-//                    val toCopy = minOf(remainingInChunk, read - consumed)
-//                    System.arraycopy(shortBuffer, consumed, chunkSamples, chunkSampleIndex, toCopy)
-//                    chunkSampleIndex += toCopy
-//                    consumed += toCopy
-//
-//                    if (chunkSampleIndex == samplesPerChunk) {
-//                        Log.d("AudioRecorder", "TS when invoking chunk $chunkIndex: ${System.currentTimeMillis()}")
-//
-//                        val processedSamples: ShortArray = processSamples(chunkSamples, gain)
-//                        onChunkReady?.invoke(processedSamples, chunkIndex)
-//                        chunkIndex++
-//                        chunkSampleIndex = 0
-//                    }
-//                }
-//            }
-//        } finally {
-//            try {
-//                audioRecord.stop()
-//                // Optionally flush partial chunk
-//                if (chunkSampleIndex > 0) {
-//                    val samples = chunkSamples.copyOf(chunkSampleIndex)
-//                    val partial = processSamples(samples, gain)
-//                    onPartialFinalChunk?.invoke(partial, chunkIndex)
-//                }
-//                audioRecord.release()
-//            } catch (_: Exception) {}
-//            audioRecord.release()
-//        }
-//    }
 
-    private fun processSamples(samples: ShortArray, gain: Float) = samples.map { sample ->
-        (sample * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
-    }.toShortArray()
+    private fun sanitizeDeviceName(name: String?): String {
+        if (name.isNullOrBlank()) return "usb-device"
+        return name.replace(Regex("[^A-Za-z0-9._-]+"), "_").take(32)
+    }
 
-    // In your BleManager or recording activity
-//    @SuppressLint("ServiceCast")
-    @SuppressLint("NewApi")
-    private fun enableBluetoothSco() {
-        // Get an AudioManager instance
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
-        var speakerDevice: AudioDeviceInfo? = null
-        val devices = audioManager.availableCommunicationDevices
-        for (device in devices) {
-            if (device != null) {
-                Log.d("AudioRecorder", "audio device ${device.productName}, type ${device.type}")
-                if (device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-                    speakerDevice = device as AudioDeviceInfo?
-                    break
-                }
+
+    /**
+     * Apply digital gain followed by a soft-knee limiter, so it is safe to
+     * call this with [gain] >> 1.0 (e.g. 2.0 / 4.0 to make up for the
+     * PCM2900C's fixed analog gain) without producing the harsh square-wave
+     * clipping you would get from the previous `coerceIn(MIN, MAX)`.
+     *
+     * Behaviour:
+     *  - Below ~50% of full scale the response is exactly linear, so quiet
+     *    detail is untouched.
+     *  - Above that the curve is tanh-shaped and asymptotes smoothly to
+     *    ±32767, so transients are rounded rather than chopped.
+     *
+     * If you want a louder signal: bump
+     * [SharedPreferencesUtil.setAudioGain] to e.g. 200f (2.0×) or 400f (4.0×).
+     */
+    private fun processSamples(samples: ShortArray, gain: Float): ShortArray {
+        if (gain == 1f) return samples.copyOf()
+        val out = ShortArray(samples.size)
+        val knee = 0.5f                  // linear region: |x| <= 0.5 * FS
+        val fs = Short.MAX_VALUE.toFloat()
+        for (i in samples.indices) {
+            val x = samples[i] * gain        // pre-gain, in 16-bit units
+            val n = x / fs                   // normalise to [-many, +many]
+            val absN = if (n < 0f) -n else n
+            val shaped = if (absN <= knee) {
+                n
+            } else {
+                // Soft-clip: 0.5 + tanh((|n|-0.5)/0.5)*0.5 in the upper half.
+                val sign = if (n < 0f) -1f else 1f
+                val over = (absN - knee) / (1f - knee)         // 0..∞
+                sign * (knee + (1f - knee) * kotlin.math.tanh(over))
+            }
+            val iv = (shaped * fs).toInt()
+            out[i] = when {
+                iv > Short.MAX_VALUE.toInt() -> Short.MAX_VALUE
+                iv < Short.MIN_VALUE.toInt() -> Short.MIN_VALUE
+                else -> iv.toShort()
             }
         }
-        if (speakerDevice != null) {
-            // Turn speakerphone ON.
-            val result = audioManager.setCommunicationDevice(speakerDevice)
-            if (!result) {
-                // Handle error.
-                Log.e("AudioRecorder", "setCommunicationDevice failed to set ble device")
-            }
-        }
+        return out
     }
 
-    @SuppressLint("NewApi")
-    private fun disableBluetoothSco() {
-        val audioManager: AudioManager =
-            context.getSystemService<AudioManager?>(AudioManager::class.java)
-        audioManager.clearCommunicationDevice()
-        audioManager.isBluetoothScoOn = false
+    companion object {
+        const val RECORDER_SAMPLE_RATE = 24_000
     }
 
-//    private fun makeChunkFile(index: Int): File {
-//        val dir = filesDirProvider()
-//        if (!dir.exists()) dir.mkdirs()
-//        val name = "chunk_${index.toString().padStart(5, '0')}.wav"
-//        return File(dir, name)
-//    }
-//
-//    @Throws(IOException::class)
-//    private fun writeWav(target: File, samples: ShortArray, sampleCount: Int) {
-//        FileOutputStream(target).use { fos ->
-//            val dataSize = sampleCount * bytesPerSample * channels
-//            val header = createWavHeader(
-//                totalAudioBytes = dataSize,
-//                sampleRate = sampleRate,
-//                channels = channels,
-//                bitsPerSample = bitsPerSample
-//            )
-//            fos.write(header)
-//            val bb = ByteBuffer.allocate(sampleCount * 2).order(ByteOrder.LITTLE_ENDIAN)
-//            for (i in 0 until sampleCount) {
-//                bb.putShort(samples[i])
-//            }
-//            fos.write(bb.array())
-//        }
-//    }
-//
-//    private fun createWavHeader(
-//        totalAudioBytes: Int,
-//        sampleRate: Int,
-//        channels: Int,
-//        bitsPerSample: Int
-//    ): ByteArray {
-//        val byteRate = sampleRate * channels * bitsPerSample / 8
-//        val totalDataLen = 36 + totalAudioBytes
-//        val header = ByteArray(44)
-//        val bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN)
-//
-//        // RIFF
-//        header[0] = 'R'.code.toByte()
-//        header[1] = 'I'.code.toByte()
-//        header[2] = 'F'.code.toByte()
-//        header[3] = 'F'.code.toByte()
-//        bb.putInt(4, totalDataLen)
-//        header[8] = 'W'.code.toByte()
-//        header[9] = 'A'.code.toByte()
-//        header[10] = 'V'.code.toByte()
-//        header[11] = 'E'.code.toByte()
-//        header[12] = 'f'.code.toByte()
-//        header[13] = 'm'.code.toByte()
-//        header[14] = 't'.code.toByte()
-//        header[15] = ' '.code.toByte()
-//        bb.putInt(16, 16) // Subchunk1Size
-//        bb.putShort(20, 1.toShort()) // PCM
-//        bb.putShort(22, channels.toShort())
-//        bb.putInt(24, sampleRate)
-//        bb.putInt(28, byteRate)
-//        bb.putShort(32, (channels * bitsPerSample / 8).toShort())
-//        bb.putShort(34, bitsPerSample.toShort())
-//        header[36] = 'd'.code.toByte()
-//        header[37] = 'a'.code.toByte()
-//        header[38] = 't'.code.toByte()
-//        header[39] = 'a'.code.toByte()
-//        bb.putInt(40, totalAudioBytes)
-//        return header
-//    }
+
 }

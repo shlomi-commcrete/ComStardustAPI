@@ -354,7 +354,32 @@ object StardustPackageUtils {
                 StardustControlByte.StardustMessageType.REGULAR
             )
         ),
+
         //Responses
+         UPDATE_PRESET_DATA(0x81,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        SWITCH_PRESET(0x82,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
+        UPDATE_SOS_DESTINATION(0x84,
+            StardustControlByte(
+                StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,
+                StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK, StardustControlByte.StardustPartType.LAST,
+                StardustControlByte.StardustServer.SERVER,
+                StardustControlByte.StardustMessageType.REGULAR
+            )
+        ),
         RECEIVE_SOS (0x85,
             StardustControlByte(
                 StardustControlByte.StardustPackageType.DATA, StardustControlByte.StardustDeliveryType.RD1,

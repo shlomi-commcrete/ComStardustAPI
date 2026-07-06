@@ -95,25 +95,6 @@ object WavHelper {
         }
     }
 
-    /**
-     * Resample PCM data from 24kHz to 8kHz using simple decimation
-     * Takes every 3rd sample (24000/8000 = 3)
-     */
-    fun resampleTo8kHz(pcm24kHz: ShortArray, originalSampleRate: Int): ShortArray {
-        if (originalSampleRate == 8000) {
-            return pcm24kHz // Already 8kHz
-        }
-
-        val decimationFactor = originalSampleRate / 8000
-        val outputSize = pcm24kHz.size / decimationFactor
-        val pcm8kHz = ShortArray(outputSize)
-
-        for (i in 0 until outputSize) {
-            pcm8kHz[i] = pcm24kHz[i * decimationFactor]
-        }
-
-        return pcm8kHz
-    }
 
     fun createWavHeader(
         totalAudioBytes: Int,

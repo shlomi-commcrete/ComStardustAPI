@@ -73,3 +73,13 @@
 
 -dontwarn org.pytorch.**
 -dontwarn com.facebook.soloader.**
+
+# RNNoise native wrapper — keep methods/fields used by JNI from being stripped
+# and keep the class name resolvable by reflection in RnNoiseProcessor.
+-keep class com.commcrete.rnnoise.RnNoise {
+    native <methods>;
+    public *;
+}
+-keepclasseswithmembernames class com.commcrete.rnnoise.RnNoise {
+    native <methods>;
+}

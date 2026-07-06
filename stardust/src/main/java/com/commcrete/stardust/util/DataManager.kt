@@ -84,8 +84,16 @@ object DataManager : StardustAPI, PttInterface{
     private var hasTimber = false
     var isPlayPttFromSdk = true
 
+    init {
+        runCatching {
+            val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+            if (debugOutFile.exists()) debugOutFile.delete()
+        }
+    }
+
     fun requireContext (context: Context) {
         this.context = context
+
 //       if(!hasTimber) { // TODO: for debug only
 //            Timber.plant(Timber.DebugTree())
 //            hasTimber = true
@@ -299,7 +307,6 @@ object DataManager : StardustAPI, PttInterface{
     override fun canRecord(context: Context): MutableLiveData<Boolean> {
         return RecorderUtils.canRecord
     }
-
 
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
@@ -574,3 +581,4 @@ object DataManager : StardustAPI, PttInterface{
         val failedDirs: List<File>
     )
 }
+

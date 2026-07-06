@@ -9,6 +9,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.LicenseType
@@ -55,6 +56,8 @@ object BittelUsbManager2 : BittelProtocol {
 
     private var audioDevice : UsbDevice? = null
     private var stardustDevice : UsbDevice? = null
+    @Volatile
+    private var isJboxAudioPresent: Boolean = false
 
     private val echoPackage : ByteArray = byteArrayOf(0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01,0x01 )
 
@@ -65,26 +68,39 @@ object BittelUsbManager2 : BittelProtocol {
 
     private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
 
+    fun isJboxAudioConnected(): Boolean = isJboxAudioPresent
+
+    private fun isJboxAudioDevice(device: UsbDevice): Boolean {
+        val productName = device.productName ?: return false
+        return productName == "FT231X USB UART PTT" ||
+            productName.contains("j-box", ignoreCase = true) ||
+            productName.contains("jbox", ignoreCase = true)
+    }
+
+    private fun isStardustDataDevice(device: UsbDevice): Boolean {
+        val productName = device.productName ?: return false
+        return productName == "FT231X USB UART" || productName.contains("stardust", ignoreCase = true)
+    }
+
     fun init(context: Context) {
         this.context = context
         this.usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
     }
 
     fun connectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
+        if (isJboxAudioDevice(device)) {
+            isJboxAudioPresent = true
             connectToAudioDevice(context, device)
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        } else if (isStardustDataDevice(device)) {
             connectToDevice(context, device)
         }
     }
 
     fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
-
+        if (isJboxAudioDevice(device)) {
+            isJboxAudioPresent = false
             disconnect()
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        } else if (isStardustDataDevice(device)) {
             disconnectAudio()
         }
         disconnect()
@@ -144,6 +160,7 @@ object BittelUsbManager2 : BittelProtocol {
         try {
 
             isConnectedAudio = false
+            isJboxAudioPresent = false
             uartManagerAudio?.disconnect()
             uartManagerAudio = null
             audioDevice = null
@@ -156,6 +173,7 @@ object BittelUsbManager2 : BittelProtocol {
 //        Timber.tag("SerialInputOutputManager").d("uartManager.send $bittelPackage")
         context?.let { context ->
             uartManager?.send(bittelPackage.getStardustPackageToSend(context))
+            Log.d("PTT DEBUG", "uartManager.send")
         }
     }
 
