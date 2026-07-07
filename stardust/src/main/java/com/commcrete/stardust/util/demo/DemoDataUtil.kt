@@ -106,10 +106,10 @@ object DemoDataUtil {
 
     fun setRSSIReportSourcePresetValue(contactsList: List<ChatContact>) {
         val presetSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
-        if(presetSource.isNotBlank() && contactsList.find { it.chatUserId.equals(presetSource, true) } != null) return
+        if(presetSource.isNotBlank() && contactsList.find { it.smartphoneBittelId.equals(presetSource, true) } != null) return
         val HQ_NAME_REGEX = Regex("\\bHQ\\b", RegexOption.IGNORE_CASE)
         (contactsList.find { it.displayName.let(HQ_NAME_REGEX::containsMatchIn) } ?: contactsList.firstOrNull())
-            ?.also { SharedPreferencesUtil.setRSSIReportSource(DataManager.context, it.chatUserId ?: "") }
+            ?.also { SharedPreferencesUtil.setRSSIReportSource(DataManager.context, it.smartphoneBittelId ?: "") }
     }
 
     private fun setLocalUser(chatItem: ChatItem) {
