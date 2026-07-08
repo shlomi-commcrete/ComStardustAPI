@@ -1,5 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.util.Carrier
+
 data class StardustAppEventPackage(
     var eventType: StardustAppEventType? = null,
     var xcvr: Int = 0,
@@ -37,7 +39,8 @@ data class StardustAppEventPackage(
     data class RSSIPackage (
         var rssi : Int? = null,
         var snr : Int? = null,
-        var signalRssi : Int? = null
+        var signalRssi: Int? = null,
+        var carrier: Carrier? = null
     )
 
 }
