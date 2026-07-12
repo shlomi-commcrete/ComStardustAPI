@@ -1,5 +1,7 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.util.Carrier
+
 data class StardustAppEventPackage(
     var eventType: StardustAppEventType? = null,
     var xcvr: Int = 0,
@@ -7,9 +9,9 @@ data class StardustAppEventPackage(
     var preset: Int? = null,
     var armDelete: Int = 0,
     var senderID: String = "",
-    var rssi: Int = 0,
-    var signalRssi: Int = 0,
-    var snr: Int = 0
+    var deviceConnectionRssi: Int? = null,
+    var signalRssi: Int? = null,
+    var snr: Int? = null
 ) {
     enum class StardustAppEventType (val type : Int) {
         RXSuccess (0),
@@ -33,5 +35,12 @@ data class StardustAppEventPackage(
     fun getCurrentPreset() : StardustConfigurationParser.CurrentPreset? {
         return preset?.let { StardustConfigurationParser.CurrentPreset.fromValue(it) }
     }
+
+    data class RSSIPackage (
+        var rssi : Int? = null,
+        var snr : Int? = null,
+        var signalRssi: Int? = null,
+        var carrier: Carrier? = null
+    )
 
 }

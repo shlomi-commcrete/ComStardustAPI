@@ -103,8 +103,14 @@ object DataManager : StardustAPI, PttInterface {
             if (it) throw IllegalStateException("Device is erased, please reset the device")
         }
 
+
         requireFileLocation(fileLocation)
         AIModuleInitializer.initModules()
+
+        runCatching {
+            val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+            if (debugOutFile.exists()) debugOutFile.delete()
+        }
     }
 
 
@@ -542,12 +548,3 @@ object DataManager : StardustAPI, PttInterface {
         val failedDirs: List<File>
     )
 }
-
-
-
-
-
-
-
-
-

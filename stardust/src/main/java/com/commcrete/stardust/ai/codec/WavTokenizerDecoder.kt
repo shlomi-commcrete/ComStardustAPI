@@ -2,15 +2,19 @@ package com.commcrete.stardust.ai.codec
 
 
 import android.util.Log
-import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig.Harmonic
+import com.commcrete.stardust.util.audio.filters.NotchFilter
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.pytorch.IValue
 import org.pytorch.LiteModuleLoader
 import org.pytorch.Module
 import org.pytorch.Tensor
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -22,25 +26,57 @@ class WavTokenizerDecoder() {
 
     private var index = 0
     private var cutTokens = 0
-
     private var loop = 0
     val outFile = File(DataManager.appContext.cacheDir, "decoded_data.txt")
     val listEnergy = mutableListOf<String>()
+
+
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Log.d(TAG, "Loading WavTokenizerDecoder model")
         val modelAssetName = "codes_to_wav_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
 
-    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        Log.d(TAG, "Loading WavTokenizerEncoder model")
-        val modelAssetName = "wav_to_codes_large_android.ptl"
-        LiteModuleLoader.load(assetFilePath(modelAssetName))
+//    private val moduleEnglish: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+//        Log.d(TAG, "Loading WavTokenizerEncoder model")
+//        val modelAssetName = "wav_to_codes_large_android.ptl"
+//        LiteModuleLoader.load(assetFilePath(context, pluginContext, modelAssetName))
+//    }
+
+
+
+    fun reset() {
+        index = 0
+        cutTokens = 0
+        loop = 0
+        listEnergy.clear()
     }
 
+    data class InternalState(
+        val index: Int,
+        val cutTokens: Int,
+        val loop: Int,
+    ) {
+        companion object {
+            val INITIAL = InternalState(index = 0, cutTokens = 0, loop = 0)
+        }
+    }
 
-    init {
-        // If your model is in assets: just put the asset name here.
+    /** Capture the current per-stream state. */
+    fun snapshotInternalState(): InternalState =
+        InternalState(index = index, cutTokens = cutTokens, loop = loop)
+
+    /**
+     * Restore a previously captured [snapshotInternalState] before
+     * [decode] is called for the corresponding stream. Always pair with a
+     * matching snapshot AFTER decode so the stream's continuity is kept
+     * intact for its next chunk.
+     */
+    fun restoreInternalState(state: InternalState) {
+        index = state.index
+        cutTokens = state.cutTokens
+        loop = state.loop
+        listEnergy.clear()
     }
 
     // Decode the list of Long tokens into PCM ShortArray
@@ -53,57 +89,87 @@ class WavTokenizerDecoder() {
         val decodeType = SharedPreferencesUtil.getAudioDecodeType()
         val selectedModule = getSelectedModule(modelType)
 
-        val combinedData = if (previousTokens != null) {
-            previousTokens + data
-        } else {
-            data
-        }
+        // Keep decode no-throw: callers run on long-lived jobs and a single
+        // bad chunk must not kill the whole stream.
+        return runCatching {
+            // Combine previous data with current data if previous data exists
+            val combinedData = if (previousTokens != null) previousTokens + data else data
 
-        // Add 3 fake values at the end
-        val fixedData = combinedData + listOf(0, 0, 0, 0)
+            // Add fake values at the end
+            val fixedData = combinedData + listOf(0L, 0L, 0L, 0L)
+            val codes = convertLongListToTensor(fixedData)
 
-        val codes = convertLongListToTensor(fixedData)
-
-        var output: Tensor?
-        val duration = measureTime {
-            output = selectedModule.forward(IValue.from(codes)).toTensor()
-        }
-        //        Log.d(TAG, "Decoding took $duration")
-
-        // Remove the last 2400 samples
-        var audioData = output!!.dataAsFloatArray.dropLast(2400).toFloatArray()
-
-        //get index
-        // to cut after
-        //slice previous tokens
-
-//        val tensor = Tensor
-        // Return only the new part after alignment
-        if(decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
-            audioData = handleSmart(previousTokens, audioData, fixedData, output)
-        }
-
-        // Apply audio normalization if we have previous data
-        // 🔹 Apply crossfade with previousSamples to remove "ticks"
-
-        var unalignedAudio: ShortArray
-        if(decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
-            val alignedAudioData = if (previousSamples != null) {
-                fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
-            } else {
-                audioData
+            val output: Tensor
+            val duration = measureTime {
+                output = selectedModule.forward(IValue.from(codes)).toTensor()
             }
-            unalignedAudio = floatArrayToPcm(alignedAudioData)
-        } else {
-            unalignedAudio = floatArrayToPcm(audioData)
+            Log.d(TAG, "Decoding took $duration")
+
+            val modelOut = output.dataAsFloatArray
+            // Decoder normally appends ~2400 tail samples we trim off. If a
+            // bad output is shorter than that, keep it as-is instead of throwing.
+            var audioData = if (modelOut.size > 2400) {
+                modelOut.copyOfRange(0, modelOut.size - 2400)
+            } else {
+                modelOut
+            }
+
+            NotchFilter(24000, NotchConfig(harmonics = mutableListOf<Harmonic>().also { list ->
+                list.add(Harmonic(frequencyHz = 120f, q = 150f))
+                list.add(Harmonic(frequencyHz = 200f, q = 150f))
+            }).resolveBands()).processInPlace(audioData)
+
+            // Return only the new part after alignment
+            if (decodeType == DecodeMode.Smart || decodeType == DecodeMode.Combined) {
+                audioData = runCatching {
+                    handleSmart(previousTokens, audioData, fixedData, output)
+                }.getOrElse { t ->
+                    Log.w(TAG, "handleSmart failed; using untrimmed audio", t)
+                    audioData
+                }
+            }
+
+            // Apply audio normalization if we have previous data
+            val unalignedAudio: ShortArray = if (decodeType == DecodeMode.Aligned || decodeType == DecodeMode.Combined) {
+                val alignedAudioData = if (previousSamples != null && previousSamples.isNotEmpty() && audioData.isNotEmpty()) {
+                    runCatching {
+                        fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
+                    }.getOrElse { t ->
+                        Log.w(TAG, "fixAudioAlignment2 failed; using unaligned audio", t)
+                        audioData
+                    }
+                } else {
+                    audioData
+                }
+                floatArrayToPcm(alignedAudioData)
+            } else {
+                floatArrayToPcm(audioData)
+            }
+
+            Log.d(TAG, "decode get size ${data.size} return ${unalignedAudio.size}")
+            loop++
+            unalignedAudio
+        }.getOrElse { t ->
+            Log.e(TAG, "decode failed; returning fallback PCM", t)
+            fallbackPcm(previousSamples, data.size)
         }
+    }
 
-
-
-
-        Log.d(TAG, "decode get size ${data.size } return ${unalignedAudio.size}")
-        loop ++
-        return unalignedAudio
+    /**
+     * Fallback PCM for failed decode paths.
+     *
+     * Prefer a short tail from [previousSamples] to keep continuity in live
+     * playback; otherwise return bounded silence estimated from token count.
+     */
+    private fun fallbackPcm(previousSamples: ShortArray?, currentTokenCount: Int): ShortArray {
+        val estimatedSamples = (currentTokenCount.coerceAtLeast(1) * 600)
+            .coerceAtMost(12_000)
+            .coerceAtLeast(600)
+        if (previousSamples != null && previousSamples.isNotEmpty()) {
+            val tail = min(previousSamples.size, estimatedSamples)
+            return previousSamples.copyOfRange(previousSamples.size - tail, previousSamples.size)
+        }
+        return ShortArray(estimatedSamples)
     }
 
     fun shortArrayToFloatArray(input: ShortArray): FloatArray {
@@ -138,8 +204,6 @@ class WavTokenizerDecoder() {
 
         val bestBoundaryToken = findLowestEnergyTokenBoundary(trimmed)
 
-        saveDecodedData(output!!.dataAsFloatArray, fixedData)
-
         index = bestBoundaryToken
         val totalTokens = trimmed.size / 600
         cutTokens = (totalTokens - index)
@@ -159,7 +223,16 @@ class WavTokenizerDecoder() {
         previousSamples: FloatArray,
         currentChunk: FloatArray
     ): FloatArray {
-        val numSamples = 400
+        // Guard: alignment needs samples on both sides. If either side is
+        // empty/short, return the chunk unchanged instead of crashing
+        // with ArrayIndexOutOfBoundsException (length=0; index=-1).
+        if (previousSamples.isEmpty() || currentChunk.isEmpty()) return currentChunk
+
+        val requested = 400
+        // Clamp the fade window to what both buffers can actually provide.
+        val numSamples = minOf(requested, previousSamples.size, currentChunk.size)
+        if (numSamples <= 0) return currentChunk
+
         val lastIndex = previousSamples.size - 1
 
         for (i in 0 until numSamples) {
@@ -194,7 +267,7 @@ class WavTokenizerDecoder() {
 
         if (tokensToCheck < 1) {
             Log.d(TAG, "Warning: Not enough tokens to check boundaries")
-            return totalTokens - 1
+            return max(0, totalTokens - 1)
         }
 
 //        Log.d(TAG, "\nAnalyzing $tokensToCheck token boundaries:")
@@ -235,7 +308,9 @@ class WavTokenizerDecoder() {
         }
 
         // Find lowest-energy token
-        val minIndex = energies.indexOf(energies.minOrNull()!!)
+        if (energies.isEmpty()) return max(0, totalTokens - 1)
+        val minEnergy = energies.minOrNull() ?: return max(0, totalTokens - 1)
+        val minIndex = energies.indexOf(minEnergy)
         val bestToken = tokenIndices[minIndex]
 
         Log.d(TAG, "\n✓ Lowest energy found at token $bestToken with energy %.6f".format(energies[minIndex]))
@@ -397,39 +472,15 @@ class WavTokenizerDecoder() {
         return out
     }
 
-    private fun saveDecodedData (byteArray: FloatArray, fixedData: List<Long>, ) {
-        try {
-            FileOutputStream(outFile, true).use { fos ->
-                // Write each int16 value on its own line
-                val sb = StringBuilder()
-                sb.append("\n").append("Loop number $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
-                sb.append("\n").append("Tokens $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
-                for (sample in fixedData) {
-                    sb.append(sample.toInt()).append("\n")
-                }
-                sb.append("\n").append("Energy $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
-                for (energy in listEnergy) {
-                    sb.append(energy).append("\n")
-                }
-                sb.append("\n").append("Data $loop").append("\n").append("\n").append("\n").append("------------------------").append("\n")
-                for (sample in byteArray) {
-                    sb.append(sample).append("\n")
-                }
-                fos.write(sb.toString().toByteArray(Charsets.UTF_8))
-            }
-            Log.e("WavHelper", "Finished writing RAW TXT file to ${outFile.absolutePath}")
-        } catch (e: IOException) {
-            Log.e("WavHelper", "Error writing raw txt file", e)
-        }
 
-    }
     fun getSelectedModule (modelTypeSelected: ModelType) : Module{
 
-        val modelType = if(modelTypeSelected == ModelType.English) {
-            moduleEnglish
-        } else {
-            module
-        }
+        val modelType = module
+//        if(modelTypeSelected == ModelType.English) {
+//            moduleEnglish
+//        } else {
+//            module
+//        }
         return modelType
     }
 
@@ -441,7 +492,7 @@ class WavTokenizerDecoder() {
 
     enum class ModelType (val type : Int) {
         General (0x00),
-        English (0x01);
+        English (0x01); // For now this option is commented out since this model isn't good enough to justify the extra app size
         companion object {
             fun fromInt(value: Int): ModelType? {
                 return entries.firstOrNull { it.type == value }
@@ -449,10 +500,21 @@ class WavTokenizerDecoder() {
         }
     }
 
-    fun initModule() {
-        Log.d(TAG, "WavTokenizerDecoder module initialized")
-        module
-        moduleEnglish
-        Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
+    fun initModule(): Job = initJob
+
+    /**
+     * Cached, single-shot init job. The first call to [initModule] triggers
+     * the lazy → launches one coroutine that touches [module] (which is
+     * itself `by lazy(SYNCHRONIZED)` so the underlying PyTorch model is
+     * loaded exactly once). Every subsequent call returns the same [Job],
+     * so `.join()` from multiple sites is safe and only waits for the
+     * single load to finish.
+     */
+    private val initJob: Job by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        Scopes.getDefaultCoroutine().launch {
+            Log.d(TAG, "WavTokenizerDecoder module initializing")
+            module
+            Log.d(TAG, "WavTokenizerDecoder model loaded successfully")
+        }
     }
 }

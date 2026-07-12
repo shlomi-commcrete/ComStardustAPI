@@ -5,13 +5,15 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.audiofx.AcousticEchoCanceler
-import android.media.audiofx.AutomaticGainControl
-import android.media.audiofx.NoiseSuppressor
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.commcrete.stardust.request_objects.Message
+import com.commcrete.stardust.room.chats.ChatsDatabase
+import com.commcrete.stardust.room.chats.ChatsRepository
+import com.commcrete.stardust.room.messages.MessageItem
+import com.commcrete.stardust.room.messages.SeenStatus
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType
@@ -22,10 +24,12 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.Carrier
-import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.FileUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.UsersUtils
+import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.ustadmobile.codec2.Codec2Decoder
 import com.ustadmobile.codec2.Codec2Encoder
@@ -41,13 +45,10 @@ import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.Base64
 import kotlin.concurrent.thread
-import kotlin.experimental.or
-import kotlin.random.Random
 
 
-class WavRecorder(
-    private val viewModel : PttInterface? = null
-) : BleMediaConnector() {
+class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
+    BleMediaConnector() {
 
     companion object {
         const val TAG_PTT_DEBUG = "tag_ptt_debug"
@@ -59,8 +60,6 @@ class WavRecorder(
         const val BYTE_RATE = RECORDER_SAMPLE_RATE * NUMBER_CHANNELS * 16 / 8
 
         var BufferElements2Rec = 320
-
-        val suffix = arrayOf(-50, -10, -128, -4, -17, 104, 0, 0)
     }
 
     private var recorder: AudioRecord? = null
@@ -68,28 +67,66 @@ class WavRecorder(
 
     private var recordingThread: Thread? = null
 
-    private var mutableByteListToSend = mutableListOf<Byte>()
-    private var savedByteArray : ByteArray? = null
+    /**
+     * Active [Codec2SendPipeline] for the current PTT session. Created on
+     * each [startRecording] (via [writeAudioDataToFile]) and finalized via
+     * [Codec2SendPipeline.finish] on stop. Held here so the `stop*()`
+     * paths can flush the trailing partial packet with `isLast = true`
+     * even when the recording thread has already exited the capture loop.
+     */
+    @Volatile private var currentPipeline: Codec2SendPipeline? = null
     private var handler = Handler(Looper.getMainLooper())
     private var numOfPackage = 0
-    private var runnable = {}
+    private var captureRateHz = RECORDER_SAMPLE_RATE
+    private val nativeFrameDurationMs = 40
+    private var nativeFrameSamples = BufferElements2Rec
+    private var runnable = {
+    }
 
-    private fun sendRecordEnd(carrier: Carrier?) {
-        //todo Correction crash
-        sendData(mutableByteListToSend.toByteArray().copyOf(), true, carrier)
-        mutableByteListToSend.clear()
-        numOfPackage++
+    /**
+     * Flush the active [Codec2SendPipeline] (sends the last buffered packet
+     * with `isLast = true`) and reset the packet counter. Replaces the old
+     * `mutableByteListToSend.toByteArray() → sendData(isLast=true)` path
+     * the deleted `sendRecordEnd` used to do — same effect on the wire,
+     * but the bookkeeping lives in one shared place now.
+     */
+    private fun flushPipelineEnd() {
+        currentPipeline?.finish()
+        currentPipeline = null
         numOfPackage = 0
     }
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
-        val audioSource = SharedPreferencesUtil.getCodecAudioSource()
+        AudioRecordingKeepAlive.acquire(context)
+        val capturePlan = AudioCaptureConfig.buildCapturePlan(
+            context = context,
+            requestedRate = RECORDER_SAMPLE_RATE,
+            defaultAudioSource = SharedPreferencesUtil.getCodecAudioSource(DataManager.context),
+        )
+        captureRateHz = capturePlan.captureRate
+        nativeFrameSamples = ((captureRateHz * nativeFrameDurationMs) / 1000).coerceAtLeast(160)
+        val minBuffer = AudioRecord.getMinBufferSize(
+            captureRateHz,
+            RECORDER_CHANNELS,
+            RECORDER_AUDIO_ENCODING,
+        )
+        val recordBufferBytes = maxOf(minBuffer * 2, nativeFrameSamples * 2)
         recorder = AudioRecord(
-            audioSource,
-            RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
-            RECORDER_AUDIO_ENCODING, BufferElements2Rec)
+            capturePlan.audioSource,
+            captureRateHz,
+            RECORDER_CHANNELS,
+            RECORDER_AUDIO_ENCODING,
+            recordBufferBytes,
+        )
 
+        try {
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder Started recorder ${recorder}")
+//            AudioRecordManager.register(recorder!!)
+        }catch ( e : Exception) {
+            e.printStackTrace()
+        }
+        AudioCaptureConfig.applyInputRoute(context, recorder, capturePlan.preferredInputDevice)
         recorder?.audioSessionId?.let { setRecordingParams(it) }
         syncBleDevice()
         recorder?.startRecording()
@@ -104,41 +141,73 @@ class WavRecorder(
         val audioManager = context.getSystemService(AudioManager::class.java)
         val wantedInputDevice = SharedPreferencesUtil.getInputDevice()
 
-        if (wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-            val bleDevice =
-                getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS)
-            bleDevice?.let {
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice has device")
-                recorder?.setPreferredDevice(it)
+        // No explicit user preference → make sure we are NOT stuck on SCO from a
+        // previous session and let the platform pick its own default.
+        if (wantedInputDevice == AudioDeviceInfo.TYPE_UNKNOWN) {
+            try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.setCommunicationDevice(it)
+                    audioManager.clearCommunicationDevice()
                 }
-                audioManager.startBluetoothSco()
-                audioManager.isBluetoothScoOn = true
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice added")
+            } catch (_: Throwable) {}
+            try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
+            return
+        }
+
+        // Resolve the actual AudioDeviceInfo that matches the user preference
+        // (falls back through the configured input hierarchy).
+        val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
+        if (preferred == null) {
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice: no matching input device")
+            return
+        }
+
+        Log.d(TAG_PTT_DEBUG,
+            "mWavRecorder syncBleDevice: using ${preferred.productName}/${preferred.type}")
+
+        // 1. Force AudioRecord to capture from the chosen device — this is the
+        //    main fix: previously we only did this for BLUETOOTH_SCO, so a
+        //    plugged-in USB headset would silently hijack the mic.
+        try { recorder?.setPreferredDevice(preferred) } catch (_: Throwable) {}
+
+        // 2. On Android 12+ also pin the communication device so VOICE_* sources
+        //    don't get re-routed by audio policy when peripherals change.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            try { audioManager.setCommunicationDevice(preferred) } catch (e: Exception) {
+                Timber.tag(TAG_PTT_DEBUG).w(e, "setCommunicationDevice(${preferred.type}) failed")
             }
+        }
+
+        // 3. Only manage SCO when the chosen input actually is the BT SCO mic.
+        //    Otherwise SCO would silently override the user's wired/USB/built-in
+        //    selection.
+        if (preferred.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
+            try { audioManager.startBluetoothSco() } catch (_: Throwable) {}
+            try { audioManager.isBluetoothScoOn = true } catch (_: Throwable) {}
+            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice SCO enabled")
+        } else {
+            try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+            try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
         }
     }
 
     private fun removeSyncBleDevices() {
         Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
-
-        val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java)
-        val wantedInputDevice = SharedPreferencesUtil.getInputDevice()
-        if(wantedInputDevice == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices has device")
-            val bleDevice = getPreferredDevice(audioManager,AudioManager.GET_DEVICES_INPUTS)
-            bleDevice?.let {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    audioManager.clearCommunicationDevice()
-                }
-                audioManager.stopBluetoothSco()
-                audioManager.isBluetoothScoOn = false
-                Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices removed")
-            }}
+        val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            context.getSystemService(AudioManager::class.java)
+        } else {
+            TODO("VERSION.SDK_INT < M")
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                audioManager.clearCommunicationDevice()
+            }
+        } catch (_: Throwable) {}
+        try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
+        try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
     }
 
-    fun kill() {
+    fun kill () {
         try {
             isRecording = false
             recorder?.let {
@@ -150,7 +219,8 @@ class WavRecorder(
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
-                    removeSyncBleDevices()
+                    AudioCaptureConfig.clearInputRoute(context)
+                    AudioRecordingKeepAlive.release()
                     recordingThread = null
                     recorder = null
                 }
@@ -185,7 +255,8 @@ class WavRecorder(
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                     stopRecording(retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
                 } finally {
-                    removeSyncBleDevices()
+                    AudioCaptureConfig.clearInputRoute(context)
+                    AudioRecordingKeepAlive.release()
                     recordingThread = null
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
@@ -202,7 +273,7 @@ class WavRecorder(
         } finally {
             // ✅ Always notify
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
-            sendRecordEnd(carrier)
+            flushPipelineEnd()
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally after sendRecordEnd")
         }
         Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
@@ -221,8 +292,11 @@ class WavRecorder(
     }
 
     private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
-        val targetGain = SharedPreferencesUtil.getCodecGain() / 100f
-        val sData = ShortArray(BufferElements2Rec)
+        // Input gain: profile setting takes precedence, then SharedPreferences.
+        val targetGain = SharedPreferencesUtil.getAudioGain(DataManager.context) / 100f
+        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState(DataManager.context)
+        val sData = ShortArray(nativeFrameSamples)
+        val nativePending = ArrayList<Short>(nativeFrameSamples * 2)
         var os: FileOutputStream? = null
         try {
             if(file.exists()){
@@ -235,78 +309,119 @@ class WavRecorder(
         val data = arrayListOf<Byte>()
         val dataPrint = arrayListOf<Byte>()
         val codec2Decoder = Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
+        var chunkIndex = 0
+
+        // SAME encode + pack + send pipeline the test feeder uses
+        // (`AudioFeederEngine.createCodec2Pipeline`). Replaces the
+        // previous in-line `encodeAndSendCodecFrame` + `handleBlePackage`
+        // + `appendToArray` + `sendToBle` chain — keeps live and feeder
+        // bit-comparable. The PTT timeout (was checked inside the old
+        // `appendToArray`) is now enforced via the `onPacketSent`
+        // callback. The decoded-WAV artifact is built via
+        // `onEncodedFrame`: each 4-byte codec2 frame is decoded right
+        // after it's enqueued for transmission, so the local `.wav`
+        // matches exactly what the receiver decodes.
+        currentPipeline?.reset()
+        val pipeline = Codec2SendPipeline(
+            context = context,
+            carrier = carrier,
+            sourceProvider = { viewModel?.getSource() ?: DataManager.getSource() },
+            destinationProvider = { viewModel?.getDestenation() },
+            onPacketSent = { onPipelinePacketSent(file, carrier) },
+            onEncodedFrame = { encodedFrame ->
+                logByteArray("logByteArrayInputRecorder", encodedFrame)
+                for (byte in encodedFrame) dataPrint.add(byte)
+                val byteBuffer = codec2Decoder.readFrame(encodedFrame)
+                val bDataCodec = byteBuffer.array()
+                logByteArray("logByteArrayOutputRecorder", bDataCodec)
+                for (byte in bDataCodec) data.add(byte)
+            },
+        )
+        currentPipeline = pipeline
 
         while (isRecording) {
             // gets the voice output from microphone to byte format
             val recording = recorder?.read(sData, 0, BufferElements2Rec)
             try {
-                if (recording != null) {
-                    if (recording > 0) {
-                        // Apply gain factor to each sample
-                        for (i in 0 until recording) {
-                            sData[i] =
-                                (sData[i] * targetGain).coerceIn(Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat())
-                                    .toInt()
-                                    .toShort()
-                        }
-
-                        // Now 'buffer' contains the amplified audio data
-                        // You can write it to a file, stream it, or process it further as needed
+                if (recording != null && recording > 0) {
+                    for (i in 0 until recording) {
+                        val gained = (sData[i] * targetGain)
+                            .coerceIn(Short.MIN_VALUE.toFloat(), Short.MAX_VALUE.toFloat())
+                            .toInt()
+                            .toShort()
+                        nativePending.add(gained)
                     }
                 }
-                val codec2Encoder = Codec2Encoder(RecorderUtils.CodecValues.MODE700.mode)
-                val charArray = CharArray(RecorderUtils.CodecValues.MODE700.charNumOutput)
-                codec2Encoder.encode(sData, charArray)
-                val byteaArray = charsToBytes(charArray)
-                byteaArray?.let {
-                    logByteArray(it)
-                    for (byte in byteaArray)
-                        dataPrint.add(byte)
-                }
-                val byteBuffer = codec2Decoder.readFrame(byteaArray)
-                val bDataCodec = byteBuffer.array()
-                logByteArray(bDataCodec)
-                for (byte in bDataCodec)
-                    data.add(byte)
+                while (nativePending.size >= nativeFrameSamples) {
+                    val nativeFrame = ShortArray(nativeFrameSamples)
+                    for (i in 0 until nativeFrameSamples) {
+                        nativeFrame[i] = nativePending[i]
+                    }
+                    repeat(nativeFrameSamples) { nativePending.removeAt(0) }
 
-
-                if(BleManager.isNetworkEnabled()){
-                    handleBlePackage(byteaArray, null, file)
-                }
-                else if (BleManager.isBluetoothConnected() || BleManager.isUsbEnabled()) {
-//                    send to BLE
-                    handleBlePackage(byteaArray, carrier, file)
+                    // Same preprocessing call the test feeder uses internally
+                    // via `PttAudioProcessor.process` — applies the active
+                    // profile's filter chain and resamples to 8 kHz.
+                    val filtered = RecorderUtils.preprocessChunkForEncoding(
+                        pcmArray = nativeFrame,
+                        nativeRate = captureRateHz,
+                        encodingType = RecorderUtils.CODE_TYPE.CODEC2,
+                        enableNoiseCancellation = enableNoiseCancellation
+                    )
+                    pipeline.enqueuePcm(filtered)
+                    chunkIndex++
                 }
             } catch (e: IOException) {
                 e.printStackTrace()
             }
         }
+
+        // Tail: any unprocessed native samples → pre-process → enqueue.
+        // [Codec2SendPipeline.finish] below will zero-pad whatever's left
+        // inside the pipeline and send the final packet with `isLast = true`.
+        if (nativePending.isNotEmpty()) {
+            val paddedNative = ShortArray(nativeFrameSamples)
+            for (i in nativePending.indices) paddedNative[i] = nativePending[i]
+            val filtered = RecorderUtils.preprocessChunkForEncoding(
+                pcmArray = paddedNative,
+                nativeRate = captureRateHz,
+                encodingType = RecorderUtils.CODE_TYPE.CODEC2,
+                enableNoiseCancellation = enableNoiseCancellation,
+                isFinal = true
+            )
+            pipeline.enqueuePcm(filtered)
+        }
+        pipeline.finish()
+        currentPipeline = null
+
         os?.write(data.toByteArray())
         try {
             os?.close()
         } catch (e: IOException) {
             e.printStackTrace()
         }
-        logByteArray(dataPrint.toByteArray())
+        logByteArray("totalRecording", dataPrint.toByteArray())
     }
 
-    fun sendAudioTest() {
-        FileUtils.clearFile(fileName = "pttTestsSend")
-        val file = FileUtils.createFile(fileName = "pttTestsSend")
-        val mutableByteListToSend = mutableListOf<Byte>()
-        while (mutableByteListToSend.size < 78){
-            mutableByteListToSend.add(0)
-        }
-        val delay = 880L
-        CoroutineScope(Dispatchers.IO).launch {
-            var count = 1
-            while(count < 200){
-                mutableByteListToSend[0] = count.toByte()
-                sendData(mutableByteListToSend.toByteArray().copyOf())
-                FileUtils.saveToFile(file.absolutePath, mutableByteListToSend.toByteArray().copyOf())
-                count++
-                delay(delay)
+
+    /**
+     * Per-packet callback from [Codec2SendPipeline] — enforces the same
+     * max-PTT-timeout the old `appendToArray` did, but driven by the
+     * shared pipeline so live and feeder share identical send semantics.
+     */
+    private fun onPipelinePacketSent(file: File, carrier: Carrier?) {
+        numOfPackage++
+        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
+        if (numOfPackage.times(880) > maxSecondsPTT) {
+            DataManager.getCallbacks()?.pttMaxTimeoutReached()
+            viewModel?.let { vm ->
+                vm.getDestenation()?.let { dest ->
+                    stopRecording(retry = 0, dest, file.absolutePath, context, carrier)
+                    vm.maxPTTTimeoutReached()
+                }
             }
+        } else {
+            resetTimer()
         }
     }
 
@@ -417,137 +532,29 @@ class WavRecorder(
         }
     }
 
-    private fun charsToBytes(chars: CharArray?): ByteArray? {
-        return chars?.let { charArray ->
-            ByteArray(charArray.size) { i -> charArray[i].code.toByte() }
-        }
-    }
-
-    private fun sendData(byteArray: ByteArray, isLast : Boolean = false, carrier: Carrier? = null) {
-        if (BleManager.isBluetoothConnected()|| BleManager.isUsbEnabled()) {
-            sendToBle(byteArray, isLast, carrier)
-        }
-    }
-
-    private fun sendToBle(byteArray: ByteArray, isLast: Boolean = false, carrier: Carrier?) {
-        val radio = CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT) ?: return
-
-        CoroutineScope(Dispatchers.IO).launch {
-            val audioIntArray = StardustPackageUtils.byteArrayToIntArray(byteArray)
-            val pkg = viewModel?.let {
-                if(audioIntArray.endsWith(suffix)){
-                    val num = generateRandomNumber()
-                    audioIntArray[audioIntArray.size - 1] = num
-                    audioIntArray[audioIntArray.size - 2] = num
-                }
-                StardustPackageUtils.getStardustPackage(
-                    source = it.getSource(),
-                    destination = it.getDestination(),
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
-                    data = audioIntArray)
+    fun updateAudioReceived(chatId: String, context: Context){
+        Scopes.getDefaultCoroutine().launch {
+            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
+            val chatItem = chatsRepo.getChatByBittelID(chatId)
+            chatItem?.let {
+                chatItem.message = Message(senderID = chatId, text = "Ptt Sent",
+                    seen = true)
+                chatsRepo.addChat(it)
             }
-
-            pkg ?: return@launch
-            pkg.stardustControlByte.stardustPartType = if(isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
-            pkg.stardustControlByte.stardustDeliveryType = radio.second
-            pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
-            DataManager.sendDataToBle(pkg)
-
         }
     }
 
-    private fun generateRandomNumber(): Int {
-        return Random.nextInt(0, 41) // 41 is exclusive
-    }
-
-    private fun appendToArray(byteArray: ByteArray?, carrier: Carrier?, file: File) {
-        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout()
-        if(numOfPackage.times(880) > maxSecondsPTT) {
-            DataManager.getCallbacks()?.pttMaxTimeoutReached()
-            viewModel?.let {
-                stopRecording(
-                    retry = 0,
-                    chatId = it.getChatId(),
-                    receiverId = it.getDestination(),
-                    path = file.absolutePath,
-                    carrier = carrier
-                )
-                it.maxPTTTimeoutReached()
-            }
-        } else {
-            byteArray?.toList()?.let {
-                for(byte in it) {
-                    mutableByteListToSend.add(byte)
-                    if(mutableByteListToSend.size == 77) {
-                        sendData(mutableByteListToSend.toByteArray().copyOf(), carrier = carrier)
-                        mutableByteListToSend.clear()
-                        numOfPackage++
-                    }
-                }
-            }
-            resetTimer()
-        }
-    }
-
-    private fun concatenateByteArraysWithIgnoring(byteArray1: ByteArray, byteArray2: ByteArray): ByteArray {
-        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray 1 : ${byteArray1.toHex()}")
-        Timber.tag("concatenateByteArraysWithIgnoring").d("byteArray 2 : ${byteArray2.toHex()}")
-        var byteArrayToReturn = ByteArray((byteArray1.size + byteArray2.size)-1)
-        var index = 0
-        var insertedIndex = 0
-        while (index<4){
-            byteArrayToReturn[index] = byteArray1[index]
-            index ++
-            insertedIndex ++
-        }
-        val shiftRight = byteArray2[0].toUByte().toInt() shr 4
-        byteArrayToReturn[3] = byteArrayToReturn[3] or shiftRight.toByte()
-        byteArrayToReturn[4] = getBytesShift(byteArray2[0], byteArray2[1])
-        byteArrayToReturn[5] = getBytesShift(byteArray2[1], byteArray2[2])
-        byteArrayToReturn[6] = getBytesShift(byteArray2[2], byteArray2[3])
-        Timber.tag("concatenateByteArraysWithIgnoring").d("combined : ${byteArrayToReturn.toHex()}")
-        return byteArrayToReturn
-    }
-
-    fun getBytesShift(byte1 : Byte , byte2 : Byte) : Byte {
-        val byteShift1 = byte1.toUByte().toInt() shl 4
-        val byteShift2 = byte2.toUByte().toInt() shr 4
-        return byteShift1.toByte() or byteShift2.toByte()
-    }
-
-    private fun handleBlePackage (byteArray: ByteArray?, carrier: Carrier?, file: File) {
-        byteArray?.let { logByteArray(it) }
-        if(savedByteArray == null){
-            savedByteArray = byteArray
-        }else {
-            savedByteArray?.let { mArray ->
-                byteArray?.let {
-                    val concatenatedByteArray = concatenateByteArraysWithIgnoring(mArray, it)
-                    logByteArray(concatenatedByteArray)
-                    appendToArray(concatenatedByteArray, carrier, file)
-                }
-            }
-            savedByteArray = null
-        }
-    }
-
-
-    fun shiftByteArrayEvery28Bits(input: ByteArray, shiftAmount: Int): ByteArray {
-        val output = ByteArray(input.size)
-
-        val shiftBytes = shiftAmount / 8
-        val shiftBits = shiftAmount % 8
-
-        for (i in input.indices) {
-            val shiftedIndex = (i + shiftBytes) % input.size
-            val shiftedByte = input[shiftedIndex].toInt() and 0xFF ushr shiftBits
-            val nextIndex = (shiftedIndex + 1) % input.size
-            val nextByte = input[nextIndex].toInt() and 0xFF shl (8 - shiftBits)
-            output[i] = (shiftedByte or nextByte).toByte()
-        }
-
-        return output
-    }
+    // NOTE: The previous `charsToBytes` / `sendData` / `sendToBle` /
+    // `generateRandomNumber` / `appendToArray` /
+    // `concatenateByteArraysWithIgnoring` / `getBytesShift` /
+    // `handleBlePackage` / `shiftByteArrayEvery28Bits` / `setMinData`
+    // helpers in this file were a parallel implementation of the
+    // codec2 encode + pack + send pipeline. They all collapsed into
+    // [Codec2SendPipeline] so the live recorder and the
+    // `AudioTestFeeder` now hit identical encode→pack→send code; the
+    // recorder's only extra responsibility (decoded-PCM local WAV
+    // artifact) is wired in via [Codec2SendPipeline.onEncodedFrame] in
+    // [writeAudioDataToFile] above.
 
     private fun resetTimer() {
         handler.removeCallbacks(runnable)
@@ -555,47 +562,14 @@ class WavRecorder(
         handler.postDelayed(runnable, 200)
     }
 
-    private fun setMinData() {
-        while (mutableByteListToSend.size < 78){
-            mutableByteListToSend.add(0)
-        }
-    }
 
-    private fun logByteArray(bDataCodec: ByteArray) {
+    private fun logByteArray(tagTitle: String, bDataCodec: ByteArray) {
         val stringBuilder = StringBuilder()
         for (element in bDataCodec) {
             stringBuilder.append("${element},")
         }
     }
 
-    private fun setRecordingParams(audioSessionID : Int) {
-        try {
-            val audioManager = DataManager.appContext.getSystemService(AudioManager::class.java)
-            val isNoise = SharedPreferencesUtil.getNoiseSuppressor()
-            val isAGC = SharedPreferencesUtil.getAutoGainControl()
-            val isAcoustic = SharedPreferencesUtil.getAcousticEchoControl()
-            audioManager?.setParameters("noise_suppression=${if(isNoise) "on" else "off"}")
-            if (NoiseSuppressor.isAvailable() && NoiseSuppressor.create(audioSessionID) == null) {
-                var noiseSuppressor : NoiseSuppressor? = null
-                noiseSuppressor  = NoiseSuppressor.create(audioSessionID)
-                noiseSuppressor.enabled = isNoise
-            }
-            audioManager?.setParameters("automatic_gain_control=${if(isAGC) "on" else "off"}")
-            if (AutomaticGainControl.isAvailable()&& AutomaticGainControl.create(audioSessionID) == null) {
-                var agc: AutomaticGainControl? = null
-                agc = AutomaticGainControl.create(audioSessionID)
-                agc?.enabled = isAGC
-            }
-            audioManager?.setParameters("echo_cancellation=${if(isAGC) "on" else "off"}")
-            if (AcousticEchoCanceler.isAvailable() && AcousticEchoCanceler.create(audioSessionID) == null) {
-                var acoustic: AcousticEchoCanceler? = null
-                acoustic = AcousticEchoCanceler.create(audioSessionID)
-                acoustic.enabled = isAcoustic
-            }
-        }catch (e : Exception){
-            e.printStackTrace()
-        }
-    }
 
     fun ShortToByte_ByteBuffer_Method(input: List<Short>): ByteArray? {
         var index: Int
@@ -632,6 +606,7 @@ class WavRecorder(
         return -1 //not found
     }
 }
+
 fun Array<Int>.endsWith(suffix: Array<Int>): Boolean {
     if (this.size < suffix.size) return false
     return this.sliceArray(this.size - suffix.size until this.size).contentEquals(suffix)

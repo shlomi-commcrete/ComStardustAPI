@@ -112,6 +112,7 @@ open class BleMediaConnector (){
         BLE (AudioDeviceInfo.TYPE_BLUETOOTH_SCO),
         Headphones (AudioDeviceInfo.TYPE_WIRED_HEADPHONES),
         Headset (AudioDeviceInfo.TYPE_USB_HEADSET),
+        USB_Device (AudioDeviceInfo.TYPE_USB_DEVICE),
         Earpiece (AudioDeviceInfo.TYPE_BUILTIN_EARPIECE),
         None (AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)
     }

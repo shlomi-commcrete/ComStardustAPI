@@ -170,7 +170,7 @@ data class StardustPackage(
         }
         val listIterator = packageToSend.toList().chunked(20)
         var byteArrayList : MutableList<ByteArray> = mutableListOf()
-        for(mPackage in listIterator){
+        for(mPackage in listIterator) {
             byteArrayList.add(intArrayToByteArray(mPackage.toMutableList()))
         }
         return byteArrayList
@@ -209,14 +209,18 @@ data class StardustPackage(
     }
 
     fun getSourceAsString() : String {
-        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().trim().lowercase()
+        return try {
+            intArrayToHexString(sourceBytes).getSrcDestMin4Bytes()
+        } catch (e : Exception) {
+            "source null"
+        }
     }
 
     fun getDestAsString() : String {
         return try {
             intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().trim().lowercase()
         } catch (e : Exception) {
-            "null"
+            "dest null"
         }
 
     }

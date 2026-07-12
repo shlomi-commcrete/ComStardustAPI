@@ -1,4 +1,4 @@
-package com.commcrete.stardust.ai.codec
+package com.commcrete.stardust.ai.codec.filter
 
 import java.io.File
 import java.io.RandomAccessFile

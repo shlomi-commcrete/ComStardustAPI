@@ -217,6 +217,16 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
+            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+            if(sdPackage.senderID.equals(rssiReportSource, true)) {
+                AppEvents.updateRssiSignalChanged(
+                    StardustAppEventPackage.RSSIPackage(
+                        rssi = sdPackage.deviceConnectionRssi,
+                        signalRssi = sdPackage.signalRssi,
+                        snr = sdPackage.snr,
+                        carrier = sdPackage.carrier?.let { getCarrierByStardustCarrier(it) }
+                ))
+            }
         }
     }
 
@@ -265,7 +275,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleDeleteGroupsResponse() {
-        GroupsUtils.addGroupsToLocal()
+        GroupsUtils.sendAddAllGroups()
     }
 
     private fun handleAddGroupsResponse() {
@@ -291,7 +301,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private fun handleUpdateAddressResponse (mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            GroupsUtils.deleteAllDeviceGroups()
+            GroupsUtils.sendDeleteAllGroups()
             DataManager.getClientConnection().removeConnectionTimer()
         }
     }

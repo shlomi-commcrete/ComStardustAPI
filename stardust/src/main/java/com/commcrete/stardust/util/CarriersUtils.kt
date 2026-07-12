@@ -183,6 +183,9 @@ object CarriersUtils {
     }
 
 
+    fun getCarrierByStardustCarrier(stardustCarrier: StardustConfigurationParser.StardustCarrier): Carrier? {
+        return carrierList.value?.firstOrNull { it.f == stardustCarrier }
+    }
 
     fun getCarrierByControl(deliveryType: StardustDeliveryType): Carrier? {
         val carriers = carrierList.value

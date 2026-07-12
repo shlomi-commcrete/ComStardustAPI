@@ -38,7 +38,7 @@ object SharedPreferencesUtil {
 
     //Preferences
     private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
-    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
+    private const val KEY_AUDIO_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
@@ -55,12 +55,12 @@ object SharedPreferencesUtil {
     //Record type Values
 
     val AUDIO_SOURCE_TO_KEY = mapOf(
-        MediaRecorder.AudioSource.DEFAULT to "Default",
+        //MediaRecorder.AudioSource.DEFAULT to "Default",
         MediaRecorder.AudioSource.MIC to "Mic",
-        MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
-        MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
+        //MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
+        //MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
         //MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
-        MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
+        //MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
     )
 
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
@@ -86,6 +86,8 @@ object SharedPreferencesUtil {
 
     private const val KEY_LAST_USER = "last_user"
     private const val KEY_ALERT_DEST = "alert_dest"
+
+    private const val KEY_RSSI_SOURCE = "rssi_source"
 
     //Output Values
     private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
@@ -138,7 +140,7 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-
+    private const val KEY_NOISE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
 
     private fun getPrefs(): SharedPreferences {
         return DataManager.appContext.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
@@ -286,7 +288,7 @@ object SharedPreferencesUtil {
         return true
     }
 
-    fun getUser() : User?{
+    fun getUser() : User? {
         val userString = getPrefs().getString(KEY_USER_OBJ, "")
         if(!userString.isNullOrEmpty()) {
             val user = Gson().fromJson(userString, User::class.java)
@@ -299,45 +301,36 @@ object SharedPreferencesUtil {
         getPrefs().edit { putBoolean(KEY_DEVELOPER, isDeveloper) }
     }
 
-    fun isDeveloperMode () : Boolean{
+    fun isDeveloperMode() : Boolean{
         return getPrefs().getBoolean(KEY_DEVELOPER, false)
     }
 
-    private fun getPreferencesBoolean (key :String) : Boolean {
+    private fun getPreferencesBoolean(key :String) : Boolean {
         return getPrefs().getBoolean(key, false)
     }
 
-    private fun getPreferencesInt (key :String, default : Int = 0) : Int {
+    private fun getPreferencesInt(key :String, default : Int = 0) : Int {
         return getPrefs().getInt(key, default)
     }
 
-    private fun getPreferencesString (key :String, default : String = "") : String? {
+    private fun getPreferencesString(key :String, default : String = "") : String? {
         return getPrefs().getString(key, default)
     }
 
-    fun getCodecGain() : Float{
-        return getPrefs().getFloat( KEY_CODEC_HANDLE_GAIN, 50.toFloat())
+    fun getAudioGain() : Float{
+        return getPrefs().getFloat( KEY_AUDIO_GAIN, 50.toFloat())
     }
 
-    fun setCodecGain(gain: Float) {
-        getPrefs().edit { putFloat(KEY_CODEC_HANDLE_GAIN, gain) }
+    fun setAudioGain(gain: Float) {
+        getPrefs().edit { putFloat(KEY_AUDIO_GAIN, gain) }
     }
 
-    fun getAIGain() : Float{
-        return getPrefs().getFloat( KEY_AI_HANDLE_GAIN, 50.toFloat())
-    }
-
-    fun setAIGain(gain: Float) {
-        getPrefs().edit { putFloat(KEY_AI_HANDLE_GAIN, gain) }
-    }
-
-    fun getAutoGainControl() : Boolean{
-        return getPreferencesBoolean(KEY_ENABLE_AUTO_GAIN_CONTROL)
-    }
-
-    fun getNoiseSuppressor() : Boolean {
+    fun getNoiseSuppressorEnableState() : Boolean {
         return getPreferencesBoolean(KEY_ENABLE_NOISE_SUPPRESSOR)
     }
+
+    fun setNoiseSuppressorEnableState(enabled: Boolean) {
+        getPrefs().edit { putBoolean(KEY_ENABLE_NOISE_SUPPRESSOR, enabled) }
 
     fun getAcousticEchoControl() : Boolean {
         return getPreferencesBoolean(KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
@@ -364,7 +357,7 @@ object SharedPreferencesUtil {
     }
 
 
-    fun getEnablePttSound () : Boolean {
+    fun getEnablePttSound() : Boolean {
         return getPrefs().getBoolean(KEY_ENABLE_PTT_SOUND, true)
     }
 
@@ -612,6 +605,15 @@ object SharedPreferencesUtil {
 
     }
 
+    fun getRSSIReportSource() : String {
+        return getPrefs().getString(KEY_RSSI_SOURCE, "") ?: ""
+    }
+
+    fun setRSSIReportSource(dest: String)  {
+        getPrefs().edit { putString(KEY_RSSI_SOURCE, dest) }
+
+    }
+
     fun getKeyNameCrypto () : String {
         return getPrefs().getString(KEY_KEY_NAME, "Default") ?: "Default"
     }
@@ -655,9 +657,14 @@ object SharedPreferencesUtil {
         return  resilience
     }
 
-    fun getCodecType(): RecorderUtils.AudioEncoderType {
-        val codecId = getPrefs().getInt(KEY_INPUT_CODEC, RecorderUtils.AudioEncoderType.CODEC2.id)
-        return RecorderUtils.AudioEncoderType.fromId(codecId) ?: RecorderUtils.AudioEncoderType.CODEC2
+    fun getCodecType(): RecorderUtils.CODE_TYPE {
+        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
+        val codecId = getPrefs().getInt(KEY_INPUT_CODEC, RecorderUtils.CODE_TYPE.CODEC2.id)
+        when (codecId) {
+            RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
+            RecorderUtils.CODE_TYPE.AI.id -> return RecorderUtils.CODE_TYPE.AI
+            else -> return RecorderUtils.CODE_TYPE.CODEC2
+        }
     }
 
     @Deprecated("As there is no option to update this value from app now this function is unavailable")

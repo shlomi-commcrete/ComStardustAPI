@@ -285,7 +285,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                         // Handle the RSSI value
                         Scopes.getMainCoroutine().launch {
                             BleManager.rssi.value = rssi
-                            if(StardustInitConnectionHandler.isConnected() || rssi >= 0) DataManager.getCallbacks()?.onRSSIChanged(rssi)
+                            if(StardustInitConnectionHandler.isConnected() || rssi >= 0) DataManager.getCallbacks()?.onDeviceConnectionRSSIChanged(rssi)
                         }
                     }
                 }
@@ -570,12 +570,12 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
      * The dialog offers two options:
      * 1. Enable Bluetooth - redirects to system Bluetooth enable request
      * 2. Go to Settings - redirects to Bluetooth settings
-     * 
+     *
      * @return true if Bluetooth is already enabled, false if user needs to enable it
      */
     fun isBluetoothEnabled(): Boolean {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        
+
         if (bluetoothAdapter == null) {
             Timber.tag(LOG_TAG).e("Bluetooth is not supported on this device")
             return false
@@ -848,8 +848,15 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
             Timber.tag(LOG_TAG).d("isAbleToSendAgain $randomID sendMessage")
 
             Timber.tag(LOG_TAG).d("Sending Package $randomID")
-            Scopes.getDefaultCoroutine().launch {
-                resetTimer(bittelPackage)
+            if (isNeedAck(bittelPackage.stardustOpCode)) {
+                // The watchdog's only cancellation path is clearTimer(), fired from an
+                // incoming BLE response. Opcodes that never get one (PTT_AI) would have
+                // this fire unconditionally 15ms after every send, and — if system load
+                // delays the synchronous write+dequeue below past that window — resend
+                // whatever is still at mutableMessageList[0], duplicating that packet.
+                Scopes.getDefaultCoroutine().launch {
+                    resetTimer(bittelPackage)
+                }
             }
             SharedPreferencesUtil.getAppUser()?.let {
                 Timber.tag(LOG_TAG).d("getAppUser $randomID sendMessage")

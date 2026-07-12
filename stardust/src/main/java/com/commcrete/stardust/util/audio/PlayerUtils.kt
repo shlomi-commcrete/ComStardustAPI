@@ -80,7 +80,8 @@ object PlayerUtils : BleMediaConnector() {
             }
             StardustPackageUtils.packageLiveData.value = null
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-            Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
+//            removeSyncBleDevices ()
+            isPttReceived.value = "empty"
         }
     }
 
@@ -375,16 +376,15 @@ object PlayerUtils : BleMediaConnector() {
     }
 
 
-    fun playNotificationSound() {
-        Handler(Looper.getMainLooper()).post {
-            try {
-                val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                val ringtone = RingtoneManager.getRingtone(appContext, notificationUri)
-                ringtone.play()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
+    fun playNotificationSound(context: Context) {
+//        try {
+//            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+//            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+//            ringtone.play()
+//        } catch (e: Exception) {
+//            e.printStackTrace()
+//        }
     }
+}
 
 }
