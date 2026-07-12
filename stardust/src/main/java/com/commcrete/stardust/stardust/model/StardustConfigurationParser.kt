@@ -140,10 +140,10 @@ class StardustConfigurationParser : StardustParser() {
         ACTIVE(1),
     }
 
-    enum class StardustTypeFunctionality(val type: Int) {
-        HR(0),
-        LR(1),
-        ST(2);
+    enum class StardustTypeFunctionality(val type: Int, val typeName: String) {
+        HR(0, "High Rate"),
+        LR(1, "Low Rate"),
+        ST(2, "Fast Rate");
 
         fun getAllowedFunctionalityOptions(): Set<FunctionalityType> {
             return when (this) {

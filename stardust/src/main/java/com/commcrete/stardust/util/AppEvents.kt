@@ -44,14 +44,13 @@ object AppEvents {
     }
 
     private fun expireSnr(expectedGeneration: Int) {
-        val expired: StardustAppEventPackage.RSSIPackage
         synchronized(snrLock) {
             if (expectedGeneration != snrGeneration) return // superseded by a newer call
-            expired = pendingSnrExpiry ?: return
+            pendingSnrExpiry ?: return
             pendingSnrExpiry = null
         }
         Timber.tag("AppEvent").d("SNR expired after ${SNR_EXPIRY_TIMEOUT_MS}ms with no refresh")
-        updateRssiSignalChanged(expired.copy(snr = null))
+        updateRssiSignalChanged(StardustAppEventPackage.RSSIPackage())
     }
 
     fun updateBattery (percent: Int) {

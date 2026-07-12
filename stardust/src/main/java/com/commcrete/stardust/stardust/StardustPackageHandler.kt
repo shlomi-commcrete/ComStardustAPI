@@ -39,6 +39,8 @@ import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
+import com.commcrete.stardust.util.CarriersUtils.getCarrierByControl
+import com.commcrete.stardust.util.CarriersUtils.getCarrierByStardustCarrier
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileSendUtils
@@ -244,7 +246,8 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustAppEventPackage.RSSIPackage(
                         rssi = sdPackage.deviceConnectionRssi,
                         signalRssi = sdPackage.signalRssi,
-                        snr = sdPackage.snr
+                        snr = sdPackage.snr,
+                        carrier = sdPackage.carrier?.let { getCarrierByStardustCarrier(it) }
                 ))
             }
         }
