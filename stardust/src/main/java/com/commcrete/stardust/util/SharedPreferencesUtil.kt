@@ -17,7 +17,10 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlin.collections.get
+import androidx.core.content.edit
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -37,7 +40,7 @@ object SharedPreferencesUtil {
 
     //Preferences
     private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
-    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
+    private const val KEY_AUDIO_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
@@ -54,12 +57,12 @@ object SharedPreferencesUtil {
     //Record type Values
 
     val AUDIO_SOURCE_TO_KEY = mapOf(
-        MediaRecorder.AudioSource.DEFAULT to "Default",
+        //MediaRecorder.AudioSource.DEFAULT to "Default",
         MediaRecorder.AudioSource.MIC to "Mic",
-        MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
-        MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
+        //MediaRecorder.AudioSource.VOICE_CALL to "Voice Call",
+        //MediaRecorder.AudioSource.CAMCORDER to "Camcorder",
         //MediaRecorder.AudioSource.VOICE_COMMUNICATION to "Voice Communication",
-        MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
+        //MediaRecorder.AudioSource.VOICE_RECOGNITION to "Voice Recognition"
     )
 
     private val KEY_TO_AUDIO_SOURCE = AUDIO_SOURCE_TO_KEY.entries
@@ -84,6 +87,8 @@ object SharedPreferencesUtil {
 
     private const val KEY_LAST_USER = "last_user"
     private const val KEY_ALERT_DEST = "alert_dest"
+
+    private const val KEY_RSSI_SOURCE = "rssi_source"
 
     //Output Values
     private const val KEY_DEFAULT_AUDIO_OUTPUT = "Builtin-Speakers"
@@ -136,7 +141,7 @@ object SharedPreferencesUtil {
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
-
+    private const val KEY_NOISE_CANCELLATION_ENABLED = "voice_cancellation_enabled"
 
     private fun getPrefs(context: Context): SharedPreferences {
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
@@ -159,7 +164,7 @@ object SharedPreferencesUtil {
     }
 
     fun savePhoneNumber(context: Context, phoneNumber: String) {
-        getPrefs(context).edit().putString(KEY_PHONE_NUMBER, phoneNumber).apply()
+        getPrefs(context).edit { putString(KEY_PHONE_NUMBER, phoneNumber) }
     }
 
     fun getPassword(context: Context): String? {
@@ -167,42 +172,42 @@ object SharedPreferencesUtil {
     }
 
     fun savePassword(context: Context, password: String) {
-        getPrefs(context).edit().putString(KEY_PASSWORD, password).apply()
+        getPrefs(context).edit { putString(KEY_PASSWORD, password) }
     }
 
     fun removePassword (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_PASSWORD).apply()
+        getPrefs(context).edit { remove(KEY_PASSWORD) }
         return true
     }
 
     fun removePhone (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_PHONE_NUMBER).apply()
+        getPrefs(context).edit { remove(KEY_PHONE_NUMBER) }
         return true
     }
 
     fun removeUserID(context: Context) {
-        getPrefs(context).edit().remove(KEY_USER_ID).apply()
+        getPrefs(context).edit { remove(KEY_USER_ID) }
     }
 
     fun setUserID(context: Context , userId : String){
-        getPrefs(context).edit().putString(KEY_USER_ID, userId).apply()
+        getPrefs(context).edit { putString(KEY_USER_ID, userId) }
     }
 
     fun setBittelDevice(context: Context , bittelDevice : String) {
         val isNewDeviceConnection = getBittelDevice(context) != bittelDevice
         if(isNewDeviceConnection) {
-            getPrefs(context).edit().putString(KEY_BEETLE_DEVICE, bittelDevice).apply()
+            getPrefs(context).edit { putString(KEY_BEETLE_DEVICE, bittelDevice) }
         }
         setConnectedToUnknownDevice(context, isNewDeviceConnection)
     }
 
     fun removeBittelDevice(context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_BEETLE_DEVICE).apply()
+        getPrefs(context).edit { remove(KEY_BEETLE_DEVICE) }
         return true
     }
 
     fun setBittelDeviceName(context: Context , bittelDeviceName : String){
-        getPrefs(context).edit().putString(KEY_BEETLE_DEVICE_NAME, bittelDeviceName).apply()
+        getPrefs(context).edit { putString(KEY_BEETLE_DEVICE_NAME, bittelDeviceName) }
     }
 
     fun getBittelDeviceName(context: Context) : String {
@@ -210,12 +215,12 @@ object SharedPreferencesUtil {
     }
 
     fun removeBittelDeviceName(context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_BEETLE_DEVICE_NAME).apply()
+        getPrefs(context).edit { remove(KEY_BEETLE_DEVICE_NAME) }
         return true
     }
 
     fun setLicenses(context: Context , licenses : String){
-        getPrefs(context).edit().putString(KEY_LICENSES, licenses).apply()
+        getPrefs(context).edit { putString(KEY_LICENSES, licenses) }
     }
 
     fun getLicenses(context: Context) : License?{
@@ -228,7 +233,12 @@ object SharedPreferencesUtil {
     }
 
     fun setConnectedToUnknownDevice(context: Context, isNewConnection: Boolean) {
-        return getPrefs(context).edit().putBoolean(KEY_CONNECTED_TO_UNKNOWN_DEVICE, isNewConnection).apply()
+        return getPrefs(context).edit {
+            putBoolean(
+                KEY_CONNECTED_TO_UNKNOWN_DEVICE,
+                isNewConnection
+            )
+        }
     }
 
     fun getUserInitialDeviceID(context: Context) : String {
@@ -236,7 +246,7 @@ object SharedPreferencesUtil {
     }
 
     fun setUserInitialDeviceID(context: Context, deviceId: String) {
-        return getPrefs(context).edit().putString(KEY_INITIAL_DEVICE_ID, deviceId).apply()
+        return getPrefs(context).edit { putString(KEY_INITIAL_DEVICE_ID, deviceId) }
     }
 
     fun getBittelDevice(context: Context) : String?{
@@ -244,17 +254,17 @@ object SharedPreferencesUtil {
     }
 
     fun setFirebaseToken(context: Context , token : String){
-        getPrefs(context).edit().putString(KEY_FIREBASE_TOKEN, token).apply()
+        getPrefs(context).edit { putString(KEY_FIREBASE_TOKEN, token) }
     }
 
     fun setAppUser (context: Context , appUser : RegisterUser) {
-        getPrefs(context).edit().putString(KEY_APP_USER, appUser.toJson()).apply()
+        getPrefs(context).edit { putString(KEY_APP_USER, appUser.toJson()) }
         UsersUtils.mRegisterUser = appUser
     }
 
     fun removeAppUser (context: Context) : Boolean{
         UsersUtils.mRegisterUser = null
-        getPrefs(context).edit().remove(KEY_APP_USER).apply()
+        getPrefs(context).edit { remove(KEY_APP_USER) }
         return true
     }
 
@@ -272,7 +282,7 @@ object SharedPreferencesUtil {
     }
 
     fun setEspPort(context: Context, isSelected : Boolean){
-        getPrefs(context).edit().putBoolean(KEY_ESP_PORT, isSelected).apply()
+        getPrefs(context).edit { putBoolean(KEY_ESP_PORT, isSelected) }
     }
 
     fun getFirebaseToken(context: Context) : String?{
@@ -280,25 +290,25 @@ object SharedPreferencesUtil {
     }
 
     fun setUser(context: Context , user : String?){
-        getPrefs(context).edit().putString(KEY_USER_OBJ, user).apply()
+        getPrefs(context).edit { putString(KEY_USER_OBJ, user) }
     }
 
     fun removeUser (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_USER_OBJ).apply()
+        getPrefs(context).edit { remove(KEY_USER_OBJ) }
         return true
     }
 
     fun getUser(context: Context) : User?{
         val userString = getPrefs(context).getString(KEY_USER_OBJ, "")
         if(!userString.isNullOrEmpty()){
-            var user = Gson().fromJson(userString, User::class.java)
+            val user = Gson().fromJson(userString, User::class.java)
             return user
         }
         return null
     }
 
     fun setDeveloperMode(context: Context , isDeveloper : Boolean = false) {
-        getPrefs(context).edit().putBoolean(KEY_DEVELOPER, isDeveloper).apply()
+        getPrefs(context).edit { putBoolean(KEY_DEVELOPER, isDeveloper) }
     }
 
     fun isDeveloperMode (context: Context) : Boolean{
@@ -306,46 +316,31 @@ object SharedPreferencesUtil {
     }
 
     private fun getPreferencesBoolean (context: Context, key :String) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getBoolean(key, false)
     }
 
     private fun getPreferencesInt (context: Context, key :String, default : Int = 0) : Int {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getInt(key, default)
     }
 
     private fun getPreferencesString (context: Context, key :String, default : String = "") : String? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(key, default)
     }
 
-    fun getCodecGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_CODEC_HANDLE_GAIN, 50.toFloat())
+    fun getAudioGain(context: Context) : Float{
+        return getPrefs(context).getFloat( KEY_AUDIO_GAIN, 50.toFloat())
     }
 
-    fun setCodecGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_CODEC_HANDLE_GAIN, gain).apply()
+    fun setAudioGain(context: Context, gain: Float) {
+        getPrefs(context).edit { putFloat(KEY_AUDIO_GAIN, gain) }
     }
 
-    fun getAIGain(context: Context) : Float{
-        return getPrefs(context).getFloat( KEY_AI_HANDLE_GAIN, 50.toFloat())
-    }
-
-    fun setAIGain(context: Context, gain: Float) {
-        getPrefs(context).edit().putFloat(KEY_AI_HANDLE_GAIN, gain).apply()
-    }
-
-    fun getAutoGainControl(context: Context) : Boolean{
-        return getPreferencesBoolean(context, KEY_ENABLE_AUTO_GAIN_CONTROL)
-    }
-
-    fun getNoiseSuppressor(context: Context) : Boolean {
+    fun getNoiseSuppressorEnableState(context: Context) : Boolean {
         return getPreferencesBoolean(context, KEY_ENABLE_NOISE_SUPPRESSOR)
     }
 
-    fun getAcousticEchoControl(context: Context) : Boolean {
-        return getPreferencesBoolean(context, KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
+    fun setNoiseSuppressorEnableState(context: Context, enabled: Boolean) {
+        getPrefs(context).edit { putBoolean(KEY_ENABLE_NOISE_SUPPRESSOR, enabled) }
     }
 
     fun getCodecAudioSource(context: Context): Int {
@@ -355,7 +350,7 @@ object SharedPreferencesUtil {
 
     fun setCodecAudioSource(context: Context, audioSource: Int) {
         val key = AUDIO_SOURCE_TO_KEY[audioSource]
-        getPrefs(context).edit().putString(KEY_CODEC_RECORDING_TYPE, key).apply()
+        getPrefs(context).edit { putString(KEY_CODEC_RECORDING_TYPE, key) }
     }
 
     fun getAIAudioSource(context: Context): Int {
@@ -365,22 +360,19 @@ object SharedPreferencesUtil {
 
     fun setAIAudioSource(context: Context, audioSource: Int) {
         val key = AUDIO_SOURCE_TO_KEY[audioSource]
-        getPrefs(context).edit().putString(KEY_AI_RECORDING_TYPE, key).apply()
+        getPrefs(context).edit { putString(KEY_AI_RECORDING_TYPE, key) }
     }
 
 
     fun getEnablePttSound (context: Context) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getBoolean(KEY_ENABLE_PTT_SOUND, true)
     }
 
     fun getIsStardustServerBitEnabled(context: Context) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getBoolean(KEY_BITTEL_BIT_SERVER, false)
     }
 
     fun getConnectivityToggles (context: Context) : MutableSet<String>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val defaults = mutableSetOf( context.getString(R.string.bluetooth))
         return getPrefs(context).getStringSet(KEY_SELECT_CONNECTIVITY_OPTIONS, defaults)
     }
@@ -390,8 +382,7 @@ object SharedPreferencesUtil {
     }
 
     fun setConfigSaved (context: Context) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putBoolean(KEY_IS_CONFIG_SAVED, true).apply()
+        getPrefs(context).edit { putBoolean(KEY_IS_CONFIG_SAVED, true) }
     }
 
     fun isBittelAck (context: Context) : Boolean {
@@ -405,8 +396,7 @@ object SharedPreferencesUtil {
     }
 
     fun setLocationInterval (context: Context, interval : String) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_LOCATION_INTERVAL, interval).apply()
+        getPrefs(context).edit { putString(KEY_LOCATION_INTERVAL, interval) }
 //        LocationUtils.updatedLocationPullParams()
     }
 
@@ -449,7 +439,7 @@ object SharedPreferencesUtil {
     }
 
     fun setExportDataOnLogout(context: Context, save: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, save).apply()
+        getPrefs(context).edit { putBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, save) }
     }
 
     fun getExportDataOnLogout(context: Context) : Boolean {
@@ -460,7 +450,7 @@ object SharedPreferencesUtil {
      * Use it from DataManager.updateSavePTTFilesRequired only!!!
      * */
     internal fun setSavePTTFiles(context: Context, save: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_SAVE_PTT_FILES, save).apply()
+        getPrefs(context).edit { putBoolean(KEY_SAVE_PTT_FILES, save) }
     }
 
     /**
@@ -476,8 +466,7 @@ object SharedPreferencesUtil {
     }
 
     fun setLastUser (context: Context, userId : String) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_LAST_USER, userId).apply()
+        getPrefs(context).edit { putString(KEY_LAST_USER, userId) }
     }
 
     fun getLastUser (context: Context) : String {
@@ -485,18 +474,15 @@ object SharedPreferencesUtil {
     }
 
     fun setAdminMode (context: Context,snifferMode: StardustConfigurationParser.SnifferMode ) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putInt(KEY_ADMIN_MODE, snifferMode.type).apply()
+        getPrefs(context).edit { putInt(KEY_ADMIN_MODE, snifferMode.type) }
     }
 
     fun getAdminMode (context: Context) : StardustConfigurationParser.SnifferMode {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val type =  getPrefs(context).getInt(KEY_ADMIN_MODE, 0)
-        return StardustConfigurationParser.SnifferMode.values()[type]
+        return StardustConfigurationParser.SnifferMode.entries[type]
     }
 
     fun getAdminLocalMode (context: Context) : AdminUtils.AdminLocal {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val type =  getPrefs(context).getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
         when (type) {
             context.getString(R.string.regular) -> { return AdminUtils.AdminLocal.Regular}
@@ -507,13 +493,11 @@ object SharedPreferencesUtil {
     }
 
     fun setOutputDevice(context: Context, outputDevice : String) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_OUTPUT_DEFAULT , outputDevice).apply()
+        getPrefs(context).edit { putString(KEY_OUTPUT_DEFAULT, outputDevice) }
     }
 
     fun setInputDevice(context: Context, inputDevice : String) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_INPUT_DEFAULT , inputDevice).apply()
+        getPrefs(context).edit { putString(KEY_INPUT_DEFAULT, inputDevice) }
     }
 
     fun getOutputDevice(context: Context) : Int {
@@ -563,11 +547,10 @@ object SharedPreferencesUtil {
 
     fun setPresets(context: Context, preset: List<StardustConfigurationParser.Preset>) {
         val presetJson = Gson().toJson(preset) // Convert list to JSON
-        getPrefs(context).edit().putString(KEY_LAST_PRESETS, presetJson).apply() // Save JSON as a string
+        getPrefs(context).edit { putString(KEY_LAST_PRESETS, presetJson) } // Save JSON as a string
     }
 
     fun getPresets(context: Context): List<StardustConfigurationParser.Preset>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = getPrefs(context).getString(KEY_LAST_PRESETS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
@@ -585,7 +568,7 @@ object SharedPreferencesUtil {
 
         val carriersJson = gson.toJson(carriers)
 
-        getPrefs(context).edit().putString(key, carriersJson).apply()
+        getPrefs(context).edit { putString(key, carriersJson) }
     }
 
     fun getCarriers(context: Context, key: String = KEY_LAST_CARRIERS): List<Carrier>? {
@@ -611,44 +594,45 @@ object SharedPreferencesUtil {
     }
 
     fun setLocationFormat (context: Context,locationFormat : String ) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_LOCATION_FORMAT, locationFormat).apply()
+        getPrefs(context).edit { putString(KEY_LOCATION_FORMAT, locationFormat) }
     }
 
     fun getLocationFormat (context: Context) : String {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(KEY_LOCATION_FORMAT, "") ?: ""
     }
 
     fun getAlertDest (context: Context) : String {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(KEY_ALERT_DEST, "") ?: ""
     }
 
     fun setAlertDest (context: Context, dest : String)  {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_ALERT_DEST, dest).apply()
+        getPrefs(context).edit { putString(KEY_ALERT_DEST, dest) }
+
+    }
+
+    fun getRSSIReportSource(context: Context) : String {
+        return getPrefs(context).getString(KEY_RSSI_SOURCE, "") ?: ""
+    }
+
+    fun setRSSIReportSource(context: Context, dest: String)  {
+        getPrefs(context).edit { putString(KEY_RSSI_SOURCE, dest) }
 
     }
 
     fun getKeyNameCrypto (context: Context) : String {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(KEY_KEY_NAME, "Default") ?: "Default"
     }
 
     fun setKeyNameCrypto (context: Context, dest : String)  {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putString(KEY_KEY_NAME, dest).apply()
+        getPrefs(context).edit { putString(KEY_KEY_NAME, dest) }
     }
 
     fun getIsErased (context: Context) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefsPlugin(context).getBoolean(KEY_ERASE, false)
     }
 
     fun setIsErased (context: Context, isErased : Boolean)  {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefsPlugin(context).edit().putBoolean(KEY_ERASE, isErased).apply()
+        getPrefsPlugin(context).edit { putBoolean(KEY_ERASE, isErased) }
     }
 
     fun getIsManualLocation (context: Context) : Boolean {
@@ -656,21 +640,18 @@ object SharedPreferencesUtil {
     }
 
     fun setIsManualLocation (context: Context, isErased : Boolean)  {
-        getPrefs(context).edit().putBoolean(KEY_LOCATION_MANUAL, isErased).apply()
+        getPrefs(context).edit { putBoolean(KEY_LOCATION_MANUAL, isErased) }
     }
 
     fun setCodecType(context: Context, codecType: RecorderUtils.CODE_TYPE) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putInt(KEY_INPUT_CODEC, codecType.id).apply()
+        getPrefs(context).edit { putInt(KEY_INPUT_CODEC, codecType.id) }
     }
 
     fun setResilience(context: Context, resilience: Resilience) {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
-        getPrefs(context).edit().putInt(KEY_RESILIENCE, resilience.value).apply()
+        getPrefs(context).edit { putInt(KEY_RESILIENCE, resilience.value) }
     }
 
     fun getResilience(context: Context) : Resilience {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val savedLocal = getPrefs(context).getInt(KEY_RESILIENCE, 60)
         val resilience = when (savedLocal) {
             20 -> Resilience.Low
@@ -682,7 +663,6 @@ object SharedPreferencesUtil {
     }
 
     fun getCodecType(context: Context): RecorderUtils.CODE_TYPE {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val codecId = getPrefs(context).getInt(KEY_INPUT_CODEC, RecorderUtils.CODE_TYPE.CODEC2.id)
         when (codecId) {
             RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
