@@ -1,16 +1,13 @@
 package com.commcrete.stardust.usb
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.content.Context.RECEIVER_EXPORTED
 import android.content.Context.USB_SERVICE
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import com.commcrete.bittell.util.bittel_package.UARTManager
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
@@ -61,7 +58,7 @@ object BittelUsbManager2 : BittelProtocol {
 
     private var handlerObject : HandlerObject? = null
 
-    private val mDeviceList : MutableSet<UsbDevice> = mutableSetOf()
+    private val mDeviceList: MutableSet<UsbDevice> = mutableSetOf()
 
     fun init() {
         this.usbManager = DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager
@@ -81,21 +78,16 @@ object BittelUsbManager2 : BittelProtocol {
         return productName == "FT231X USB UART" || productName.contains("stardust", ignoreCase = true)
     }
 
-    fun init(context: Context) {
-        this.context = context
-        this.usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-    }
-
-    fun connectToUnknownDevice (context: Context, device: UsbDevice) {
+    fun connectToUnknownDevice (device: UsbDevice) {
         if (isJboxAudioDevice(device)) {
             isJboxAudioPresent = true
-            connectToAudioDevice(context, device)
+            connectToAudioDevice( device)
         } else if (isStardustDataDevice(device)) {
-            connectToDevice(context, device)
+            connectToDevice(device)
         }
     }
 
-    fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
+    fun disconnectToUnknownDevice (device: UsbDevice) {
         if (isJboxAudioDevice(device)) {
             isJboxAudioPresent = false
             disconnect()

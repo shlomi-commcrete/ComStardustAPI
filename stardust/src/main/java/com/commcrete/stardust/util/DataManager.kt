@@ -108,7 +108,7 @@ object DataManager : StardustAPI, PttInterface {
         AIModuleInitializer.initModules()
 
         runCatching {
-            val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+            val debugOutFile = File(DataManager.appContext.cacheDir, "decoded_data.txt")
             if (debugOutFile.exists()) debugOutFile.delete()
         }
     }
@@ -189,7 +189,7 @@ object DataManager : StardustAPI, PttInterface {
 
 
     @SuppressLint("MissingPermission")
-    override fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType): File? {
+    override fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File? {
         checkInitialized()
         this.source = stardustAPIPackage.senderId
         this.destination = stardustAPIPackage.receiverId
@@ -199,7 +199,7 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     @SuppressLint("MissingPermission")
-    override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.AudioEncoderType, file: File) {
+    override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File) {
         checkInitialized()
         RecorderUtils.stopRecording(chatId = chatId, receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
     }

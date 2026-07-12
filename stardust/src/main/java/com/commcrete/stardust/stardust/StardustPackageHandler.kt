@@ -27,6 +27,7 @@ import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.mapper.StardustPackageApiMapper
+import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
@@ -35,6 +36,7 @@ import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
+import com.commcrete.stardust.util.CarriersUtils.getCarrierByStardustCarrier
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
@@ -217,7 +219,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
-            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource()
             if(sdPackage.senderID.equals(rssiReportSource, true)) {
                 AppEvents.updateRssiSignalChanged(
                     StardustAppEventPackage.RSSIPackage(

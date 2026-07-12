@@ -5,6 +5,7 @@ import android.content.Context.MODE_PRIVATE
 import android.content.SharedPreferences
 import android.media.AudioDeviceInfo
 import android.media.MediaRecorder
+import android.preference.PreferenceManager
 import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
 import com.commcrete.stardust.request_objects.RegisterUser
@@ -331,13 +332,14 @@ object SharedPreferencesUtil {
 
     fun setNoiseSuppressorEnableState(enabled: Boolean) {
         getPrefs().edit { putBoolean(KEY_ENABLE_NOISE_SUPPRESSOR, enabled) }
+    }
 
-    fun getAcousticEchoControl() : Boolean {
+    fun getAcousticEchoControl(): Boolean {
         return getPreferencesBoolean(KEY_ENABLE_ACOUSTIC_ECHO_CONTROL)
     }
 
     fun getCodecAudioSource(): Int {
-        val key = getPreferencesString( KEY_CODEC_RECORDING_TYPE)
+        val key = getPreferencesString(KEY_CODEC_RECORDING_TYPE)
         return KEY_TO_AUDIO_SOURCE[key] ?: MediaRecorder.AudioSource.MIC
     }
 
@@ -357,15 +359,15 @@ object SharedPreferencesUtil {
     }
 
 
-    fun getEnablePttSound() : Boolean {
+    fun getEnablePttSound(): Boolean {
         return getPrefs().getBoolean(KEY_ENABLE_PTT_SOUND, true)
     }
 
-    fun getIsStardustServerBitEnabled() : Boolean {
+    fun getIsStardustServerBitEnabled(): Boolean {
         return getPrefs().getBoolean(KEY_BITTEL_BIT_SERVER, false)
     }
 
-    fun getConnectivityToggles () : MutableSet<String>? {
+    fun getConnectivityToggles(): MutableSet<String>? {
         val defaults = mutableSetOf(DataManager.appContext.getString(R.string.bluetooth))
         return getPrefs().getStringSet(KEY_SELECT_CONNECTIVITY_OPTIONS, defaults)
     }
@@ -383,20 +385,20 @@ object SharedPreferencesUtil {
     }
 
     fun getLocationInterval(): Int {
-        val value = getPreferencesString( KEY_LOCATION_INTERVAL, "4")
+        val value = getPreferencesString(KEY_LOCATION_INTERVAL, "4")
         return (value?.toInt() ?: 4) * 1000
 
     }
 
-    fun setLocationInterval(interval : String) {
+    fun setLocationInterval(interval: String) {
         getPrefs().edit().putString(KEY_LOCATION_INTERVAL, interval).apply()
     }
 
-    fun getLocationPriority() : Int{
+    fun getLocationPriority(): Int {
         val priority = getPreferencesString(KEY_LOCATION_PRIORITY, "100")
-        if(priority == "100") {
+        if (priority == "100") {
             return LocationRequest.PRIORITY_HIGH_ACCURACY
-        }else if (priority == "102") {
+        } else if (priority == "102") {
             LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
         } else if (priority == "104") {
             LocationRequest.PRIORITY_LOW_POWER
@@ -405,97 +407,123 @@ object SharedPreferencesUtil {
 
     }
 
-    fun getLocationAccuracy() : Int {
+    fun getLocationAccuracy(): Int {
         val value = getPreferencesString(KEY_LOCATION_ACCURACY, "200")
         return value?.toInt() ?: 100
     }
 
-    fun getSelectedSOSMain() : String {
-        return getPreferencesString( KEY_SOS_SELECTED_1, "") ?: ""
+    fun getSelectedSOSMain(): String {
+        return getPreferencesString(KEY_SOS_SELECTED_1, "") ?: ""
     }
 
-    fun getSelectedSOSSub() : String {
+    fun getSelectedSOSSub(): String {
         return getPreferencesString(KEY_SOS_SELECTED_2, "") ?: ""
     }
 
-    fun getEqBand(bandNum : Int) : Int {
-        val default = when(bandNum) {
-            0 -> {-14}
-            1 -> {-13}
-            2 -> {0}
-            3 -> {8}
-            4 -> {-6}
-            else -> {0}
+    fun getEqBand(bandNum: Int): Int {
+        val default = when (bandNum) {
+            0 -> {
+                -14
+            }
+
+            1 -> {
+                -13
+            }
+
+            2 -> {
+                0
+            }
+
+            3 -> {
+                8
+            }
+
+            4 -> {
+                -6
+            }
+
+            else -> {
+                0
+            }
         }
-        return getPreferencesInt(KEY_EQ_BAND + bandNum, default) *100
+        return getPreferencesInt(KEY_EQ_BAND + bandNum, default) * 100
     }
 
     fun setExportDataOnLogout(save: Boolean) {
         getPrefs().edit { putBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, save) }
     }
 
-    fun getExportDataOnLogout() : Boolean {
+    fun getExportDataOnLogout(): Boolean {
         return getPrefs().getBoolean(KEY_EXPORT_SESSION_DATA_ON_LOGOUT, false)
     }
 
     /**
      * Use it from DataManager.updateSavePTTFilesRequired only!!!
      * */
-    internal fun setSavePTTFiles(save: Boolean) {
+    fun setSavePTTFiles(save: Boolean) {
         getPrefs().edit { putBoolean(KEY_SAVE_PTT_FILES, save) }
     }
 
     /**
      * Use it from DataManager.getSavePTTFilesRequired only!!!
      * */
-    internal fun getSavePTTFiles() : Boolean {
+    fun getSavePTTFiles(): Boolean {
         return getPrefs().getBoolean(KEY_SAVE_PTT_FILES, true)
     }
 
-    fun getPTTTimeout () : Int {
+    fun getPTTTimeout(): Int {
         val value = getPreferencesInt(KEY_PTT_TIMEOUT, 45)
         return value.times(1000)
     }
 
-    fun setLastUser (userId : String) {
+    fun setLastUser(userId: String) {
         getPrefs().edit { putString(KEY_LAST_USER, userId) }
     }
 
-    fun getLastUser() : String {
-        return getPreferencesString( KEY_LAST_USER, "") ?: ""
+    fun getLastUser(): String {
+        return getPreferencesString(KEY_LAST_USER, "") ?: ""
     }
 
-    fun setAdminMode (snifferMode: StardustConfigurationParser.SnifferMode ) {
+    fun setAdminMode(snifferMode: StardustConfigurationParser.SnifferMode) {
         getPrefs().edit { putInt(KEY_ADMIN_MODE, snifferMode.type) }
     }
 
-    fun getAdminMode() : StardustConfigurationParser.SnifferMode {
+    fun getAdminMode(): StardustConfigurationParser.SnifferMode {
         val type = getPrefs().getInt(KEY_ADMIN_MODE, 0)
         return StardustConfigurationParser.SnifferMode.entries[type]
     }
 
-    fun getAdminLocalMode() : AdminUtils.AdminLocal {
+    fun getAdminLocalMode(): AdminUtils.AdminLocal {
         val context = DataManager.appContext
-        val type =  getPrefs().getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
+        val type =
+            getPrefs().getString(KEY_ADMIN_LOCAL_MODE, context.getString(R.string.regular))
         when (type) {
-            context.getString(R.string.regular) -> { return AdminUtils.AdminLocal.Regular}
-            context.getString(R.string.admin) -> { return AdminUtils.AdminLocal.Admin}
-            context.getString(R.string.superUser) -> { return AdminUtils.AdminLocal.SuperUser}
+            context.getString(R.string.regular) -> {
+                return AdminUtils.AdminLocal.Regular
+            }
+
+            context.getString(R.string.admin) -> {
+                return AdminUtils.AdminLocal.Admin
+            }
+
+            context.getString(R.string.superUser) -> {
+                return AdminUtils.AdminLocal.SuperUser
+            }
         }
         return AdminUtils.AdminLocal.Regular
     }
 
-    fun setOutputDevice(outputDevice : String) {
+    fun setOutputDevice(outputDevice: String) {
         getPrefs().edit { putString(KEY_OUTPUT_DEFAULT, outputDevice) }
     }
 
-    fun setInputDevice(inputDevice : String) {
+    fun setInputDevice(inputDevice: String) {
         getPrefs().edit { putString(KEY_INPUT_DEFAULT, inputDevice) }
     }
 
-    fun getOutputDevice() : Int {
+    fun getOutputDevice(): Int {
         val audioSourceString = getPreferencesString(KEY_OUTPUT_DEFAULT)
-        if(audioSourceString != null) {
+        if (audioSourceString != null) {
             audioSourceString.let {
                 return when (it) {
                     KEY_DEFAULT_AUDIO_OUTPUT -> AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -520,9 +548,9 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun getInputDevice() : Int {
+    fun getInputDevice(): Int {
         val audioSourceString = getPreferencesString(KEY_INPUT_DEFAULT)
-        if(audioSourceString != null) {
+        if (audioSourceString != null) {
             audioSourceString.let {
                 when (it) {
                     KEY_DEFAULT_AUDIO_INPUT -> return AudioDeviceInfo.TYPE_BUILTIN_MIC
@@ -532,10 +560,12 @@ object SharedPreferencesUtil {
                     KEY_DEFAULT_AUDIO_INPUT_USB_DEVICE -> return AudioDeviceInfo.TYPE_USB_DEVICE
                     KEY_DEFAULT_AUDIO_INPUT_EARPIECE -> return AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
                     KEY_DEFAULT_AUDIO_INPUT_BLUETOOTH -> return AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-                    else -> { return AudioDeviceInfo.TYPE_UNKNOWN }
+                    else -> {
+                        return AudioDeviceInfo.TYPE_UNKNOWN
+                    }
                 }
             }
-        }else {
+        } else {
             return AudioDeviceInfo.TYPE_UNKNOWN
         }
     }
@@ -549,8 +579,12 @@ object SharedPreferencesUtil {
         val carriersJson = getPrefs().getString(KEY_LAST_PRESETS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
-            val type = object : TypeToken<List<StardustConfigurationParser.Preset>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<StardustConfigurationParser.Preset>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+            val type = object :
+                TypeToken<List<StardustConfigurationParser.Preset>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<StardustConfigurationParser.Preset>>(
+                carriersJson,
+                type
+            ) // Convert JSON string back to List<Carrier>
         } else {
             null
         }
@@ -570,8 +604,12 @@ object SharedPreferencesUtil {
         val carriersJson = getPrefs().getString(key, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
-            val type = object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<Carrier>>(carriersJson, type) // Convert JSON string back to List<Carrier>
+            val type =
+                object : TypeToken<List<Carrier>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Carrier>>(
+                carriersJson,
+                type
+            ) // Convert JSON string back to List<Carrier>
         } else {
             null
         }
@@ -582,63 +620,66 @@ object SharedPreferencesUtil {
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object : TypeToken<Carrier>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<Carrier>(carriersJson, type) // Convert JSON string back to List<Carrier>
+            Gson().fromJson<Carrier>(
+                carriersJson,
+                type
+            ) // Convert JSON string back to List<Carrier>
         } else {
             null
         }
     }
 
-    fun setLocationFormat (locationFormat : String ) {
+    fun setLocationFormat(locationFormat: String) {
         getPrefs().edit { putString(KEY_LOCATION_FORMAT, locationFormat) }
     }
 
-    fun getLocationFormat () : String {
+    fun getLocationFormat(): String {
         return getPrefs().getString(KEY_LOCATION_FORMAT, "") ?: ""
     }
 
-    fun getAlertDest () : String {
+    fun getAlertDest(): String {
         return getPrefs().getString(KEY_ALERT_DEST, "") ?: ""
     }
 
-    fun setAlertDest (dest : String)  {
+    fun setAlertDest(dest: String) {
         getPrefs().edit { putString(KEY_ALERT_DEST, dest) }
 
     }
 
-    fun getRSSIReportSource() : String {
+    fun getRSSIReportSource(): String {
         return getPrefs().getString(KEY_RSSI_SOURCE, "") ?: ""
     }
 
-    fun setRSSIReportSource(dest: String)  {
+    fun setRSSIReportSource(dest: String) {
         getPrefs().edit { putString(KEY_RSSI_SOURCE, dest) }
 
     }
 
-    fun getKeyNameCrypto () : String {
+    fun getKeyNameCrypto(): String {
         return getPrefs().getString(KEY_KEY_NAME, "Default") ?: "Default"
     }
 
-    fun setKeyNameCrypto (dest : String)  {
+    fun setKeyNameCrypto(dest: String) {
         getPrefs().edit { putString(KEY_KEY_NAME, dest) }
     }
 
-    fun getIsErased () : Boolean {
+    fun getIsErased(): Boolean {
         return getPrefsPlugin()?.getBoolean(KEY_ERASE, false) ?: false
     }
 
-    fun setIsErased (isErased : Boolean)  {
+    fun setIsErased(isErased: Boolean) {
         getPrefsPlugin()?.edit()?.putBoolean(KEY_ERASE, isErased)?.apply()
     }
 
-    fun getIsManualLocation () : Boolean {
+    fun getIsManualLocation(): Boolean {
         return getPrefs().getBoolean(KEY_LOCATION_MANUAL, false)
     }
 
-    fun setIsManualLocation (isErased : Boolean)  {
+    fun setIsManualLocation(isErased: Boolean) {
         getPrefs().edit { putBoolean(KEY_LOCATION_MANUAL, isErased) }
     }
 
-    fun setCodecType(codecType: RecorderUtils.AudioEncoderType) {
+    fun setCodecType(codecType: RecorderUtils.CODE_TYPE) {
         getPrefs().edit { putInt(KEY_INPUT_CODEC, codecType.id) }
     }
 
@@ -646,7 +687,7 @@ object SharedPreferencesUtil {
         getPrefs().edit { putInt(KEY_RESILIENCE, resilience.value) }
     }
 
-    fun getResilience() : Resilience {
+    fun getResilience(): Resilience {
         val savedLocal = getPrefs().getInt(KEY_RESILIENCE, 60)
         val resilience = when (savedLocal) {
             20 -> Resilience.Low
@@ -654,16 +695,15 @@ object SharedPreferencesUtil {
             120 -> Resilience.High
             else -> Resilience.Medium
         }
-        return  resilience
+        return resilience
     }
 
     fun getCodecType(): RecorderUtils.CODE_TYPE {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val codecId = getPrefs().getInt(KEY_INPUT_CODEC, RecorderUtils.CODE_TYPE.CODEC2.id)
-        when (codecId) {
-            RecorderUtils.CODE_TYPE.CODEC2.id -> return RecorderUtils.CODE_TYPE.CODEC2
-            RecorderUtils.CODE_TYPE.AI.id -> return RecorderUtils.CODE_TYPE.AI
-            else -> return RecorderUtils.CODE_TYPE.CODEC2
+        return when (codecId) {
+            RecorderUtils.CODE_TYPE.CODEC2.id -> RecorderUtils.CODE_TYPE.CODEC2
+            RecorderUtils.CODE_TYPE.AI.id -> RecorderUtils.CODE_TYPE.AI
+            else -> RecorderUtils.CODE_TYPE.CODEC2
         }
     }
 
@@ -739,5 +779,6 @@ object SharedPreferencesUtil {
             emptyList()
         }
     }
-
 }
+
+

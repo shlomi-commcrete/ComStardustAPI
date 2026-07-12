@@ -1,7 +1,7 @@
 package com.commcrete.stardust.util.audio
 
 
-import android.media.RingtoneManager
+import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -9,9 +9,7 @@ import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.Codec2PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
-import com.commcrete.stardust.room.legacy_db.contacts.ChatContact
 import com.commcrete.stardust.room.new_db.message.EncoderType
-import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -80,8 +78,6 @@ object PlayerUtils : BleMediaConnector() {
             }
             StardustPackageUtils.packageLiveData.value = null
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-//            removeSyncBleDevices ()
-            isPttReceived.value = "empty"
         }
     }
 
@@ -376,7 +372,7 @@ object PlayerUtils : BleMediaConnector() {
     }
 
 
-    fun playNotificationSound(context: Context) {
+    fun playNotificationSound() {
 //        try {
 //            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
 //            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
@@ -387,4 +383,4 @@ object PlayerUtils : BleMediaConnector() {
     }
 }
 
-}
+

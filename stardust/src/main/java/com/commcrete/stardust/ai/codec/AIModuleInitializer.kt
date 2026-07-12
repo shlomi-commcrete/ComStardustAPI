@@ -2,97 +2,28 @@ package com.commcrete.stardust.ai.codec
 
 
 import android.util.Log
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.filter.PyTorchInitGate
-import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
 import com.commcrete.stardust.util.Scopes
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 object AIModuleInitializer {
 
     private const val TAG = "AIModuleInitializer"
+
+    /** Bounded wait for the PyTorch model-load jobs before wiring up PTT managers. */
+    private const val MODEL_LOAD_TIMEOUT_MS = 10_000L
 
     /** Public lateinit fields kept for backwards-compatibility with existing callers. */
     lateinit var wavTokenizerEncoder: WavTokenizerEncoder
     lateinit var wavTokenizerDecoder: WavTokenizerDecoder
 
     var aiEnabled = false
-    private const val TAG = "AIModuleInitializer"
+        private set
 
-    /**
-     * Single-shot guards for the **construction** step (`WavTokenizerEncoder(...)` /
-     * `WavTokenizerDecoder(...)`). Without these, two concurrent calls to [init]
-     * could both pass the `lateinit` `isInitialized` check before either
-     * assignment landed and end up constructing two ML model wrappers (each
-     * with its own `by lazy { Module(...) }`, so the PyTorch model file would
-     * be loaded into RAM twice — one instance becomes orphaned).
-     *
-     * The per-instance `initModule()` call is already idempotent because
-     * `module` is `by lazy(LazyThreadSafetyMode.SYNCHRONIZED)`.
-     */
-    private val encoderConstructStarted = AtomicBoolean(false)
-    private val decoderConstructStarted = AtomicBoolean(false)
-    private val pipelineStarted = AtomicBoolean(false)
-
-    /**
-     * Completes when [wavTokenizerEncoder] and [wavTokenizerDecoder] have been
-     * constructed and their lazy `module` triggered (via [initModule]).
-     * Callers that need the codec ready (e.g. before the first PTT) can
-     * `await()` this instead of guessing with `delay(...)`.
-     *
-     * Stays `null` until [initModules] is called for the first time.
-     */
-    @Volatile
-    private var readiness: CompletableDeferred<Unit>? = null
-
-    fun ready(): CompletableDeferred<Unit>? = readiness
-
-    fun initModules(context: Context, pluginContext: Context) {
-        // Idempotent at the pipeline level. Re-entry only re-fires if the
-        // first attempt failed before completing readiness.
-        if (!pipelineStarted.compareAndSet(false, true)) {
-            Log.d(TAG, "initModules: already started — ignoring duplicate call")
-            return
-        }
-        val signal = CompletableDeferred<Unit>().also { readiness = it }
-        Scopes.getDefaultCoroutine().launch {
-            try {
-                init(context, pluginContext)
-                // Wait until both constructors have actually landed before
-                // touching their lazy modules. Bounded so we don't block
-                // forever on a broken init.
-                awaitConstructed(timeoutMs = 10_000L)
-                // initModule() returns a cached Job that completes once the
-                // PyTorch model has been loaded into the underlying lazy
-                // `module`. Joining is now exact (no magic delay) — the
-                // pipeline signals readiness the moment both models are
-                // actually live in RAM.
-                joinInitModuleJobs()
-                PttSendManager.init(context)
-                PttReceiveManager.init()
-                signal.complete(Unit)
-            } catch (t: Throwable) {
-                Log.e(TAG, "initModules pipeline failed", t)
-                signal.completeExceptionally(t)
-                // Allow a future call to retry from scratch.
-                pipelineStarted.set(false)
-                readiness = null
-            }
-        }
-    }
-
-    /**
-     * Public no-arg overload — kept for binary-compat with existing call
-     * sites. Fire-and-forget; if you want to await, use [ready] /
-     * [readinessAwait] instead.
-     */
-    fun initModules() {
-        Scopes.getDefaultCoroutine().launch { triggerInitModuleJobs() }
     private val initLock = Mutex()
     @Volatile private var initialized = false
 
@@ -110,79 +41,65 @@ object AIModuleInitializer {
     suspend fun initModulesSuspending() = initLock.withLock {
         if (initialized) return@withLock
 
-        if (!resolveAiEnabled()) return@withLock
+        try {
+            if (!resolveAiEnabled()) return@withLock
 
-        createCodecs()
-        warmUpCodecs()
-        initPttManagers()
+            createCodecs()
+            joinModelLoad()
+            initPttManagers()
 
-        initialized = true
-        Log.d(TAG, "AI modules initialized.")
+            initialized = true
+            Log.d(TAG, "AI modules initialized.")
+        } catch (t: Throwable) {
+            // Leave `initialized` false so a later call retries the whole
+            // pipeline instead of getting permanently stuck behind this
+            // mutex on a bad model asset / OOM / I/O error. Contained here
+            // so it can't escape as an uncaught exception on the bare
+            // Dispatchers.Default coroutine `initModules()` launches on.
+            Log.e(TAG, "AI module init failed", t)
+        }
     }
 
     private fun resolveAiEnabled(): Boolean {
         aiEnabled = PyTorchInitGate.isPrimaryInitializer()
         if (!aiEnabled) {
             Log.d(TAG, "AI Codec not enabled for this process.")
-            // IMPORTANT: do NOT instantiate or reference any org.pytorch.* here
-            return
         }
-        Scopes.getDefaultCoroutine().launch {
-            // Race-safe single-shot construction. The CAS ensures only ONE
-            // coroutine ever runs the constructor for each module, even if
-            // [init] is invoked from multiple call sites concurrently.
-            if (encoderConstructStarted.compareAndSet(false, true)) {
-                try {
-                    if (!::wavTokenizerEncoder.isInitialized) {
-                        wavTokenizerEncoder = WavTokenizerEncoder(context, pluginContext)
-                    }
-                } catch (t: Throwable) {
-                    Log.e(TAG, "WavTokenizerEncoder construction failed", t)
-                    encoderConstructStarted.set(false) // allow retry
-                    throw t
-                }
-            }
-            if (decoderConstructStarted.compareAndSet(false, true)) {
-                try {
-                    if (!::wavTokenizerDecoder.isInitialized) {
-                        wavTokenizerDecoder = WavTokenizerDecoder(context, pluginContext)
-                    }
-                } catch (t: Throwable) {
-                    Log.e(TAG, "WavTokenizerDecoder construction failed", t)
-                    decoderConstructStarted.set(false) // allow retry
-                    throw t
-                }
-            }
-        }
+        return aiEnabled
     }
 
-    private suspend fun awaitConstructed(timeoutMs: Long) {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (System.currentTimeMillis() < deadline) {
-            if (::wavTokenizerEncoder.isInitialized && ::wavTokenizerDecoder.isInitialized) return
-            delay(50)
+    private fun createCodecs() {
+        if (!::wavTokenizerEncoder.isInitialized) {
+            wavTokenizerEncoder = WavTokenizerEncoder()
         }
-        Log.w(TAG, "awaitConstructed: timed out after ${timeoutMs}ms — proceeding anyway")
+        if (!::wavTokenizerDecoder.isInitialized) {
+            wavTokenizerDecoder = WavTokenizerDecoder()
+        }
     }
 
     /**
-     * Trigger (without awaiting) the cached init jobs on both modules. Safe
-     * to call repeatedly — `initModule()` returns the same lazy-cached Job.
+     * Wait for both PyTorch models to finish loading into RAM before
+     * [initPttManagers] starts the encode/decode pipeline. Without this, the
+     * first real PTT chunk can arrive before the lazy `module` has loaded,
+     * so the encoder blocks synchronously on that lazy initializer's lock —
+     * the "slow ML step inline on hot loop" latency bug, on the first press.
+     * Bounded so a stalled load can't hang init forever; falls back to
+     * proceeding anyway (logged) rather than failing the whole pipeline.
      */
-    private fun triggerInitModuleJobs() {
-        if (::wavTokenizerEncoder.isInitialized) wavTokenizerEncoder.initModule()
-        if (::wavTokenizerDecoder.isInitialized) wavTokenizerDecoder.initModule()
+    private suspend fun joinModelLoad() {
+        val encoderJob: Job = wavTokenizerEncoder.initModule()
+        val decoderJob: Job = wavTokenizerDecoder.initModule()
+        val joined = withTimeoutOrNull(MODEL_LOAD_TIMEOUT_MS) {
+            encoderJob.join()
+            decoderJob.join()
+        }
+        if (joined == null) {
+            Log.w(TAG, "joinModelLoad: timed out after ${MODEL_LOAD_TIMEOUT_MS}ms — proceeding anyway")
+        }
     }
 
-    /**
-     * Trigger AND await both init jobs. Joining the same lazy-cached Job
-     * from a second call site is free if the first call has already
-     * completed it.
-     */
-    private suspend fun joinInitModuleJobs() {
-        val encoderJob = if (::wavTokenizerEncoder.isInitialized) wavTokenizerEncoder.initModule() else null
-        val decoderJob = if (::wavTokenizerDecoder.isInitialized) wavTokenizerDecoder.initModule() else null
-        encoderJob?.join()
-        decoderJob?.join()
+    private fun initPttManagers() {
+        PttSendManager.init()
+        PttReceiveManager.init()
     }
 }

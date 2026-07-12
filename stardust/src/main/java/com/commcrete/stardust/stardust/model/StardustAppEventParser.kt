@@ -67,7 +67,7 @@ class StardustAppEventParser : StardustParser(){
     ) {
         val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
         parseIDSender(appIDBytes, deviceEventPackage)
-        val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+        val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource()
         if(deviceEventPackage.senderID.equals(rssiReportSource, true)) {
             var newOffset = offset + SENDER_ID_LENGTH
             val rssi = cutByteArray(byteArray, RSSI_LENGTH, newOffset)

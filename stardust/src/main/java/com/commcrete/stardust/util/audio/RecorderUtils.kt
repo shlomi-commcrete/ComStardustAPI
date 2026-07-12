@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
+import android.os.Environment
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
@@ -16,6 +17,7 @@ import com.ustadmobile.codec2.Codec2
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import java.io.File
 
 
@@ -54,10 +56,6 @@ object RecorderUtils {
         if (!dirToSaveFile.exists()) dirToSaveFile.mkdirs()
     }
 
-    fun onPTTTest() {
-        wavRecorder = WavRecorder()
-        wavRecorder?.sendAudioTest()
-    }
 
 
     // ----------------------------------------
@@ -94,7 +92,7 @@ object RecorderUtils {
     }
 
     private fun startCodec2Recording(destination: String, carrier: Carrier?): File? {
-        audioRecorderCodec2 = AudioRecorderCodec2(DataManager.context, pttInterface)
+        audioRecorderCodec2 = AudioRecorderCodec2(pttInterface)
         audioRecorderCodec2 ?: return null
         val file: File? = if (!DataManager.getSavePTTFilesRequired()) {
             FileUtils.withTempFile(
@@ -142,7 +140,7 @@ object RecorderUtils {
             }
         )
 
-        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState(DataManager.context)
+        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState()
 
         aiRecorder = AudioRecorderAI(
             chunkDurationMs = 500,
@@ -176,7 +174,7 @@ object RecorderUtils {
             }
             onStateChanged = { recording ->
                 Log.d(LOG_TAG, "Recording state changed: $recording (session ${session.id})")
-                if (!recording) finishAIRecording(DataManager.context, session)
+                if (!recording) finishAIRecording(session)
             }
         }
 
@@ -201,7 +199,8 @@ object RecorderUtils {
         captureRate: Int,
         file: File,
         carrier: Carrier?,
-        destination: String,
+        receiverId: String,
+        chatId: String,
         enableNoiseCancellation: Boolean,
         isFinal: Boolean = false
     ) {
@@ -212,7 +211,8 @@ object RecorderUtils {
             isFinal = isFinal,
             file = file,
             carrier = carrier,
-            chatID = destination
+            chatId = chatId,
+            receiverId = receiverId,
         )
     }
 
@@ -261,7 +261,7 @@ object RecorderUtils {
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
-        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(chatID, carrier, file)
+        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(chatId, receiverId, carrier, file)
         else stopAIRecording()
 
         Scopes.getMainCoroutine().launch {
@@ -271,15 +271,21 @@ object RecorderUtils {
         }
     }
 
-    private fun stopCodec2Recording(chatId: String, receiverID: String, carrier: Carrier?, file: File) {
+    private fun stopCodec2Recording(chatId: String, receiverID: String, carrier: Carrier?, file: File?) {
         audioRecorderCodec2?.run {
-            stopRecording(
-                chatId = chatId,
-                retry = 0,
-                receiverId = receiverID,
-                path = file.absolutePath,
-                carrier = carrier
-            )
+            // file can be null if startRecording's own file-creation step
+            // failed or was skipped — don't let a null here throw before
+            // the recordingInProgress guard above gets a chance to reset,
+            // which would otherwise permanently lock out future recordings.
+            file?.let {
+                stopRecording(
+                    chatId = chatId,
+                    retry = 0,
+                    receiverId = receiverID,
+                    path = it.absolutePath,
+                    carrier = carrier
+                )
+            }
             Scopes.getDefaultCoroutine().launch {
                 delay(50)
                 audioRecorderCodec2 = null
@@ -296,7 +302,7 @@ object RecorderUtils {
         }
     }
 
-    private fun finishAIRecording(context: Context, session: PttSession) {
+    private fun finishAIRecording(session: PttSession) {
         Scopes.getDefaultCoroutine().launch {
             delay(3000)
             PttSendManager.finish(session)
@@ -345,6 +351,15 @@ object RecorderUtils {
     }
 
     enum class CODE_TYPE (val id : Int, val codecName: String){
-        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Classic Codec Encoder")
+        AI(1, "Neural Audio Encoder (NAE)"), CODEC2(0, "Classic Codec Encoder");
+
+        fun toEncoderType(): EncoderType = when (this) {
+            AI -> EncoderType.AI
+            CODEC2 -> EncoderType.CODEC2
+        }
+
+        companion object {
+            fun fromId(id: Int): CODE_TYPE? = entries.firstOrNull { it.id == id }
+        }
     }
 }

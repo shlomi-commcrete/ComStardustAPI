@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.util.Log
 import com.commcrete.stardust.util.DataManager
@@ -69,7 +70,7 @@ class AudioRecorderAI(
         synchronized(this) {
             // Already running or cancelling
             if (job?.isActive == true) return
-            AudioRecordingKeepAlive.acquire(context)
+            AudioRecordingKeepAlive.acquire(DataManager.appContext)
 
             job = scope.launch {
                 onStateChanged?.invoke(true)
@@ -91,7 +92,7 @@ class AudioRecorderAI(
         synchronized(this) {
             job?.cancel()
         }
-        AudioCaptureConfig.clearInputRoute(context)
+        AudioCaptureConfig.clearInputRoute(DataManager.appContext)
     }
 
     fun release() {
@@ -103,12 +104,12 @@ class AudioRecorderAI(
         Log.d("AudioRecorder", "recordLoop")
 
         // Input gain: profile setting takes precedence, then SharedPreferences.
-        val gain = SharedPreferencesUtil.getAudioGain(context) / 100f
+        val gain = SharedPreferencesUtil.getAudioGain() / 100f
 
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
-            context = context,
+            context = DataManager.appContext,
             requestedRate = sampleRate,
-            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource(context)
+            defaultAudioSource = SharedPreferencesUtil.getAIAudioSource()
         )
         val captureRate = capturePlan.captureRate
         val audioSource = capturePlan.audioSource
@@ -140,7 +141,7 @@ class AudioRecorderAI(
             )
         }
 
-        AudioCaptureConfig.applyInputRoute(context, audioRecord, capturePlan.preferredInputDevice)
+        AudioCaptureConfig.applyInputRoute(DataManager.appContext, audioRecord, capturePlan.preferredInputDevice)
 
         val deviceTag = capturePlan.preferredInputDevice?.let { sanitizeDeviceName(it.productName?.toString()) }
             ?: "default-mic"
@@ -245,7 +246,7 @@ class AudioRecorderAI(
 
             try { audioRecord.stop() } catch (_: Exception) {}
             audioRecord.release()
-            AudioCaptureConfig.clearInputRoute(context)
+            AudioCaptureConfig.clearInputRoute(DataManager.appContext)
         }
     }
 

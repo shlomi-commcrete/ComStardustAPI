@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util.audio
 
 import android.annotation.SuppressLint
+import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -10,29 +11,17 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import com.commcrete.stardust.request_objects.Message
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
-import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.SeenStatus
-import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.StardustControlByte
-import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.Scopes
-import com.commcrete.stardust.util.FileUtils
-import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.UsersUtils
-import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import com.ustadmobile.codec2.Codec2Decoder
-import com.ustadmobile.codec2.Codec2Encoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -98,11 +87,11 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
-        AudioRecordingKeepAlive.acquire(context)
+        AudioRecordingKeepAlive.acquire(DataManager.appContext)
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
-            context = context,
+            context = DataManager.appContext,
             requestedRate = RECORDER_SAMPLE_RATE,
-            defaultAudioSource = SharedPreferencesUtil.getCodecAudioSource(DataManager.context),
+            defaultAudioSource = SharedPreferencesUtil.getCodecAudioSource(),
         )
         captureRateHz = capturePlan.captureRate
         nativeFrameSamples = ((captureRateHz * nativeFrameDurationMs) / 1000).coerceAtLeast(160)
@@ -126,19 +115,23 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }catch ( e : Exception) {
             e.printStackTrace()
         }
-        AudioCaptureConfig.applyInputRoute(context, recorder, capturePlan.preferredInputDevice)
-        recorder?.audioSessionId?.let { setRecordingParams(it) }
-        syncBleDevice()
+        AudioCaptureConfig.applyInputRoute(DataManager.appContext, recorder, capturePlan.preferredInputDevice)
         recorder?.startRecording()
         isRecording = true
 
-        recordingThread = thread(true) { writeAudioDataToFile(file, carrier) }
+        recordingThread = thread(true) {
+            writeAudioDataToFile(file, carrier)
+        }
     }
 
-    private fun syncBleDevice() {
+    private fun syncBleDevice (context: Context) {
         Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice")
-        val context = DataManager.appContext
-        val audioManager = context.getSystemService(AudioManager::class.java)
+
+        val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            context.getSystemService(AudioManager::class.java)
+        } else {
+            TODO("VERSION.SDK_INT < M")
+        }
         val wantedInputDevice = SharedPreferencesUtil.getInputDevice()
 
         // No explicit user preference → make sure we are NOT stuck on SCO from a
@@ -156,7 +149,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
 
         // Resolve the actual AudioDeviceInfo that matches the user preference
         // (falls back through the configured input hierarchy).
-        val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS, context)
+        val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS)
         if (preferred == null) {
             Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice: no matching input device")
             return
@@ -191,7 +184,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }
     }
 
-    private fun removeSyncBleDevices() {
+    private fun removeSyncBleDevices (context: Context) {
         Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
         val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             context.getSystemService(AudioManager::class.java)
@@ -219,7 +212,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
-                    AudioCaptureConfig.clearInputRoute(context)
+                    AudioCaptureConfig.clearInputRoute(DataManager.appContext)
                     AudioRecordingKeepAlive.release()
                     recordingThread = null
                     recorder = null
@@ -235,8 +228,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         chatId: String,
         receiverId: String,
         path: String,
-        carrier: Carrier?) {
-
+        carrier: Carrier?
+    ) {
         var retryNum = retry
         retryNum += 1
         if(retryNum > 3) {
@@ -253,9 +246,9 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
-                    stopRecording(retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
+                    stopRecording(retryNum, chatId, receiverId, path, carrier)
                 } finally {
-                    AudioCaptureConfig.clearInputRoute(context)
+                    AudioCaptureConfig.clearInputRoute(DataManager.appContext)
                     AudioRecordingKeepAlive.release()
                     recordingThread = null
 //                    val mRecorder = recorder
@@ -267,9 +260,10 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             // ✅ Save PTT regardless of whether recorder was null
             saveOrRemovePttFile(chatId, receiverId, path)
         } catch (e: Exception) {
+            e.printStackTrace()
             Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
 
-            stopRecording(retryNum, chatId = chatId, receiverId = receiverId, path = path, carrier)
+            stopRecording(retryNum, chatId, receiverId, path, carrier)
         } finally {
             // ✅ Always notify
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
@@ -278,6 +272,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }
         Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
     }
+
 
     fun stopRecording(
         retry : Int = 0,
@@ -293,8 +288,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
 
     private fun writeAudioDataToFile(file: File, carrier: Carrier?) {
         // Input gain: profile setting takes precedence, then SharedPreferences.
-        val targetGain = SharedPreferencesUtil.getAudioGain(DataManager.context) / 100f
-        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState(DataManager.context)
+        val targetGain = SharedPreferencesUtil.getAudioGain() / 100f
+        val enableNoiseCancellation = SharedPreferencesUtil.getNoiseSuppressorEnableState()
         val sData = ShortArray(nativeFrameSamples)
         val nativePending = ArrayList<Short>(nativeFrameSamples * 2)
         var os: FileOutputStream? = null
@@ -323,10 +318,10 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         // matches exactly what the receiver decodes.
         currentPipeline?.reset()
         val pipeline = Codec2SendPipeline(
-            context = context,
+            context = DataManager.appContext,
             carrier = carrier,
             sourceProvider = { viewModel?.getSource() ?: DataManager.getSource() },
-            destinationProvider = { viewModel?.getDestenation() },
+            destinationProvider = { viewModel?.getDestination() },
             onPacketSent = { onPipelinePacketSent(file, carrier) },
             onEncodedFrame = { encodedFrame ->
                 logByteArray("logByteArrayInputRecorder", encodedFrame)
@@ -411,12 +406,12 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
      */
     private fun onPipelinePacketSent(file: File, carrier: Carrier?) {
         numOfPackage++
-        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout(context)
+        val maxSecondsPTT = SharedPreferencesUtil.getPTTTimeout()
         if (numOfPackage.times(880) > maxSecondsPTT) {
             DataManager.getCallbacks()?.pttMaxTimeoutReached()
             viewModel?.let { vm ->
-                vm.getDestenation()?.let { dest ->
-                    stopRecording(retry = 0, dest, file.absolutePath, context, carrier)
+                vm.getDestination().let { dest ->
+                    stopRecording(retry = 0, vm.getChatId(), dest, file.absolutePath, carrier)
                     vm.maxPTTTimeoutReached()
                 }
             }
@@ -424,6 +419,11 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             resetTimer()
         }
     }
+
+    fun recordFrom () {
+
+    }
+
 
     /**
      * Constructs header for wav file format
@@ -507,6 +507,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         data[43] = (contentSize shr 24 and 0xff).toByte()
     }
 
+
     private fun saveOrRemovePttFile(chatId: String, receiverId: String, path: String) {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
@@ -532,17 +533,6 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }
     }
 
-    fun updateAudioReceived(chatId: String, context: Context){
-        Scopes.getDefaultCoroutine().launch {
-            val chatsRepo = ChatsRepository(ChatsDatabase.getDatabase(context).chatsDao())
-            val chatItem = chatsRepo.getChatByBittelID(chatId)
-            chatItem?.let {
-                chatItem.message = Message(senderID = chatId, text = "Ptt Sent",
-                    seen = true)
-                chatsRepo.addChat(it)
-            }
-        }
-    }
 
     // NOTE: The previous `charsToBytes` / `sendData` / `sendToBle` /
     // `generateRandomNumber` / `appendToArray` /
@@ -556,7 +546,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     // artifact) is wired in via [Codec2SendPipeline.onEncodedFrame] in
     // [writeAudioDataToFile] above.
 
-    private fun resetTimer() {
+    private fun resetTimer(){
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed(runnable, 200)
@@ -605,8 +595,10 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }
         return -1 //not found
     }
-}
 
+
+
+}
 fun Array<Int>.endsWith(suffix: Array<Int>): Boolean {
     if (this.size < suffix.size) return false
     return this.sliceArray(this.size - suffix.size until this.size).contentEquals(suffix)

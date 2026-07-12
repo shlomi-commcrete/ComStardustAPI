@@ -1,9 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 import android.util.Log
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.DataManager.context
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.Job
@@ -168,7 +166,7 @@ class WavTokenizerEncoder() {
     }
 
     fun isWindowModel(): Boolean {
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(context)
+        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType()
         return modelTypeSelected == WavTokenizerDecoder.ModelType.English
     }
 

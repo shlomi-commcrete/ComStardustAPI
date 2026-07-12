@@ -101,7 +101,7 @@ internal object AudioCaptureConfig {
         context: Context,
         inputs: List<AudioDeviceInfo>,
     ): AudioDeviceInfo? {
-        val wantedType = SharedPreferencesUtil.getInputDevice(context)
+        val wantedType = SharedPreferencesUtil.getInputDevice()
         if (wantedType == AudioDeviceInfo.TYPE_UNKNOWN) return null
         return inputs.firstOrNull { it.type == wantedType }
             ?: inputs.firstOrNull { it.isUsbInput() }

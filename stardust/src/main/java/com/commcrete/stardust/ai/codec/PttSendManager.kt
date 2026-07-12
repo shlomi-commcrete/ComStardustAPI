@@ -1,12 +1,10 @@
 package com.commcrete.stardust.ai.codec
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.media.MediaCodec
 import android.util.Log
 import com.commcrete.aiaudio.codecs.BitPacking12
-import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
-import com.commcrete.aiaudio.media.WavHelper
-import com.commcrete.aiaudio.codecs.WavTokenizerEncoder
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -18,6 +16,7 @@ import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
@@ -88,7 +87,8 @@ class PttSession internal constructor(
     internal val frameBuffer = mutableListOf<ShortArray>()
     @Volatile internal var file: File? = null
     @Volatile internal var carrier: Carrier? = null
-    @Volatile internal var chatID: String? = null
+    @Volatile internal var chatId: String? = null
+    @Volatile internal var receiverId: String? = null
     internal var lastTokens: List<Long>? = null
     internal var lastPCM: ShortArray? = null
     internal var recordingTs: Long = 0L
@@ -107,7 +107,7 @@ class PttSession internal constructor(
      * state (`index`/`cutTokens`/`loop`), saved/restored around every
      * mirror-decode call so it can multiplex over the shared decoder
      * singleton alongside concurrent [PttReceiveManager] streams and the
-     * encode loop, the same way [PttReceiveManager]'s `ReceiveStream`
+     * encode loop, the same way [PttReceiveManager]'s per-stream state
      * does for incoming audio.
      */
     internal var decoderState: WavTokenizerDecoder.InternalState = WavTokenizerDecoder.InternalState.INITIAL
@@ -198,11 +198,6 @@ object PttSendManager {
     private var wavTokenizerEncoder: WavTokenizerEncoder = AIModuleInitializer.wavTokenizerEncoder
     @SuppressLint("StaticFieldLeak")
     private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
-    private lateinit var cacheDir: File
-    private var fileToSave: File? = null
-    var carrier : Carrier? = null
-    var chatId: String? = null
-    var receiverId: String? = null
     private var viewModel : PttInterface? = null
     var aiEnabled = false
 
@@ -214,10 +209,8 @@ object PttSendManager {
     private val sessionIdGen = AtomicLong(0)
 
     fun init(viewModel : PttInterface? = null) {
-        cacheDir = DataManager.appContext.cacheDir
         this.viewModel = viewModel
         aiEnabled = true
-//        AudioDebugTest(context, wavTokenizerEncoder, wavTokenizerDecoder).runTest()
     }
 
     fun addNewFrame(
@@ -261,7 +254,8 @@ object PttSendManager {
         isFinal: Boolean,
         file: File,
         carrier: Carrier? = null,
-        chatID: String? = null
+        chatId: String? = null,
+        receiverId: String? = null,
     ) {
         val session = synchronized(sessionsLock) { currentSession } ?: run {
             Log.w(TAG, "addRawFrame: no active session — dropping ${pcmArray.size}-sample chunk")
@@ -270,7 +264,8 @@ object PttSendManager {
 
         session.file = file
         session.carrier = carrier
-        session.chatID = chatID
+        session.chatId = chatId
+        session.receiverId = receiverId
         val chunk = RawAiChunk(pcmArray, nativeRate, enableNoiseCancellation, isFinal)
         if (!session.rawQueue.trySend(chunk).isSuccess) {
             Log.w(TAG, "Session ${session.id}: raw queue trySend failed (queue closed?)")
@@ -343,7 +338,7 @@ object PttSendManager {
     fun restart(onMaxTimeoutReached: (() -> Unit)? = null): PttSession {
         val newSession = PttSession(
             id = sessionIdGen.incrementAndGet(),
-            context = DataManager.context,
+            context = DataManager.appContext,
         )
         newSession.recordingTs = RecorderUtils.ts
         newSession.onMaxTimeoutReached = onMaxTimeoutReached
@@ -479,10 +474,11 @@ object PttSendManager {
                     // per session even if some future code path adds
                     // another finalize call site.
                     if (session.finalized.compareAndSet(false, true)) {
-                        // [NonCancellable] so the WAV write completes
-                        // even when the surrounding job is cancelling.
-                        // Otherwise a partial recording's frames would
-                        // be lost on app shutdown / scope cancel.
+                        // [NonCancellable] so the WAV write + message save
+                        // completes even when the surrounding job is
+                        // cancelling. Otherwise a partial recording's
+                        // frames — or its message row — would be lost on
+                        // app shutdown / scope cancel.
                         withContext(NonCancellable) {
                             try {
                                 // The encode loop above only ends once launchDspProcessingLoop
@@ -608,7 +604,7 @@ object PttSendManager {
      */
     private fun enforceMaxPttTimeout(session: PttSession) {
         session.numPacketsSent++
-        val maxMs = SharedPreferencesUtil.getPTTTimeout(session.context)
+        val maxMs = SharedPreferencesUtil.getPTTTimeout()
         if (session.numPacketsSent.times(AI_PACKET_DURATION_MS) <= maxMs) return
 
         val onTimeout = session.onMaxTimeoutReached ?: return
@@ -699,13 +695,13 @@ object PttSendManager {
      */
     private suspend fun mirrorDecodeChunk(session: PttSession, packedData: ByteArray) {
         val decodedSink = onDecodedChunk
-        val savingToFile = DataManager.getSavePTTFilesRequired(session.context)
+        val savingToFile = DataManager.getSavePTTFilesRequired()
         if (decodedSink == null && !savingToFile) return
 
         try {
             val unpack = BitPacking12.unpack12(packedData)
             @Suppress("DEPRECATION")
-            val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
+            val modelTypeSelected = SharedPreferencesUtil.getAudioModelType()
             val pcm = codecMutex.withLock {
                 wavTokenizerDecoder.restoreInternalState(session.decoderState)
                 val decoded = wavTokenizerDecoder.decode(unpack, session.lastTokens, session.lastPCM, modelTypeSelected)
@@ -734,9 +730,8 @@ object PttSendManager {
                 System.arraycopy(data, 0, fullData, 1, data.size)
                 val audioIntArray = StardustPackageUtils.byteArrayToIntArray(fullData)
                 StardustPackageUtils.getStardustPackage(
-                    context = session.context,
                     source = it.getSource(),
-                    destenation = it.getDestenation() ?: "" ,
+                    destination = it.getDestination(),
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT_AI,
                     data = audioIntArray)
             }
@@ -755,27 +750,39 @@ object PttSendManager {
 
     }
 
-    private fun savePtt(session: PttSession, chatID: String, path: String) {
-        Scopes.getDefaultCoroutine().launch {
-            SharedPreferencesUtil.getAppUser(session.context)?.appId?.let {
-                val chatsRepo = DataManager.getChatsRepo(session.context)
-                val chatItem = chatsRepo.getChatByBittelID(chatID)
-                chatItem?.message = Message(
-                    senderID = it,
-                    text = "PTT Sent",
-                    seen = true
-                )
-                chatItem?.let { chatsRepo.addChat(it) }
-                DataManager.getMessagesRepo(DataManager.context).saveMessage(
-                    context = session.context,
-                    isPTT = true,
-                    messageItem = MessageItem(senderID = it,
-                        epochTimeMs = session.recordingTs, senderName = "" ,
-                        chatId = chatID, text = "", fileLocation = path,
-                        isAudio = true, seen = SeenStatus.SENT, audioType = RecorderUtils.CODE_TYPE.AI.id)
-                )
-            }
+    /**
+     * Persist the "PTT sent" message row for [session] once its WAV has
+     * been written to [path]. Called from [finalizeSession], already
+     * inside `withContext(NonCancellable)` — awaiting the save here
+     * (rather than firing a detached coroutine) guarantees the message
+     * row lands even if the surrounding job is being cancelled.
+     */
+    private suspend fun savePttMessage(session: PttSession, path: String) {
+        val chatId = session.chatId ?: run {
+            Log.w(TAG, "Session ${session.id}: no chatId — skipping message save")
+            return
         }
+        val receiverId = session.receiverId ?: run {
+            Log.w(TAG, "Session ${session.id}: no receiverId — skipping message save")
+            return
+        }
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: run {
+            Log.w(TAG, "Session ${session.id}: no logged-in user — skipping message save")
+            return
+        }
+        DataManager.getAppRepo().saveMessage(
+            MessageEntity(
+                chatId = chatId,
+                senderID = appId,
+                receiverID = receiverId,
+                state = MessageState.SENT,
+                epochTimeMs = session.recordingTs,
+                extraData = MessageExtraData.PTT(
+                    path = path,
+                    encoderType = EncoderType.AI
+                )
+            )
+        )
     }
 
     private fun ByteArray.toHexString(): String =
@@ -786,9 +793,9 @@ object PttSendManager {
      * and persist a PTT message row. Runs at most once per session
      * (guarded by [PttSession.finalized] in the caller).
      */
-    private fun finalizeSession(session: PttSession) {
+    private suspend fun finalizeSession(session: PttSession) {
         Log.d(TAG, "Session ${session.id}: finalize (${session.frameBuffer.size} frame(s))")
-        if (!DataManager.getSavePTTFilesRequired(session.context)) {
+        if (!DataManager.getSavePTTFilesRequired()) {
             Log.d(TAG, "Session ${session.id}: save not required — skipping file")
             return
         }
@@ -824,7 +831,8 @@ object PttSendManager {
                 }
             }.onFailure { Log.w(TAG, "Session ${session.id}: mirror copy failed", it) }
 
-            savePtt(session = session, chatID = session.chatID ?: "", path = file.absolutePath)
+            savePttMessage(session, file.absolutePath)
+            RecorderUtils.ts = 0
         } catch (e: Exception) {
             Log.e(TAG, "Session ${session.id}: WAV save failed", e)
         }

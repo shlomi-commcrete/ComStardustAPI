@@ -61,7 +61,8 @@ internal object AudioFeederEngine {
 
     suspend fun feedSingle(
         context: Context,
-        sendTo: String?,
+        receiverId: String,
+        chatId: String,
         carrier: Carrier?,
         source: Source,
         codeType: RecorderUtils.CODE_TYPE,
@@ -109,7 +110,7 @@ internal object AudioFeederEngine {
         val flowKey = "${codeType.name}-feeder"
 
         val sinkFile: File? = if (codeType == RecorderUtils.CODE_TYPE.AI) {
-            createSinkFile(context, sendTo ?: "${source.file.name}_codec", source.label)
+            createSinkFile(context, chatId ?: "${source.file.name}_codec", source.label)
         } else {
             null
         }
@@ -147,7 +148,7 @@ internal object AudioFeederEngine {
             null
         }
 
-        val inputGain = SharedPreferencesUtil.getAudioGain(context) / 100f
+        val inputGain = SharedPreferencesUtil.getAudioGain() / 100f
 
         val emission = try {
             streamPcmAsChunks(
@@ -181,7 +182,8 @@ internal object AudioFeederEngine {
                         processedChunk = processed,
                         sinkFile = sinkFile ?: return@streamPcmAsChunks,
                         carrier = carrier,
-                        chatID = sendTo,
+                        chatId = chatId,
+                        receiverId = receiverId,
                         aiInputWriter = aiInputWriter,
                     )
                 } else {
@@ -253,7 +255,8 @@ internal object AudioFeederEngine {
         processedChunk: ShortArray,
         sinkFile: File,
         carrier: Carrier?,
-        chatID: String?,
+        receiverId: String,
+        chatId: String,
         aiInputWriter: com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter?,
     ) {
         // Diagnostic-only observer; doesn't alter the audio path.
@@ -262,7 +265,8 @@ internal object AudioFeederEngine {
             pcmArray = processedChunk,
             file = sinkFile,
             carrier = carrier,
-            chatID = chatID,
+            receiverId = receiverId,
+            chatId = chatId,
         )
     }
 

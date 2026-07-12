@@ -182,9 +182,8 @@ class Codec2SendPipeline(
             audioIntArray[audioIntArray.lastIndex - 1] = num
         }
         val pkg = StardustPackageUtils.getStardustPackage(
-            context = context,
             source = sourceProvider(),
-            destenation = dest,
+            destination = dest,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
             data = audioIntArray,
         )

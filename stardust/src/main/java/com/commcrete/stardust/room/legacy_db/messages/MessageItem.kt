@@ -89,7 +89,7 @@ data class MessageItem (
             else -> MessageType.TEXT
         }
 
-        val pttSubType = if (type == MessageType.PTT) RecorderUtils.AudioEncoderType.fromId(audioType)?.toEncoderType() else null
+        val pttSubType = if (type == MessageType.PTT) RecorderUtils.CODE_TYPE.fromId(audioType)?.toEncoderType() else null
 
         val attachmentSubType = when {
             isImage == true -> AttachmentType.IMAGE

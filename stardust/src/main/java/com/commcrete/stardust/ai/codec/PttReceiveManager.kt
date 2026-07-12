@@ -25,25 +25,26 @@ import kotlinx.coroutines.sync.withLock
  * Decoder for incoming PTT packets.
  *
  * **Multi-stream aware.** A user can receive PTTs from several different
- * channels at the same time (e.g. multiple talkers on different carriers),
- * and every stream needs its own decoder continuity — `previousTokens`,
- * `previousSamples` AND the [WavTokenizerDecoder]'s internal `index` /
- * `cutTokens` / `loop`. Mixing those across streams causes audible
- * head-cut and progressive desynchronisation.
+ * senders/groups at the same time, and every stream needs its own decoder
+ * continuity — `previousTokens`, `previousSamples` AND the
+ * [WavTokenizerDecoder]'s internal `index` / `cutTokens` / `loop`. Mixing
+ * those across streams causes audible head-cut and progressive
+ * desynchronisation.
  *
  * The decoder is a heavy ML singleton, so we **multiplex** N streams over
  * one decoder instance by:
- *  1. attaching `(from, source, modelType)` to every queued chunk so the
- *     consumer always knows which stream it belongs to,
+ *  1. attaching the source [StardustPackage] + model type to every queued
+ *     chunk so the consumer always knows which stream it belongs to (never
+ *     reads mutable shared state for that),
  *  2. tracking per-stream state (last unpack, last samples, last
  *     timestamp + a [WavTokenizerDecoder.InternalState] snapshot) keyed
- *     by `(from, source)`,
+ *     by sender+group,
  *  3. **save → restore → decode → save** of decoder internal state for
  *     every chunk under the shared [PttSendManager.codecMutex] so neither
  *     concurrent receives nor a parallel send can corrupt each other.
  *
  * Streams that go silent for [STREAM_GAP_RESET_MS] are treated as ended;
- * their entry is purged on the next chunk by the periodic prune.
+ * idle entries are purged periodically so the map can't grow unbounded.
  */
 object PttReceiveManager {
     private const val TAG = "PttManager"
@@ -51,8 +52,8 @@ object PttReceiveManager {
 
     /**
      * If no chunk has arrived within this many milliseconds, we treat the
-     * next packet as the start of a brand-new receive stream and reset the
-     * shared [wavTokenizerDecoder]. Without this, decoder internal state
+     * next packet as the start of a brand-new receive stream and reset that
+     * stream's decoder continuity. Without this, decoder internal state
      * (`index`, `cutTokens`) accumulates across independent receive
      * sessions and progressively degrades audio over many PTTs.
      */
@@ -60,8 +61,8 @@ object PttReceiveManager {
 
     /**
      * Idle streams older than this are evicted from [streams] on the next
-     * incoming chunk so the map can't grow unbounded as channels come and
-     * go over a long-lived session.
+     * incoming chunk so the map can't grow unbounded as senders/groups come
+     * and go over a long-lived session.
      */
     private const val STREAM_IDLE_EVICT_MS = 30_000L
 
@@ -71,7 +72,7 @@ object PttReceiveManager {
 
     private var wavTokenizerDecoder: WavTokenizerDecoder = AIModuleInitializer.wavTokenizerDecoder
 
-    /** Per-stream continuity, keyed by `(from|source)`. */
+    /** Per-stream continuity, keyed by [streamKey]. */
     private val streams = HashMap<String, ReceiveStream>()
 
     fun init() {
@@ -81,59 +82,35 @@ object PttReceiveManager {
         startDecodingJob()
     }
 
-    data class AIDecodeData (
-        val data: ByteArray,
-        val from: String = "",
-        val source: String = "",
-        val modelType: WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General,
-        val onPcmReady: ((ShortArray) -> Unit)? = null
-    )
-
-    fun addNewData(data: ByteArray, from : String, source : String? = null, modelType: WavTokenizerDecoder.ModelType? = null,
-                   onPcmReady: ((ShortArray) -> Unit)? = null) {
+    fun addNewData(data: ParsedAiData, dataPackage: StardustPackage) {
         toDecodeQueue.trySend(
             IncomingChunk(
-                data = data,
-                from = from,
-                source = source,
-                modelType = modelType ?: WavTokenizerDecoder.ModelType.General,
-            )
-        )
-    }
-
-    fun addNewData(aiDecodeData: AIDecodeData) {
-        toDecodeQueue.trySend(
-            IncomingChunk(
-                data = aiDecodeData.data,
-                from = aiDecodeData.from,
-                source = aiDecodeData.source,
-                modelType = aiDecodeData.modelType,
+                decodedBytes = data.decodedBytes,
+                dataPackage = dataPackage,
+                modelType = data.selectedModule ?: WavTokenizerDecoder.ModelType.General,
             )
         )
     }
 
     /**
-     * One queued incoming chunk. Carries the stream identity with it so
-     * the decoder loop never has to consult mutable shared state — that
-     * was the bug that mixed concurrent channels' continuity together.
+     * One queued incoming chunk. Carries the stream identity ([dataPackage])
+     * and [modelType] with it so the consumer never has to consult mutable
+     * shared state — that was the bug that mixed concurrent streams'
+     * continuity together. [decodedBytes] still has the leading
+     * model-selector byte that [com.commcrete.stardust.util.audio.PlayerUtils]
+     * prefixes; it's stripped in [handleTokenizerChunk].
      */
     private data class IncomingChunk(
-        val data: ByteArray,
-        val from: String,
-        val source: String?,
+        val decodedBytes: ByteArray,
+        val dataPackage: StardustPackage,
         val modelType: WavTokenizerDecoder.ModelType,
     )
 
     /**
-     * Mutable per-channel continuity. The decoder is shared, so we save
+     * Mutable per-stream continuity. The decoder is shared, so we save
      * and restore [decoderState] around every decode call.
      */
-    private class ReceiveStream(
-        val key: String,
-        val from: String,
-        val source: String?,
-    ) {
-        var modelType: WavTokenizerDecoder.ModelType = WavTokenizerDecoder.ModelType.General
+    private class ReceiveStream(val key: String) {
         var lastUnpack: List<Long>? = null
         var lastDecodedSamples: ShortArray? = null
         var lastUnpackTime: Long = 0L
@@ -141,7 +118,8 @@ object PttReceiveManager {
         var decoderState: WavTokenizerDecoder.InternalState = WavTokenizerDecoder.InternalState.INITIAL
     }
 
-    private fun streamKey(from: String, source: String?): String = "$from|${source ?: ""}"
+    private fun streamKey(dataPackage: StardustPackage): String =
+        "${dataPackage.senderId}|${dataPackage.groupId ?: ""}"
 
     private fun startDecodingJob() {
         decodingJob = coroutineScope.launch {
@@ -150,11 +128,8 @@ object PttReceiveManager {
                     val chunk = toDecodeQueue.tryReceive().getOrNull()
 
                     if (chunk != null) {
-                        Log.d(TAG, "Data received of size: ${chunk.data.size} (from=${chunk.from}, source=${chunk.source})")
-                        val decodedData = chunk.data.sliceArray(1 until chunk.data.size)
-                        Log.d(TAG, "Received data: ${decodedData.toHexString()}")
-
-                        handleTokenizerChunk(decodedData, chunk)
+                        Log.d(TAG, "Data received of size: ${chunk.decodedBytes.size} (sender=${chunk.dataPackage.senderId})")
+                        handleTokenizerChunk(chunk)
                     }
 
                 } catch (e: MediaCodec.CodecException) {
@@ -172,20 +147,21 @@ object PttReceiveManager {
         }
     }
 
-    private suspend fun handleTokenizerChunk(decodedData: ByteArray, chunk: IncomingChunk) {
+    private suspend fun handleTokenizerChunk(chunk: IncomingChunk) {
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(chunk.dataPackage) ?: return
+
+        val decodedData = chunk.decodedBytes.sliceArray(1 until chunk.decodedBytes.size)
+        Log.d(TAG, "Received data: ${decodedData.toHexString()}")
         val unpack = BitPacking12.unpack12(decodedData)
 
-        val key = streamKey(chunk.from, chunk.source)
+        val key = streamKey(chunk.dataPackage)
         val now = System.currentTimeMillis()
 
         // Evict any streams that have gone fully idle so the map can't
-        // grow unbounded as channels come and go over a long session.
+        // grow unbounded as senders/groups come and go over a long session.
         if (streams.size > 1) pruneIdleStreams(now)
 
-        val stream = streams.getOrPut(key) {
-            ReceiveStream(key = key, from = chunk.from, source = chunk.source)
-        }
-        stream.modelType = chunk.modelType
+        val stream = streams.getOrPut(key) { ReceiveStream(key) }
 
         // A gap longer than [STREAM_GAP_RESET_MS] within the SAME stream
         // is treated as the start of a fresh PTT — drop continuity for
@@ -208,7 +184,7 @@ object PttReceiveManager {
                 stream.decoderState = WavTokenizerDecoder.InternalState.INITIAL
             }
             wavTokenizerDecoder.restoreInternalState(stream.decoderState)
-            val pcm = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, stream.modelType)
+            val pcm = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, chunk.modelType)
             stream.decoderState = wavTokenizerDecoder.snapshotInternalState()
             pcm
         }
@@ -223,7 +199,25 @@ object PttReceiveManager {
         if (previousUnpack == null)
             delay(BUFFERING_TIME_MS)
 
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, chunk.from, chunk.source)
+        if (!isFileInit) {
+            Log.d("PcmStreamPlayer", "Initializing PTT input file...")
+            val file = initPttInputFile(pkg) ?: return
+
+            DataManager.getAppRepo().saveMessage(
+                pkg = pkg,
+                state = MessageState.RECEIVING,
+                extraData = MessageExtraData.PTT(
+                    path = file.absolutePath,
+                    encoderType = EncoderType.AI
+                )
+            )
+
+            DataManager.getCallbacks()?.startedReceivingPTT(pkg, file)
+        } else {
+            DataManager.getCallbacks()?.receivePTT(pkg, decodedData)
+        }
+
+        AIPcmStreamPlayer.enqueue(finalPcmData, 24000)
     }
 
     /**
@@ -241,43 +235,6 @@ object PttReceiveManager {
                 it.remove()
             }
         }
-    }
-
-    /**
-     * Test-only entry that bypasses the queue. Same multi-stream
-     * semantics as [handleTokenizerChunk] but takes already-unpacked
-     * tokens and a synthetic stream key.
-     */
-    suspend fun handleTokenizerChunkForTest(unpack: List<Long>) {
-        val key = "test|"
-        val now = System.currentTimeMillis()
-        val stream = streams.getOrPut(key) {
-            ReceiveStream(key = key, from = "from", source = "source")
-        }
-        val isContinuation = stream.lastUnpack != null && (now - stream.lastUnpackTime) < STREAM_GAP_RESET_MS
-        val previousUnpack = if (isContinuation) stream.lastUnpack else null
-        val previousSample = if (isContinuation) stream.lastDecodedSamples else null
-        val modelTypeSelected = SharedPreferencesUtil.getAudioModelType(DataManager.context)
-
-        val finalPcmData = PttSendManager.codecMutex.withLock {
-            if (!isContinuation) {
-                stream.decoderState = WavTokenizerDecoder.InternalState.INITIAL
-            }
-            wavTokenizerDecoder.restoreInternalState(stream.decoderState)
-            val pcm = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, modelTypeSelected)
-            stream.decoderState = wavTokenizerDecoder.snapshotInternalState()
-            pcm
-        }
-        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples (test)")
-
-        stream.lastUnpack = unpack
-        stream.lastDecodedSamples = finalPcmData
-        stream.lastUnpackTime = now
-
-        if (previousUnpack == null)
-            delay(BUFFERING_TIME_MS)
-
-        PcmStreamPlayer.enqueue(finalPcmData, 24000, "from", "source")
     }
 
     private fun ByteArray.toHexString(): String =
