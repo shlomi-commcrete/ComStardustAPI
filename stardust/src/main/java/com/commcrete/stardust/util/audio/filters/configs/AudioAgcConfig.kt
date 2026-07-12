@@ -1,7 +1,7 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 /**
- * Optional [AGCFilter] (Automatic Gain Control) stage applied to every emitted
+ * Optional [com.commcrete.stardust.util.audio.filters.AGCFilter] (Automatic Gain Control) stage applied to every emitted
  * chunk **after** the [NotchConfig] and [RnNoiseConfig] stages and **before**
  * the [LowPassConfig] / AI encoder. Continuously adjusts gain so the output
  * stays near [targetLevel] (RMS, normalised to full-scale).
@@ -13,7 +13,7 @@ package com.commcrete.stardust.util.audio
  *  - [minGainDb]      – maximum cut the AGC may apply (negative dB).
  *  - [noiseGateLevel] – RMS below which gain is frozen (0 = disabled).
  *
- * The feeder will, per source, create one [AGCFilter] instance (state carried
+ * The feeder will, per source, create one [com.commcrete.stardust.util.audio.filters.AGCFilter] instance (state carried
  * across chunks), process each chunk in place, accumulate the processed
  * samples and write a `<label>-agc-*.wav` file next to the other artifacts so
  * the post-AGC signal (exactly what the AI encoder receives) can be inspected

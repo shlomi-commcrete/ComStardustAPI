@@ -38,7 +38,7 @@ object SharedPreferencesUtil {
 
     //Preferences
     private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
-    private const val KEY_AI_HANDLE_GAIN = "handle_ai_gain"
+    private const val KEY_AUDIO_GAIN = "handle_ai_gain"
     private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
     private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"

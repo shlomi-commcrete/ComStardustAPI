@@ -125,11 +125,6 @@ class StardustPackageParser : StardustParser() {
                 dataBytes = dataBytes.copyOfRange(1, realLength+1)
                 length = realLength
             }
-            if (opcode == StardustPackageUtils.StardustOpCode.SEND_PTT_AI) {
-                Log.d(StardustPackage.PTT_TRACE_TAG, "RX post-decrypt src=${sourceBytes.joinToString("") { "%02x".format(it) }} " +
-                    "part=${controlByte.stardustPartType} size=${dataBytes.size} " +
-                    "hex=${dataBytes.joinToString("") { "%02x".format(it) }}")
-            }
             if(length > dataBytes.size) {
                 packageState = PackageState.NOT_ENOUGH_DATA
                 return null

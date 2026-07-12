@@ -4,9 +4,9 @@ import android.content.Context
 import android.util.Log
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.audio.NotchConfig
-import com.commcrete.stardust.util.audio.NotchConfig.Harmonic
-import com.commcrete.stardust.util.audio.NotchFilter
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig.Harmonic
+import com.commcrete.stardust.util.audio.filters.NotchFilter
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.pytorch.IValue
@@ -15,7 +15,6 @@ import org.pytorch.Module
 import org.pytorch.Tensor
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min

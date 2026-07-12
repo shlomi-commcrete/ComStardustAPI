@@ -1,12 +1,13 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.tester
 
+import android.content.Context
 import com.commcrete.stardust.util.DataManager
 import java.io.BufferedOutputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import android.content.Context
 
 /**
  * Persists the test feeder's intermediate and round-trip artifacts to disk:
@@ -90,7 +91,7 @@ internal object AudioArtifactWriter {
      *   magic(4) "WTOK" | version(uint16=1) | tokenCount(uint32) | tokens[uint16] × N
      */
     fun writeTokensBin(file: File, tokens: LongArray) {
-        java.io.DataOutputStream(BufferedOutputStream(FileOutputStream(file))).use { out ->
+        DataOutputStream(BufferedOutputStream(FileOutputStream(file))).use { out ->
             out.write("WTOK".toByteArray(Charsets.US_ASCII))
             out.write(shortToLeBytes(1))
             out.write(intToLeBytes(tokens.size))
@@ -116,4 +117,3 @@ internal object AudioArtifactWriter {
         ((v ushr 8) and 0xFF).toByte(),
     )
 }
-

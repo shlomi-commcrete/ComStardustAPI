@@ -1,4 +1,4 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters
 
 import kotlin.math.abs
 import kotlin.math.exp
@@ -8,7 +8,7 @@ import kotlin.math.roundToInt
 /**
  * Configurable Automatic Gain Control (AGC) filter intended for use in the
  * jbox audio input processing chain (alongside other DSP stages such as
- * [LowPassFilter], [NotchFilter], [Equalizer], noise suppression, etc.).
+ * [LowPassFilter], [NotchFilter], [com.commcrete.stardust.util.audio.Equalizer], noise suppression, etc.).
  *
  * The filter continuously estimates the short-term signal level and applies
  * a smoothly-varying gain so the output stays near a configurable
@@ -223,5 +223,3 @@ class AGCFilter(
         fun dbToLinear(db: Float): Float = 10f.pow(db / 20f)
     }
 }
-
-

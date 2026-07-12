@@ -1,9 +1,10 @@
 package com.commcrete.stardust.util.audio
 
+import com.commcrete.stardust.util.audio.tester.AudioTestFeeder
 import kotlin.math.roundToInt
 
 /**
- * DSP primitives shared by the [AudioTestFeeder] pipeline:
+ * DSP primitives shared by the [com.commcrete.stardust.util.audio.tester.AudioTestFeeder] pipeline:
  *  - mono down-mix,
  *  - linear / band-limited resampling,
  *  - AI-gain application (mirroring `AudioRecorderAI.processSamples`),

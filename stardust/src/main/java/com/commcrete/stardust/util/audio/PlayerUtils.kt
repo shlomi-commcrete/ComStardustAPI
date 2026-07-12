@@ -100,7 +100,6 @@ object PlayerUtils : BleMediaConnector() {
             }
             StardustPackageUtils.packageLiveData.value = null
             mCodec2Decoder.rawAudioOutBytesBuffer.clear()
-            Timber.tag(WavRecorder.TAG_PTT_DEBUG).d("rawAudioOutBytesBuffer.clear() runnable")
 //            removeSyncBleDevices ()
             isPttReceived.value = "empty"
         }

@@ -1,8 +1,8 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 /**
- * Configuration for the [HighPassFilter] stage. The HPF runs **first**
- * in the live filter chain — before [NotchFilter] and RNNoise — so
+ * Configuration for the [com.commcrete.stardust.util.audio.filters.HighPassFilter] stage. The HPF runs **first**
+ * in the live filter chain — before [com.commcrete.stardust.util.audio.filters.NotchFilter] and RNNoise — so
  * low-frequency rumble (HVAC, traffic, hand-held thump) is removed
  * before the spectral / ML stages even see it:
  *
@@ -35,4 +35,3 @@ data class HighPassConfig(
 
 
 }
-

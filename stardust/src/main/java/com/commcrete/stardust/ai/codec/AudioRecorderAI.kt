@@ -7,7 +7,7 @@ import android.media.AudioRecord
 import android.util.Log
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
-import com.commcrete.stardust.util.audio.AudioCaptureConfig
+import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import kotlinx.coroutines.*
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean

@@ -1,10 +1,17 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.tester
 
 import android.content.Context
 import com.commcrete.stardust.ai.codec.PttSendManager
+import com.commcrete.stardust.ai.codec.PttSession
+import com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.audio.AudioFeederEngine
+import com.commcrete.stardust.util.audio.PttAudioProcessor
+import com.commcrete.stardust.util.audio.PttInterface
+import com.commcrete.stardust.util.audio.RecorderUtils
+import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -12,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
@@ -19,7 +27,7 @@ import java.io.File
  *
  * Reads one or more audio files captured on different devices (WAV, raw PCM,
  * or any container Android's `MediaCodec` can decode — m4a / mp3 / aac / ogg /
- * flac …) and feeds them into [PttSendManager] in 500 ms chunks — exactly the
+ * flac …) and feeds them into [com.commcrete.stardust.ai.codec.PttSendManager] in 500 ms chunks — exactly the
  * way `AudioRecorderAI` feeds live frames.
  *
  * Each file is analyzed and logged in great detail (header, statistics per
@@ -32,9 +40,9 @@ import java.io.File
  *  - **Model** (one class per file, all in this package):
  *    [Source], [LowPassConfig], [NotchConfig], [RnNoiseConfig], [AGCConfig],
  *    [AudioInfo], [AudioStats].
- *  - [AudioFeederEngine]      — orchestration of the per-source pipeline.
+ *  - [com.commcrete.stardust.util.audio.AudioFeederEngine]      — orchestration of the per-source pipeline.
  *  - [AudioFileLoader]        — WAV / MediaCodec decoding to mono 16-bit PCM.
- *  - [AudioDsp]               — down-mix, resample, anti-alias, AI gain, FFT.
+ *  - [com.commcrete.stardust.util.audio.AudioDsp]               — down-mix, resample, anti-alias, AI gain, FFT.
  *  - [AudioStatsAnalyzer]     — PCM stats + spectral fingerprint + tone alert.
  *  - [AudioArtifactWriter]    — WAV + token (txt/bin) writers.
  *
@@ -165,13 +173,13 @@ object AudioTestFeeder {
             // Per-filter debug writers: one DebugRawWavWriter per filter
             // step, created lazily on first callback. Keyed by "stepIdx-name".
             val debugWriters = if (savePerFilterStage)
-                LinkedHashMap<String, com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter>()
+                LinkedHashMap<String, DebugRawWavWriter>()
             else null
 
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
-                    Timber.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
+                    Timber.Forest.tag(TAG).i("── [%d/%d] Source: %s (%s)", idx + 1, sources.size, src.label, src.file.absolutePath)
 
                     // Set up per-filter debug hook if requested.
                     if (savePerFilterStage) {
@@ -182,7 +190,7 @@ object AudioTestFeeder {
                         PttAudioProcessor.onFilterStepDebug = { sampleRate, stepIdx, filterName, snapshot ->
                             val key = "%02d-%s".format(stepIdx, filterName)
                             val writer = debugWriters!!.getOrPut(key) {
-                                com.commcrete.stardust.ai.codec.testing.DebugRawWavWriter().apply {
+                                DebugRawWavWriter().apply {
                                     start(
                                         context = context,
                                         sampleRate = sampleRate,
@@ -203,14 +211,14 @@ object AudioTestFeeder {
                     // output artifact.
 
                     // AI path: restart PttSendManager session.
-                    val session: com.commcrete.stardust.ai.codec.PttSession? =
+                    val session: PttSession? =
                         if (isAi) PttSendManager.restart() else null
 
                     // CODEC2 path: fresh pipeline + decoder + data buffer
                     // per source (mirrors AudioRecorderCodec2 lifecycle).
                     val decodedCodec2Data = if (isCodec2) ArrayList<Byte>() else null
                     val codec2FrameDecoder = if (isCodec2)
-                        com.ustadmobile.codec2.Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
+                        Codec2Decoder(RecorderUtils.CodecValues.MODE700.mode)
                     else null
                     val codec2Pipeline = if (isCodec2) {
                         // Reset filter chain for the new "session".
@@ -243,14 +251,14 @@ object AudioTestFeeder {
                     // ── Finalize this source's session before the next.
 
                     if (isAi && session != null) {
-                        Timber.tag(TAG).i("  ⏳ Finishing AI session ${session.id} for ${src.label}")
+                        Timber.Forest.tag(TAG).i("  ⏳ Finishing AI session ${session.id} for ${src.label}")
                         PttSendManager.finish(session)
                         PttSendManager.awaitFinalized(session)
-                        Timber.tag(TAG).i("  ✔ AI session ${session.id} finalized")
+                        Timber.Forest.tag(TAG).i("  ✔ AI session ${session.id} finalized")
                     }
 
                     if (isCodec2) {
-                        Timber.tag(TAG).i("  ⏳ Flushing CODEC2 pipeline for ${src.label}")
+                        Timber.Forest.tag(TAG).i("  ⏳ Flushing CODEC2 pipeline for ${src.label}")
                         codec2Pipeline?.finish()
                         // Write per-source decoded artifact.
                         if (decodedCodec2Data != null && decodedCodec2Data.isNotEmpty()) {
@@ -261,15 +269,15 @@ object AudioTestFeeder {
                                 val mirror = File(artifactDir, mirrorName)
                                 val pcmBytes = decodedCodec2Data.toByteArray()
                                 mirror.writeBytes(buildWavHeader(pcmBytes.size, sampleRate = 8000, bitDepth = 16, channels = 1) + pcmBytes)
-                                Timber.tag(TAG).i("  ✔ CODEC2 decoded artifact → %s", mirror.absolutePath)
+                                Timber.Forest.tag(TAG).i("  ✔ CODEC2 decoded artifact → %s", mirror.absolutePath)
                             }.onFailure { t ->
-                                Timber.tag(TAG).e(t, "Failed to write CODEC2 decoded artifact for ${src.label}")
+                                Timber.Forest.tag(TAG).e(t, "Failed to write CODEC2 decoded artifact for ${src.label}")
                             }
                         }
                     }
                 }
             } catch (t: Throwable) {
-                Timber.tag(TAG).e(t, "Feeder failed")
+                Timber.Forest.tag(TAG).e(t, "Feeder failed")
             } finally {
                 // Clean up per-filter debug writers and hook.
                 if (savePerFilterStage) {
@@ -294,7 +302,7 @@ object AudioTestFeeder {
     fun buildWavHeader(pcmSize: Int, sampleRate: Int, bitDepth: Int, channels: Int): ByteArray {
         val byteRate = sampleRate * channels * bitDepth / 8
         val blockAlign = (channels * bitDepth / 8).toShort()
-        return java.io.ByteArrayOutputStream(44).apply {
+        return ByteArrayOutputStream(44).apply {
             fun Int.le4() = byteArrayOf(toByte(), shr(8).toByte(), shr(16).toByte(), shr(24).toByte())
             fun Short.le2() = byteArrayOf(toByte(), toInt().shr(8).toByte())
             write("RIFF".toByteArray())
@@ -352,14 +360,14 @@ object AudioTestFeeder {
             try {
                 sources.forEachIndexed { idx, src ->
                     if (!isActive) return@forEachIndexed
-                    Timber.tag(TAG).i("── [%d/%d] saveOnly: %s", idx + 1, sources.size, src.label)
+                    Timber.Forest.tag(TAG).i("── [%d/%d] saveOnly: %s", idx + 1, sources.size, src.label)
                     AudioFeederEngine.saveOnly(
                         source = src,
                         artifactDir = effectiveOutputDir,
                     )
                 }
             } catch (t: Throwable) {
-                Timber.tag(TAG).e(t, "saveOnly failed")
+                Timber.Forest.tag(TAG).e(t, "saveOnly failed")
             } finally {
                 onDone?.invoke()
             }
@@ -396,4 +404,3 @@ object AudioTestFeeder {
         withSend = withSend,
     )
 }
-

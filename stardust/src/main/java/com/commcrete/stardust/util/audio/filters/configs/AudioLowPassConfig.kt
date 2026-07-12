@@ -1,7 +1,7 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 /**
- * Configuration for the [LowPassFilter] stage. The LPF runs **last** in
+ * Configuration for the [com.commcrete.stardust.util.audio.filters.LowPassFilter] stage. The LPF runs **last** in
  * the live filter chain, after AGC / AI-gain:
  *
  * ```

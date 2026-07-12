@@ -5,6 +5,9 @@ import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.audio.tester.AudioFileLoader
+import com.commcrete.stardust.util.audio.tester.AudioTestFeeder
+import com.commcrete.stardust.util.audio.tester.Source
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -19,7 +22,7 @@ import java.io.File
  *
  * Mirrors `AudioRecorderAI.recordLoop` chunking exactly so file-fed runs
  * produce the same cadence and chunk shape as a live mic session. All
- * artifact persistence (filtered WAVs) is delegated to [AudioArtifactWriter].
+ * artifact persistence (filtered WAVs) is delegated to [com.commcrete.stardust.util.audio.tester.AudioArtifactWriter].
  */
 internal object AudioFeederEngine {
 

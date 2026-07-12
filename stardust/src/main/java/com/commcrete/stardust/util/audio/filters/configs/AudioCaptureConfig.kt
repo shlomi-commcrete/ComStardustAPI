@@ -1,12 +1,12 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.os.Build
+import com.commcrete.stardust.util.SharedPreferencesUtil
 import timber.log.Timber
 
 /**
@@ -46,7 +46,7 @@ internal object AudioCaptureConfig {
         val captureRate = pickCaptureRate(selected, requestedRate)
 
 
-        Timber.tag(TAG).d(
+        Timber.Forest.tag(TAG).d(
             "capturePlan: requested=%d selectedRate=%d source=%d usb=%b deviceType=%s device=%s",
             requestedRate,
             captureRate,
@@ -101,7 +101,7 @@ internal object AudioCaptureConfig {
         context: Context,
         inputs: List<AudioDeviceInfo>,
     ): AudioDeviceInfo? {
-        val wantedType = com.commcrete.stardust.util.SharedPreferencesUtil.getInputDevice(context)
+        val wantedType = SharedPreferencesUtil.getInputDevice(context)
         if (wantedType == AudioDeviceInfo.TYPE_UNKNOWN) return null
         return inputs.firstOrNull { it.type == wantedType }
             ?: inputs.firstOrNull { it.isUsbInput() }
@@ -154,4 +154,3 @@ internal object AudioCaptureConfig {
             type == AudioDeviceInfo.TYPE_USB_ACCESSORY
     }
 }
-

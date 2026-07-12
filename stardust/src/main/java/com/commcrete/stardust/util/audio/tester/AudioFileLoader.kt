@@ -1,6 +1,12 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.tester
 
+import android.media.AudioFormat
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import com.commcrete.stardust.util.audio.AudioDsp
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -197,7 +203,7 @@ internal object AudioFileLoader {
     // ---------------- Compressed-audio decoding via MediaExtractor + MediaCodec ----------------
 
     private fun decodeCompressedAudio(file: File): ParsedWav {
-        val extractor = android.media.MediaExtractor()
+        val extractor = MediaExtractor()
         try {
             extractor.setDataSource(file.absolutePath)
         } catch (t: Throwable) {
@@ -208,10 +214,10 @@ internal object AudioFileLoader {
         }
 
         var audioTrack = -1
-        var inputFormat: android.media.MediaFormat? = null
+        var inputFormat: MediaFormat? = null
         for (i in 0 until extractor.trackCount) {
             val f = extractor.getTrackFormat(i)
-            val mime = f.getString(android.media.MediaFormat.KEY_MIME) ?: continue
+            val mime = f.getString(MediaFormat.KEY_MIME) ?: continue
             if (mime.startsWith("audio/")) {
                 audioTrack = i
                 inputFormat = f
@@ -224,27 +230,27 @@ internal object AudioFileLoader {
         }
         extractor.selectTrack(audioTrack)
 
-        val mime = inputFormat.getString(android.media.MediaFormat.KEY_MIME)!!
-        val sampleRate = inputFormat.getInteger(android.media.MediaFormat.KEY_SAMPLE_RATE)
-        val channels = inputFormat.getInteger(android.media.MediaFormat.KEY_CHANNEL_COUNT)
+        val mime = inputFormat.getString(MediaFormat.KEY_MIME)!!
+        val sampleRate = inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+        val channels = inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
 
         inputFormat.setInteger(
-            android.media.MediaFormat.KEY_PCM_ENCODING,
-            android.media.AudioFormat.ENCODING_PCM_16BIT
+            MediaFormat.KEY_PCM_ENCODING,
+            AudioFormat.ENCODING_PCM_16BIT
         )
 
         val codec = try {
-            android.media.MediaCodec.createDecoderByType(mime)
+            MediaCodec.createDecoderByType(mime)
         } catch (t: Throwable) {
             extractor.release()
             throw IllegalStateException("No decoder for $mime (file ${file.name}): ${t.message}", t)
         }
 
-        val pcmOut = java.io.ByteArrayOutputStream()
-        val info = android.media.MediaCodec.BufferInfo()
+        val pcmOut = ByteArrayOutputStream()
+        val info = MediaCodec.BufferInfo()
         var sawInputEOS = false
         var sawOutputEOS = false
-        var outputPcmEncoding = android.media.AudioFormat.ENCODING_PCM_16BIT
+        var outputPcmEncoding = AudioFormat.ENCODING_PCM_16BIT
         val timeoutUs = 10_000L
 
         try {
@@ -261,7 +267,7 @@ internal object AudioFileLoader {
                         if (sampleSize < 0) {
                             codec.queueInputBuffer(
                                 inIdx, 0, 0, 0L,
-                                android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM
+                                MediaCodec.BUFFER_FLAG_END_OF_STREAM
                             )
                             sawInputEOS = true
                         } else {
@@ -284,15 +290,15 @@ internal object AudioFileLoader {
                             pcmOut.write(chunk)
                         }
                         codec.releaseOutputBuffer(outIdx, false)
-                        if (info.flags and android.media.MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                             sawOutputEOS = true
                         }
                     }
-                    outIdx == android.media.MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                    outIdx == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                         val newFormat = codec.outputFormat
-                        if (newFormat.containsKey(android.media.MediaFormat.KEY_PCM_ENCODING)) {
+                        if (newFormat.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                             outputPcmEncoding = newFormat
-                                .getInteger(android.media.MediaFormat.KEY_PCM_ENCODING)
+                                .getInteger(MediaFormat.KEY_PCM_ENCODING)
                         }
                     }
                 }
@@ -305,13 +311,13 @@ internal object AudioFileLoader {
 
         val pcmBytes = pcmOut.toByteArray()
         val samples: ShortArray = when (outputPcmEncoding) {
-            android.media.AudioFormat.ENCODING_PCM_16BIT -> bytesToShortsLe(pcmBytes)
-            android.media.AudioFormat.ENCODING_PCM_FLOAT -> bytes32FloatLeToShorts(pcmBytes)
-            android.media.AudioFormat.ENCODING_PCM_8BIT  -> bytes8uToShorts(pcmBytes)
+            AudioFormat.ENCODING_PCM_16BIT -> bytesToShortsLe(pcmBytes)
+            AudioFormat.ENCODING_PCM_FLOAT -> bytes32FloatLeToShorts(pcmBytes)
+            AudioFormat.ENCODING_PCM_8BIT  -> bytes8uToShorts(pcmBytes)
             else -> bytesToShortsLe(pcmBytes)
         }
 
-        Timber.tag(TAG).d(
+        Timber.Forest.tag(TAG).d(
             "Decoded '%s' via MediaCodec (%s): %d Hz, %d ch, %d samples (%d ms)",
             file.name, mime, sampleRate, channels, samples.size / max(channels, 1),
             if (sampleRate > 0) (samples.size / max(channels, 1)) * 1000L / sampleRate else 0L
@@ -382,6 +388,3 @@ internal object AudioFileLoader {
         return out
     }
 }
-
-
-

@@ -1,9 +1,11 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters
 
+import com.commcrete.stardust.util.audio.AudioDsp
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig
+import timber.log.Timber
 import kotlin.math.log10
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
-import timber.log.Timber
 
 /**
  * Per-chunk FFT-based tonal interference detector. Companion to [NotchFilter]:
@@ -47,7 +49,7 @@ import timber.log.Timber
  *    longer holdover / more hits).
  *
  * Spectrum estimation uses Welch averaging over overlapping
- * [AudioDsp.FFT_SIZE]-sample windows with a Hann window. At 48 kHz with a
+ * [com.commcrete.stardust.util.audio.AudioDsp.FFT_SIZE]-sample windows with a Hann window. At 48 kHz with a
  * 500 ms chunk that's ~22 averages → smooth noise floor, clean peaks.
  *
  * The detector is **stateful** — keep a single instance per stream and call
@@ -156,7 +158,7 @@ internal class AdaptiveNotchDetector(
         if (changed) {
             lastAppliedBuckets = finalBuckets
             lastAppliedBands = newBands
-            Timber.tag(TAG).d(
+            Timber.Forest.tag(TAG).d(
                 "      ↳ adaptive notch (chunk #%03d, rms=%.1f dBFS%s): %d band(s) @ Q=%.0f → %s",
                 chunkIndex, rmsDb,
                 if (isSilence) " SILENCE" else "",
@@ -322,4 +324,3 @@ internal class AdaptiveNotchDetector(
         const val TAG = "AudioTestFeeder"
     }
 }
-

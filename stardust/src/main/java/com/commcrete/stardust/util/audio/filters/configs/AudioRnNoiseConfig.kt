@@ -1,4 +1,4 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 import kotlin.math.pow
 

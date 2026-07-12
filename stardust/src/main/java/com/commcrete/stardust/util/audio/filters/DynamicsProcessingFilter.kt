@@ -1,5 +1,6 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters
 
+import com.commcrete.stardust.util.audio.filters.configs.DynamicsConfig
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.log10
@@ -383,6 +384,3 @@ class DynamicsProcessingFilter(
         fun dbToLinear(db: Float): Float = 10f.pow(db / 20f)
     }
 }
-
-
-

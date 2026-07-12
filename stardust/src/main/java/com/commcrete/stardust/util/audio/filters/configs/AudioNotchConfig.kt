@@ -1,4 +1,6 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
+
+import com.commcrete.stardust.util.audio.filters.NotchFilter
 
 /**
  * Optional NotchFilter (band-stop) stage; runs FIRST in the DSP chain,
@@ -28,7 +30,7 @@ data class NotchConfig(
      * Optional per-chunk **adaptive** layer: FFT-based tone detector that
      * ADDS notch bands on top of the static [harmonics] / [numHarmonics]
      * config. `null` (default) = disabled, behaviour identical to the
-     * legacy static-only mode. See [AdaptiveNotchDetector] for the actual
+     * legacy static-only mode. See [com.commcrete.stardust.util.audio.filters.AdaptiveNotchDetector] for the actual
      * detection algorithm.
      */
     val adaptive: AdaptiveSettings? = null,
@@ -40,7 +42,7 @@ data class NotchConfig(
      * Per-chunk adaptive-notch configuration. Three detection paths
      * (harmonic-series scan, narrowband Q-filtered peak scan, silence-based
      * learning) feed a temporal tracker that confirms tones over multiple
-     * chunks before locking on. See [AdaptiveNotchDetector] for details.
+     * chunks before locking on. See [com.commcrete.stardust.util.audio.filters.AdaptiveNotchDetector] for details.
      */
     data class AdaptiveSettings(
         /**

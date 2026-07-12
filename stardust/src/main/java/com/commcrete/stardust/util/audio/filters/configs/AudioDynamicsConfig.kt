@@ -1,8 +1,8 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters.configs
 
 /**
  * Software multiband compressor + limiter config for
- * [DynamicsProcessingFilter]. Used by the live per-chunk filter chain in
+ * [com.commcrete.stardust.util.audio.filters.DynamicsProcessingFilter]. Used by the live per-chunk filter chain in
  * [com.commcrete.stardust.util.audio.AudioFeederEngine] (test feeder) at
  * this position:
  *

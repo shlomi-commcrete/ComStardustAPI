@@ -2,7 +2,19 @@ package com.commcrete.stardust.util.audio
 
 import android.util.Log
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
-import timber.log.Timber
+import com.commcrete.stardust.util.audio.filters.AGCFilter
+import com.commcrete.stardust.util.audio.filters.AdaptiveNotchDetector
+import com.commcrete.stardust.util.audio.filters.DynamicsProcessingFilter
+import com.commcrete.stardust.util.audio.filters.HighPassFilter
+import com.commcrete.stardust.util.audio.filters.LowPassFilter
+import com.commcrete.stardust.util.audio.filters.NotchFilter
+import com.commcrete.stardust.util.audio.filters.RecorderFiltersProfile
+import com.commcrete.stardust.util.audio.filters.configs.AGCConfig
+import com.commcrete.stardust.util.audio.filters.configs.DynamicsConfig
+import com.commcrete.stardust.util.audio.filters.configs.HighPassConfig
+import com.commcrete.stardust.util.audio.filters.configs.LowPassConfig
+import com.commcrete.stardust.util.audio.filters.configs.NotchConfig
+import com.commcrete.stardust.util.audio.filters.configs.RnNoiseConfig
 
 /**
  * Single source of truth for **pre-encode** PCM processing on the PTT path.
@@ -148,7 +160,13 @@ object PttAudioProcessor {
 
         val filtered: ShortArray = if (enableNoiseCancellation) {
             val mutable = pcmArray.copyOf()
-            applyFilterChain(mutable, nativeRate, RecorderFiltersProfile(rnNoise = RnNoiseConfig(enabled = true, maxAttenuationDb = -20f)))
+            applyFilterChain(mutable, nativeRate, RecorderFiltersProfile(
+                rnNoise = RnNoiseConfig(
+                    enabled = true,
+                    maxAttenuationDb = -20f
+                )
+            )
+            )
             mutable
         } else {
             pcmArray
@@ -341,7 +359,12 @@ object PttAudioProcessor {
             }
             rnNoiseProcessor = rn?.let { RnNoiseProcessor().apply { init(sampleRate) } }
             rnNoiseAttenFloor = rn?.attenuationFloorLin ?: 0f
-            dynamicsFilter = dp?.let { DynamicsProcessingFilter(sampleRateHz = sampleRate, config = it) }
+            dynamicsFilter = dp?.let {
+                DynamicsProcessingFilter(
+                    sampleRateHz = sampleRate,
+                    config = it
+                )
+            }
             agcFilter = agc?.let {
                 AGCFilter(
                     sampleRateHz = sampleRate,

@@ -1,4 +1,4 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.filters
 
 import kotlin.math.PI
 import kotlin.math.cos
@@ -9,7 +9,7 @@ import kotlin.math.sin
 /**
  * Configurable IIR notch filter intended for use in the jbox audio input
  * processing chain (alongside other DSP stages such as [LowPassFilter],
- * [Equalizer], noise suppression, AGC, etc.).
+ * [com.commcrete.stardust.util.audio.Equalizer], noise suppression, AGC, etc.).
  *
  * The filter removes narrow bands around an arbitrary list of [bands], each
  * with its own frequency and Q. This is useful for killing tonal contaminants

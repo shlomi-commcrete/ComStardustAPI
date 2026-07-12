@@ -1,4 +1,4 @@
-package com.commcrete.stardust.util.audio
+package com.commcrete.stardust.util.audio.tester
 
 /**
  * Detailed metadata extracted from an input file by [AudioFileLoader].
@@ -22,4 +22,3 @@ data class AudioInfo(
     val byteRate: Int,
     val containerLabel: String = "WAV/RIFF",
 )
-
