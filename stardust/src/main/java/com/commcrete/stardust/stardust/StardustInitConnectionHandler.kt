@@ -6,8 +6,6 @@ import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.request_objects.RegisterUser
-import com.commcrete.stardust.room.chats.ChatsDatabase
-import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
@@ -19,12 +17,10 @@ import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import timber.log.Timber
 import kotlin.coroutines.cancellation.CancellationException
@@ -314,7 +310,7 @@ object StardustInitConnectionHandler {
 
     private fun afterUpdateAddressAck() {
         // Your existing local side-effects:
-        GroupsUtils.deleteAllGroups(ctx)
+        GroupsUtils.sendDeleteAllGroups(ctx)
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
@@ -335,18 +331,7 @@ object StardustInitConnectionHandler {
 
     // 4) Add groups
     private fun sendAddGroups() {
-        Scopes.getDefaultCoroutine().launch {
-            val payload = buildAddGroupsPayload()
-            val (src, dst) = requireSrcDst() ?: return@launch
-            val pkg = StardustPackageUtils.getStardustPackage(
-                context = ctx,
-                source = src, destenation = dst,
-                stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_ADD_GROUPS,
-                data = payload
-            )
-            conn.addMessageToQueue(pkg)
-            Timber.tag("InitHandler").d("Sent ADD_GROUPS")
-        }
+        GroupsUtils.sendAddAllGroups(ctx)
     }
 
     // 5) Get configuration
@@ -438,23 +423,6 @@ object StardustInitConnectionHandler {
         val intData = arrayListOf<Int>()
         intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         return intData.toIntArray().toTypedArray()
-    }
-    private suspend fun buildAddGroupsPayload(): Array<Int> {
-        return withContext(Dispatchers.IO) {
-            val groupsList = ChatsRepository(
-                ChatsDatabase.getDatabase(DataManager.context).chatsDao()
-            ).getAllGroupIds()
-
-            val intData = arrayListOf<Int>()
-            if(groupsList.isNotEmpty()) {
-                for (group in groupsList) {
-                    intData.addAll(StardustPackageUtils.hexStringToByteArray(group).reversedArray())
-                }
-            } else { intData.addAll(listOf(0, 0, 0, 0)) }
-
-            intData.add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
-            intData.toIntArray().toTypedArray().reversedArray()
-        }
     }
 
     private fun onInitFailed(reason: String) {

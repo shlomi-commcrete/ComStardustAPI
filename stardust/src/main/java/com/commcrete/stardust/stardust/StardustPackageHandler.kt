@@ -32,11 +32,14 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType.*
 import com.commcrete.stardust.stardust.model.StardustAppEventParser
 import com.commcrete.stardust.stardust.model.StardustBatteryParser
+import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
+import com.commcrete.stardust.util.CarriersUtils.getCarrierByControl
+import com.commcrete.stardust.util.CarriersUtils.getCarrierByStardustCarrier
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
@@ -75,7 +78,7 @@ internal class StardustPackageHandler(private val context: Context ,
                     mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE){
                     savedPackage = mPackage
                 }
-                Log.i("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
+                Log.d("IncomingPackage", "op: ${bittelPackage.stardustOpCode}; src: ${bittelPackage.getSourceAsString()}")
                 Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray $randomID: ${bittelPackage.stardustOpCode}")
 
                 val mPackageControl = mPackage.stardustControlByte
@@ -226,6 +229,16 @@ internal class StardustPackageHandler(private val context: Context ,
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
             AppEvents.updateAppEvents(sdPackage)
+            val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource(DataManager.context)
+            if(sdPackage.senderID.equals(rssiReportSource, true)) {
+                AppEvents.updateRssiSignalChanged(
+                    StardustAppEventPackage.RSSIPackage(
+                        rssi = sdPackage.deviceConnectionRssi,
+                        signalRssi = sdPackage.signalRssi,
+                        snr = sdPackage.snr,
+                        carrier = sdPackage.carrier?.let { getCarrierByStardustCarrier(it) }
+                ))
+            }
         }
     }
 
@@ -265,8 +278,8 @@ internal class StardustPackageHandler(private val context: Context ,
         bittelBatteryPackage.let {
             AppEvents.updateBattery(it)
         }
-        if(missingGroups && GroupsUtils.groupsIds.isNotEmpty()){
-            GroupsUtils.addAllGroups(context)
+        if(missingGroups) {
+            GroupsUtils.sendAddAllGroups(context, false)
         }
     }
 
@@ -281,7 +294,7 @@ internal class StardustPackageHandler(private val context: Context ,
     }
 
     private fun handleDeleteGroupsResponse(context: Context) {
-        GroupsUtils.addAllGroups(context)
+        GroupsUtils.sendAddAllGroups(context)
     }
 
     private fun handleAddGroupsResponse(context: Context) {
@@ -311,7 +324,7 @@ internal class StardustPackageHandler(private val context: Context ,
 
     private fun handleUpdateAddressResponse (context: Context, mPackage: StardustPackage) {
         if(mPackage.isAck()) {
-            GroupsUtils.deleteAllGroups(context)
+            GroupsUtils.sendDeleteAllGroups(context)
             DataManager.getClientConnection(context).removeConnectionTimer()
         }
     }

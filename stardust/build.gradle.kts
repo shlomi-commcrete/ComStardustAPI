@@ -12,6 +12,13 @@ val apiKeyProvider = providers.gradleProperty("Crypt")
 
 val apiKey = apiKeyProvider.orElse("").get()
 
+// ─── Native RNNoise build (optional) ─────────────────────────────────────────
+// When `stardust/src/main/cpp/rnnoise/include/rnnoise.h` is present (created by
+// running `./stardust/scripts/setup_rnnoise.sh`), enable the CMake build that
+// produces librnnoise_jni.so. Otherwise skip native build entirely so the
+// project keeps compiling without the RNNoise dependency.
+val rnnoiseHeader = file("src/main/cpp/rnnoise/include/rnnoise.h")
+val enableRnnoise = rnnoiseHeader.exists()
 
 android {
     namespace = "com.commcrete.stardust"
@@ -25,6 +32,27 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "Crypt", "\"$apiKey\"")
+
+        if (enableRnnoise) {
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            }
+            externalNativeBuild {
+                cmake {
+                    cFlags += listOf("-O3", "-ffast-math")
+                    arguments += listOf("-DANDROID_STL=c++_static")
+                }
+            }
+        }
+    }
+
+    if (enableRnnoise) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
+        }
     }
 
     buildTypes {
@@ -101,6 +129,20 @@ dependencies {
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
     implementation ("com.github.mik3y:usb-serial-for-android:3.8.0")
+
+
+    // RNNoise (xiph) — neural noise suppression, 48 kHz / 480-sample frames.
+    // Loaded at runtime by RnNoiseProcessor via reflection. Uncomment ONE of
+    // the options below to enable real denoising; otherwise the processor
+    // falls back to pass-through and the recording pipeline still works.
+    //
+    // Option A — public JitPack wrapper (drop-in, no NDK setup):
+    // implementation("com.github.theeasiestway:android-rnnoise:1.0.4")
+    //
+    // Option B — your own JNI shim around xiph/rnnoise: place librnnoise.so
+    // under src/main/jniLibs/<abi>/ plus a small Kotlin/Java class whose
+    // package matches one of the auto-discovery candidates documented in
+    // RnNoiseProcessor.kt.
 
     implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.8.3")
 

@@ -84,6 +84,13 @@ object DataManager : StardustAPI, PttInterface{
 
     private val fileSenders = mutableMapOf<String, FileSender>() // <uuid, FileSender>
 
+    init {
+        runCatching {
+            val debugOutFile = File(context.cacheDir, "decoded_data.txt")
+            if (debugOutFile.exists()) debugOutFile.delete()
+        }
+    }
+
     fun requireContext (context: Context) {
         this.context = context
 //       if(!hasTimber) { // TODO: for debug only
@@ -337,12 +344,11 @@ object DataManager : StardustAPI, PttInterface{
         return RecorderUtils.canRecord
     }
 
-
     override fun init(context: Context, fileLocation : String) {
         requireContext(context)
         requireFileLocation(fileLocation)
         UsersUtils.mRegisterUser = SharedPreferencesUtil.getAppUser(context)
-        GroupsUtils.resetGroupIds(context)
+        GroupsUtils.start(context)
     }
 
     override fun scanForDevice(context: Context) : MutableLiveData<List<ScanResult>> {

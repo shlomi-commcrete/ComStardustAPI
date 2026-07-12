@@ -3,6 +3,8 @@ package com.commcrete.stardust.util.audio
 import android.content.Context
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -561,12 +563,12 @@ object PlayerUtils : BleMediaConnector() {
 
 
     fun playNotificationSound(context: Context) {
-        try {
-            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
-            ringtone.play()
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+//        try {
+//            val notificationUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+//            val ringtone = RingtoneManager.getRingtone(context, notificationUri)
+//            ringtone.play()
+//        } catch (e: Exception) {
+//            e.printStackTrace()
+//        }
     }
 }

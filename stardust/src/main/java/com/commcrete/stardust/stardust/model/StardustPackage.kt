@@ -192,14 +192,18 @@ data class StardustPackage(
     }
 
     fun getSourceAsString () : String {
-        return intArrayToHexString(sourceBytes).getSrcDestMin4Bytes().lowercase()
+        return try {
+            intArrayToHexString(sourceBytes).getSrcDestMin4Bytes()
+        } catch (e : Exception) {
+            "source null"
+        }
     }
 
     fun getDestAsString () : String {
         return try {
-            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes().lowercase()
-        }catch (e : Exception) {
-            "null"
+            intArrayToHexString(destinationBytes).getSrcDestMin4Bytes()
+        } catch (e : Exception) {
+            "dest null"
         }
 
     }
@@ -336,5 +340,5 @@ fun String.getSrcDestMin4Bytes() : String {
     while (output.length < 8){
         output = "0$output"
     }
-    return output
+    return output.lowercase()
 }

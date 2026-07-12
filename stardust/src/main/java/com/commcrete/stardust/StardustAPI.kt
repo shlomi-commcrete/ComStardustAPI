@@ -67,7 +67,8 @@ interface StardustAPICallbacks {
         failure: FileReceiver.FileFailure
     )
     fun connectionStatusChanged (connectionType: ConnectionType?)
-    fun onRSSIChanged (rssi : Int)
+    fun onDeviceConnectionRSSIChanged (rssi : Int)
+    fun onSignalRSSIChanged(rssiData: StardustAppEventPackage.RSSIPackage) // called with snr = null if no refresh arrives within 15s (see AppEvents.updateRssiSignalChanged)
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)
