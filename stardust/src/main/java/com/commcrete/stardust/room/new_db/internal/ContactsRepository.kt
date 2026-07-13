@@ -8,6 +8,11 @@ import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 
@@ -220,6 +225,26 @@ internal class ContactsRepository(
 
         mapGroupContactRowsToFullContactData(groupRows) + mapAppContactRowsToFullContactData(appRows)
     }
+
+    /** See `AppRepository.observeUserAndGroupContactsExceptSelf`. */
+    fun observeUserAndGroupContactsExceptSelf(): Flow<List<FullContactData>> =
+        flow {
+            // Resolve self per (re)subscription so a login/logout between subscriptions is reflected,
+            // matching the per-call semantics of getUserAndGroupContactsExceptSelf.
+            val selfId = registeredAppIdProvider()
+            val appRowsFlow = if (selfId == null) {
+                contactsDao.observeAllAppContactRows()
+            } else {
+                contactsDao.observeAllAppContactRowsExceptUser(selfId)
+            }
+            emitAll(
+                combine(contactsDao.observeAllGroupContactRows(), appRowsFlow) { groupRows, appRows ->
+                    mapGroupContactRowsToFullContactData(groupRows) + mapAppContactRowsToFullContactData(appRows)
+                }
+            )
+        }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
 
     /** See `AppRepository.getUserAndDeviceContactsExceptSelf`. */
     suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {

@@ -328,6 +328,20 @@ interface ContactsDao {
     )
     suspend fun getAllAppContactRows(): List<AppContactRow>
 
+    /** Reactive variant of [getAllAppContactRows]. Re-emits on any contacts-table change. */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id AS user_id
+        FROM contacts c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        WHERE c.type = 'USER'
+        ORDER BY c.name ASC
+        """
+    )
+    fun observeAllAppContactRows(): Flow<List<AppContactRow>>
+
     @Query(
         """
         SELECT
@@ -340,6 +354,20 @@ interface ContactsDao {
         """
     )
     suspend fun getAllAppContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
+
+    /** Reactive variant of [getAllAppContactRowsExceptUser]. */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id AS user_id
+        FROM contacts c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
+        ORDER BY c.name ASC
+        """
+    )
+    fun observeAllAppContactRowsExceptUser(excludedUserId: String): Flow<List<AppContactRow>>
 
     /**
      * Returns USER and DEVICE contacts with their device links joined in.
@@ -426,6 +454,20 @@ interface ContactsDao {
         """
     )
     suspend fun getAllGroupContactRows(): List<GroupContactRow>
+
+    /** Reactive variant of [getAllGroupContactRows]. */
+    @Query(
+        """
+        SELECT
+            c.*,
+            g.group_id AS group_id
+        FROM contacts c
+        INNER JOIN app_contact_group_ids g ON g.contact_id = c.id
+        WHERE c.type = 'GROUP'
+        ORDER BY c.name ASC
+        """
+    )
+    fun observeAllGroupContactRows(): Flow<List<GroupContactRow>>
 
     /**
      * Returns GROUP participants for a single chat with their group IDs.

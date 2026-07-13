@@ -203,6 +203,13 @@ class AppRepository(
     suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> =
         contacts.getUserAndGroupContactsExceptSelf()
 
+    /**
+     * Reactive variant of [getUserAndGroupContactsExceptSelf] — re-emits whenever the
+     * contacts data changes (including contacts auto-created from incoming messages or file import).
+     */
+    fun observeUserAndGroupContactsExceptSelf(): Flow<List<FullContactData>> =
+        contacts.observeUserAndGroupContactsExceptSelf()
+
     /** Every USER and DEVICE contact except the registered user themselves. */
     suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> =
         contacts.getUserAndDeviceContactsExceptSelf()
