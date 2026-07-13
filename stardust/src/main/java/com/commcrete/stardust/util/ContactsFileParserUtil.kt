@@ -69,7 +69,7 @@ object ContactsFileParserUtil {
 
             fullContact?.let { result.add(it) }
         }
-        return result
+        return result.sortedBy { it.contact.name }
     }
 
 
