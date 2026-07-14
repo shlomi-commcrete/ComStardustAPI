@@ -3,8 +3,7 @@ package com.commcrete.stardust.util.connectivity
 
 import android.os.Handler
 import android.os.Looper
-import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
@@ -26,12 +25,9 @@ object PortUtils {
     fun startUpdatingPort() {
         job = Scopes.getMainCoroutine().launch {
             while (isActive) {
-                if(BleManager.isUsbEnabled()){
-                    BittelUsbManager2.updateBlePort()
-                    Timber.tag("startUpdatingPort").d("updateUsbPort")
-                }else if (BleManager.isBluetoothConnected()) {
-                    DataManager.getClientConnection().updateBlePort()
-                    Timber.tag("startUpdatingPort").d("updateBlePort")
+                TransportRegistry.active()?.let { transport ->
+                    transport.updateBlePort()
+                    Timber.tag("startUpdatingPort").d("updatePort over ${transport.id}")
                 }
                 delay(20000)
             }

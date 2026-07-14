@@ -10,7 +10,7 @@ import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustPackage
-import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
@@ -370,12 +370,9 @@ object StardustInitConnectionHandler {
 
     private fun finishAdminModeUpdate() {
         AdminUtils.updateBittelAdminMode()
-        if (BleManager.isUsbEnabled()) {
-            BittelUsbManager2.updateBlePort()
-            Timber.tag("startUpdatingPort").d("updateUsbPort (init)")
-        } else if (BleManager.isBluetoothConnected()) {
-            DataManager.getClientConnection().updateBlePort()
-            Timber.tag("startUpdatingPort").d("updateBlePort (init)")
+        TransportRegistry.active()?.let { transport ->
+            transport.updateBlePort()
+            Timber.tag("startUpdatingPort").d("updatePort over ${transport.id} (init)")
         }
         stop()
     }
