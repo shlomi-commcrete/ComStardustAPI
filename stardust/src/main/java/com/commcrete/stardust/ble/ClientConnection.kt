@@ -59,6 +59,11 @@ internal class ClientConnection(): BittelProtocol {
         // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
         // so one lost callback can't wedge all subsequent writes.
         const val GATT_OP_TIMEOUT_MS = 5000L
+
+        // Settle delay before service discovery. Kept (not removed) because discovering services
+        // immediately after connecting to a BONDED device hits a known Android race on some OEMs
+        // where discovery silently fails; a short delay lets bonding/encryption settle first.
+        const val SERVICE_DISCOVERY_DELAY_MS = 2000L
     }
     private val TAG = ClientConnection::class.java.simpleName
 
@@ -207,7 +212,7 @@ internal class ClientConnection(): BittelProtocol {
                         }
                         discoverServicesJob?.cancel()
                         discoverServicesJob = Scopes.getDefaultCoroutine().launch {
-                            delay(2000)
+                            delay(SERVICE_DISCOVERY_DELAY_MS)
                             gatt?.discoverServices()
                         }
                     } else {
@@ -511,12 +516,18 @@ internal class ClientConnection(): BittelProtocol {
     }
 
 
+    /**
+     * @param autoConnect false = direct connect: fast, but only succeeds if the device is
+     *   currently connectable (right for a fresh user pick / just-bonded device). true = background
+     *   connect: the OS patiently waits for the device to appear (right for startup reconnect and
+     *   the background auto-reconnect watchdog, where the radio may still be off).
+     */
     @SuppressLint("MissingPermission")
-    fun connectDevice(device: BluetoothDevice) {
-        Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback")
+    fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false) {
+        Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
         if(!hasCallback) {
             resetDiscoveryState()
-            device.connectGatt(context, true, getBleGattCallback(device))
+            device.connectGatt(context, autoConnect, getBleGattCallback(device))
         }
     }
 
@@ -637,7 +648,8 @@ internal class ClientConnection(): BittelProtocol {
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = true
         }
-        connectDevice(connectedDevice)
+        // Startup: the radio may still be off/out of range, so connect patiently in the background.
+        connectDevice(connectedDevice, autoConnect = true)
         this.deviceName = connectedDevice.name
     }
 
@@ -1320,7 +1332,8 @@ internal class ClientConnection(): BittelProtocol {
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             delay(2000)
-            mDevice?.let { connectDevice(it) }
+            // Background reconnect: device may be off (e.g. battery died) — wait for it patiently.
+            mDevice?.let { connectDevice(it, autoConnect = true) }
         }
     }
 
