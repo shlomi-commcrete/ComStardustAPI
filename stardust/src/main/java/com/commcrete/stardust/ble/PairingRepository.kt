@@ -55,6 +55,7 @@ object PairingRepository {
      */
     @SuppressLint("MissingPermission")
     private fun bondedStardustDevices(): List<BluetoothDevice>? {
+        if (!BlePermissions.hasConnectPermission(DataManager.appContext)) return null
         val manager = DataManager.appContext.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = manager?.adapter ?: return null
         if (!adapter.isEnabled) return null

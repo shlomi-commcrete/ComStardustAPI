@@ -139,8 +139,11 @@ internal class ClientConnection(): BittelProtocol {
 
     val handlerRSSI = Handler(Looper.getMainLooper())
 
-    val readRssiRunnable = Runnable @androidx.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) {
-        gattConnection?.readRemoteRssi()
+    @SuppressLint("MissingPermission")
+    val readRssiRunnable = Runnable {
+        if (BlePermissions.hasConnectPermission(context)) {
+            gattConnection?.readRemoteRssi()
+        }
         resetRSSITimer()
     }
 
@@ -524,6 +527,12 @@ internal class ClientConnection(): BittelProtocol {
      */
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false) {
+        // device.address is safe without permission; device.name is NOT — never touch it here.
+        if (!BlePermissions.hasConnectPermission(context)) {
+            Timber.tag(LOG_TAG).e("BLUETOOTH_CONNECT not granted; cannot connect to ${device.address}")
+            DataManager.getCallbacks()?.onPermissionDenied(deviceName ?: device.address)
+            return
+        }
         Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
         if(!hasCallback) {
             resetDiscoveryState()
@@ -602,6 +611,11 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         this.deviceName = deviceName
+        if (!BlePermissions.hasConnectPermission(context)) {
+            Timber.tag(LOG_TAG).e("BLUETOOTH_CONNECT not granted; cannot bond ${device.address}")
+            DataManager.getCallbacks()?.onPermissionDenied(deviceName ?: device.address)
+            return
+        }
         Scopes.getDefaultCoroutine().launch {
             val connectedDevice = device.name?.let { getBleConnectedDevice(device.address) }
             if(connectedDevice != null) {
@@ -866,6 +880,10 @@ internal class ClientConnection(): BittelProtocol {
 
     @SuppressLint("MissingPermission")
     private fun getBondedDevices(): Set<BluetoothDevice> {
+        if (!BlePermissions.hasConnectPermission(context)) {
+            Timber.tag(LOG_TAG).w("BLUETOOTH_CONNECT not granted; bonded devices unavailable")
+            return emptySet()
+        }
         val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager ?: return emptySet()
         return btManager.adapter?.bondedDevices ?: emptySet()
     }
