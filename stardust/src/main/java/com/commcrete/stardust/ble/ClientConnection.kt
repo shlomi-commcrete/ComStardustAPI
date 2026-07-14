@@ -55,6 +55,10 @@ internal class ClientConnection(): BittelProtocol {
         const val MAX_WRITE_RETRIES = 3
         const val RETRY_DELAY_MS = 500L
         const val WRITE_ERROR_CODE = 2147483647
+
+        // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
+        // so one lost callback can't wedge all subsequent writes.
+        const val GATT_OP_TIMEOUT_MS = 5000L
     }
     private val TAG = ClientConnection::class.java.simpleName
 
@@ -232,6 +236,9 @@ internal class ClientConnection(): BittelProtocol {
                     status: Int
                 ) {
                     super.onCharacteristicWrite(gatt, characteristic, status)
+                    // The previous write finished (success or error) — release the queue so the
+                    // next GATT op can run. This is what makes the queue a real serial queue.
+                    completeGattOp()
                 }
 
                 fun fastRandomId(length: Int = 6): String {
@@ -280,6 +287,7 @@ internal class ClientConnection(): BittelProtocol {
                     } else {
                         Timber.tag("NotificationSetup").e("Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
                     }
+                    completeGattOp()
                 }
 
                 override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
@@ -385,8 +393,25 @@ internal class ClientConnection(): BittelProtocol {
         Timber.tag(LOG_TAG).d("has Char")
         gatt.setCharacteristicNotification(readChar, true)
         val desc = readChar.descriptors?.get(0) ?: return
-        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        gatt.writeDescriptor(desc)
+        // Serialised through the same GATT queue as data writes — a descriptor write and a
+        // characteristic write are both single-outstanding GATT operations and must not overlap.
+        enqueueGattOp(GattOp("descriptor:notif:${readChar.uuid}") {
+            writeNotificationDescriptor(gatt, desc)
+        })
+    }
+
+    /** Writes the CCCD enable-notification value, version-appropriately. Returns whether initiated. */
+    @SuppressLint("MissingPermission")
+    private fun writeNotificationDescriptor(gatt: BluetoothGatt, desc: BluetoothGattDescriptor): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(desc, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == 0
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(desc)
+            }
+        }
     }
 
     /**
@@ -491,6 +516,7 @@ internal class ClientConnection(): BittelProtocol {
         reconnectJob?.cancel()
         reconnectJob = null
         resetDiscoveryState()
+        clearGattQueue()
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null
@@ -895,6 +921,93 @@ internal class ClientConnection(): BittelProtocol {
         }
     }
 
+    // ── GATT operation queue (B2 fix) ────────────────────────────────────────
+    // Android BLE allows only ONE outstanding GATT operation per connection; issuing a second
+    // write before the previous one's callback fires makes the framework silently drop it. Every
+    // characteristic write and the notification-descriptor write goes through this serial queue,
+    // which starts the next op only when the prior op's completion callback (onCharacteristicWrite
+    // / onDescriptorWrite) fires — or a timeout elapses as a safety valve.
+
+    /** A single GATT operation. [execute] performs it and returns whether it was actually initiated
+     *  (i.e. whether a completion callback should be expected). */
+    private class GattOp(val label: String, val execute: () -> Boolean)
+
+    private val gattOpQueue = ArrayDeque<GattOp>()
+    private var gattOpInFlight = false
+    private var gattOpExpectsCallback = false
+    // A callback that arrives AFTER its op has been abandoned by the timeout would otherwise
+    // complete the *next* op early (reintroducing overlap). We count such abandoned-but-initiated
+    // ops and swallow that many subsequent completion callbacks.
+    private var staleCallbacksToIgnore = 0
+    private val gattOpHandler = Handler(Looper.getMainLooper())
+    private var gattOpTimeoutRunnable: Runnable? = null
+
+    @Synchronized
+    private fun enqueueGattOp(op: GattOp) {
+        gattOpQueue.addLast(op)
+        pumpGattQueue()
+    }
+
+    @Synchronized
+    private fun pumpGattQueue() {
+        if (gattOpInFlight || gattOpQueue.isEmpty()) return
+        val op = gattOpQueue.removeFirst()
+        gattOpInFlight = true
+        gattOpExpectsCallback = false
+
+        val timeout = Runnable { onGattOpTimeout(op.label) }
+        gattOpTimeoutRunnable = timeout
+        gattOpHandler.postDelayed(timeout, GATT_OP_TIMEOUT_MS)
+
+        val initiated = try {
+            op.execute()
+        } catch (e: Exception) {
+            Timber.tag(LOG_TAG).e(e, "GATT op '${op.label}' threw")
+            false
+        }
+        gattOpExpectsCallback = initiated
+        // If the op never actually started, no completion callback will arrive — advance now.
+        if (!initiated) advanceGattQueue()
+    }
+
+    /** Called from the real GATT completion callbacks (onCharacteristicWrite / onDescriptorWrite). */
+    @Synchronized
+    private fun completeGattOp() {
+        if (staleCallbacksToIgnore > 0) {
+            staleCallbacksToIgnore--
+            return
+        }
+        if (gattOpInFlight) advanceGattQueue()
+    }
+
+    @Synchronized
+    private fun onGattOpTimeout(label: String) {
+        if (!gattOpInFlight) return
+        Timber.tag(LOG_TAG).w("GATT op '$label' timed out; advancing queue")
+        // The op was initiated, so its completion callback may still arrive late — ignore it.
+        if (gattOpExpectsCallback) staleCallbacksToIgnore++
+        advanceGattQueue()
+    }
+
+    private fun advanceGattQueue() {
+        gattOpTimeoutRunnable?.let { gattOpHandler.removeCallbacks(it) }
+        gattOpTimeoutRunnable = null
+        gattOpInFlight = false
+        gattOpExpectsCallback = false
+        pumpGattQueue()
+    }
+
+    /** Drops all pending ops and clears in-flight state (used on disconnect). */
+    @Synchronized
+    private fun clearGattQueue() {
+        gattOpTimeoutRunnable?.let { gattOpHandler.removeCallbacks(it) }
+        gattOpTimeoutRunnable = null
+        gattOpQueue.clear()
+        gattOpInFlight = false
+        gattOpExpectsCallback = false
+        staleCallbacksToIgnore = 0
+    }
+
     @SuppressLint("MissingPermission")
     private fun writePackage(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
@@ -902,24 +1015,73 @@ internal class ClientConnection(): BittelProtocol {
         count: Int = 0,
         randomID: String = ""
     ) {
-        Timber.tag(LOG_TAG).d("writePackage attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
-
         if (count > MAX_WRITE_RETRIES) {
             Timber.tag(LOG_TAG).w("Max write retries exceeded for ${bittelPackage.stardustOpCode}")
             return
         }
-
-        if (count > 0) {
-            scheduleRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        } else {
-            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
+        Timber.tag(LOG_TAG).d("writePackage enqueue attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
+        enqueueGattOp(GattOp("write:${bittelPackage.stardustOpCode}:$count") {
+            performGattWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        })
     }
 
     /**
-     * Schedules a delayed retry of the write operation.
+     * Performs a single characteristic write. Returns true if the write was initiated (a completion
+     * callback is expected); false if it failed to start (queue advances immediately, and a retry
+     * or reconnect is scheduled as appropriate).
      */
-    private fun scheduleRetry(
+    @SuppressLint("MissingPermission")
+    private fun performGattWrite(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ): Boolean {
+        val gatt = gattConnection ?: run {
+            Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
+            return false
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when (val writeResult = gatt.writeCharacteristic(
+                bluetoothGattCharacteristic,
+                bittelPackage.getStardustPackageToSend(),
+                WRITE_TYPE_DEFAULT
+            )) {
+                0 -> {
+                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    checkIfPackageDemandsAck(bittelPackage)
+                    true
+                }
+                WRITE_ERROR_CODE -> {
+                    Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
+                    reconnectToDevice()
+                    false
+                }
+                else -> {
+                    Timber.tag(LOG_TAG).w("Write returned: $writeResult, scheduling retry...")
+                    scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+                    false
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                if (gatt.writeCharacteristic(bluetoothGattCharacteristic)) {
+                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    checkIfPackageDemandsAck(bittelPackage)
+                    true
+                } else {
+                    Timber.tag(LOG_TAG).w("Write failed, scheduling retry... (attempt ${count + 1})")
+                    scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+                    false
+                }
+            }
+        }
+    }
+
+    /** Re-enqueues the write after a delay, preserving the retry cap. */
+    private fun scheduleWriteRetry(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
         bittelPackage: StardustPackage,
         count: Int,
@@ -927,86 +1089,7 @@ internal class ClientConnection(): BittelProtocol {
     ) {
         Scopes.getDefaultCoroutine().launch {
             delay(RETRY_DELAY_MS)
-            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
-    }
-
-    /**
-     * Performs the actual write operation using platform-appropriate API.
-     */
-    @SuppressLint("MissingPermission")
-    private fun performWrite(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            performWriteAndroid13Plus(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        } else {
-            performWriteLegacy(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
-    }
-
-    /**
-     * Android 13+ write path using new BluetoothGatt API.
-     */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    @SuppressLint("MissingPermission")
-    private fun performWriteAndroid13Plus(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        val writeResult = gattConnection?.writeCharacteristic(
-            bluetoothGattCharacteristic,
-            bittelPackage.getStardustPackageToSend(),
-            WRITE_TYPE_DEFAULT
-        )
-
-        when (writeResult) {
-            null -> {
-                Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
-            }
-            0 -> {
-                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
-                checkIfPackageDemandsAck(bittelPackage)
-            }
-            WRITE_ERROR_CODE -> {
-                Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
-                reconnectToDevice()
-            }
-            else -> {
-                Timber.tag(LOG_TAG).w("Write returned: $writeResult, retrying...")
-                // Re-enter via writePackage so retry delay and retry cap are enforced.
-                writePackage(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
-            }
-        }
-    }
-
-    /**
-     * Legacy (Android < 13) write path using deprecated but stable API.
-     */
-    @SuppressLint("MissingPermission", "Deprecation")
-    private fun performWriteLegacy(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
-        val writeSuccess = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic) ?: false
-
-        when {
-            writeSuccess -> {
-                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
-                checkIfPackageDemandsAck(bittelPackage)
-            }
-            else -> {
-                Timber.tag(LOG_TAG).w("Write failed, retrying... (attempt ${count + 1})")
-                performWrite(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
-            }
+            writePackage(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
         }
     }
 
