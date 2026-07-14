@@ -445,6 +445,8 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun disconnectFromDevice() {
         checkInitialized()
+        // Intentional disconnect: stop the auto-reconnect watchdog so we don't fight the tear-down.
+        com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
         cleanupPackageHandlerOnDisconnect()
         getClientConnection().disconnectFromBLEDevice()
     }
@@ -505,6 +507,7 @@ object DataManager : StardustAPI, PttInterface {
 
     fun unpairDeviceBLE() {
         checkInitialized()
+        com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
         cleanupPackageHandlerOnDisconnect()
         val clientConnection = getClientConnection()
         clientConnection.removeBittelBond()

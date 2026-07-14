@@ -1,10 +1,12 @@
 package com.commcrete.stardust.transport
 
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,6 +33,7 @@ object ConnectionManager {
     private const val BASE_DELAY_MS = 1500L
     private const val MAX_DELAY_MS = 30_000L
     private const val MAX_BACKOFF_SHIFT = 20
+    private const val WATCHDOG_INTERVAL_MS = 10_000L
 
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -40,6 +43,14 @@ object ConnectionManager {
 
     private var reconnectJob: Job? = null
     private var attempt = 0
+
+    // Whether the app WANTS a BLE link kept alive. Set once a BLE link is established; cleared only
+    // on an intentional teardown (manual disconnect / unpair via [disableAutoReconnect]). This is
+    // what distinguishes an unexpected drop (device died / out of range → reconnect) from a
+    // deliberate disconnect (→ stay down), since both otherwise look like Disconnected+paired.
+    @Volatile
+    private var autoReconnectDesired = false
+    private var watchdogJob: Job? = null
 
     // ───────────────────────── State derivation ─────────────────────────
 
@@ -63,6 +74,20 @@ object ConnectionManager {
             reconnectJob = null
             attempt = 0
         }
+
+        // Once a BLE link is established, arm the auto-reconnect watchdog. We only do this for BLE
+        // (USB has its own attach-driven lifecycle) and never for a USB-active state.
+        if (isBleConnectedState(next)) {
+            autoReconnectDesired = true
+            startReconnectWatchdog()
+        }
+    }
+
+    private fun isBleConnectedState(state: ConnectionState): Boolean = when (state) {
+        is ConnectionState.LinkUp -> state.transport == TransportId.BLE
+        is ConnectionState.Syncing -> state.transport == TransportId.BLE
+        is ConnectionState.Ready -> state.transport == TransportId.BLE
+        else -> false
     }
 
     private fun derive(active: TransportId?, s: State): ConnectionState = when {
@@ -106,5 +131,52 @@ object ConnectionManager {
         if (attempt == 0) return 0L
         val shift = (attempt - 1).coerceAtMost(MAX_BACKOFF_SHIFT)
         return (BASE_DELAY_MS shl shift).coerceAtMost(MAX_DELAY_MS)
+    }
+
+    // ───────────────────────── Auto-reconnect watchdog ─────────────────────────
+
+    /**
+     * Periodically restores a BLE link that dropped unexpectedly (e.g. the radio's battery died and
+     * it was later switched back on), giving a deterministic fallback for when Android's autoConnect
+     * doesn't fire. It deliberately does NOT fire for intentional GATT tear-downs:
+     *  - manual disconnect / unpair → [autoReconnectDesired] is cleared (see [disableAutoReconnect]),
+     *    and unpair also drops [BleManager.isPaired];
+     *  - USB takeover → guarded by `!isUSBConnected` (we don't fight USB while it's connected);
+     *  - Bluetooth off → the state is [ConnectionState.BluetoothOff], not [ConnectionState.Disconnected],
+     *    and the adapter-state observer handles re-connect when BT returns.
+     * The actual reconnect goes through [requestReconnect], so its single-flight + backoff throttle
+     * repeated attempts.
+     */
+    @Synchronized
+    private fun startReconnectWatchdog() {
+        if (watchdogJob?.isActive == true) return
+        watchdogJob = Scopes.getDefaultCoroutine().launch {
+            while (isActive && autoReconnectDesired) {
+                delay(WATCHDOG_INTERVAL_MS)
+                if (shouldAutoReconnect()) {
+                    requestReconnect(TransportId.BLE, "auto-reconnect watchdog")
+                }
+            }
+        }
+    }
+
+    private fun shouldAutoReconnect(): Boolean =
+        autoReconnectDesired &&
+            BleManager.isPaired.value == true &&
+            !BleManager.isUSBConnected &&
+            _connectionState.value is ConnectionState.Disconnected
+
+    /**
+     * Disables auto-reconnect and stops the watchdog. Call this on INTENTIONAL disconnects (the user
+     * tapped disconnect, or unpaired) so we don't immediately fight the tear-down. Battery-death /
+     * out-of-range drops do NOT call this, so those still auto-reconnect.
+     */
+    @Synchronized
+    fun disableAutoReconnect() {
+        autoReconnectDesired = false
+        watchdogJob?.cancel()
+        watchdogJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
     }
 }
