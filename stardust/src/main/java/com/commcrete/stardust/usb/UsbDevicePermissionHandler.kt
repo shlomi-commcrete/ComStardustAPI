@@ -1,7 +1,7 @@
 package com.commcrete.stardust.usb
 
 import android.app.PendingIntent
-import android.content.Context.RECEIVER_EXPORTED
+import android.content.Context.RECEIVER_NOT_EXPORTED
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
@@ -102,19 +102,38 @@ object UsbDevicePermissionHandler {
     }
 
     private var receiverRegistered = false
-    private fun registerReceiverOnce() {
-        if (!receiverRegistered) {
-            val filter = IntentFilter().apply {
-                addAction(ACTION_USB_PERMISSION)
-                addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-                addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter, RECEIVER_EXPORTED)
-            } else {
-                DataManager.appContext.registerReceiver(usbPermissionReceiver, filter)
-            }
-            receiverRegistered = true
+
+    /**
+     * Registers the USB broadcast receiver exactly once. This is the single registration point for
+     * [usbPermissionReceiver] — [BittelUsbManager2.registerReceiver] delegates here rather than
+     * registering the same instance a second time.
+     *
+     * Uses RECEIVER_NOT_EXPORTED: ACTION_USB_PERMISSION is a private action and USB attach/detach
+     * are protected system broadcasts, so no other app should be able to deliver these to us.
+     */
+    fun registerReceiverOnce() {
+        if (receiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(ACTION_USB_PERMISSION)
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            DataManager.appContext.registerReceiver(usbPermissionReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            DataManager.appContext.registerReceiver(usbPermissionReceiver, filter)
+        }
+        receiverRegistered = true
+    }
+
+    /** Unregisters the receiver and resets the guard so a later [registerReceiverOnce] works again. */
+    fun unregister() {
+        if (!receiverRegistered) return
+        try {
+            DataManager.appContext.unregisterReceiver(usbPermissionReceiver)
+        } catch (e: Exception) {
+            Timber.tag("UsbPermission").w(e, "unregister receiver failed")
+        }
+        receiverRegistered = false
     }
 }

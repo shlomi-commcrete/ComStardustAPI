@@ -2,9 +2,7 @@ package com.commcrete.stardust.usb
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Context.RECEIVER_EXPORTED
 import android.content.Context.USB_SERVICE
-import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
@@ -88,14 +86,18 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun disconnectToUnknownDevice (device: UsbDevice) {
-        if (isJboxAudioDevice(device)) {
-            isJboxAudioPresent = false
-            disconnect()
-        } else if (isStardustDataDevice(device)) {
-            disconnectAudio()
+        // Tear down only the role that actually detached. Previously this unconditionally called
+        // both disconnect() and disconnectAudio(), so unplugging the audio J-box also killed the
+        // data link (and vice-versa). The per-type branches were also swapped.
+        when {
+            isJboxAudioDevice(device) -> disconnectAudio()
+            isStardustDataDevice(device) -> disconnect()
+            else -> {
+                // Unknown device: be safe and tear down both.
+                disconnect()
+                disconnectAudio()
+            }
         }
-        disconnect()
-        disconnectAudio()
     }
 
     fun getConnectedDevicesStartup () {
@@ -246,24 +248,14 @@ object BittelUsbManager2 : BittelProtocol {
         // Process the data received from the device
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun registerReceiver(){
-        val filter = IntentFilter()
-        filter.addAction(ACTION_USB_PERMISSION)
-        filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            DataManager.appContext.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter, RECEIVER_EXPORTED)
-        }else {
-            DataManager.appContext.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter)
-
-        }
+        // Single registration point: delegate to the guarded registrar so the receiver is never
+        // registered twice (this used to register the same instance a second time).
+        usbDevicePermissionHandler.registerReceiverOnce()
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun unregisterReceiver(){
-//        context.unregisterReceiver(usbReceiver)
-        DataManager.appContext.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
+        usbDevicePermissionHandler.unregister()
     }
 
     private fun getUartPortType(): StardustConfigurationParser.PortType {

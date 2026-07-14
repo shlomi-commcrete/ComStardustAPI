@@ -43,14 +43,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import no.nordicsemi.andorid.ble.test.spec.Characteristics
-import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import no.nordicsemi.android.ble.BleManager as NordicBleManager
 
-internal class ClientConnection(): NordicBleManager(DataManager.appContext), BittelProtocol {
+internal class ClientConnection(): BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
@@ -60,10 +58,10 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     }
     private val TAG = ClientConnection::class.java.simpleName
 
-    private var characteristic: BluetoothGattCharacteristic? = null
-    private var indicationCharacteristics: BluetoothGattCharacteristic? = null
-    private var reliableCharacteristics: BluetoothGattCharacteristic? = null
-    private var readCharacteristics: BluetoothGattCharacteristic? = null
+    // Formerly provided by the Nordic BleManager base class. The connection is driven entirely by
+    // the raw BluetoothGatt path below, so the Nordic FSM was dead weight; this replaces its only
+    // still-used member.
+    private val context: Context get() = DataManager.appContext
 
     var gattConnection : BluetoothGatt? = null
     var mDevice : BluetoothDevice? = null
@@ -376,7 +374,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     /** Requests high-priority connection and enables notifications on the read characteristic. */
     @SuppressLint("MissingPermission")
     private fun enableNotifications(gatt: BluetoothGatt?) {
-        gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
         val id = deviceLastDigit
         val readChar = gatt
@@ -477,51 +475,6 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }
     }
 
-    override fun log(priority: Int, message: String) {
-        when (priority) {
-            2 -> Timber.tag(TAG).v(message)
-            3 -> Timber.tag(TAG).d(message)
-            4 -> Timber.tag(TAG).i(message)
-            5 -> Timber.tag(TAG).w(message)
-            6 -> Timber.tag(TAG).e(message)
-            7 -> Timber.tag(TAG).wtf(message)
-            else -> Timber.tag(TAG).d(message)
-        }
-    }
-
-    override fun getMinLogPriority(): Int {
-        return Log.VERBOSE
-    }
-
-    // Return false if a required service has not been discovered.
-    @SuppressLint("MissingPermission")
-    override fun isRequiredServiceSupported(gatt: BluetoothGatt): Boolean {
-        gatt.getService(Characteristics.UUID_SERVICE_DEVICE)?.let { service ->
-            characteristic = service.getCharacteristic(Characteristics.WRITE_CHARACTERISTIC)
-            indicationCharacteristics = service.getCharacteristic(Characteristics.IND_CHARACTERISTIC)
-            reliableCharacteristics = service.getCharacteristic(Characteristics.REL_WRITE_CHARACTERISTIC)
-            readCharacteristics = service.getCharacteristic(Characteristics.READ_CHARACTERISTIC)
-        }
-        return characteristic != null &&
-                indicationCharacteristics != null &&
-                reliableCharacteristics != null &&
-                readCharacteristics != null
-    }
-
-    override fun initialize() {
-        // TODO: return ?
-//        requestMtu(512).enqueue()
-        requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH).enqueue()
-    }
-
-    override fun onServicesInvalidated() {
-        resetDiscoveryState()
-        characteristic = null
-        indicationCharacteristics = null
-        reliableCharacteristics = null
-        readCharacteristics = null
-    }
-
 
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice) {
@@ -595,8 +548,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     fun release() {
         removeBluetoothStateObserver()
-        cancelQueue()
-        disconnect().enqueue()
+        disconnectFromBLEDevice(disconnectByForce = true)
     }
 
     @SuppressLint("MissingPermission")
