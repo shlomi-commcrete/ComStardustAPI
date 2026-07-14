@@ -1222,6 +1222,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
             delay(100)
             mDevice?.let { connectDevice(it) }
         }
