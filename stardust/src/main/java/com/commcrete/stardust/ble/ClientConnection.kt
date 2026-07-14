@@ -22,6 +22,7 @@ import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.isDisconnected
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
+import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.transport.TransportId
@@ -525,12 +526,25 @@ internal class ClientConnection(): BittelProtocol {
      *   connect: the OS patiently waits for the device to appear (right for startup reconnect and
      *   the background auto-reconnect watchdog, where the radio may still be off).
      */
+    /**
+     * Returns the reason a BLE connection can't proceed right now (unsupported / permission /
+     * adapter off), or null if it can. device.address is safe without permission; device.name is
+     * NOT, so callers must report with the address, never the name.
+     */
+    @SuppressLint("MissingPermission")
+    private fun bleConnectBlockReason(): BleUnavailableReason? {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+            ?: return BleUnavailableReason.BLUETOOTH_UNSUPPORTED
+        if (!BlePermissions.hasConnectPermission(context)) return BleUnavailableReason.CONNECT_PERMISSION_MISSING
+        if (!adapter.isEnabled) return BleUnavailableReason.BLUETOOTH_DISABLED
+        return null
+    }
+
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false) {
-        // device.address is safe without permission; device.name is NOT — never touch it here.
-        if (!BlePermissions.hasConnectPermission(context)) {
-            Timber.tag(LOG_TAG).e("BLUETOOTH_CONNECT not granted; cannot connect to ${device.address}")
-            DataManager.getCallbacks()?.onPermissionDenied(deviceName ?: device.address)
+        bleConnectBlockReason()?.let { reason ->
+            Timber.tag(LOG_TAG).e("Cannot connect to ${device.address}: $reason")
+            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
             return
         }
         Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
@@ -611,9 +625,9 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         this.deviceName = deviceName
-        if (!BlePermissions.hasConnectPermission(context)) {
-            Timber.tag(LOG_TAG).e("BLUETOOTH_CONNECT not granted; cannot bond ${device.address}")
-            DataManager.getCallbacks()?.onPermissionDenied(deviceName ?: device.address)
+        bleConnectBlockReason()?.let { reason ->
+            Timber.tag(LOG_TAG).e("Cannot bond ${device.address}: $reason")
+            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
             return
         }
         Scopes.getDefaultCoroutine().launch {

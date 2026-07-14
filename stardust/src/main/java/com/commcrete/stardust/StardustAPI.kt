@@ -23,6 +23,23 @@ import java.io.File
  */
 data class AdoptableDevice(val address: String, val name: String)
 
+/**
+ * Why a BLE connection couldn't be established/continued, so the host can show the user an
+ * actionable message (enable Bluetooth, grant a permission, etc.) instead of a generic failure.
+ */
+enum class BleUnavailableReason {
+    /** The Bluetooth adapter is turned off. */
+    BLUETOOTH_DISABLED,
+    /** The device has no Bluetooth adapter / BLE hardware. */
+    BLUETOOTH_UNSUPPORTED,
+    /** `BLUETOOTH_CONNECT` runtime permission (Android 12+) is not granted. */
+    CONNECT_PERMISSION_MISSING,
+    /** `BLUETOOTH_SCAN` runtime permission (Android 12+) is not granted. */
+    SCAN_PERMISSION_MISSING,
+    /** Cause could not be determined. */
+    UNKNOWN,
+}
+
 interface StardustAPI {
 
     // Send to the SDK
@@ -90,7 +107,13 @@ interface StardustAPICallbacks {
     fun onSignalRSSIChanged(rssiData: StardustAppEventPackage.RSSIPackage) // called with snr = null if no refresh arrives within 15s (see AppEvents.updateRssiSignalChanged)
     fun onBatteryChanged(battery : Int)
     fun onAppEvent(stardustAppEventPackage: StardustAppEventPackage)
-    fun onPermissionDenied(deviceName : String)
+    /**
+     * Called when a BLE connection can't be established or is dropped for a determinable reason
+     * ([BleUnavailableReason]) — permission missing, Bluetooth off, unsupported, etc. Replaces the
+     * old permission-only `onPermissionDenied`. [deviceName] is the target device's name/MAC if
+     * known. Default no-op so it's optional to implement.
+     */
+    fun onConnectionUnavailable(reason: BleUnavailableReason, deviceName: String?) {}
     fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
 
     /**

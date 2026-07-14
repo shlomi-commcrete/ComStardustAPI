@@ -17,6 +17,7 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
+import com.commcrete.stardust.ble.BlePermissions
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.ble.CompanionDeviceHelper
 import com.commcrete.stardust.ble.PairingRepository
@@ -320,6 +321,13 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
         checkInitialized()
+        // Tell the host why a scan won't yield results, so it can prompt the user.
+        val reason = when {
+            !getClientConnection().isBluetoothEnabled() -> com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED
+            !BlePermissions.hasScanPermission(appContext) -> com.commcrete.stardust.BleUnavailableReason.SCAN_PERMISSION_MISSING
+            else -> null
+        }
+        reason?.let { getCallbacks()?.onConnectionUnavailable(it, null) }
         val bleScanner = getBleScanner()
         bleScanner.startScan()
         return bleScanner.getScanResultsLiveData()
@@ -358,6 +366,7 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().initBleStatus()
         // Check if Bluetooth is enabled; if not, user will see a dialog
         if (!getClientConnection().isBluetoothEnabled()) {
+            getCallbacks()?.onConnectionUnavailable(com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED, null)
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
             return
         }
