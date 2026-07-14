@@ -1,5 +1,6 @@
 package com.commcrete.stardust.transport
 
+import android.bluetooth.BluetoothAdapter
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
@@ -164,7 +165,16 @@ object ConnectionManager {
         autoReconnectDesired &&
             BleManager.isPaired.value == true &&
             !BleManager.isUSBConnected &&
+            isBluetoothOn() &&
             _connectionState.value is ConnectionState.Disconnected
+
+    /**
+     * False when the adapter is off or absent. Pauses auto-reconnect while Bluetooth is disabled —
+     * there's no point retrying until it's back on. Re-enabling BT is handled by the adapter-state
+     * observer in ClientConnection (which reconnects), and the watchdog resumes once that lands.
+     */
+    private fun isBluetoothOn(): Boolean =
+        @Suppress("DEPRECATION") (BluetoothAdapter.getDefaultAdapter()?.isEnabled == true)
 
     /**
      * Disables auto-reconnect and stops the watchdog. Call this on INTENTIONAL disconnects (the user
