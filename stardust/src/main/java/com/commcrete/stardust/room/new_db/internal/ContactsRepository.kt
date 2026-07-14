@@ -1,5 +1,6 @@
 package com.commcrete.stardust.room.new_db.internal
 
+import android.util.Log
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
@@ -61,6 +62,10 @@ internal class ContactsRepository(
     private val registeredAppIdProvider: () -> String?,
 ) {
 
+    private companion object {
+        private const val TAG = "ContactsRepository"
+    }
+
     // ─────────────────────────────────────────────────────────────────────
     // Inserts
     // ─────────────────────────────────────────────────────────────────────
@@ -73,6 +78,15 @@ internal class ContactsRepository(
             val allMemberIds = contactsDao.getAllMemberContactIds()
 
             inserted.forEach { (data, contactId) ->
+                // addContact returns null when the entry had no resolvable
+                // primary ID — no ContactEntity row exists for it, so
+                // creating a chat/participant referencing it would trip
+                // the chat_participants.contact_id foreign key.
+                if (contactId == null) {
+                    Log.w(TAG, "insertContactsWithChats: skipping chat creation — unresolvable primary ID for ${data.contact.name}")
+                    return@forEach
+                }
+
                 // Add to contacts cache before chat creation so concurrent
                 // saveMessage callers can resolve the new contact via cache.
                 caches.addContact(data, contactId)
@@ -93,6 +107,10 @@ internal class ContactsRepository(
     suspend fun insertContactWithChat(contact: FullContactData) =
         withContext(Dispatchers.IO) {
             val contactId = contactsDao.addContact(contact)
+            if (contactId == null) {
+                Log.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID for ${contact.contact.name}")
+                return@withContext
+            }
             caches.addContact(contact, contactId)
 
             when (contact.contact.type) {

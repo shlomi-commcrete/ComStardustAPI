@@ -528,14 +528,27 @@ interface ContactsDao {
     )
     suspend fun findResolvedGroupChatIdByGroupId(groupId: String): String?
 
-    /** Inserts/updates all contacts and returns each one paired with its resolved contact ID. */
+    /**
+     * Inserts/updates all contacts and returns each one paired with its
+     * resolved contact ID, or `null` when [addContact] rejected the entry
+     * (e.g. a blank primary ID) — callers must skip those rather than
+     * treat `null` as a real [ContactEntity] row.
+     */
     @Transaction
-    suspend fun addContacts(contacts: List<FullContactData>): List<Pair<FullContactData, Int>> =
+    suspend fun addContacts(contacts: List<FullContactData>): List<Pair<FullContactData, Int?>> =
         contacts.map { it to addContact(it) }
 
+    /**
+     * Returns `null` (never `0`) when [fullContactData]'s primary ID is
+     * blank/unresolvable after normalization — there is no [ContactEntity]
+     * row for the caller to reference. Callers MUST skip chat/participant
+     * creation for a `null` result: passing `0` (or any other sentinel)
+     * into [ChatParticipantEntity.contactId] trips its foreign key, since
+     * no contact row was ever inserted for it.
+     */
     @Transaction
-    suspend fun addContact(fullContactData: FullContactData): Int {
-        val normalizedPrimaryId = resolveNormalizedPrimaryId(fullContactData) ?: return 0
+    suspend fun addContact(fullContactData: FullContactData): Int? {
+        val normalizedPrimaryId = resolveNormalizedPrimaryId(fullContactData) ?: return null
         val normalizedDevices = resolveNormalizedDevices(fullContactData)
 
         val existingByPrimaryId = findExistingByPrimaryId(fullContactData, normalizedPrimaryId)
