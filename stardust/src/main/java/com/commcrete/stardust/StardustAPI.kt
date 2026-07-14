@@ -17,6 +17,12 @@ import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.Deferred
 import java.io.File
 
+/**
+ * A Stardust/Bittel device already bonded to the phone (paired from phone Settings or another
+ * app) that the app can adopt. [address] is the BLE MAC; [name] is a display label.
+ */
+data class AdoptableDevice(val address: String, val name: String)
+
 interface StardustAPI {
 
     // Send to the SDK
@@ -43,6 +49,19 @@ interface StardustAPI {
     fun getSecurityKey(): ByteArray
     fun reconnectToCurrentDevice()
     fun canRecord(): MutableLiveData<Boolean>
+
+    /**
+     * Stardust devices already bonded to the phone that are not the app's current device —
+     * candidates for [adoptDevice]. Empty if Bluetooth is off or CONNECT permission is missing.
+     */
+    fun getAdoptableDevices(): List<AdoptableDevice>
+
+    /**
+     * Adopts an already-bonded device by its MAC [address]: persists it, marks it paired, and
+     * connects + syncs to fetch its data. Returns false if the address is not a bonded Stardust
+     * device. Use for pre-paired devices surfaced via [StardustAPICallbacks.onAdoptableDevicesFound].
+     */
+    fun adoptDevice(address: String): Boolean
 }
 
 // Receive from the SDK
@@ -73,4 +92,11 @@ interface StardustAPICallbacks {
     fun onAppEvent(stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied(deviceName : String)
     fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
+
+    /**
+     * Called when the app is not paired but finds Stardust devices already bonded to the phone
+     * (paired from phone Settings or another app). The host should ask the user whether to use
+     * one and, if so, call [StardustAPI.adoptDevice]. Default no-op for backward compatibility.
+     */
+    fun onAdoptableDevicesFound(devices: List<AdoptableDevice>) {}
 }

@@ -150,6 +150,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     private var discoverServicesJob: Job? = null
     private var reconnectJob: Job? = null
 
+    // Address we are actively bonding to. Lets the bond-state receiver recognise our target
+    // before [mDevice] is assigned, and — combined with the receiver's address filter — stops
+    // us from reacting to bond changes on unrelated Bluetooth devices (e.g. the user's headset).
+    private var pendingBondAddress: String? = null
+
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
     init {
@@ -606,6 +611,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
             Scopes.getMainCoroutine().launch {
                 resetBondTimer()
                 try {
+                    pendingBondAddress = device.address
                     registerBondStateReceiver()
                     Timber.tag(LOG_TAG).d("bondToBleDevice")
                     device.connectGatt(context, false, object : BluetoothGattCallback() {})
@@ -654,9 +660,22 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     val bondTransition = "${previousBondState.toBondStateDescription()} to " +
                             bondState.toBondStateDescription()
                     Timber.tag(LOG_TAG).w("${device?.address} bond state changed | $bondTransition")
+
+                    // Only act on OUR device. ACTION_BOND_STATE_CHANGED is a system-wide broadcast,
+                    // so without this filter a bond change on ANY device (e.g. the user pairing a
+                    // headset) would fall into the else-branch below and unbond/disconnect us.
+                    val target = mDevice?.address ?: pendingBondAddress
+                    val eventAddress = device?.address
+                    if (target == null || eventAddress == null ||
+                        !eventAddress.equals(target, ignoreCase = true)) {
+                        Timber.tag(LOG_TAG).d("Ignoring bond change for $eventAddress (target=$target)")
+                        return
+                    }
+
                     if(bondState == BluetoothDevice.BOND_BONDED && previousBondState == BluetoothDevice.BOND_BONDING) {
                         //device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
                         //device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
+                        pendingBondAddress = null
                         device?.let {
                             Scopes.getDefaultCoroutine().launch {
                                 Scopes.getMainCoroutine().launch {
@@ -669,10 +688,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
                         disconnectFromBLEDevice(withStateUpdate = false)
                     } else{
-                        device?.let {
-                            requestUnbond(it)
-                        }
+                        // Bond removed (e.g. BONDED->NONE) or the attempt failed for our device.
+                        // Reconcile app pairing with the OS instead of forcing another unbond.
+                        pendingBondAddress = null
                         disconnectFromBLEDevice(withStateUpdate = false)
+                        PairingRepository.reconcile()
                     }
                 }
             }
@@ -697,24 +717,59 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }.getOrDefault(false)
     }
 
-    fun removeBittelBond() {
+    enum class UnpairResult {
+        /** OS unbond initiated (or forced); local pairing cleared. */
+        UNBONDED,
+        /** OS `removeBond()` failed and clearing was not forced; local pairing kept so app == OS. */
+        STILL_BONDED_KEPT,
+        /** Nothing was paired. */
+        NOT_PAIRED,
+    }
+
+    /**
+     * Removes the pairing to the current Bittel device.
+     *
+     * By default this is HONEST: the persisted address/name and [BleManager.isPaired] are only
+     * cleared if the OS unbond actually starts. If the hidden `removeBond()` reflection call fails
+     * (common on some OEMs) the local record is KEPT, so we never strand a device that is still
+     * bonded in Android but erased from the app (which would leave it unpairable).
+     *
+     * @param forceClearLocal clear the local record regardless of unbond success. Used by the
+     *   security-erase flow, where the app data must be destroyed no matter what; a leftover OS
+     *   bond is then recoverable on next launch via [PairingRepository] adoption.
+     */
+    fun removeBittelBond(forceClearLocal: Boolean = false): UnpairResult {
         val deviceToUnbond = mDevice
             ?: SharedPreferencesUtil.getBittelDevice()
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
                 ?.let { getBleConnectedStardustDeviceBySavedAddress(it) }
 
-        deviceToUnbond?.let {
-            val started = requestUnbond(it)
-            Timber.tag(LOG_TAG).d("Unbond requested for ${it.address}: started=$started")
+        if (deviceToUnbond == null) {
+            if (forceClearLocal) clearLocalPairing()
+            disconnectFromBLEDevice(true)
+            return UnpairResult.NOT_PAIRED
         }
+
+        val unbondStarted = requestUnbond(deviceToUnbond)
+        Timber.tag(LOG_TAG).d("Unbond for ${deviceToUnbond.address}: started=$unbondStarted force=$forceClearLocal")
         disconnectFromBLEDevice(true)
 
+        return if (unbondStarted || forceClearLocal) {
+            clearLocalPairing()
+            UnpairResult.UNBONDED
+        } else {
+            Timber.tag(LOG_TAG).w("OS unbond failed for ${deviceToUnbond.address}; keeping local pairing so app and OS agree")
+            UnpairResult.STILL_BONDED_KEPT
+        }
+    }
+
+    private fun clearLocalPairing() {
         Scopes.getDefaultCoroutine().launch {
             SharedPreferencesUtil.removeBittelDevice()
             SharedPreferencesUtil.removeBittelDeviceName()
         }
-
         mDevice = null
+        pendingBondAddress = null
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = false
         }
@@ -798,8 +853,9 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                 return device
             }
         }
-        SharedPreferencesUtil.setBittelDevice("empty")
-        SharedPreferencesUtil.setBittelDeviceName("empty")
+        // NOTE: this used to write the sentinel "empty" into the saved device address/name here,
+        // which erased a valid pairing on any lookup miss. Pairing lifecycle is now owned by
+        // PairingRepository / removeBittelBond, so this query no longer mutates persisted state.
         return null
     }
 

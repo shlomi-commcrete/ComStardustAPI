@@ -18,6 +18,7 @@ import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.ble.PairingRepository
 import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
@@ -359,13 +360,41 @@ object DataManager : StardustAPI, PttInterface {
             return
         }
 
-        val bondedDevice = getPairedDevices()
-        if(bondedDevice != null) {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-            getClientConnection().bondToBleDeviceStartup(bondedDevice)
+        // Reconcile app pairing with the OS bond registry first, so a stale saved address
+        // (OS bond removed externally) is cleared and a still-bonded device is honored.
+        PairingRepository.reconcile()
+
+        val pairedAddress = PairingRepository.currentPairedAddress()
+        if (pairedAddress != null) {
+            val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(pairedAddress)
+            if (device != null) {
+                StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+                getClientConnection().bondToBleDeviceStartup(device)
+                return
+            }
+        }
+
+        // Not paired to a saved device. If Stardust devices are already bonded to the phone
+        // (paired from Settings or another app), surface them so the user can choose to adopt
+        // one instead of silently grabbing the first name match.
+        val adoptable = PairingRepository.getAdoptableDevices()
+        if (adoptable.isNotEmpty()) {
+            // Hand off to the host. State is left for adoptDevice() to advance (to SEARCHING);
+            // if the host ignores the callback the state simply stays DISCONNECTED (the default).
+            getCallbacks()?.onAdoptableDevicesFound(adoptable)
         } else {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
         }
+    }
+
+    override fun getAdoptableDevices(): List<com.commcrete.stardust.AdoptableDevice> {
+        checkInitialized()
+        return PairingRepository.getAdoptableDevices()
+    }
+
+    override fun adoptDevice(address: String): Boolean {
+        checkInitialized()
+        return PairingRepository.adopt(address)
     }
 
     override fun connectToDevice(device: ScanResult) {
