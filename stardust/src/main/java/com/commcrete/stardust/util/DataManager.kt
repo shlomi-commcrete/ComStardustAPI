@@ -18,7 +18,9 @@ import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.ble.CompanionDeviceHelper
 import com.commcrete.stardust.ble.PairingRepository
+import androidx.lifecycle.asFlow
 import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
@@ -404,6 +406,34 @@ object DataManager : StardustAPI, PttInterface {
      */
     fun getConnectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
         com.commcrete.stardust.transport.ConnectionManager.connectionState
+
+    // ── Flow facade (Stage 5) ────────────────────────────────────────────────
+    // Flow equivalents of the connection callbacks, backed by the existing LiveData. Additive:
+    // the StardustAPICallbacks surface is unchanged. Messaging/PTT callbacks are intentionally
+    // left as-is — this refactor is scoped to the connection layer.
+
+    /** Emits true while a device is paired. Flow equivalent of the paired signal. */
+    fun pairedFlow(): kotlinx.coroutines.flow.Flow<Boolean> = BleManager.isPaired.asFlow()
+
+    /** Emits RSSI updates. Flow equivalent of [StardustAPICallbacks.onDeviceConnectionRSSIChanged]. */
+    fun rssiFlow(): kotlinx.coroutines.flow.Flow<Int> = BleManager.rssi.asFlow()
+
+    // ── CompanionDeviceManager (Stage 5) ─────────────────────────────────────
+    // Thin pass-throughs to CompanionDeviceHelper for host discoverability. Association requires a
+    // host Activity to launch the returned IntentSender and forward its result back.
+
+    fun isCompanionDeviceSupported(): Boolean = CompanionDeviceHelper.isSupported()
+
+    fun associateCompanionDevice(
+        activity: android.app.Activity,
+        onLaunch: (android.content.IntentSender) -> Unit,
+        onError: (CharSequence) -> Unit,
+    ) = CompanionDeviceHelper.associate(activity, onLaunch, onError)
+
+    fun handleCompanionAssociationResult(data: android.content.Intent?): Boolean =
+        CompanionDeviceHelper.handleAssociationResult(data)
+
+    fun getCompanionAssociations(): List<String> = CompanionDeviceHelper.getAssociatedAddresses()
 
     override fun connectToDevice(device: ScanResult) {
         checkInitialized()
