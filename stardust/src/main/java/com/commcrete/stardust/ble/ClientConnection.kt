@@ -148,6 +148,7 @@ internal class ClientConnection(): BittelProtocol {
     var deviceName : String?  = ""
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
+    private val mtuRequested = AtomicBoolean(false)
     private var bluetoothStateObserver: Observer<Boolean>? = null
     private val bluetoothStateObserverLock = Any()
     private val bleStatusHandler = Handler(Looper.getMainLooper())
@@ -196,9 +197,14 @@ internal class ClientConnection(): BittelProtocol {
 
                     Log.d("StardustDataManager", " onConnectionStateChange")
                     Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
-                    val mtu = gatt?.requestMtu(200)
-                    Timber.tag("SetMtu").d("$mtu")
                     if(status == 0 && newState == 2){
+                        // Request the larger MTU once, only now that we're actually connected —
+                        // previously this fired on every state change (including disconnects/errors),
+                        // where it is meaningless and just logs failures.
+                        if (mtuRequested.compareAndSet(false, true)) {
+                            val requested = gatt?.requestMtu(200)
+                            Timber.tag("SetMtu").d("requestMtu(200) initiated=$requested")
+                        }
                         discoverServicesJob?.cancel()
                         discoverServicesJob = Scopes.getDefaultCoroutine().launch {
                             delay(2000)
@@ -307,7 +313,11 @@ internal class ClientConnection(): BittelProtocol {
 
                 override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                     super.onMtuChanged(gatt, mtu, status)
-
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        Timber.tag("SetMtu").d("MTU negotiated: $mtu")
+                    } else {
+                        Timber.tag("SetMtu").w("MTU change failed, status=$status")
+                    }
                 }
 
 
@@ -547,6 +557,7 @@ internal class ClientConnection(): BittelProtocol {
     private fun resetDiscoveryState() {
         servicesDiscoveredHandled.set(false)
         initStartTriggered.set(false)
+        mtuRequested.set(false)
         discoverServicesJob?.cancel()
         discoverServicesJob = null
         initStartJob?.cancel()
