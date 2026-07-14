@@ -10,6 +10,7 @@ import com.commcrete.stardust.stardust.model.OpenStardustControlByte
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
@@ -72,6 +73,7 @@ object StardustInitConnectionHandler {
 
             Log.d("StardustDataManager", "StardustInitConnectionHandler onDeviceInitialized -> $value")
             DataManager.getCallbacks()?.onDeviceInitialized(value)
+            ConnectionManager.onInitStateChanged(value)
         }
 
     val isRunning: Boolean

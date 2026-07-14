@@ -23,6 +23,8 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.isDisconnected
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.transport.TransportId
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -93,7 +95,9 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
-        if(!StardustInitConnectionHandler.isConnected()) reconnectToDevice()
+        if(!StardustInitConnectionHandler.isConnected()) {
+            ConnectionManager.requestReconnect(TransportId.BLE, "BLE connection watchdog")
+        }
     }
 
     private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {

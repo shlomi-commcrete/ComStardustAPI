@@ -35,4 +35,7 @@ interface Transport : BittelProtocol {
 
     /** Tears the link down. [force] disconnects even if the session isn't fully connected. */
     fun disconnect(force: Boolean = true)
+
+    /** Re-establishes the link to the current/last device. Driven by [ConnectionManager]. */
+    fun reconnect()
 }

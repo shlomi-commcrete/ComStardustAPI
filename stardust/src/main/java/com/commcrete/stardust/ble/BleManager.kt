@@ -12,6 +12,7 @@ import com.commcrete.bittell.util.connectivity.ConnectivityObserver
 import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.toHex
+import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
@@ -105,6 +106,7 @@ object BleManager {
         }
 
         DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
+        ConnectionManager.onTransportChanged()
     }
 
     fun redirectUserToTurnOnBLE(context: Activity) {

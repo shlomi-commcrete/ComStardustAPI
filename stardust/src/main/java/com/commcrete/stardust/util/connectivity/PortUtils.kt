@@ -3,6 +3,8 @@ package com.commcrete.stardust.util.connectivity
 
 import android.os.Handler
 import android.os.Looper
+import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.transport.TransportId
 import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
@@ -19,7 +21,7 @@ object PortUtils {
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val connectionTimeout = 10000L
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        DataManager.getUsbManager().reconnectToDevice()
+        ConnectionManager.requestReconnect(TransportId.USB, "USB ping timeout")
     }
 
     fun startUpdatingPort() {

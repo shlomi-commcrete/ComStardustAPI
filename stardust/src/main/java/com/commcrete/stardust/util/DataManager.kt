@@ -397,6 +397,14 @@ object DataManager : StardustAPI, PttInterface {
         return PairingRepository.adopt(address)
     }
 
+    /**
+     * The unified connection state (single source of truth): link + init-handshake status combined.
+     * Prefer collecting this over juggling [StardustAPICallbacks.connectionStatusChanged] and
+     * [StardustAPICallbacks.onDeviceInitialized] separately.
+     */
+    fun getConnectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
+        com.commcrete.stardust.transport.ConnectionManager.connectionState
+
     override fun connectToDevice(device: ScanResult) {
         checkInitialized()
         getClientConnection().bondToBleDevice(device.device,device.scanRecord?.deviceName )
