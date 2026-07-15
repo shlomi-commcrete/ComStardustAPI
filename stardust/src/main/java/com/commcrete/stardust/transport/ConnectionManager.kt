@@ -93,11 +93,23 @@ object ConnectionManager {
 
     private fun derive(active: TransportId?, s: State): ConnectionState = when {
         s == State.BLUETOOTH_OFF -> ConnectionState.BluetoothOff
+        // Terminal errors are surfaced regardless of transport presence — evaluated before the
+        // active==null gate so a failure isn't lost as plain Disconnected when the link drops.
+        s == State.CANCELED || StardustInitConnectionHandler.hasUnsyncableError() ->
+            ConnectionState.Error(toConnectionError(s))
         active == null -> if (s == State.SEARCHING) ConnectionState.Searching else ConnectionState.Disconnected
         s == State.SUCCESS -> ConnectionState.Ready(active)
-        s == State.CANCELED || StardustInitConnectionHandler.hasUnsyncableError() -> ConnectionState.Failed(s)
-        StardustInitConnectionHandler.isSyncing() -> ConnectionState.Syncing(active, s)
+        StardustInitConnectionHandler.isSyncing() -> ConnectionState.Syncing(active)
         else -> ConnectionState.LinkUp(active)
+    }
+
+    /** Maps the internal handshake state to the stable public [ConnectionError]. */
+    private fun toConnectionError(s: State): ConnectionError = when (s) {
+        State.NO_LICENSE -> ConnectionError.NoLicense
+        State.ENCRYPTION_KEY_ERROR -> ConnectionError.EncryptionKey
+        State.PRESET_ERROR -> ConnectionError.Preset
+        State.CANCELED -> ConnectionError.Canceled
+        else -> ConnectionError.Unknown
     }
 
     // ───────────────────────── Reconnection policy ─────────────────────────

@@ -1,16 +1,29 @@
 package com.commcrete.stardust.transport
 
-import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+/**
+ * Stable, public reason a connection ended in a terminal error. Mapped from the SDK's internal
+ * handshake state so consumers never depend on that internal enum ([com.commcrete.stardust.stardust.StardustInitConnectionHandler.State]).
+ */
+enum class ConnectionError {
+    /** No valid license on the device. */
+    NoLicense,
+    /** Encryption-key mismatch / key setup failed. */
+    EncryptionKey,
+    /** Device presets are missing or invalid. */
+    Preset,
+    /** The connection/handshake was canceled or aborted. */
+    Canceled,
+    /** Terminal failure with no more specific cause. */
+    Unknown,
+}
 
 /**
- * A single, unified view of the connection — the Stage 3 replacement for reconciling the two
- * separate signals the app exposes today: the raw transport link
- * ([com.commcrete.stardust.ble.BleManager.bleConnectionStatus] / `usbConnectionStatus`) and the
- * init-handshake state ([StardustInitConnectionHandler.State]).
+ * The single, unified view of the connection — the public read-model derived from the transport
+ * link and the init-handshake state. It is complete on its own: consumers render everything they
+ * need from this and never reach into the SDK's internal predicates or state enum.
  *
  * A physical link being up ([LinkUp]) is distinct from the device being usable ([Ready], reached
- * only after the init handshake), which previously required the UI to cross-reference two
- * callbacks (`connectionStatusChanged` + `onDeviceInitialized`).
+ * only after the init handshake).
  */
 sealed interface ConnectionState {
 
@@ -26,12 +39,12 @@ sealed interface ConnectionState {
     /** Physically connected over [transport], handshake not yet started. */
     data class LinkUp(val transport: TransportId) : ConnectionState
 
-    /** Connected and running the init handshake [step]. */
-    data class Syncing(val transport: TransportId, val step: StardustInitConnectionHandler.State) : ConnectionState
+    /** Connected and running the init handshake. */
+    data class Syncing(val transport: TransportId) : ConnectionState
 
     /** Fully connected and synced — the device is usable. */
     data class Ready(val transport: TransportId) : ConnectionState
 
-    /** Connected but the handshake produced a terminal error (license/preset/encryption/canceled). */
-    data class Failed(val reason: StardustInitConnectionHandler.State) : ConnectionState
+    /** Terminal failure with a typed [cause]. Surfaced regardless of whether a link is up. */
+    data class Error(val cause: ConnectionError) : ConnectionState
 }
