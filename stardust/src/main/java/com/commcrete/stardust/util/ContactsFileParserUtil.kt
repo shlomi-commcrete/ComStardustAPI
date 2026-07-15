@@ -29,7 +29,7 @@ object ContactsFileParserUtil {
 
     }
 
-    private fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
+    fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
         val result = mutableListOf<FullContactData>()
 
         for (contact in contacts) {

@@ -199,6 +199,13 @@ class AppRepository(
     suspend fun findUnknownMainCommunicationIds(mainCommunicationIds: List<String>): List<String> =
         contacts.findUnknownMainCommunicationIds(mainCommunicationIds)
 
+    /**
+     * Every contact stored in the database, mapped to [FullContactData]:
+     * USER (with linked devices), DEVICE, and GROUP contacts — including the
+     * registered user. Not filtered by self.
+     */
+    suspend fun getAllContacts(): List<FullContactData> = contacts.getAllContacts()
+
     /** Every USER + GROUP contact except the registered user themselves. */
     suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> =
         contacts.getUserAndGroupContactsExceptSelf()

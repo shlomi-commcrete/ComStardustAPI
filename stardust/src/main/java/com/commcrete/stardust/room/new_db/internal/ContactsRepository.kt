@@ -264,6 +264,13 @@ internal class ContactsRepository(
             .distinctUntilChanged()
             .flowOn(Dispatchers.IO)
 
+    /** See `AppRepository.getAllContacts`. */
+    suspend fun getAllContacts(): List<FullContactData> = withContext(Dispatchers.IO) {
+        val appRows = contactsDao.getAllUserAndDeviceContactRows()
+        val groupRows = contactsDao.getAllGroupContactRows()
+        mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+    }
+
     /** See `AppRepository.getUserAndDeviceContactsExceptSelf`. */
     suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
         val selfId = registeredAppIdProvider()
