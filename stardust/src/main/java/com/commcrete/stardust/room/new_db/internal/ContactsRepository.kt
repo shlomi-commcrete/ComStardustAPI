@@ -271,6 +271,17 @@ internal class ContactsRepository(
         mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
     }
 
+    /** See `AppRepository.observeAllContacts`. */
+    fun observeAllContacts(): Flow<List<FullContactData>> =
+        combine(
+            contactsDao.observeAllUserAndDeviceContactRows(),
+            contactsDao.observeAllGroupContactRows(),
+        ) { appRows, groupRows ->
+            mapAppContactRowsToFullContactData(appRows) + mapGroupContactRowsToFullContactData(groupRows)
+        }
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
+
     /** See `AppRepository.getUserAndDeviceContactsExceptSelf`. */
     suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> = withContext(Dispatchers.IO) {
         val selfId = registeredAppIdProvider()

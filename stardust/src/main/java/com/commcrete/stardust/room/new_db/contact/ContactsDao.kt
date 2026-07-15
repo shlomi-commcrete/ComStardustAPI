@@ -394,6 +394,26 @@ interface ContactsDao {
     )
     suspend fun getAllUserAndDeviceContactRows(): List<AppContactRow>
 
+    /** Reactive variant of [getAllUserAndDeviceContactRows]. Re-emits on any contacts-table change. */
+    @Query(
+        """
+        SELECT
+            c.*,
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
+        FROM contacts c
+        LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
+        WHERE c.type IN ('USER', 'DEVICE')
+        ORDER BY c.name ASC, cd.slot ASC
+        """
+    )
+    fun observeAllUserAndDeviceContactRows(): Flow<List<AppContactRow>>
+
     /** Variant of [getAllUserAndDeviceContactRows] that excludes the registered user by user_id. */
     @Query(
         """

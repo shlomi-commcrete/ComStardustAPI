@@ -2,6 +2,10 @@ package com.commcrete.stardust.room.new_db
 
 
 import com.commcrete.stardust.StardustAPIPackage
+import com.commcrete.stardust.contacts.ContactConflictEngine
+import com.commcrete.stardust.contacts.ContactConflicts
+import com.commcrete.stardust.contacts.ContactDraft
+import com.commcrete.stardust.contacts.ContactOperation
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -25,8 +29,14 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.room.RepositoryProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 
 /**
@@ -205,6 +215,69 @@ class AppRepository(
      * registered user. Not filtered by self.
      */
     suspend fun getAllContacts(): List<FullContactData> = contacts.getAllContacts()
+
+    /**
+     * Reactive variant of [getAllContacts] — re-emits whenever the contacts
+     * data changes (including contacts auto-created from incoming messages or
+     * file import). Includes USER, DEVICE and GROUP contacts, not filtered by self.
+     */
+    fun observeAllContacts(): Flow<List<FullContactData>> = contacts.observeAllContacts()
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Contact conflict domain (shared by the contact editor and bulk import)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * App-lifetime cache of **every** contact, shared by every consumer so the
+     * DB is observed once rather than per screen/flow. `null` until the first
+     * load completes; started eagerly on the application scope.
+     */
+    private val cachedContacts: StateFlow<List<FullContactData>?> =
+        observeAllContacts().stateIn(
+            RepositoryProvider.AppScopes.applicationScope, SharingStarted.Eagerly, null,
+        )
+
+    /** The shared cache as a StateFlow (`null` = not loaded yet). */
+    fun observeCachedContacts(): StateFlow<List<FullContactData>?> = cachedContacts
+
+    /** The shared cache as drafts; only emits once the roster has loaded. */
+    fun observeCachedContactDrafts(): Flow<List<ContactDraft>> =
+        cachedContacts.filterNotNull().map { it.map(ContactDraft.Companion::fromFullContactData) }
+
+    /** Current cached drafts, falling back to a one-shot DB read if not warm yet. */
+    suspend fun cachedContactDrafts(): List<ContactDraft> =
+        (cachedContacts.value ?: getAllContacts()).map(ContactDraft.Companion::fromFullContactData)
+
+    /** Every contact as a flat [ContactDraft] (fresh DB read). */
+    suspend fun getAllContactDrafts(): List<ContactDraft> =
+        getAllContacts().map(ContactDraft.Companion::fromFullContactData)
+
+    /** Reactive [getAllContactDrafts]. */
+    fun observeAllContactDrafts(): Flow<List<ContactDraft>> =
+        observeAllContacts().map { list -> list.map(ContactDraft.Companion::fromFullContactData) }
+
+    /** Detects which existing contacts [incoming] collides with (reads the cache). */
+    suspend fun findContactConflicts(incoming: ContactDraft): ContactConflicts =
+        ContactConflictEngine.detect(incoming, cachedContactDrafts())
+
+    /**
+     * Applies resolver output. The only place [ContactDraft] → [FullContactData]
+     * conversion happens on write; existing-row updates run before the incoming
+     * insert so a surrendered primary key is observable.
+     *
+     * **DeleteExisting is best-effort** — no AAR delete method is wired yet, so
+     * it is skipped (the caller may see the old row linger).
+     */
+    suspend fun applyContactOperations(ops: List<ContactOperation>) {
+        val toInsert = mutableListOf<FullContactData>()
+        for (op in ops) when (op) {
+            is ContactOperation.Insert -> op.contact.toFullContactData()?.let { toInsert += it }
+            is ContactOperation.UpdateExisting -> op.updated.toFullContactData()?.let { toInsert += it }
+            is ContactOperation.DeleteExisting -> Unit // TODO: wire AAR delete when exposed
+            ContactOperation.Noop -> Unit
+        }
+        if (toInsert.isNotEmpty()) insertContactsWithChats(toInsert)
+    }
 
     /** Every USER + GROUP contact except the registered user themselves. */
     suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> =
