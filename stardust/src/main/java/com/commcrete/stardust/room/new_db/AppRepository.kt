@@ -265,15 +265,16 @@ class AppRepository(
      * conversion happens on write; existing-row updates run before the incoming
      * insert so a surrendered primary key is observable.
      *
-     * **DeleteExisting is best-effort** — no AAR delete method is wired yet, so
-     * it is skipped (the caller may see the old row linger).
+     * Owner mutations (rename / strip a moved identity / delete an emptied
+     * contact) run first so a surrendered identity is free before the incoming
+     * insert. A deleted contact's private chat + messages are removed too.
      */
     suspend fun applyContactOperations(ops: List<ContactOperation>) {
         val toInsert = mutableListOf<FullContactData>()
         for (op in ops) when (op) {
             is ContactOperation.Insert -> op.contact.toFullContactData()?.let { toInsert += it }
-            is ContactOperation.UpdateExisting -> op.updated.toFullContactData()?.let { toInsert += it }
-            is ContactOperation.DeleteExisting -> Unit // TODO: wire AAR delete when exposed
+            is ContactOperation.UpdateExisting -> contacts.updateExistingContact(op.original, op.updated)
+            is ContactOperation.DeleteExisting -> contacts.deleteContact(op.target)
             ContactOperation.Noop -> Unit
         }
         if (toInsert.isNotEmpty()) insertContactsWithChats(toInsert)

@@ -88,6 +88,24 @@ interface ContactsDao {
     @Update
     suspend fun updateContact(contact: ContactEntity): Int
 
+    /** Renames a contact in place (identity/device rows untouched). */
+    @Query("UPDATE contacts SET name = :name WHERE id = :contactId")
+    suspend fun renameContact(contactId: Int, name: String): Int
+
+    /** Deletes a contact; FK cascades remove its id/device mappings and chat participants. */
+    @Query("DELETE FROM contacts WHERE id = :contactId")
+    suspend fun deleteContactById(contactId: Int): Int
+
+    /** Strips a single identity mapping so it can move to another contact. */
+    @Query("DELETE FROM app_contact_user_ids WHERE user_id = :userId")
+    suspend fun removeUserId(userId: String): Int
+
+    @Query("DELETE FROM app_contact_group_ids WHERE group_id = :groupId")
+    suspend fun removeGroupId(groupId: String): Int
+
+    @Query("DELETE FROM app_contact_devices WHERE device_id = :deviceId")
+    suspend fun removeDeviceLink(deviceId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertUserAppId(contactUserId: ContactUserIdEntity)
 

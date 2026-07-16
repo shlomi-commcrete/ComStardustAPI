@@ -3,6 +3,7 @@ package com.commcrete.stardust.room.new_db.internal
 import android.util.Log
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
+import com.commcrete.stardust.contacts.ContactDraft
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
@@ -263,6 +264,47 @@ internal class ContactsRepository(
         }
             .distinctUntilChanged()
             .flowOn(Dispatchers.IO)
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Conflict-resolution mutations (rename / move-field / delete)
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Applies an in-place change to an existing contact resolved from
+     * [original]'s identity: renames it and/or strips an identity that has
+     * moved to another contact. Leaves the contact otherwise intact.
+     */
+    suspend fun updateExistingContact(original: ContactDraft, updated: ContactDraft) = withContext(Dispatchers.IO) {
+        val contactId = resolveContactId(original) ?: return@withContext
+        if (updated.name.isNotBlank() && updated.name != original.name) {
+            contactsDao.renameContact(contactId, updated.name)
+        }
+        if (original.hasAppId && !updated.hasAppId) {
+            if (original.type == ContactType.GROUP) contactsDao.removeGroupId(original.appId)
+            else contactsDao.removeUserId(original.appId)
+        }
+        if (original.hasDeviceId && !updated.hasDeviceId) {
+            contactsDao.removeDeviceLink(original.deviceId)
+        }
+    }
+
+    /**
+     * Fully removes the contact resolved from [target]'s identity — its private
+     * chat + messages first (so nothing is orphaned), then the contact row
+     * (FK cascades drop its id/device mappings and remaining chat participants).
+     */
+    suspend fun deleteContact(target: ContactDraft) = withContext(Dispatchers.IO) {
+        val contactId = resolveContactId(target) ?: return@withContext
+        chatsDao.findPrivateChatIdByContactId(contactId)?.let { chats.deleteChat(it) }
+        contactsDao.deleteContactById(contactId)
+    }
+
+    private suspend fun resolveContactId(draft: ContactDraft): Int? = when {
+        draft.type == ContactType.GROUP && draft.hasAppId -> contactsDao.findContactIdByGroupId(draft.appId)
+        draft.hasAppId -> contactsDao.findContactIdByUserId(draft.appId)
+        draft.hasDeviceId -> contactsDao.findContactIdByDeviceId(draft.deviceId)
+        else -> null
+    }
 
     /** See `AppRepository.getAllContacts`. */
     suspend fun getAllContacts(): List<FullContactData> = withContext(Dispatchers.IO) {

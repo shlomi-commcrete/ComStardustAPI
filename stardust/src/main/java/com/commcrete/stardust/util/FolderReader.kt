@@ -8,6 +8,11 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import com.commcrete.stardust.room.new_db.internal.normalizeId
 import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import timber.log.Timber
@@ -20,6 +25,9 @@ import java.io.InputStream
 object FolderReader {
 
     private const val REQUEST_READ_EXTERNAL_STORAGE = 1020345
+
+    /** File read + Excel parsing is I/O + CPU heavy — never run it on the caller's thread. */
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private fun buildHeaderIndexMap(headerRow: Row): Map<String, Int> {
         return headerRow.associate { cell ->
@@ -144,7 +152,7 @@ object FolderReader {
 
 
     fun processFolder(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
-        var excel : Uri? = uri
+        val excel : Uri = uri
 //        val fileList = listFilesInFolder(context, uri)
 //        for (tempFileData in fileList) {
 //            when {
@@ -166,31 +174,29 @@ object FolderReader {
 //                }
 //            }
 //        }
-        if(excel == null) {
-            onExcelFilesSelected.onError()
+        // Read + parse off the caller's (typically main) thread; callbacks are
+        // dispatched back to Main so UI handlers stay safe.
+        ioScope.launch {
+            try {
+                processExcelFile(excel, onExcelFilesSelected)
+            } catch (e: Exception) {
+                Timber.tag("processFolder").e(e, "Failed to process contacts file")
+                withContext(Dispatchers.Main) { onExcelFilesSelected.onError() }
+            }
         }
-        excel?.let { processExcelFile(it, onExcelFilesSelected) }
     }
 
-    private fun processExcelFile(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
+    private suspend fun processExcelFile(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
         val fileData = readFileFromContentUri(uri)
-        if (fileData != null) {
-            val success = saveFileToInternalStorage("myFile.xlsx", fileData)
-            if (success != null) {
-                // File saved successfully
-                val userList = readExcelFile(success)
-                if(userList.isEmpty()) {
-                    onExcelFilesSelected.onError()
-                } else {
-                    onExcelFilesSelected.onGetUsers(fileData, userList)
-                }
+        val success = fileData?.let { saveFileToInternalStorage("myFile.xlsx", it) }
+        val userList = success?.let { readExcelFile(it) }
 
-            } else {
-                onExcelFilesSelected.onError()
-                // Error saving file
+        withContext(Dispatchers.Main) {
+            when {
+                fileData == null || success == null -> onExcelFilesSelected.onError()
+                userList.isNullOrEmpty() -> onExcelFilesSelected.onError()
+                else -> onExcelFilesSelected.onGetUsers(fileData, userList)
             }
-        } else {
-            onExcelFilesSelected.onError()
         }
     }
 
