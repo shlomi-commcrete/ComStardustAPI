@@ -39,6 +39,10 @@ interface ChatDao {
     @Query("DELETE FROM chats WHERE id = :chatId")
     suspend fun deleteChatById(chatId: String): Int
 
+    /** Renames a chat in place (used when a contact's callsign changes). */
+    @Query("UPDATE chats SET name = :name WHERE id = :chatId")
+    suspend fun renameChatById(chatId: String, name: String): Int
+
     // ── Chat + participants (transactional) ──────────────────────────────
 
     @Transaction

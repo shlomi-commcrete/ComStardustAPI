@@ -289,14 +289,40 @@ internal class ContactsRepository(
     }
 
     /**
-     * Fully removes the contact resolved from [target]'s identity — its private
-     * chat + messages first (so nothing is orphaned), then the contact row
-     * (FK cascades drop its id/device mappings and remaining chat participants).
+     * Renames an existing contact **and** its chat in place. Used for the
+     * "same ids, callsign changed" case so a matching import updates the name
+     * without creating a duplicate contact / chat.
+     */
+    suspend fun renameContactAndChat(target: ContactDraft, newName: String) = withContext(Dispatchers.IO) {
+        val contactId = resolveContactId(target) ?: return@withContext
+        val trimmed = newName.trim()
+        if (trimmed.isBlank() || trimmed.equals(target.name, ignoreCase = true)) return@withContext
+        contactsDao.renameContact(contactId, trimmed)
+        chatIdForContact(target.type, contactId)?.let { chatId ->
+            chatsDao.renameChatById(chatId, trimmed)
+        }
+    }
+
+    /**
+     * Fully removes the contact resolved from [target]'s identity — its chat
+     * first (so nothing is orphaned), then the contact row (FK cascades drop
+     * its id/device mappings and remaining chat participants).
      */
     suspend fun deleteContact(target: ContactDraft) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(target) ?: return@withContext
-        chatsDao.findPrivateChatIdByContactId(contactId)?.let { chats.deleteChat(it) }
+        chatIdForContact(target.type, contactId)?.let { chats.deleteChat(it) }
         contactsDao.deleteContactById(contactId)
+    }
+
+    /** Chat id for [contactId] (private or group depending on [type]). */
+    suspend fun chatIdForContactDraft(draft: ContactDraft): String? = withContext(Dispatchers.IO) {
+        val contactId = resolveContactId(draft) ?: return@withContext null
+        chatIdForContact(draft.type, contactId)
+    }
+
+    private suspend fun chatIdForContact(type: ContactType, contactId: Int): String? = when (type) {
+        ContactType.GROUP -> chatsDao.findGroupChatIdByContactId(contactId)
+        ContactType.USER, ContactType.DEVICE -> chatsDao.findPrivateChatIdByContactId(contactId)
     }
 
     private suspend fun resolveContactId(draft: ContactDraft): Int? = when {

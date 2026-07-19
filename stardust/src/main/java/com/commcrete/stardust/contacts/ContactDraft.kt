@@ -66,6 +66,16 @@ data class ContactDraft(
             appId.equals(other.appId, ignoreCase = true) &&
             deviceId.equals(other.deviceId, ignoreCase = true)
 
+    /**
+     * `true` when both drafts share every identity field (type + appId + deviceId)
+     * but the name may differ — the "same contact, callsign changed" case that
+     * should be handled as an in-place rename rather than a duplicate insert.
+     */
+    fun sameIdentityIgnoringName(other: ContactDraft): Boolean =
+        type == other.type &&
+            appId.equals(other.appId, ignoreCase = true) &&
+            deviceId.equals(other.deviceId, ignoreCase = true)
+
     companion object {
         fun fromFullContactData(contact: FullContactData): ContactDraft {
             val entity = contact.contact

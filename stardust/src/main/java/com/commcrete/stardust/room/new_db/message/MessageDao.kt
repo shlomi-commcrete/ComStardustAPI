@@ -75,6 +75,16 @@ interface MessageDao {
     @Query("DELETE FROM messages WHERE chat_id = :chatId")
     suspend fun clearChatMessages(chatId: String)
 
+    /**
+     * Re-parents every message from [oldChatId] to [newChatId]. Used when a
+     * contact is being deleted after surrendering its last identifier to a new
+     * incoming contact — we move the message history to the new contact's chat
+     * before the old chat is dropped, so history survives the swap.
+     * Returns the number of messages moved.
+     */
+    @Query("UPDATE messages SET chat_id = :newChatId WHERE chat_id = :oldChatId")
+    suspend fun reassignChat(oldChatId: String, newChatId: String): Int
+
     @Query("DELETE FROM messages WHERE sender_id = :senderId")
     suspend fun clearSenderMessages(senderId: String)
 

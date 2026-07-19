@@ -28,20 +28,67 @@ object ContactConflictEngine {
         )
 
     /**
-     * Turns a resolved conflict into DB operations: any owner mutations implied
-     * by the [resolution] (Swap strips/deletes/renames the owner) followed by
-     * the upsert of the incoming contact with its applied values.
+     * If [applied] has the same identity (type + appId + deviceId) as one of
+     * [candidates] but a different name, returns the [ContactOperation.RenameExisting]
+     * that updates that contact (and its chat) in place. Otherwise `null`.
+     *
+     * Reused by both the LoadContacts auto-save pass and the single-contact
+     * editor's EDIT path, so the "same ids, callsign changed" rule lives in one
+     * place.
+     */
+    fun renameOpFor(applied: ContactDraft, candidates: List<ContactDraft>): ContactOperation.RenameExisting? {
+        val twin = candidates.firstOrNull { it.sameIdentityIgnoringName(applied) } ?: return null
+        if (applied.name.equals(twin.name, ignoreCase = true)) return null
+        return ContactOperation.RenameExisting(twin, applied.name)
+    }
+
+    /**
+     * Turns a resolved conflict into DB operations.
+     *
+     *  - **Rename shortcut**: if the applied contact would recreate an existing
+     *    contact's identity exactly (all IDs match) but with a different name,
+     *    returns a single [ContactOperation.RenameExisting] — no duplicate row,
+     *    no duplicate chat. The chat's `name` is updated too.
+     *  - **Otherwise**: owner mutations implied by the [resolution] (Swap
+     *    strips / deletes / renames the owner) followed by the insert of the
+     *    incoming contact. If a swap empties out an owner (no App ID and no
+     *    Device ID left), that owner is scheduled for deletion, and its chat
+     *    messages are re-parented to the incoming contact's chat via
+     *    [ContactOperation.DeleteExisting.reparentTo] so history survives.
+     *
+     * @param candidates every existing contact considered for the rename
+     *   shortcut. For the LoadContacts flow this is the full existing roster;
+     *   for the ContactDetailsDialog editor it must include the original being
+     *   edited so a pure name change on the same contact is treated as a rename.
      */
     fun resolve(
         incoming: ContactDraft,
         conflicts: ContactConflicts,
         resolution: ContactResolution,
+        candidates: List<ContactDraft> = emptyList(),
     ): List<ContactOperation> {
         val applied = incoming.copy(
             name = resolution.incomingName,
             appId = if (ConflictField.APP_ID in conflicts.fields && resolution.appId == FieldChoice.KEEP) "" else incoming.appId,
             deviceId = if (ConflictField.DEVICE_ID in conflicts.fields && resolution.deviceId == FieldChoice.KEEP) "" else incoming.deviceId,
         )
+
+        // Rename shortcut: same identity, callsign changed → update in place.
+        renameOpFor(applied, candidates)?.let { rename ->
+            val ops = mutableListOf<ContactOperation>()
+            // If the applied name was chosen via SWAP callsign, also rename the
+            // third-party contact that used to hold that name.
+            val ownerName = resolution.ownerName
+            val callsignOwner = conflicts.callsignOwner
+            if (callsignOwner != null && callsignOwner !== rename.target &&
+                ownerName != null && ownerName.isNotBlank() &&
+                !ownerName.equals(callsignOwner.name, ignoreCase = true)
+            ) {
+                ops += ContactOperation.RenameExisting(callsignOwner, ownerName)
+            }
+            ops += rename
+            return ops
+        }
 
         val ops = mutableListOf<ContactOperation>()
         // Owner mutations, merged per owner so several moved fields collapse
@@ -71,14 +118,22 @@ object ContactConflictEngine {
             mutate(callsignOwner) { d -> d.copy(name = ownerName) }
         }
 
+        val updateOps = mutableListOf<ContactOperation>()
+        val deleteOps = mutableListOf<ContactOperation>()
         updates.values.forEach { (original, updated) ->
             when {
                 updated == original -> Unit
-                updated.appId.isBlank() && updated.deviceId.isBlank() -> ops += ContactOperation.DeleteExisting(original)
-                else -> ops += ContactOperation.UpdateExisting(original, updated)
+                updated.appId.isBlank() && updated.deviceId.isBlank() ->
+                    // Emptied by swap → reparent messages to the incoming contact.
+                    deleteOps += ContactOperation.DeleteExisting(original, reparentTo = applied)
+                else -> updateOps += ContactOperation.UpdateExisting(original, updated)
             }
         }
+        // Order: strip identities → insert applied (creates its chat) →
+        // delete emptied owners (message reparent needs applied's chat).
+        ops += updateOps
         ops += ContactOperation.Insert(applied)
+        ops += deleteOps
         return ops
     }
 

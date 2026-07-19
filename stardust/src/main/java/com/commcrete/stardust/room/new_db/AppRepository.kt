@@ -134,7 +134,16 @@ class AppRepository(
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Inserts all contacts and creates a chat for each one.
+     * Inserts all contacts and **creates a fresh chat for each one**.
+     *
+     * **Intended usage**: called once at login, with a freshly-cleared DB
+     * (contacts are wiped on logout). Re-running against a non-empty DB
+     * duplicates chats — because chat creation here does not de-duplicate.
+     * For post-login writes (adding a single contact, resolving a conflict,
+     * renaming an existing contact), go through [applyContactOperations],
+     * which routes edits to `RenameExisting` / `UpdateExisting` and never
+     * re-creates chats.
+     *
      * See [insertContactWithChat] for per-contact logic.
      */
     suspend fun insertContactsWithChats(contactsToInsert: List<FullContactData>) =
@@ -261,23 +270,41 @@ class AppRepository(
         ContactConflictEngine.detect(incoming, cachedContactDrafts())
 
     /**
-     * Applies resolver output. The only place [ContactDraft] → [FullContactData]
-     * conversion happens on write; existing-row updates run before the incoming
-     * insert so a surrendered primary key is observable.
+     * Applies resolver output. Runs the operations in the correct order so
+     * identity swaps and message reparenting are observable:
      *
-     * Owner mutations (rename / strip a moved identity / delete an emptied
-     * contact) run first so a surrendered identity is free before the incoming
-     * insert. A deleted contact's private chat + messages are removed too.
+     *  1. **UpdateExisting** – strip identities that moved to an incoming contact.
+     *  2. **RenameExisting** – rename the target contact + its chat in place
+     *     (the "same ids, callsign changed" shortcut, no duplicate row/chat).
+     *  3. **Insert** – create the incoming contact and its chat.
+     *  4. **DeleteExisting** – remove owners emptied by a swap; if the delete
+     *     specifies `reparentTo`, the source chat's messages are re-parented to
+     *     the (freshly-inserted) target's chat before the source is deleted.
+     *
+     * [ContactDraft] → [FullContactData] conversion happens only inside step 3.
      */
     suspend fun applyContactOperations(ops: List<ContactOperation>) {
-        val toInsert = mutableListOf<FullContactData>()
-        for (op in ops) when (op) {
-            is ContactOperation.Insert -> op.contact.toFullContactData()?.let { toInsert += it }
-            is ContactOperation.UpdateExisting -> contacts.updateExistingContact(op.original, op.updated)
-            is ContactOperation.DeleteExisting -> contacts.deleteContact(op.target)
-            ContactOperation.Noop -> Unit
-        }
+        val updates = ops.filterIsInstance<ContactOperation.UpdateExisting>()
+        val renames = ops.filterIsInstance<ContactOperation.RenameExisting>()
+        val inserts = ops.filterIsInstance<ContactOperation.Insert>()
+        val deletes = ops.filterIsInstance<ContactOperation.DeleteExisting>()
+
+        for (u in updates) contacts.updateExistingContact(u.original, u.updated)
+        for (r in renames) contacts.renameContactAndChat(r.target, r.newName)
+
+        val toInsert = inserts.mapNotNull { it.contact.toFullContactData() }
         if (toInsert.isNotEmpty()) insertContactsWithChats(toInsert)
+
+        for (d in deletes) {
+            val reparentToChatId = d.reparentTo?.let { contacts.chatIdForContactDraft(it) }
+            if (reparentToChatId != null) {
+                val sourceChatId = contacts.chatIdForContactDraft(d.target)
+                if (sourceChatId != null && sourceChatId != reparentToChatId) {
+                    messagesDao.reassignChat(sourceChatId, reparentToChatId)
+                }
+            }
+            contacts.deleteContact(d.target)
+        }
     }
 
     /** Every USER + GROUP contact except the registered user themselves. */

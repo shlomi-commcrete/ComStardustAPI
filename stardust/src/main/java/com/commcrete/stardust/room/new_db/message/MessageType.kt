@@ -21,6 +21,7 @@ enum class MessageType {
 enum class AttachmentType {
     IMAGE,
     FILE,
+    CONTACT
 }
 
 enum class SosType {
