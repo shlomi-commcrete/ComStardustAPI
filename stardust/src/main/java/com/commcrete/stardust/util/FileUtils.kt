@@ -446,22 +446,26 @@ object FileUtils {
 
     enum class FileType(val bitCode : Int) {
         File(0),
-        Image(1);
+        Image(1),
+        Contact(2);
 
         fun relatedFunctionalityType() : FunctionalityType = when(this) {
             File -> FunctionalityType.FILE
             Image -> FunctionalityType.IMAGE
+            Contact -> FunctionalityType.FILE
         }
 
         fun toAttachmentType(): AttachmentType = when (this) {
             File -> AttachmentType.FILE
             Image -> AttachmentType.IMAGE
+            Contact -> AttachmentType.CONTACT
         }
 
         companion object {
             fun fromAttachmentType(type: AttachmentType): FileType = when (type) {
                 AttachmentType.FILE -> File
                 AttachmentType.IMAGE -> Image
+                AttachmentType.CONTACT -> Contact
             }
         }
     }

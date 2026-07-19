@@ -164,7 +164,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                         return false
                     }
                 }
-                FileType.File -> {
+                FileType.File,
+                FileType.Contact -> {
+                    // Contact CSVs are treated as plain text files for transport.
                     if (!src.exists() || !src.canRead()) {
                         logUnreadableSource(src)
                         return false
