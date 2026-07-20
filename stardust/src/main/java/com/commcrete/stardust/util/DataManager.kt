@@ -43,6 +43,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.audio.PlayerUtils
@@ -116,7 +117,11 @@ object DataManager : StardustAPI, PttInterface{
         return clientConnection!!
     }
 
-    internal fun getUsbManager (context: Context) : BittelUsbManager2 {
+    fun cleanMessagesBuffer() {
+        clientConnection?.clearMessageBuffer()
+    }
+
+    internal fun getUsbManager() : BittelUsbManager2 {
         requireContext(context)
         if(bittelusbManager == null) {
             bittelusbManager =
@@ -151,6 +156,10 @@ object DataManager : StardustAPI, PttInterface{
     }
 
     override fun sendMessage(context: Context, stardustAPIPackage: StardustAPIPackage, text: String) {
+        sendMessage(context, stardustAPIPackage, text, false)
+    }
+
+    fun sendMessage(context: Context, stardustAPIPackage: StardustAPIPackage, text: String, withLast: Boolean) {
         requireContext(context)
         val data = StardustPackageUtils.byteArrayToIntArray(createDataByteArray(
             getAsciiValue(text) ))
@@ -168,7 +177,7 @@ object DataManager : StardustAPI, PttInterface{
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data =  split)
                 mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
-                mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
+                mPackage.stardustControlByte.stardustPartType = if(withLast) getIsPartType(messageNum, splitData.size) else StardustControlByte.StardustPartType.MESSAGE
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
                 mPackage.messageNumber = splitData.size
                 mPackage.idNumber = id

@@ -674,6 +674,16 @@ internal class ClientConnection(
         sendMessage(mutableMessageList[0])
     }
 
+    /**
+     * Drops every pending outgoing package and ACK-awaiting entry (the transmit buffer), so nothing
+     * still queued gets sent. The `isNotEmpty()` guards around the lists make this safe to call at
+     * any time (e.g. when a stress test is stopped).
+     */
+    fun clearMessageBuffer() {
+        mutableMessageList.clear()
+        mutableAckAwaitingList.clear()
+    }
+
     fun isNeedAck (opCode: StardustPackageUtils.StardustOpCode) : Boolean {
         return opCode != StardustPackageUtils.StardustOpCode.SEND_PTT_AI
     }
