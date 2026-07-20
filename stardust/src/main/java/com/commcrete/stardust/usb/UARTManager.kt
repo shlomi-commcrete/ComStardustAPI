@@ -2,6 +2,8 @@ package com.commcrete.bittell.util.bittel_package
 
 import android.content.Context
 import android.hardware.usb.UsbManager
+import android.util.Log
+import com.commcrete.stardust.stardust.model.toHex
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
