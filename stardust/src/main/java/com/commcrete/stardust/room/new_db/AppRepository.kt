@@ -337,6 +337,14 @@ class AppRepository(
     /** Returns all chat IDs currently stored in the database. */
     suspend fun getChatIds(): List<String> = chats.getChatIds()
 
+    /**
+     * Resolves the chat id for [contact] — the private chat for USER/DEVICE, the
+     * group chat for GROUP. Returns null when the contact isn't saved (so has no
+     * chat yet). Saving a contact creates its chat, so a saved contact resolves.
+     */
+    suspend fun chatIdForContact(contact: FullContactData): String? =
+        contacts.chatIdForContactDraft(ContactDraft.fromFullContactData(contact))
+
 
     /** Returns chat by chat ID, or null when chat is missing/invalid. */
     suspend fun getChatByChatId(chatId: String): ChatEntity? =
