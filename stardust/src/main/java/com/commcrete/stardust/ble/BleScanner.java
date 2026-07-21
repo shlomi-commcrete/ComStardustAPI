@@ -13,6 +13,8 @@ import android.bluetooth.le.ScanFilter;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.pm.PackageManager;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.core.app.ActivityCompat;
 import androidx.lifecycle.MutableLiveData;
 
@@ -23,16 +25,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class BleScanner {
+    private static final long SCAN_TIMEOUT_MS = 30_000L;
+
     private BluetoothLeScanner bluetoothLeScanner = null;
     private BluetoothAdapter bluetoothAdapter;
     private List<ScanResult> scanResults = new ArrayList<>();
     public MutableLiveData<List<ScanResult>> scanResultsLiveData = new MutableLiveData<>();
+    private final Handler scanTimeoutHandler = new Handler(Looper.getMainLooper());
 
     private ScanCallback scanCallback = new ScanCallback() {
         @SuppressLint("MissingPermission")
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             super.onScanResult(callbackType, result);
+            // Collect here too, not just in the batch callback — otherwise single-result mode
+            // (reportDelay 0) would never populate the list.
+            addIfMatch(result);
             notifyResults();
         }
 
@@ -40,22 +48,27 @@ public class BleScanner {
         @Override
         public void onBatchScanResults(List<ScanResult> results) {
             super.onBatchScanResults(results);
-            // Add your logic here
-//            Log.d("scanResults", "onBatchScanResults");
-
-            if (!results.isEmpty()) {
-                for (ScanResult result : results) {
-                    if ((result.getDevice().getName() != null && isStartWithBittle(result.getDevice().getName())) ||
-                            (result.getScanRecord() != null && result.getScanRecord().getDeviceName() != null && isStartWithBittle(result.getScanRecord().getDeviceName()))) {
-                        if (!isContainScanResult(result)) {
-                            scanResults.add(result);
-                        }
-                    }
-                }
+            for (ScanResult result : results) {
+                addIfMatch(result);
             }
             notifyResults();
         }
     };
+
+    /** Adds a scan result if it's one of our radios and not already collected. */
+    @SuppressLint("MissingPermission")
+    private void addIfMatch(ScanResult result) {
+        if (result == null || result.getDevice() == null) return;
+        // Prefer the advertised name (needs only SCAN permission); fall back to the cached device
+        // name. Either identifying as one of our radios is enough.
+        String advertisedName = result.getScanRecord() != null ? result.getScanRecord().getDeviceName() : null;
+        String deviceName = result.getDevice().getName();
+        if (isStartWithBittle(advertisedName) || isStartWithBittle(deviceName)) {
+            if (!isContainScanResult(result)) {
+                scanResults.add(result);
+            }
+        }
+    }
 
     public BleScanner() {
         BluetoothManager bluetoothManager = (BluetoothManager) DataManager.appContext.getSystemService(BLUETOOTH_SERVICE);
@@ -77,9 +90,16 @@ public class BleScanner {
 
     @SuppressLint("MissingPermission")
     public boolean startScan() {
-//        Log.d("scanResults", "startScan");
         if (!checkBlePermissions()) {
-//            Log.d("scanResults", "no permissions");
+            return false;
+        }
+        // Guard against a null scanner (adapter off/absent) — getBluetoothLeScanner() returns null
+        // when Bluetooth is disabled, which previously NPE'd here.
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            return false;
+        }
+        BluetoothLeScanner scanner = bluetoothAdapter.getBluetoothLeScanner();
+        if (scanner == null) {
             return false;
         }
 
@@ -91,14 +111,18 @@ public class BleScanner {
         List<ScanFilter> scanFilters = new ArrayList<>();
         scanFilters.add(new ScanFilter.Builder().build());
 
-        bluetoothLeScanner = bluetoothAdapter.getBluetoothLeScanner();
+        bluetoothLeScanner = scanner;
         bluetoothLeScanner.startScan(scanFilters, scanSettingsBuilder.build(), scanCallback);
-//        Log.d("scanResults", "scanning");
+
+        // Bound battery use: stop scanning automatically after a timeout instead of running forever.
+        scanTimeoutHandler.removeCallbacksAndMessages(null);
+        scanTimeoutHandler.postDelayed(this::stopScan, SCAN_TIMEOUT_MS);
         return true;
     }
 
     @SuppressLint("MissingPermission")
     public boolean stopScan() {
+        scanTimeoutHandler.removeCallbacksAndMessages(null);
         if (!checkBlePermissions()) {
             return false;
         }
@@ -123,6 +147,10 @@ public class BleScanner {
     }
 
     private boolean isStartWithBittle(String name) {
-        return name.toLowerCase().contains("bittle") || name.toLowerCase().contains("stardust");
+        if (name == null) return false;
+        String lower = name.toLowerCase();
+        // Unified with PairingRepository / bonded-device matching — includes the "bittel" spelling,
+        // which the scan filter previously missed (so a "bittel"-named unit never showed up).
+        return lower.contains("bittle") || lower.contains("bittel") || lower.contains("stardust");
     }
 }

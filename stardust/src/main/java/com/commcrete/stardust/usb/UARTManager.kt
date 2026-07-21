@@ -17,6 +17,10 @@ class UARTManager() {
     private val executor = Executors.newSingleThreadExecutor()
     private var ioManager: SerialInputOutputManager? = null
 
+    @Volatile
+    private var ctsPolling = false
+    private var ctsThread: Thread? = null
+
     interface UARTCallback {
         fun onReceivedData(data: ByteArray)
         fun onError(message: String)
@@ -62,30 +66,7 @@ class UARTManager() {
                 Timber.tag("SerialInputOutputManager").d("executor.submit")
             }
             if (onCTSChange != null ) {
-                var previousCtsStatus = serialPort?.cts
-
-                Thread {
-                    while (true) {
-                        try {
-                            val currentCtsStatus = serialPort?.cts
-                            if (currentCtsStatus != previousCtsStatus) {
-                                previousCtsStatus = currentCtsStatus
-                                Timber.tag("SerialInputOutputManager").d("CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
-
-                                // Perform actions based on CTS status
-                                onCTSChange.onCTSChanged(currentCtsStatus == true)
-                            }
-
-                            // Sleep for a short period to avoid excessive CPU usage
-                            try {
-                                Thread.sleep(50)
-                            } catch (e: InterruptedException) {
-                            }
-                        }catch (e : Exception) {
-                        }
-
-                    }
-                }.start()
+                startCtsPolling(onCTSChange)
             }
 
             return true
@@ -99,6 +80,36 @@ class UARTManager() {
         }
     }
 
+    /**
+     * Polls the CTS line (used as the PTT button signal) on a background thread. The thread is
+     * stoppable via [ctsPolling] + interrupt so [disconnect] can tear it down — previously this was
+     * a `while(true)` thread with no reference, leaking one busy-poll thread per audio connect.
+     */
+    private fun startCtsPolling(onCTSChange: CTSChange) {
+        var previousCtsStatus = serialPort?.cts
+        ctsPolling = true
+        ctsThread = Thread {
+            while (ctsPolling) {
+                try {
+                    val currentCtsStatus = serialPort?.cts
+                    if (currentCtsStatus != previousCtsStatus) {
+                        previousCtsStatus = currentCtsStatus
+                        Timber.tag("SerialInputOutputManager").d("CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
+                        onCTSChange.onCTSChanged(currentCtsStatus == true)
+                    }
+                    Thread.sleep(50)
+                } catch (e: InterruptedException) {
+                    break
+                } catch (e: Exception) {
+                    // Transient read error; keep polling until explicitly stopped.
+                }
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+    }
+
     fun send(data: ByteArray) {
         try {
             serialPort?.write(data, 3000)
@@ -109,11 +120,18 @@ class UARTManager() {
     }
 
     fun disconnect() {
+        ctsPolling = false
+        ctsThread?.interrupt()
+        ctsThread = null
         try {
             ioManager?.stop()
             serialPort?.close()
         } catch (e : Exception) {
             e.printStackTrace()
+        } finally {
+            ioManager = null
+            serialPort = null
+            executor.shutdownNow()
         }
     }
 }

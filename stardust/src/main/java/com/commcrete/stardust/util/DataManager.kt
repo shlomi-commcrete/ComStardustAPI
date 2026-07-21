@@ -17,7 +17,11 @@ import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.BleScanner
+import com.commcrete.stardust.ble.BlePermissions
 import com.commcrete.stardust.ble.ClientConnection
+import com.commcrete.stardust.ble.CompanionDeviceHelper
+import com.commcrete.stardust.ble.PairingRepository
+import androidx.lifecycle.asFlow
 import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
@@ -317,6 +321,13 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
         checkInitialized()
+        // Tell the host why a scan won't yield results, so it can prompt the user.
+        val reason = when {
+            !getClientConnection().isBluetoothEnabled() -> com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED
+            !BlePermissions.hasScanPermission(appContext) -> com.commcrete.stardust.BleUnavailableReason.SCAN_PERMISSION_MISSING
+            else -> null
+        }
+        reason?.let { getCallbacks()?.onConnectionUnavailable(it, null) }
         val bleScanner = getBleScanner()
         bleScanner.startScan()
         return bleScanner.getScanResultsLiveData()
@@ -355,18 +366,83 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().initBleStatus()
         // Check if Bluetooth is enabled; if not, user will see a dialog
         if (!getClientConnection().isBluetoothEnabled()) {
+            getCallbacks()?.onConnectionUnavailable(com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED, null)
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
             return
         }
 
-        val bondedDevice = getPairedDevices()
-        if(bondedDevice != null) {
-            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
-            getClientConnection().bondToBleDeviceStartup(bondedDevice)
+        // Reconcile app pairing with the OS bond registry first, so a stale saved address
+        // (OS bond removed externally) is cleared and a still-bonded device is honored.
+        PairingRepository.reconcile()
+
+        val pairedAddress = PairingRepository.currentPairedAddress()
+        if (pairedAddress != null) {
+            val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(pairedAddress)
+            if (device != null) {
+                StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+                getClientConnection().bondToBleDeviceStartup(device)
+                return
+            }
+        }
+
+        // Not paired to a saved device. If Stardust devices are already bonded to the phone
+        // (paired from Settings or another app), surface them so the user can choose to adopt
+        // one instead of silently grabbing the first name match.
+        val adoptable = PairingRepository.getAdoptableDevices()
+        if (adoptable.isNotEmpty()) {
+            // Hand off to the host. State is left for adoptDevice() to advance (to SEARCHING);
+            // if the host ignores the callback the state simply stays DISCONNECTED (the default).
+            getCallbacks()?.onAdoptableDevicesFound(adoptable)
         } else {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
         }
     }
+
+    override fun getAdoptableDevices(): List<com.commcrete.stardust.AdoptableDevice> {
+        checkInitialized()
+        return PairingRepository.getAdoptableDevices()
+    }
+
+    override fun adoptDevice(address: String): Boolean {
+        checkInitialized()
+        return PairingRepository.adopt(address)
+    }
+
+    /**
+     * The unified connection state (single source of truth): link + init-handshake status combined.
+     * Prefer collecting this over juggling [StardustAPICallbacks.connectionStatusChanged] and
+     * [StardustAPICallbacks.onDeviceInitialized] separately.
+     */
+    fun getConnectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
+        com.commcrete.stardust.transport.ConnectionManager.connectionState
+
+    // ── Flow facade (Stage 5) ────────────────────────────────────────────────
+    // Flow equivalents of the connection callbacks, backed by the existing LiveData. Additive:
+    // the StardustAPICallbacks surface is unchanged. Messaging/PTT callbacks are intentionally
+    // left as-is — this refactor is scoped to the connection layer.
+
+    /** Emits true while a device is paired. Flow equivalent of the paired signal. */
+    fun pairedFlow(): kotlinx.coroutines.flow.Flow<Boolean> = BleManager.isPaired.asFlow()
+
+    /** Emits RSSI updates. Flow equivalent of [StardustAPICallbacks.onDeviceConnectionRSSIChanged]. */
+    fun rssiFlow(): kotlinx.coroutines.flow.Flow<Int> = BleManager.rssi.asFlow()
+
+    // ── CompanionDeviceManager (Stage 5) ─────────────────────────────────────
+    // Thin pass-throughs to CompanionDeviceHelper for host discoverability. Association requires a
+    // host Activity to launch the returned IntentSender and forward its result back.
+
+    fun isCompanionDeviceSupported(): Boolean = CompanionDeviceHelper.isSupported()
+
+    fun associateCompanionDevice(
+        activity: android.app.Activity,
+        onLaunch: (android.content.IntentSender) -> Unit,
+        onError: (CharSequence) -> Unit,
+    ) = CompanionDeviceHelper.associate(activity, onLaunch, onError)
+
+    fun handleCompanionAssociationResult(data: android.content.Intent?): Boolean =
+        CompanionDeviceHelper.handleAssociationResult(data)
+
+    fun getCompanionAssociations(): List<String> = CompanionDeviceHelper.getAssociatedAddresses()
 
     override fun connectToDevice(device: ScanResult) {
         checkInitialized()
@@ -378,6 +454,8 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun disconnectFromDevice() {
         checkInitialized()
+        // Intentional disconnect: stop the auto-reconnect watchdog so we don't fight the tear-down.
+        com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
         cleanupPackageHandlerOnDisconnect()
         getClientConnection().disconnectFromBLEDevice()
     }
@@ -438,6 +516,7 @@ object DataManager : StardustAPI, PttInterface {
 
     fun unpairDeviceBLE() {
         checkInitialized()
+        com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
         cleanupPackageHandlerOnDisconnect()
         val clientConnection = getClientConnection()
         clientConnection.removeBittelBond()

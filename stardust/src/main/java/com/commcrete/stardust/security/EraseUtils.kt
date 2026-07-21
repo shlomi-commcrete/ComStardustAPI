@@ -33,7 +33,9 @@ object EraseUtils {
             Timber.i("EraseUtils: User logged out")
             val device = DataManager.getPairedDevices()
             DataManager.getClientConnection().mDevice = device
-            DataManager.getClientConnection().removeBittelBond()
+            // Security wipe: destroy the local pairing record unconditionally, even if the OS
+            // unbond fails. Any leftover OS bond is recoverable later via PairingRepository adoption.
+            DataManager.getClientConnection().removeBittelBond(forceClearLocal = true)
             Handler(Looper.getMainLooper()).postDelayed({
                 android.os.Process.killProcess(android.os.Process.myPid())
             }, 1000)

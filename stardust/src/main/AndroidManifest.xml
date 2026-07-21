@@ -3,4 +3,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- CompanionDeviceManager association (Stage 5). Optional so it never blocks install. -->
+    <uses-feature
+        android:name="android.software.companion_device_setup"
+        android:required="false" />
 </manifest>

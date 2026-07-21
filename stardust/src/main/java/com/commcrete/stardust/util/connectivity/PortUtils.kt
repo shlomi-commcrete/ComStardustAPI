@@ -3,8 +3,9 @@ package com.commcrete.stardust.util.connectivity
 
 import android.os.Handler
 import android.os.Looper
-import com.commcrete.stardust.ble.BleManager
-import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.transport.TransportId
+import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
@@ -20,18 +21,15 @@ object PortUtils {
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val connectionTimeout = 10000L
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        DataManager.getUsbManager().reconnectToDevice()
+        ConnectionManager.requestReconnect(TransportId.USB, "USB ping timeout")
     }
 
     fun startUpdatingPort() {
         job = Scopes.getMainCoroutine().launch {
             while (isActive) {
-                if(BleManager.isUsbEnabled()){
-                    BittelUsbManager2.updateBlePort()
-                    Timber.tag("startUpdatingPort").d("updateUsbPort")
-                }else if (BleManager.isBluetoothConnected()) {
-                    DataManager.getClientConnection().updateBlePort()
-                    Timber.tag("startUpdatingPort").d("updateBlePort")
+                TransportRegistry.active()?.let { transport ->
+                    transport.updateBlePort()
+                    Timber.tag("startUpdatingPort").d("updatePort over ${transport.id}")
                 }
                 delay(20000)
             }

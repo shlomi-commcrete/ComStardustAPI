@@ -22,7 +22,10 @@ import com.commcrete.stardust.stardust.AckSystem.Companion.DELAY_TS_LR
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.isDisconnected
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
+import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.stardust.StardustPackageUtils
+import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.transport.TransportId
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -41,27 +44,34 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import no.nordicsemi.andorid.ble.test.spec.Characteristics
-import no.nordicsemi.android.ble.ConnectionPriorityRequest
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
-import no.nordicsemi.android.ble.BleManager as NordicBleManager
 
-internal class ClientConnection(): NordicBleManager(DataManager.appContext), BittelProtocol {
+internal class ClientConnection(): BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
         const val MAX_WRITE_RETRIES = 3
         const val RETRY_DELAY_MS = 500L
         const val WRITE_ERROR_CODE = 2147483647
+
+        // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
+        // so one lost callback can't wedge all subsequent writes.
+        const val GATT_OP_TIMEOUT_MS = 5000L
+
+        // Settle delay before service discovery. Kept (not removed) because discovering services
+        // immediately after connecting to a BONDED device hits a known Android race on some OEMs
+        // where discovery silently fails; a short delay lets bonding/encryption settle first.
+        const val SERVICE_DISCOVERY_DELAY_MS = 2000L
     }
     private val TAG = ClientConnection::class.java.simpleName
 
-    private var characteristic: BluetoothGattCharacteristic? = null
-    private var indicationCharacteristics: BluetoothGattCharacteristic? = null
-    private var reliableCharacteristics: BluetoothGattCharacteristic? = null
-    private var readCharacteristics: BluetoothGattCharacteristic? = null
+    // Formerly provided by the Nordic BleManager base class. The connection is driven entirely by
+    // the raw BluetoothGatt path below, so the Nordic FSM was dead weight; this replaces its only
+    // still-used member.
+    private val context: Context get() = DataManager.appContext
 
     var gattConnection : BluetoothGatt? = null
     var mDevice : BluetoothDevice? = null
@@ -93,7 +103,9 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
-        if(!StardustInitConnectionHandler.isConnected()) reconnectToDevice()
+        if(!StardustInitConnectionHandler.isConnected()) {
+            ConnectionManager.requestReconnect(TransportId.BLE, "BLE connection watchdog")
+        }
     }
 
     private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {
@@ -128,8 +140,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     val handlerRSSI = Handler(Looper.getMainLooper())
 
-    val readRssiRunnable = Runnable @androidx.annotation.RequiresPermission(android.Manifest.permission.BLUETOOTH_CONNECT) {
-        gattConnection?.readRemoteRssi()
+    @SuppressLint("MissingPermission")
+    val readRssiRunnable = Runnable {
+        if (BlePermissions.hasConnectPermission(context)) {
+            gattConnection?.readRemoteRssi()
+        }
         resetRSSITimer()
     }
 
@@ -142,6 +157,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     var deviceName : String?  = ""
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
+    private val mtuRequested = AtomicBoolean(false)
     private var bluetoothStateObserver: Observer<Boolean>? = null
     private val bluetoothStateObserverLock = Any()
     private val bleStatusHandler = Handler(Looper.getMainLooper())
@@ -149,6 +165,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     private var initStartJob: Job? = null
     private var discoverServicesJob: Job? = null
     private var reconnectJob: Job? = null
+
+    // Address we are actively bonding to. Lets the bond-state receiver recognise our target
+    // before [mDevice] is assigned, and — combined with the receiver's address filter — stops
+    // us from reacting to bond changes on unrelated Bluetooth devices (e.g. the user's headset).
+    private var pendingBondAddress: String? = null
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
@@ -185,12 +206,17 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
                     Log.d("StardustDataManager", " onConnectionStateChange")
                     Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
-                    val mtu = gatt?.requestMtu(200)
-                    Timber.tag("SetMtu").d("$mtu")
                     if(status == 0 && newState == 2){
+                        // Request the larger MTU once, only now that we're actually connected —
+                        // previously this fired on every state change (including disconnects/errors),
+                        // where it is meaningless and just logs failures.
+                        if (mtuRequested.compareAndSet(false, true)) {
+                            val requested = gatt?.requestMtu(200)
+                            Timber.tag("SetMtu").d("requestMtu(200) initiated=$requested")
+                        }
                         discoverServicesJob?.cancel()
                         discoverServicesJob = Scopes.getDefaultCoroutine().launch {
-                            delay(2000)
+                            delay(SERVICE_DISCOVERY_DELAY_MS)
                             gatt?.discoverServices()
                         }
                     } else {
@@ -225,6 +251,9 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     status: Int
                 ) {
                     super.onCharacteristicWrite(gatt, characteristic, status)
+                    // The previous write finished (success or error) — release the queue so the
+                    // next GATT op can run. This is what makes the queue a real serial queue.
+                    completeGattOp()
                 }
 
                 fun fastRandomId(length: Int = 6): String {
@@ -273,6 +302,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     } else {
                         Timber.tag("NotificationSetup").e("Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
                     }
+                    completeGattOp()
                 }
 
                 override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
@@ -292,7 +322,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
                 override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                     super.onMtuChanged(gatt, mtu, status)
-
+                    if (status == BluetoothGatt.GATT_SUCCESS) {
+                        Timber.tag("SetMtu").d("MTU negotiated: $mtu")
+                    } else {
+                        Timber.tag("SetMtu").w("MTU change failed, status=$status")
+                    }
                 }
 
 
@@ -367,7 +401,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     /** Requests high-priority connection and enables notifications on the read characteristic. */
     @SuppressLint("MissingPermission")
     private fun enableNotifications(gatt: BluetoothGatt?) {
-        gatt?.requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH)
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
 
         val id = deviceLastDigit
         val readChar = gatt
@@ -378,8 +412,25 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         Timber.tag(LOG_TAG).d("has Char")
         gatt.setCharacteristicNotification(readChar, true)
         val desc = readChar.descriptors?.get(0) ?: return
-        desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        gatt.writeDescriptor(desc)
+        // Serialised through the same GATT queue as data writes — a descriptor write and a
+        // characteristic write are both single-outstanding GATT operations and must not overlap.
+        enqueueGattOp(GattOp("descriptor:notif:${readChar.uuid}") {
+            writeNotificationDescriptor(gatt, desc)
+        })
+    }
+
+    /** Writes the CCCD enable-notification value, version-appropriately. Returns whether initiated. */
+    @SuppressLint("MissingPermission")
+    private fun writeNotificationDescriptor(gatt: BluetoothGatt, desc: BluetoothGattDescriptor): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(desc, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == 0
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                desc.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                gatt.writeDescriptor(desc)
+            }
+        }
     }
 
     /**
@@ -468,58 +519,38 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }
     }
 
-    override fun log(priority: Int, message: String) {
-        when (priority) {
-            2 -> Timber.tag(TAG).v(message)
-            3 -> Timber.tag(TAG).d(message)
-            4 -> Timber.tag(TAG).i(message)
-            5 -> Timber.tag(TAG).w(message)
-            6 -> Timber.tag(TAG).e(message)
-            7 -> Timber.tag(TAG).wtf(message)
-            else -> Timber.tag(TAG).d(message)
-        }
-    }
 
-    override fun getMinLogPriority(): Int {
-        return Log.VERBOSE
-    }
-
-    // Return false if a required service has not been discovered.
+    /**
+     * @param autoConnect false = direct connect: fast, but only succeeds if the device is
+     *   currently connectable (right for a fresh user pick / just-bonded device). true = background
+     *   connect: the OS patiently waits for the device to appear (right for startup reconnect and
+     *   the background auto-reconnect watchdog, where the radio may still be off).
+     */
+    /**
+     * Returns the reason a BLE connection can't proceed right now (unsupported / permission /
+     * adapter off), or null if it can. device.address is safe without permission; device.name is
+     * NOT, so callers must report with the address, never the name.
+     */
     @SuppressLint("MissingPermission")
-    override fun isRequiredServiceSupported(gatt: BluetoothGatt): Boolean {
-        gatt.getService(Characteristics.UUID_SERVICE_DEVICE)?.let { service ->
-            characteristic = service.getCharacteristic(Characteristics.WRITE_CHARACTERISTIC)
-            indicationCharacteristics = service.getCharacteristic(Characteristics.IND_CHARACTERISTIC)
-            reliableCharacteristics = service.getCharacteristic(Characteristics.REL_WRITE_CHARACTERISTIC)
-            readCharacteristics = service.getCharacteristic(Characteristics.READ_CHARACTERISTIC)
-        }
-        return characteristic != null &&
-                indicationCharacteristics != null &&
-                reliableCharacteristics != null &&
-                readCharacteristics != null
+    private fun bleConnectBlockReason(): BleUnavailableReason? {
+        val adapter = BluetoothAdapter.getDefaultAdapter()
+            ?: return BleUnavailableReason.BLUETOOTH_UNSUPPORTED
+        if (!BlePermissions.hasConnectPermission(context)) return BleUnavailableReason.CONNECT_PERMISSION_MISSING
+        if (!adapter.isEnabled) return BleUnavailableReason.BLUETOOTH_DISABLED
+        return null
     }
-
-    override fun initialize() {
-        // TODO: return ?
-//        requestMtu(512).enqueue()
-        requestConnectionPriority(ConnectionPriorityRequest.CONNECTION_PRIORITY_HIGH).enqueue()
-    }
-
-    override fun onServicesInvalidated() {
-        resetDiscoveryState()
-        characteristic = null
-        indicationCharacteristics = null
-        reliableCharacteristics = null
-        readCharacteristics = null
-    }
-
 
     @SuppressLint("MissingPermission")
-    fun connectDevice(device: BluetoothDevice) {
-        Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback")
+    fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false) {
+        bleConnectBlockReason()?.let { reason ->
+            Timber.tag(LOG_TAG).e("Cannot connect to ${device.address}: $reason")
+            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
+            return
+        }
+        Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
         if(!hasCallback) {
             resetDiscoveryState()
-            device.connectGatt(context, true, getBleGattCallback(device))
+            device.connectGatt(context, autoConnect, getBleGattCallback(device))
         }
     }
 
@@ -529,6 +560,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         reconnectJob?.cancel()
         reconnectJob = null
         resetDiscoveryState()
+        clearGattQueue()
         gattConnection?.disconnect()
         gattConnection?.close()
         bleGatChar = null
@@ -559,6 +591,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     private fun resetDiscoveryState() {
         servicesDiscoveredHandled.set(false)
         initStartTriggered.set(false)
+        mtuRequested.set(false)
         discoverServicesJob?.cancel()
         discoverServicesJob = null
         initStartJob?.cancel()
@@ -586,13 +619,17 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
 
     fun release() {
         removeBluetoothStateObserver()
-        cancelQueue()
-        disconnect().enqueue()
+        disconnectFromBLEDevice(disconnectByForce = true)
     }
 
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         this.deviceName = deviceName
+        bleConnectBlockReason()?.let { reason ->
+            Timber.tag(LOG_TAG).e("Cannot bond ${device.address}: $reason")
+            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
+            return
+        }
         Scopes.getDefaultCoroutine().launch {
             val connectedDevice = device.name?.let { getBleConnectedDevice(device.address) }
             if(connectedDevice != null) {
@@ -606,6 +643,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
             Scopes.getMainCoroutine().launch {
                 resetBondTimer()
                 try {
+                    pendingBondAddress = device.address
                     registerBondStateReceiver()
                     Timber.tag(LOG_TAG).d("bondToBleDevice")
                     device.connectGatt(context, false, object : BluetoothGattCallback() {})
@@ -638,7 +676,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = true
         }
-        connectDevice(connectedDevice)
+        // Startup: the radio may still be off/out of range, so connect patiently in the background.
+        connectDevice(connectedDevice, autoConnect = true)
         this.deviceName = connectedDevice.name
     }
 
@@ -654,9 +693,22 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     val bondTransition = "${previousBondState.toBondStateDescription()} to " +
                             bondState.toBondStateDescription()
                     Timber.tag(LOG_TAG).w("${device?.address} bond state changed | $bondTransition")
+
+                    // Only act on OUR device. ACTION_BOND_STATE_CHANGED is a system-wide broadcast,
+                    // so without this filter a bond change on ANY device (e.g. the user pairing a
+                    // headset) would fall into the else-branch below and unbond/disconnect us.
+                    val target = mDevice?.address ?: pendingBondAddress
+                    val eventAddress = device?.address
+                    if (target == null || eventAddress == null ||
+                        !eventAddress.equals(target, ignoreCase = true)) {
+                        Timber.tag(LOG_TAG).d("Ignoring bond change for $eventAddress (target=$target)")
+                        return
+                    }
+
                     if(bondState == BluetoothDevice.BOND_BONDED && previousBondState == BluetoothDevice.BOND_BONDING) {
                         //device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
                         //device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
+                        pendingBondAddress = null
                         device?.let {
                             Scopes.getDefaultCoroutine().launch {
                                 Scopes.getMainCoroutine().launch {
@@ -669,10 +721,11 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
                         disconnectFromBLEDevice(withStateUpdate = false)
                     } else{
-                        device?.let {
-                            requestUnbond(it)
-                        }
+                        // Bond removed (e.g. BONDED->NONE) or the attempt failed for our device.
+                        // Reconcile app pairing with the OS instead of forcing another unbond.
+                        pendingBondAddress = null
                         disconnectFromBLEDevice(withStateUpdate = false)
+                        PairingRepository.reconcile()
                     }
                 }
             }
@@ -697,24 +750,59 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }.getOrDefault(false)
     }
 
-    fun removeBittelBond() {
+    enum class UnpairResult {
+        /** OS unbond initiated (or forced); local pairing cleared. */
+        UNBONDED,
+        /** OS `removeBond()` failed and clearing was not forced; local pairing kept so app == OS. */
+        STILL_BONDED_KEPT,
+        /** Nothing was paired. */
+        NOT_PAIRED,
+    }
+
+    /**
+     * Removes the pairing to the current Bittel device.
+     *
+     * By default this is HONEST: the persisted address/name and [BleManager.isPaired] are only
+     * cleared if the OS unbond actually starts. If the hidden `removeBond()` reflection call fails
+     * (common on some OEMs) the local record is KEPT, so we never strand a device that is still
+     * bonded in Android but erased from the app (which would leave it unpairable).
+     *
+     * @param forceClearLocal clear the local record regardless of unbond success. Used by the
+     *   security-erase flow, where the app data must be destroyed no matter what; a leftover OS
+     *   bond is then recoverable on next launch via [PairingRepository] adoption.
+     */
+    fun removeBittelBond(forceClearLocal: Boolean = false): UnpairResult {
         val deviceToUnbond = mDevice
             ?: SharedPreferencesUtil.getBittelDevice()
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
                 ?.let { getBleConnectedStardustDeviceBySavedAddress(it) }
 
-        deviceToUnbond?.let {
-            val started = requestUnbond(it)
-            Timber.tag(LOG_TAG).d("Unbond requested for ${it.address}: started=$started")
+        if (deviceToUnbond == null) {
+            if (forceClearLocal) clearLocalPairing()
+            disconnectFromBLEDevice(true)
+            return UnpairResult.NOT_PAIRED
         }
+
+        val unbondStarted = requestUnbond(deviceToUnbond)
+        Timber.tag(LOG_TAG).d("Unbond for ${deviceToUnbond.address}: started=$unbondStarted force=$forceClearLocal")
         disconnectFromBLEDevice(true)
 
+        return if (unbondStarted || forceClearLocal) {
+            clearLocalPairing()
+            UnpairResult.UNBONDED
+        } else {
+            Timber.tag(LOG_TAG).w("OS unbond failed for ${deviceToUnbond.address}; keeping local pairing so app and OS agree")
+            UnpairResult.STILL_BONDED_KEPT
+        }
+    }
+
+    private fun clearLocalPairing() {
         Scopes.getDefaultCoroutine().launch {
             SharedPreferencesUtil.removeBittelDevice()
             SharedPreferencesUtil.removeBittelDeviceName()
         }
-
         mDevice = null
+        pendingBondAddress = null
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = false
         }
@@ -798,13 +886,18 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
                 return device
             }
         }
-        SharedPreferencesUtil.setBittelDevice("empty")
-        SharedPreferencesUtil.setBittelDeviceName("empty")
+        // NOTE: this used to write the sentinel "empty" into the saved device address/name here,
+        // which erased a valid pairing on any lookup miss. Pairing lifecycle is now owned by
+        // PairingRepository / removeBittelBond, so this query no longer mutates persisted state.
         return null
     }
 
     @SuppressLint("MissingPermission")
     private fun getBondedDevices(): Set<BluetoothDevice> {
+        if (!BlePermissions.hasConnectPermission(context)) {
+            Timber.tag(LOG_TAG).w("BLUETOOTH_CONNECT not granted; bonded devices unavailable")
+            return emptySet()
+        }
         val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager ?: return emptySet()
         return btManager.adapter?.bondedDevices ?: emptySet()
     }
@@ -883,6 +976,93 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         }
     }
 
+    // ── GATT operation queue (B2 fix) ────────────────────────────────────────
+    // Android BLE allows only ONE outstanding GATT operation per connection; issuing a second
+    // write before the previous one's callback fires makes the framework silently drop it. Every
+    // characteristic write and the notification-descriptor write goes through this serial queue,
+    // which starts the next op only when the prior op's completion callback (onCharacteristicWrite
+    // / onDescriptorWrite) fires — or a timeout elapses as a safety valve.
+
+    /** A single GATT operation. [execute] performs it and returns whether it was actually initiated
+     *  (i.e. whether a completion callback should be expected). */
+    private class GattOp(val label: String, val execute: () -> Boolean)
+
+    private val gattOpQueue = ArrayDeque<GattOp>()
+    private var gattOpInFlight = false
+    private var gattOpExpectsCallback = false
+    // A callback that arrives AFTER its op has been abandoned by the timeout would otherwise
+    // complete the *next* op early (reintroducing overlap). We count such abandoned-but-initiated
+    // ops and swallow that many subsequent completion callbacks.
+    private var staleCallbacksToIgnore = 0
+    private val gattOpHandler = Handler(Looper.getMainLooper())
+    private var gattOpTimeoutRunnable: Runnable? = null
+
+    @Synchronized
+    private fun enqueueGattOp(op: GattOp) {
+        gattOpQueue.addLast(op)
+        pumpGattQueue()
+    }
+
+    @Synchronized
+    private fun pumpGattQueue() {
+        if (gattOpInFlight || gattOpQueue.isEmpty()) return
+        val op = gattOpQueue.removeFirst()
+        gattOpInFlight = true
+        gattOpExpectsCallback = false
+
+        val timeout = Runnable { onGattOpTimeout(op.label) }
+        gattOpTimeoutRunnable = timeout
+        gattOpHandler.postDelayed(timeout, GATT_OP_TIMEOUT_MS)
+
+        val initiated = try {
+            op.execute()
+        } catch (e: Exception) {
+            Timber.tag(LOG_TAG).e(e, "GATT op '${op.label}' threw")
+            false
+        }
+        gattOpExpectsCallback = initiated
+        // If the op never actually started, no completion callback will arrive — advance now.
+        if (!initiated) advanceGattQueue()
+    }
+
+    /** Called from the real GATT completion callbacks (onCharacteristicWrite / onDescriptorWrite). */
+    @Synchronized
+    private fun completeGattOp() {
+        if (staleCallbacksToIgnore > 0) {
+            staleCallbacksToIgnore--
+            return
+        }
+        if (gattOpInFlight) advanceGattQueue()
+    }
+
+    @Synchronized
+    private fun onGattOpTimeout(label: String) {
+        if (!gattOpInFlight) return
+        Timber.tag(LOG_TAG).w("GATT op '$label' timed out; advancing queue")
+        // The op was initiated, so its completion callback may still arrive late — ignore it.
+        if (gattOpExpectsCallback) staleCallbacksToIgnore++
+        advanceGattQueue()
+    }
+
+    private fun advanceGattQueue() {
+        gattOpTimeoutRunnable?.let { gattOpHandler.removeCallbacks(it) }
+        gattOpTimeoutRunnable = null
+        gattOpInFlight = false
+        gattOpExpectsCallback = false
+        pumpGattQueue()
+    }
+
+    /** Drops all pending ops and clears in-flight state (used on disconnect). */
+    @Synchronized
+    private fun clearGattQueue() {
+        gattOpTimeoutRunnable?.let { gattOpHandler.removeCallbacks(it) }
+        gattOpTimeoutRunnable = null
+        gattOpQueue.clear()
+        gattOpInFlight = false
+        gattOpExpectsCallback = false
+        staleCallbacksToIgnore = 0
+    }
+
     @SuppressLint("MissingPermission")
     private fun writePackage(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
@@ -890,24 +1070,73 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         count: Int = 0,
         randomID: String = ""
     ) {
-        Timber.tag(LOG_TAG).d("writePackage attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
-
         if (count > MAX_WRITE_RETRIES) {
             Timber.tag(LOG_TAG).w("Max write retries exceeded for ${bittelPackage.stardustOpCode}")
             return
         }
-
-        if (count > 0) {
-            scheduleRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        } else {
-            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
+        Timber.tag(LOG_TAG).d("writePackage enqueue attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
+        enqueueGattOp(GattOp("write:${bittelPackage.stardustOpCode}:$count") {
+            performGattWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+        })
     }
 
     /**
-     * Schedules a delayed retry of the write operation.
+     * Performs a single characteristic write. Returns true if the write was initiated (a completion
+     * callback is expected); false if it failed to start (queue advances immediately, and a retry
+     * or reconnect is scheduled as appropriate).
      */
-    private fun scheduleRetry(
+    @SuppressLint("MissingPermission")
+    private fun performGattWrite(
+        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
+        bittelPackage: StardustPackage,
+        count: Int,
+        randomID: String
+    ): Boolean {
+        val gatt = gattConnection ?: run {
+            Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
+            return false
+        }
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            when (val writeResult = gatt.writeCharacteristic(
+                bluetoothGattCharacteristic,
+                bittelPackage.getStardustPackageToSend(),
+                WRITE_TYPE_DEFAULT
+            )) {
+                0 -> {
+                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    checkIfPackageDemandsAck(bittelPackage)
+                    true
+                }
+                WRITE_ERROR_CODE -> {
+                    Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
+                    reconnectToDevice()
+                    false
+                }
+                else -> {
+                    Timber.tag(LOG_TAG).w("Write returned: $writeResult, scheduling retry...")
+                    scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+                    false
+                }
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            run {
+                bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
+                if (gatt.writeCharacteristic(bluetoothGattCharacteristic)) {
+                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    checkIfPackageDemandsAck(bittelPackage)
+                    true
+                } else {
+                    Timber.tag(LOG_TAG).w("Write failed, scheduling retry... (attempt ${count + 1})")
+                    scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
+                    false
+                }
+            }
+        }
+    }
+
+    /** Re-enqueues the write after a delay, preserving the retry cap. */
+    private fun scheduleWriteRetry(
         bluetoothGattCharacteristic: BluetoothGattCharacteristic,
         bittelPackage: StardustPackage,
         count: Int,
@@ -915,86 +1144,7 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
     ) {
         Scopes.getDefaultCoroutine().launch {
             delay(RETRY_DELAY_MS)
-            performWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
-    }
-
-    /**
-     * Performs the actual write operation using platform-appropriate API.
-     */
-    @SuppressLint("MissingPermission")
-    private fun performWrite(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            performWriteAndroid13Plus(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        } else {
-            performWriteLegacy(bluetoothGattCharacteristic, bittelPackage, count, randomID)
-        }
-    }
-
-    /**
-     * Android 13+ write path using new BluetoothGatt API.
-     */
-    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
-    @SuppressLint("MissingPermission")
-    private fun performWriteAndroid13Plus(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        val writeResult = gattConnection?.writeCharacteristic(
-            bluetoothGattCharacteristic,
-            bittelPackage.getStardustPackageToSend(),
-            WRITE_TYPE_DEFAULT
-        )
-
-        when (writeResult) {
-            null -> {
-                Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
-            }
-            0 -> {
-                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
-                checkIfPackageDemandsAck(bittelPackage)
-            }
-            WRITE_ERROR_CODE -> {
-                Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
-                reconnectToDevice()
-            }
-            else -> {
-                Timber.tag(LOG_TAG).w("Write returned: $writeResult, retrying...")
-                // Re-enter via writePackage so retry delay and retry cap are enforced.
-                writePackage(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
-            }
-        }
-    }
-
-    /**
-     * Legacy (Android < 13) write path using deprecated but stable API.
-     */
-    @SuppressLint("MissingPermission", "Deprecation")
-    private fun performWriteLegacy(
-        bluetoothGattCharacteristic: BluetoothGattCharacteristic,
-        bittelPackage: StardustPackage,
-        count: Int,
-        randomID: String
-    ) {
-        bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
-        val writeSuccess = gattConnection?.writeCharacteristic(bluetoothGattCharacteristic) ?: false
-
-        when {
-            writeSuccess -> {
-                Timber.tag(LOG_TAG).d("Write succeeded on attempt ${count + 1}")
-                checkIfPackageDemandsAck(bittelPackage)
-            }
-            else -> {
-                Timber.tag(LOG_TAG).w("Write failed, retrying... (attempt ${count + 1})")
-                performWrite(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
-            }
+            writePackage(bluetoothGattCharacteristic, bittelPackage, count + 1, randomID)
         }
     }
 
@@ -1214,7 +1364,8 @@ internal class ClientConnection(): NordicBleManager(DataManager.appContext), Bit
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             delay(2000)
-            mDevice?.let { connectDevice(it) }
+            // Background reconnect: device may be off (e.g. battery died) — wait for it patiently.
+            mDevice?.let { connectDevice(it, autoConnect = true) }
         }
     }
 
