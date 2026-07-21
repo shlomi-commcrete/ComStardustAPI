@@ -9,11 +9,13 @@ import com.commcrete.stardust.contacts.ContactOperation
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
+import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsFullParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ShortParticipantInfo
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
+import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
@@ -344,6 +346,23 @@ class AppRepository(
      */
     suspend fun chatIdForContact(contact: FullContactData): String? =
         contacts.chatIdForContactDraft(ContactDraft.fromFullContactData(contact))
+
+    /**
+     * The "main" contact communication id for [chatId] — the inverse of
+     * [chatIdForContact]:
+     *  - GROUP chat → the group contact's app id,
+     *  - PRIVATE chat → the peer contact's app id (USER) or device id (DEVICE).
+     * Null when the chat or its main participant can't be resolved.
+     */
+    suspend fun mainContactIdByChatId(chatId: String): String? {
+        val data = getChatWithParticipantsShortParticipantInfo(chatId) ?: return null
+        val main = if (data.chat.type == ChatType.GROUP) {
+            data.participants.firstOrNull { it.type == ContactType.GROUP }
+        } else {
+            data.participants.firstOrNull()
+        }
+        return main?.id
+    }
 
 
     /** Returns chat by chat ID, or null when chat is missing/invalid. */

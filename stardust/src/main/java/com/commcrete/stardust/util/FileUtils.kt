@@ -483,6 +483,10 @@ object FileUtils {
                 AttachmentType.IMAGE -> Image
                 AttachmentType.CONTACT -> Contact
             }
+
+            fun fromBitCode(bitCode: Int): FileType? {
+                return FileType.entries.find { it.bitCode == bitCode }
+            }
         }
     }
 

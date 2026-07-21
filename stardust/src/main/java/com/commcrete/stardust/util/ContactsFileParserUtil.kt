@@ -62,6 +62,25 @@ object ContactsFileParserUtil {
         return mediaFile
     }
 
+    /**
+     * Exports [contacts] to CSV and returns a local [File] in the app cache, ready to
+     * be sent as a chat attachment. Encapsulates the export + the MediaStore→File copy
+     * a sharing caller would otherwise do inline.
+     */
+    @Throws(IOException::class)
+    fun createContactsShareFile(
+        context: Context,
+        contacts: Set<FullContactData>,
+        fileName: String,
+    ): File {
+        val mediaFile = exportContactsToCsv(context = context, contacts = contacts, fileName = fileName)
+        val shareFile = File(context.cacheDir, "contact_share.csv")
+        context.contentResolver.openInputStream(mediaFile.uri).use { input ->
+            shareFile.outputStream().use { output -> input?.copyTo(output) }
+        }
+        return shareFile
+    }
+
     /** Pure builder for tests/callers that only need the CSV payload. */
     fun buildContactsCsvContent(
         contacts: Set<FullContactData>,
