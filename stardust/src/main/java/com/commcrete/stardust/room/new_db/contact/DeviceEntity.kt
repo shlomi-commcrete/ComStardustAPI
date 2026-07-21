@@ -3,7 +3,9 @@ package com.commcrete.stardust.room.new_db.contact
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(
     tableName = "devices",
 )

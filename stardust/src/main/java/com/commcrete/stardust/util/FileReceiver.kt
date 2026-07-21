@@ -165,13 +165,14 @@ class FileReceiver(
         }
         val name = data.fileName
         val ending = data.fileEnding
-        val type = if(data.fileType == FileUtils.FileType.File) ".$ending" else ".jpg"
+        val type = if(data.fileType == FileUtils.FileType.Image) ".jpg" else ".$ending"
         val ts = System.currentTimeMillis()
         val completeFileName = "$ts"+ "_"+"$name$type"
         val targetFile = File(destDir, "$completeFileName")
         try {
 
-            if(data.fileType == FileUtils.FileType.File) {
+            // File and Contact are gzip-compressed text payloads; Image is raw bytes.
+            if(data.fileType != FileUtils.FileType.Image) {
                 // Step 1: Create a temporary file for the concatenated data
                 val tempOutputFile = File.createTempFile("output_temp", null)
                 // Write concatenated data to the temporary file
@@ -193,9 +194,8 @@ class FileReceiver(
             saveToMessages(targetFile)
             PlayerUtils.playNotificationSound()
             when (data.fileType) {
-                FileUtils.FileType.File -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
+                FileUtils.FileType.File, FileUtils.FileType.Contact -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
                 FileUtils.FileType.Image -> DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
-                else -> Log.w("FileReceiver", "Unknown file type: ${data.fileType}")
             }
         } catch (e: Exception) {
             Log.e("FileReceiver", "Error saving file: ${data.fileName}", e)
@@ -265,6 +265,7 @@ class FileReceiver(
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
+            val subtype = data.fileType.toAttachmentType()
             DataManager.getAppRepo().saveMessage(
                 message = MessageEntity(
                     chatId = data.chatId,
@@ -274,7 +275,10 @@ class FileReceiver(
                     extraData = MessageExtraData.Attachment(
                         title = mFileName,
                         path = file.absolutePath,
-                        subtype = data.fileType.toAttachmentType()
+                        subtype = subtype,
+                        // Parse the received contact CSV once here so the conversation
+                        // UI renders from the summary without re-reading the file.
+                        fileSummary = FileUtils.buildFileSummary(file, subtype),
                     )
                 )
             )

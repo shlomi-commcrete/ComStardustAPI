@@ -25,6 +25,12 @@ sealed class MessageExtraData {
         val title: String,
         val path: String,
         val subtype: AttachmentType,
+        /**
+         * Optional cached, display-oriented summary parsed once at persist time.
+         * `null` for attachments that need no summary (a plain file/image renders
+         * from [title]/[path] alone). Carries [SharedContactSummary] for CONTACT.
+         */
+        val fileSummary: FileSummary? = null,
     ) : MessageExtraData()
 
     @Serializable

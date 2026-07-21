@@ -114,6 +114,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         // if the file vanished or is on a path we cannot read directly.
         val copyOk = copySourceToLocal(destFile)
 
+        val localFile = if (copyOk) destFile else data.file
+        val subtype = data.fileType.toAttachmentType()
         return try {
             DataManager.getAppRepo().saveMessage(
                 MessageEntity(
@@ -125,8 +127,11 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                         title = data.file.name,
                         // Fall back to the original path if the local copy
                         // failed; UI can still try to open it directly.
-                        path = if (copyOk) destFile.absolutePath else data.file.absolutePath,
-                        subtype = data.fileType.toAttachmentType()
+                        path = localFile.absolutePath,
+                        subtype = subtype,
+                        // Parse the contact CSV once here so the conversation UI
+                        // renders from the summary without re-reading the file.
+                        fileSummary = FileUtils.buildFileSummary(localFile, subtype),
                     )
                 ))
             true
@@ -164,9 +169,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                         return false
                     }
                 }
-                FileType.File,
-                FileType.Contact -> {
-                    // Contact CSVs are treated as plain text files for transport.
+                FileType.File, FileType.Contact -> {
+                    // Both are gzip-compressed text payloads (a contact is a CSV),
+                    // so decompress the source into the local copy.
                     if (!src.exists() || !src.canRead()) {
                         logUnreadableSource(src)
                         return false
@@ -317,10 +322,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
     private fun sendPackage(stardustFilePackage: StardustFilePackage) {
         DataManager.getClientConnection().let {
-            val functionalityType = when (data.fileType) {
-                FileType.File -> FunctionalityType.FILE
-                else -> FunctionalityType.IMAGE
-            }
+            val functionalityType = data.fileType.relatedFunctionalityType()
             val radio = getRadioToSend(
                 functionalityType = functionalityType,
                 carrier = data.stardustAPIPackage.carrier

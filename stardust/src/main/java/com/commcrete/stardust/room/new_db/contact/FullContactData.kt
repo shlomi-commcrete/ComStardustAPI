@@ -1,24 +1,36 @@
+@file:OptIn(kotlinx.serialization.InternalSerializationApi::class)
+
 package com.commcrete.stardust.room.new_db.contact
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
  * Write model for inserting/updating contacts.
  *
  * Each subtype contains only relevant identity/device data for that contact kind.
  */
+@Serializable
 sealed class FullContactData {
     abstract val contact: ContactEntity
 
+    @Serializable
+    @SerialName("User")
     data class User(
         override val contact: ContactEntity,
         val userId: String,
         val devices: List<DeviceEntity> = emptyList(),
     ) : FullContactData()
 
+    @Serializable
+    @SerialName("Group")
     data class Group(
         override val contact: ContactEntity,
         val groupId: String,
     ) : FullContactData()
 
+    @Serializable
+    @SerialName("Device")
     data class Device(
         override val contact: ContactEntity,
         val deviceId: String,

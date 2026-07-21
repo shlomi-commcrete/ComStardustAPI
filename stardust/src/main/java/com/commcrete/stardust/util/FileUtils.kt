@@ -27,6 +27,7 @@ import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import com.commcrete.stardust.room.new_db.message.AttachmentType
+import com.commcrete.stardust.room.new_db.message.FileSummary
 
 object FileUtils {
     fun createFile(folderName : String = "logs"
@@ -438,6 +439,21 @@ object FileUtils {
             }
         }
     }
+
+    /**
+     * Builds the cached, display-oriented [FileSummary] persisted on an attachment
+     * message. Parses type-specific summary data once (e.g. the contacts in a CONTACT
+     * CSV); plain files/images carry no extra summary data.
+     */
+    fun buildFileSummary(file: File, subtype: AttachmentType): FileSummary =
+        FileSummary(
+            title = file.name,
+            size = runCatching { file.length() }.getOrDefault(0L),
+            extraData = when (subtype) {
+                AttachmentType.CONTACT -> ContactsFileParserUtil.buildSharedContactSummary(file)
+                AttachmentType.FILE, AttachmentType.IMAGE -> null
+            },
+        )
 
     fun trimUntilUnderscore(input: String): String {
         return input.substringAfter("_")

@@ -43,8 +43,9 @@ data class StardustFileStartPackage(
     }
 
     val fileType: FileUtils.FileType = when (type) {
-        0 -> FileUtils.FileType.File
-        else -> FileUtils.FileType.Image
+        FileUtils.FileType.Image.bitCode -> FileUtils.FileType.Image
+        FileUtils.FileType.Contact.bitCode -> FileUtils.FileType.Contact
+        else -> FileUtils.FileType.File
     }
 
 }
