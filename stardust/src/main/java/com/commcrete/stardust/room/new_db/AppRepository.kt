@@ -542,6 +542,10 @@ class AppRepository(
     fun observeUnseenCountsForChats(chatIds: List<String>): Flow<Map<String, Int>> =
         messages.observeUnseenCountsForChats(chatIds)
 
+    /** Live count of every message across all chats currently in state RECEIVED. */
+    fun observeReceivedMessageCount(): Flow<Int> =
+        messages.observeReceivedMessageCount()
+
     // ── Archival ─────────────────────────────────────────────────────────
 
     /** Archives a single message by ID. Returns true when a row was updated. */

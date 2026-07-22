@@ -301,6 +301,17 @@ interface MessageDao {
     fun observeUnseenCountForChat(chatId: String): Flow<Int>
 
     /**
+     * Reactive count of every message across all chats currently in state
+     * RECEIVED (2) — i.e. delivered but not yet marked SEEN. Re-emits
+     * whenever any message is inserted, updated, or deleted.
+     */
+    @Query("""
+        SELECT COUNT(*) FROM messages
+        WHERE state = 2
+    """)
+    fun observeReceivedMessageCount(): Flow<Int>
+
+    /**
      * Reactive unseen count for [chatId] scoped to messages where [targetId]
      * is the sender OR receiver. Useful when a chat is "shared" between
      * multiple participants and you want a per-target badge.

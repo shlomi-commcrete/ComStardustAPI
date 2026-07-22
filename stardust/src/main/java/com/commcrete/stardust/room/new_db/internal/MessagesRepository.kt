@@ -420,6 +420,10 @@ internal class MessagesRepository(
             ?.let { messagesDao.observeUnseenCountForChat(it).flowOn(Dispatchers.IO) }
             ?: flowOf(0)
 
+    /** See `AppRepository.observeReceivedMessageCount`. */
+    fun observeReceivedMessageCount(): Flow<Int> =
+        messagesDao.observeReceivedMessageCount().flowOn(Dispatchers.IO)
+
     /** See `AppRepository.observeUnseenCountForTarget`. */
     fun observeUnseenCountForTarget(chatId: String, targetId: String): Flow<Int> {
         val normalizedChatId = normalizeIdOrNull(chatId) ?: return flowOf(0)
