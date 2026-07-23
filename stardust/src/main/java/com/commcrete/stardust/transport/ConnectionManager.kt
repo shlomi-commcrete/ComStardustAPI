@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Stage 3 of the connection refactor. Owns two things that used to be scattered across the codebase:
@@ -42,8 +43,12 @@ object ConnectionManager {
     @Volatile
     private var lastInitState: State = State.DISCONNECTED
 
+    // reconnectJob is only ever read/assigned inside @Synchronized methods (recompute /
+    // requestReconnect / disableAutoReconnect) so its check-then-assign is atomic. attempt is
+    // AtomicInteger because it is also incremented from the launched reconnect coroutine, outside
+    // any monitor.
     private var reconnectJob: Job? = null
-    private var attempt = 0
+    private val attempt = AtomicInteger(0)
 
     // Whether the app WANTS a BLE link kept alive. Set once a BLE link is established; cleared only
     // on an intentional teardown (manual disconnect / unpair via [disableAutoReconnect]). This is
@@ -64,6 +69,7 @@ object ConnectionManager {
         recompute()
     }
 
+    @Synchronized
     private fun recompute() {
         val active = TransportRegistry.active()?.id
         val next = derive(active, lastInitState)
@@ -73,19 +79,23 @@ object ConnectionManager {
         if (next is ConnectionState.LinkUp || next is ConnectionState.Syncing || next is ConnectionState.Ready) {
             reconnectJob?.cancel()
             reconnectJob = null
-            attempt = 0
+            attempt.set(0)
         }
 
-        // Once a BLE link is established, arm the auto-reconnect watchdog. We only do this for BLE
-        // (USB has its own attach-driven lifecycle) and never for a USB-active state.
-        if (isBleConnectedState(next)) {
+        // Arm the auto-reconnect watchdog only on an ESTABLISHED BLE link (Syncing/Ready), NOT
+        // LinkUp. LinkUp can be derived spuriously right after a manual disconnect — when the init
+        // state is already DISCONNECTED but BleManager.isBleConnected hasn't propagated to false
+        // yet, derive() yields LinkUp(BLE). Re-arming on that would resurrect the watchdog the user
+        // just disabled. Established states require a non-terminal handshake, which a manual
+        // disconnect never produces. This block shares the monitor with disableAutoReconnect() so a
+        // concurrent disable can't be overwritten.
+        if (isBleEstablished(next)) {
             autoReconnectDesired = true
             startReconnectWatchdog()
         }
     }
 
-    private fun isBleConnectedState(state: ConnectionState): Boolean = when (state) {
-        is ConnectionState.LinkUp -> state.transport == TransportId.BLE
+    private fun isBleEstablished(state: ConnectionState): Boolean = when (state) {
         is ConnectionState.Syncing -> state.transport == TransportId.BLE
         is ConnectionState.Ready -> state.transport == TransportId.BLE
         else -> false
@@ -121,17 +131,18 @@ object ConnectionManager {
      * (0ms on the first attempt to preserve prior immediacy, then 1.5s, 3s, 6s … capped at 30s) and
      * resets once a connected state is reached.
      */
+    @Synchronized
     fun requestReconnect(transport: TransportId, reason: String) {
         if (reconnectJob?.isActive == true) {
             Timber.tag(TAG).d("reconnect already in progress; ignoring request ($reason)")
             return
         }
         val delayMs = backoffDelay()
-        Timber.tag(TAG).d("scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt + 1}, reason=$reason)")
+        Timber.tag(TAG).d("scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
 
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             if (delayMs > 0) delay(delayMs)
-            attempt++
+            attempt.incrementAndGet()
             try {
                 TransportRegistry.of(transport).reconnect()
             } catch (e: Exception) {
@@ -141,8 +152,9 @@ object ConnectionManager {
     }
 
     private fun backoffDelay(): Long {
-        if (attempt == 0) return 0L
-        val shift = (attempt - 1).coerceAtMost(MAX_BACKOFF_SHIFT)
+        val a = attempt.get()
+        if (a == 0) return 0L
+        val shift = (a - 1).coerceAtMost(MAX_BACKOFF_SHIFT)
         return (BASE_DELAY_MS shl shift).coerceAtMost(MAX_DELAY_MS)
     }
 

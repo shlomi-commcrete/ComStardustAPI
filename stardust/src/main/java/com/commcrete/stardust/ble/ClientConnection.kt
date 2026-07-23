@@ -90,6 +90,36 @@ internal class ClientConnection(): BittelProtocol {
     val mutableMessageList = mutableListOf<StardustPackage>()
     val mutableAckAwaitingList = mutableListOf<AckSystem>()
 
+    // Both lists are plain ArrayLists touched from binder GATT callbacks (onCharacteristicChanged),
+    // Dispatchers.Default/IO retry coroutines, the main-looper resend runnable, and arbitrary caller
+    // threads. ArrayList is not thread-safe, so ALL access goes through this one lock and each
+    // check-then-act (isNotEmpty -> removeAt(0)) is made atomic.
+    private val queueLock = Any()
+
+    private fun enqueueMessage(pkg: StardustPackage) = synchronized(queueLock) { mutableMessageList.add(pkg) }
+    private fun peekFirstMessage(): StardustPackage? = synchronized(queueLock) { mutableMessageList.firstOrNull() }
+
+    /**
+     * Removes the SPECIFIC package [pkg] by object identity (not index 0). The inbound ACK carries
+     * no message id (idNumber is a client-only DB tag, never sent to the radio) and the protocol
+     * serialises to one outstanding ACK, so the object reference is the correlation key: each site
+     * removes exactly the package it sent/acked. This stops clearTimer — which fires on EVERY
+     * inbound notification — from dropping a different, queued-but-unsent package (the lost-packet
+     * bug of a blind removeAt(0)). A double-remove of the same package is a harmless no-op.
+     */
+    private fun removeMessage(pkg: StardustPackage?) {
+        pkg ?: return
+        synchronized(queueLock) {
+            val i = mutableMessageList.indexOfFirst { it === pkg }
+            if (i >= 0) mutableMessageList.removeAt(i)
+        }
+    }
+
+    private fun addAwaitingAck(ack: AckSystem) = synchronized(queueLock) { mutableAckAwaitingList.add(ack) }
+    private fun isAckAwaiting(): Boolean = synchronized(queueLock) { mutableAckAwaitingList.isNotEmpty() }
+    private fun removeFirstAwaitingAck(): AckSystem? = synchronized(queueLock) { if (mutableAckAwaitingList.isNotEmpty()) mutableAckAwaitingList.removeAt(0) else null }
+    private fun firstAwaitingAck(): AckSystem? = synchronized(queueLock) { mutableAckAwaitingList.firstOrNull() }
+
 
     private val handler : Handler = Handler(Looper.getMainLooper())
     var bittelPackage : StardustPackage? = null
@@ -125,9 +155,7 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        if(mutableMessageList.isNotEmpty()){
-            sendMessage(mutableMessageList[0])
-        }
+        peekFirstMessage()?.let { sendMessage(it) }
     }
 
     var lastPlayedTS : Long = 0
@@ -909,8 +937,8 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     fun addMessageToQueue(bittelPackage: StardustPackage) {
-        mutableMessageList.add(bittelPackage)
-        sendMessage(mutableMessageList[0])
+        enqueueMessage(bittelPackage)
+        peekFirstMessage()?.let { sendMessage(it) }
     }
 
     fun isNeedAck (opCode: StardustPackageUtils.StardustOpCode) : Boolean {
@@ -921,7 +949,7 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
         // TODO: check if FunctionalityType is valid by licence here ??
-        if(mutableAckAwaitingList.isNotEmpty() && isNeedAck(bittelPackage.stardustOpCode)) {
+        if(isAckAwaiting() && isNeedAck(bittelPackage.stardustOpCode)) {
             Scopes.getDefaultCoroutine().launch {
                 delay(100)
                 sendMessage(bittelPackage, randomID)
@@ -965,14 +993,10 @@ internal class ClientConnection(): BittelProtocol {
                             writePackage(it, bittelPackage, randomID = randomID)
                         }
                 }
-                if(mutableMessageList.isNotEmpty()){
-                    mutableMessageList.removeAt(0)
-                }
+                removeMessage(bittelPackage)
             }
         }else {
-            if(mutableMessageList.isNotEmpty()){
-                mutableMessageList.removeAt(0)
-            }
+            removeMessage(bittelPackage)
         }
     }
 
@@ -1202,7 +1226,7 @@ internal class ClientConnection(): BittelProtocol {
         val ackSystem = AckSystem(bittelPackage, createAckCallback())
         ackSystem.delayTS = DELAY_TS_LR
         ackSystem.start()
-        mutableAckAwaitingList.add(ackSystem)
+        addAwaitingAck(ackSystem)
         Timber.tag(LOG_TAG).d("ACK tracking started for opCode: ${bittelPackage.stardustOpCode}")
     }
 
@@ -1216,8 +1240,8 @@ internal class ClientConnection(): BittelProtocol {
             }
 
             override fun onSuccess() {
-                if (mutableAckAwaitingList.isNotEmpty()) {
-                    val ackSystem = mutableAckAwaitingList.removeAt(0)
+                val ackSystem = removeFirstAwaitingAck()
+                if (ackSystem != null) {
                     syncMessageReceivedStatus(ackSystem)
                     Timber.tag(LOG_TAG).d("ACK received and processed")
                 } else {
@@ -1230,8 +1254,7 @@ internal class ClientConnection(): BittelProtocol {
      * Safely removes the first ACK from the queue, logging any issues.
      */
     private fun removeFirstAckFromQueue(reason: String) {
-        if (mutableAckAwaitingList.isNotEmpty()) {
-            mutableAckAwaitingList.removeAt(0)
+        if (removeFirstAwaitingAck() != null) {
             Timber.tag(LOG_TAG).d("ACK removed from queue - reason: $reason")
         } else {
             Timber.tag(LOG_TAG).w("Attempted to remove ACK but queue is empty - reason: $reason")
@@ -1246,9 +1269,7 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     fun handleAckReceived () {
-        if(mutableAckAwaitingList.isNotEmpty()) {
-            mutableAckAwaitingList[0].notifySuccess()
-        }
+        firstAwaitingAck()?.notifySuccess()
     }
 
     private fun resetTimer(bittelPackage: StardustPackage) {
@@ -1316,9 +1337,9 @@ internal class ClientConnection(): BittelProtocol {
 
     private fun clearTimer(){
         try {
-            if(mutableMessageList.isNotEmpty()){
-                mutableMessageList.removeAt(0)
-            }
+            // Remove only the in-flight package (tracked by resetTimer), by identity — never the
+            // blind head, which on an unrelated inbound notification could be a queued-unsent packet.
+            removeMessage(bittelPackage)
             handler.removeCallbacks(runnable)
             handler.removeCallbacksAndMessages(null)
         }catch (e : Exception) {
