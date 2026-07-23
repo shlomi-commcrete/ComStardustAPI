@@ -315,23 +315,12 @@ object StardustInitConnectionHandler {
     }
 
     private fun afterUpdateAddressAck() {
-        // Your existing local side-effects:
-        GroupsUtils.sendDeleteAllGroups()
         transitionTo(State.DELETING_GROUPS) { sendDeleteGroups() }
     }
 
     // 3) Delete groups
     private fun sendDeleteGroups() {
-        val (src, dst) = requireLocalSrcDst() ?: return
-        val payload = buildDeleteGroupsPayload() // TODO: replace with your real payload
-        val pkg = StardustPackageUtils.getStardustPackage(
-            source = src,
-            destination = dst,
-            stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_DELETE_ALL_GROUPS,
-            data = payload
-        )
-        conn.addMessageToQueue(pkg)
-        Timber.tag("InitHandler").d("Sent DELETE_GROUPS")
+        GroupsUtils.sendDeleteAllGroups()
     }
 
     // 4) Add groups

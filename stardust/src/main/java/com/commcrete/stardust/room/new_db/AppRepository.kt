@@ -6,6 +6,7 @@ import com.commcrete.stardust.contacts.ContactConflictEngine
 import com.commcrete.stardust.contacts.ContactConflicts
 import com.commcrete.stardust.contacts.ContactDraft
 import com.commcrete.stardust.contacts.ContactOperation
+import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -307,6 +308,20 @@ class AppRepository(
             }
             contacts.deleteContact(d.target)
         }
+
+        // A local group add/edit/remove must be pushed to the connected device:
+        // wipe its group list and re-send the full (now-updated) set.
+        if (ops.any { it.touchesGroup() }) {
+            GroupsUtils.sendDeleteAllGroups()
+        }
+    }
+
+    private fun ContactOperation.touchesGroup(): Boolean = when (this) {
+        is ContactOperation.Insert -> contact.type == ContactType.GROUP
+        is ContactOperation.UpdateExisting -> original.type == ContactType.GROUP || updated.type == ContactType.GROUP
+        is ContactOperation.DeleteExisting -> target.type == ContactType.GROUP
+        is ContactOperation.RenameExisting -> false
+        ContactOperation.Noop -> false
     }
 
     /** Every USER + GROUP contact except the registered user themselves. */

@@ -66,29 +66,28 @@ object GroupsUtils {
     //  Public BLE API
     // ---------------------------------------------------------------------
 
-    fun sendDeleteAllGroups() = deleteAllDeviceGroups()
 
-    fun deleteAllDeviceGroups() {
+    fun sendDeleteAllGroups() {
         sendOp(StardustOpCode.REQUEST_DELETE_ALL_GROUPS, smartphoneMarker())
     }
-
-    fun getAllDeviceGroups() {
-        sendOp(StardustOpCode.REQUEST_GET_ALL_GROUPS)
-    }
-
-    fun addDeviceGroups(groupId: List<String>) {
-        sendOp(
-            StardustOpCode.REQUEST_ADD_GROUPS,
-            encodeGroupsPayload(groupId, padIfEmpty = false)
-        )
-    }
-
-    fun deleteDeviceGroups(groupId: List<String>) {
-        sendOp(
-            StardustOpCode.REQUEST_REMOVE_GROUPS,
-            encodeGroupsPayload(groupId, padIfEmpty = false)
-        )
-    }
+//
+//    fun getAllDeviceGroups() {
+//        sendOp(StardustOpCode.REQUEST_GET_ALL_GROUPS)
+//    }
+//
+//    fun addDeviceGroups(groupId: List<String>) {
+//        sendOp(
+//            StardustOpCode.REQUEST_ADD_GROUPS,
+//            encodeGroupsPayload(groupId, padIfEmpty = false)
+//        )
+//    }
+//
+//    fun deleteDeviceGroups(groupId: List<String>) {
+//        sendOp(
+//            StardustOpCode.REQUEST_REMOVE_GROUPS,
+//            encodeGroupsPayload(groupId, padIfEmpty = false)
+//        )
+//    }
 
     /**
      * Loads all locally-stored group ids and sends them to the device using
@@ -114,8 +113,8 @@ object GroupsUtils {
     fun sendAddAllGroups(sendIfEmpty: Boolean = true) =
         loadAndSendAddGroups(padIfEmpty = true, sendIfEmpty = sendIfEmpty)
 
-    fun addGroupsToLocal() =
-        loadAndSendAddGroups(padIfEmpty = false, sendIfEmpty = true)
+//    fun addGroupsToLocal() =
+//        loadAndSendAddGroups(padIfEmpty = false, sendIfEmpty = true)
 
     // ---------------------------------------------------------------------
     //  Group/contact resolution (sender vs group)
