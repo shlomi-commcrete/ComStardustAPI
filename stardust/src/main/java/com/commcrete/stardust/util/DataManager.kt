@@ -32,6 +32,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
@@ -317,6 +318,21 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun canRecord(): MutableLiveData<Boolean> {
         return RecorderUtils.canRecord
+    }
+
+    override fun switchToPreset(preset: StardustConfigurationParser.CurrentPreset) {
+        val (src, dst) = requireLocalSrcDst() ?: return
+
+        val msg = StardustPackageUtils.getStardustPackage(
+            data = arrayListOf<Int>().apply {
+                addAll(StardustPackageUtils.hexStringToByteArray(dst))
+                repeat(if(preset.value < 2) 7 else 6) { add(0) }
+                add(preset.value)
+            }.toIntArray().toTypedArray(),
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SWITCH_PRESET_REQUEST)
+        getClientConnection().addMessageToQueue(msg)
     }
 
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {

@@ -204,7 +204,6 @@ class StardustConfigurationParser : StardustParser() {
                 val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
                 offset += sizeLength
                 //Preset 1
-//Preset 1
                 val presetsBytes = cutByteArray(byteArray, presetParsetsLength, offset)
                 val presets = parsePresets(presetsBytes)
                 offset += presetParsetsLength

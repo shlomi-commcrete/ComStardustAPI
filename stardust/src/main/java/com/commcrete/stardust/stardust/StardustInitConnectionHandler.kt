@@ -301,7 +301,7 @@ object StardustInitConnectionHandler {
         val appId = user.appId
         val payload = arrayListOf<Int>().apply {
             addAll(StardustPackageUtils.hexStringToByteArray(appId))
-            add(0); add(0); add(0); add(0)
+            repeat(4) { add(0) }
             add(StardustPackageUtils.BittelAddressUpdate.SMARTPHONE.id)
         }
         val pkg = StardustPackageUtils.getStardustPackage(
