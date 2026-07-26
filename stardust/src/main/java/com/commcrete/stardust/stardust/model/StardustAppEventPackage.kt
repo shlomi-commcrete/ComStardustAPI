@@ -41,6 +41,8 @@ data class StardustAppEventPackage(
         var snr : Int? = null,
         var signalRssi: Int? = null,
         var carrier: Carrier? = null
-    )
+    ) {
+        fun normalizedSNR(): Int? = snr?.let { (it * 2) + 2 }
+    }
 
 }
