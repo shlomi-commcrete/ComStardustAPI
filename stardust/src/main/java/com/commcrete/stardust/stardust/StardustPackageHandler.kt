@@ -38,6 +38,8 @@ import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
 import com.commcrete.stardust.util.CarriersUtils.getCarrierByStardustCarrier
 import com.commcrete.stardust.util.ConfigurationUtils
+import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
+import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
@@ -515,7 +517,13 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handlePTT(mPackage: StardustPackage) {
-        PlayerUtils.onPTTCodecReceived(dataPackage = mPackage)
+        // v2 receive path (flag-guarded). Default flag = false → legacy PlayerUtils path.
+        if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
+            PttV2Wiring.init(DataManager.appContext)
+            PttV2Wiring.router.onPackage(mPackage)
+        } else {
+            PlayerUtils.onPTTCodecReceived(dataPackage = mPackage)
+        }
     }
 
     private fun handleText(mPackage: StardustPackage) {

@@ -7,6 +7,9 @@ import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ai.codec.PttSession
+import com.commcrete.stardust.audio.v2.domain.CodecId
+import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
+import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileUtils
@@ -78,6 +81,11 @@ object RecorderUtils {
         try {
             Scopes.getMainCoroutine().launch { canRecord.value = false }
 
+            // v2 pipeline (flag-guarded, CODEC2 only for now). Default flag = false → legacy path.
+            if (codeType == CODE_TYPE.CODEC2 && PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
+                return startV2Codec2Recording(receiverId, carrier)
+            }
+
             return if (codeType == CODE_TYPE.CODEC2) {
                 startCodec2Recording(receiverId, carrier)
             } else {
@@ -107,6 +115,25 @@ object RecorderUtils {
             }
         }
         return file
+    }
+
+    /**
+     * v2 CODEC2 send path. Delegates capture→encode→ordered-send to [PttV2Wiring.recorderBridge].
+     * Returns null: v2 owns its own file/persistence lifecycle, so there is no legacy File handle to
+     * hand back (the matching [stopRecording] v2 branch ignores the `file` argument).
+     */
+    private fun startV2Codec2Recording(destination: String, carrier: Carrier?): File? {
+        PttV2Wiring.init(DataManager.appContext)
+        val source = DataManager.getSource()
+        Scopes.getDefaultCoroutine().launch {
+            PttV2Wiring.recorderBridge.startRecording(
+                codecId = CodecId("codec2"),
+                source = source,
+                destination = destination,
+                carrier = carrier,
+            )
+        }
+        return null
     }
 
     private fun startAIRecording(chatId: String, receiverId: String, carrier: Carrier?): File? {
@@ -261,8 +288,13 @@ object RecorderUtils {
     ) {
         Log.d("AudioRecorder", "Stop recording")
 
-        if (codeType == CODE_TYPE.CODEC2) stopCodec2Recording(chatId, receiverId, carrier, file)
-        else stopAIRecording()
+        if (codeType == CODE_TYPE.CODEC2 && PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
+            Scopes.getDefaultCoroutine().launch { PttV2Wiring.recorderBridge.stopRecording() }
+        } else if (codeType == CODE_TYPE.CODEC2) {
+            stopCodec2Recording(chatId, receiverId, carrier, file)
+        } else {
+            stopAIRecording()
+        }
 
         Scopes.getMainCoroutine().launch {
             delay(300)
