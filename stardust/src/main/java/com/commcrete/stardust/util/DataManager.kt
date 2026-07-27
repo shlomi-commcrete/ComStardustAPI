@@ -325,8 +325,6 @@ object DataManager : StardustAPI, PttInterface {
 
         val msg = StardustPackageUtils.getStardustPackage(
             data = arrayListOf<Int>().apply {
-                addAll(StardustPackageUtils.hexStringToByteArray(dst))
-                repeat(if(preset.value < 2) 7 else 6) { add(0) }
                 add(preset.value)
             }.toIntArray().toTypedArray(),
             source = src,
