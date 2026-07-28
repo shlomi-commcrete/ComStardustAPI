@@ -56,7 +56,7 @@ interface StardustAPI {
     fun init(appContext: Context, pluginContext: Context, fileLocation : String)
     fun scanForDevice(): MutableLiveData<List<ScanResult>>
     fun connectToDevice(device: ScanResult)
-    fun disconnectFromDevice()
+    fun disconnectFromDevice(disconnectByForce: Boolean)
     fun logout()
     fun setCallback(stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (): List<Carrier>?

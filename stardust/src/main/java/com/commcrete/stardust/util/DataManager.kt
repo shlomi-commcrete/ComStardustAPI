@@ -466,12 +466,12 @@ object DataManager : StardustAPI, PttInterface {
         this.bleScanner = null
     }
 
-    override fun disconnectFromDevice() {
+    override fun disconnectFromDevice(disconnectByForce: Boolean) {
         checkInitialized()
         // Intentional disconnect: stop the auto-reconnect watchdog so we don't fight the tear-down.
         com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
         cleanupPackageHandlerOnDisconnect()
-        getClientConnection().disconnectFromBLEDevice()
+        getClientConnection().disconnectFromBLEDevice(disconnectByForce)
     }
 
     override fun logout() {
@@ -530,10 +530,8 @@ object DataManager : StardustAPI, PttInterface {
 
     fun unpairDeviceBLE() {
         checkInitialized()
-        com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
-        cleanupPackageHandlerOnDisconnect()
-        val clientConnection = getClientConnection()
-        clientConnection.removeBittelBond()
+        disconnectFromDevice(disconnectByForce = true)
+        getClientConnection().removeBittelBond()
     }
 
     private fun cleanupPackageHandlerOnDisconnect() {
