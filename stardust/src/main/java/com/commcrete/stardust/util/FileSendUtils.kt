@@ -14,8 +14,6 @@ import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.chats.ChatsDatabase
 import com.commcrete.stardust.room.chats.ChatsRepository
 import com.commcrete.stardust.room.messages.MessageItem
-import com.commcrete.stardust.room.messages.MessagesDatabase
-import com.commcrete.stardust.room.messages.MessagesRepository
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -260,7 +258,7 @@ object FileSendUtils {
                     destenation = dest,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = data)
-                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 it.addMessageToQueue(fileStartMessage)
             }
         }
@@ -389,7 +387,7 @@ object FileSendUtils {
             val radio = CarriersUtils.getRadioToSend(functionalityType =  if(sendType == StardustFileStartParser.FileTypeEnum.TXT)
                 FunctionalityType.FILE else FunctionalityType.IMAGE, carrier = stardustAPIPackage?.carrier
             )  ?: return
-            this.sendInterval = if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) {
+            this.sendInterval = if(radio.type == StardustConfigurationParser.CarrierType.ST) {
                 300
             } else {
                 900
@@ -401,7 +399,7 @@ object FileSendUtils {
                     destenation = dest,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                     data = stardustFilePackage.toArrayInt())
-                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+                fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 if(stardustFilePackage.isLast) {
                     fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
                 }

@@ -2,7 +2,7 @@ package com.commcrete.stardust.stardust.model
 
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
-import com.commcrete.stardust.stardust.model.StardustAppEventPackage.StardustAppEventType
+import com.commcrete.stardust.util.Carrier
 import kotlin.collections.reversedArray
 
 class StardustConfigurationParser : StardustParser() {
@@ -52,39 +52,6 @@ class StardustConfigurationParser : StardustParser() {
         const val rdpLevelLength = 1
         const val deviceTypeLength = 1
         const val MHz = 1000000
-
-//
-//        const val frequencyXcvr1SatelliteTXBytesLength = 4
-//        const val frequencyXcvr1RadioTXBytesLength = 4
-//        const val frequencyXcvr2SatelliteTXBytesLength = 4
-//        const val frequencyXcvr1SatelliteRXBytesLength = 4
-//        const val frequencyXcvr1RadioRXBytesLength = 4
-//        const val frequencyXcvr2SatelliteRXBytesLength = 4
-//        const val powerLOTXLength = 1
-//        const val powerLORXLength = 1
-//
-//        const val powerXcvr1TXLength = 1
-//        const val powerXcvr2TXLength = 1
-//        const val redundent = 1
-//        const val frequencyXcvr3SatelliteTXBytesLength = 4
-//        const val frequencyXcvr4SatelliteTXBytesLength = 4
-//        const val frequencyXcvr3SatelliteRXBytesLength = 4
-//        const val frequencyXcvr4SatelliteRXBytesLength = 4
-//        const val powerXcvr3TXLength = 1
-//        const val powerXcvr4TXLength = 1
-//        const val functionXcvr1Length = 1
-//        const val functionXcvr2Length = 1
-//        const val functionXcvr3Length = 1
-//        const val frequencyLOTXLength = 4
-//        const val frequencyLORXLength = 4
-//        const val frequencyXcvr2TXLength = 4
-//        const val frequencyXcvr2RXLength = 4
-//
-//        const val frequencyXcvr3TXLength = 4
-//        const val frequencyXcvr3RXLength = 4
-//        const val frequencyXcvr4TXLength = 4
-//        const val frequencyXcvr4RXLength = 4
-
 
     }
 
@@ -140,7 +107,7 @@ class StardustConfigurationParser : StardustParser() {
         ACTIVE(1),
     }
 
-    enum class StardustTypeFunctionality(val type: Int, val typeName: String) {
+    enum class CarrierType(val type: Int, val typeName: String) {
         HR(0, "High Rate"),
         LR(1, "Low Rate"),
         ST(2, "Fast Rate");
@@ -180,20 +147,10 @@ class StardustConfigurationParser : StardustParser() {
                 FunctionalityType.FILE
             )
 
-            fun fromType(type: Int): StardustTypeFunctionality =
+            fun fromType(type: Int): CarrierType =
                 entries.firstOrNull { it.type == type } ?: HR
         }
     }
-
-
-    enum class StardustCarrier (val carrier : Int, val carrierName : String){
-        Carrier1(0, "Carrier 1"),
-        Carrier2(1, "Carrier 2"),
-        Carrier3(2, "Carrier 3")
-    }
-
-
-
 
     fun parseConfiguration(StardustPackage: StardustPackage) : StardustConfigurationPackage? {
         StardustPackage.data?.let { intArray ->
@@ -345,7 +302,6 @@ class StardustConfigurationParser : StardustParser() {
             val preset3 = parsePreset(preset3Bytes, 2)
             preset3.currentPreset = CurrentPreset.PRESET3
             presetList.add(preset3)
-            offset += presetParseLength
         } catch (e : Exception) {
             e.printStackTrace()
         }
@@ -354,114 +310,89 @@ class StardustConfigurationParser : StardustParser() {
 
     private fun parsePreset (byteArray: ByteArray, i: Int) : Preset {
         val preset = Preset(index = i)
-        var offset = 0
 
         try {
-            val xcvr1Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
-            val xcvr1 = parseXcvr(xcvr1Bytes, 0)
-            preset.xcvrList.add(xcvr1)
-            offset += xcvrParseLength
-            val xcvr2Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
-            val xcvr2 = parseXcvr(xcvr2Bytes, 1)
-            preset.xcvrList.add(xcvr2)
-            offset += xcvrParseLength
-            val xcvr3Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
-            val xcvr3 = parseXcvr(xcvr3Bytes, 2)
-            preset.xcvrList.add(xcvr3)
-            offset += xcvrParseLength
-            val xcvr4Bytes = cutByteArray(byteArray, xcvrParseLength, offset)
-            val xcvr4 = parseXcvr(xcvr4Bytes, 3)
-            preset.xcvrList.add(xcvr4)
-            offset += xcvrParseLength
+            var offset = 0
+            for(i in 0..3) {
+                val bytes = cutByteArray(byteArray, xcvrParseLength, offset)
+                parseXcvr(bytes, i)?.let { preset.xcvrList.add(it) }
+                offset += xcvrParseLength
+            }
         } catch (e : Exception) {
             e.printStackTrace()
         }
         return preset
     }
 
-    private fun parseXcvr (byteArray: ByteArray, xcvrNum : Int = 0) : xcvr {
-        val xcvr = xcvr()
-        var offset = 0
+    private fun parseXcvr(byteArray: ByteArray, xcvrNum : Int = 0): xcvr? {
         try {
-            val xcvrTxFrequencyBytes = cutByteArray(byteArray, xcvrParseTXLength, offset)
-            xcvr.txFrequency = byteArrayToUInt32(xcvrTxFrequencyBytes.reversedArray()).toDouble().div(MHz)
+            var offset = 0
+
+            val txFrequency = cutByteArray(byteArray, xcvrParseTXLength, offset)
+                .reversedArray()
+                .let { byteArrayToUInt32(it).toDouble().div(MHz) }
             offset += xcvrParseTXLength
 
-            val xcvrRxFrequencyBytes = cutByteArray(byteArray, xcvrParseRXLength, offset)
-            xcvr.rxFrequency = byteArrayToUInt32(xcvrRxFrequencyBytes.reversedArray()).toDouble().div(MHz)
+            val rxFrequency = cutByteArray(byteArray, xcvrParseRXLength, offset)
+                .reversedArray()
+                .let { byteArrayToUInt32(it).toDouble().div(MHz) }
             offset += xcvrParseRXLength
 
-            val xcvrPowerBytes = cutByteArray(byteArray, xcvrParsePowerLength, offset)
-            xcvr.power = byteArrayToInt(xcvrPowerBytes.reversedArray())
+            val power = cutByteArray(byteArray, xcvrParsePowerLength, offset)
+                .reversedArray()
+                .let { byteArrayToInt(it) }
             offset += xcvrParsePowerLength
 
-            val xcvrFunctionalityBytes = cutByteArray(byteArray, xcvrParseFunctionalityLength, offset)
-            val byteFunctionality = xcvrFunctionalityBytes[0].toInt() and 0xFF  // Ensure unsigned byte interpretation
-            xcvr.functionality = if ((byteFunctionality and 0b00000001) == 0) {
-                StardustTypeFunctionality.HR
-            } else {
-                StardustTypeFunctionality.LR
-            }
-            if(xcvrNum == 3) {
-                xcvr.functionality = StardustTypeFunctionality.ST
-            }
-
+            val byteFunctionality = cutByteArray(byteArray, xcvrParseFunctionalityLength, offset)[0].toInt() and 0xFF  // Ensure unsigned byte interpretation
             // Remaining bits (bits 1–7) → options
-            xcvr.options = byteFunctionality shr 1
+            val options = byteFunctionality shr 1
             offset += xcvrParseFunctionalityLength
 
             val xcvrCarrierBytes = cutByteArray(byteArray, xcvrParseTransceiverLength, offset)
             val byteCarrier = xcvrCarrierBytes[0].toInt() and 0xFF  // Ensure unsigned byte interpretation
             val carrierBits = byteCarrier and 0b00000011 // Mask bits 0 and 1
 
-            // Map carrier bits to enum
-            xcvr.carrier = when (carrierBits) {
-                0 -> StardustCarrier.Carrier1
-                1 -> StardustCarrier.Carrier2
-                2 -> StardustCarrier.Carrier3
-                else -> StardustCarrier.Carrier1 // fallback/default
+            val carrierIndex = carrierBits
+            val carrierType = when {
+                xcvrNum == 3 -> CarrierType.ST
+                (byteFunctionality and 0b00000001) == 0 -> CarrierType.HR
+                else -> CarrierType.LR
             }
 
-            // Extract third bit (bit 2) for carrierOn
-            xcvr.carrierOn = (byteCarrier and 0b00000100) != 0
 
-        }catch (e : Exception) {
+            // Extract third bit (bit 2) for carrierOn
+            val carrierOn = (byteCarrier and 0b00000100) != 0
+            return xcvr(
+                txFrequency = txFrequency,
+                rxFrequency = rxFrequency,
+                power = power,
+                options = options,
+                carrierOn = carrierOn,
+                carrier = Carrier(
+                    index = carrierIndex,
+                    type = carrierType
+                ))
+        } catch (e : Exception) {
             e.printStackTrace()
+            return null
         }
-        return xcvr
     }
 
     data class xcvr (
-        var txFrequency: Double = 0.0,
-        var rxFrequency: Double = 0.0,
-        var power: Int = 0,
-        var functionality : StardustTypeFunctionality = StardustTypeFunctionality.HR,
-        var options : Int = 0,
-        var carrier : StardustCarrier = StardustCarrier.Carrier1,
-        var carrierOn : Boolean = true
+        var txFrequency: Double,
+        var rxFrequency: Double,
+        var power: Int,
+        var options: Int,
+        var carrier: Carrier,
+        var carrierOn: Boolean
     ) {
-        fun getOptions() : Set<FunctionalityType>{
-            val functionalityOptions = mutableSetOf<FunctionalityType>()
-            for (type in FunctionalityType.values()) {
-                if ((options and type.bitwise) == type.bitwise) {
-                    functionalityOptions.add(type)
-                }
-            }
-
-            return functionalityOptions
+        fun getOptions() : Set<FunctionalityType> {
+            return FunctionalityType.entries.filter { type -> (options and type.bitwise) == type.bitwise }.toSet()
         }
 
         fun hasDefaultFrequency(): Boolean {
             return txFrequency == 0.0 && rxFrequency == 0.0
         }
-
-//
-//        fun getRadio (carrier: Carrier) : Carrier {
-//            carrier.availableFunctionalityTypeList = getOptions().toMutableSet()
-//            carrier.f = this.carrier
-//            carrier.type = this.functionality
-//            return carrier
-//        }
     }
 
     data class Preset (
@@ -471,10 +402,7 @@ class StardustConfigurationParser : StardustParser() {
     )
 
     private fun getPortType (portType : Int): PortType {
-        PortType.values().iterator().forEach {
-            if(it.type == portType) return it
-        }
-        return PortType.UNDEFINED
+        return PortType.entries.find { it.type == portType } ?: PortType.UNDEFINED
     }
 
 }

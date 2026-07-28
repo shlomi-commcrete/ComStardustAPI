@@ -193,7 +193,7 @@ class Codec2SendPipeline(
         } else {
             StardustControlByte.StardustPartType.MESSAGE
         }
-        pkg.stardustControlByte.stardustDeliveryType = radio.second
+        pkg.stardustControlByte.stardustDeliveryType = radio.deliveryType
         pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
         DataManager.sendDataToBle(pkg)
         onPacketSent?.invoke()

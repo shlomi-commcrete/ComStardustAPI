@@ -26,11 +26,11 @@ data class StardustControlByte (val stardustPackageType: StardustPackageType,
         SPEECH(1)
     }
 
-    enum class StardustDeliveryType (val value : Int, val radioName : String) {
-        RD1(0, "RD1"),
-        RD2(2, "RD2"),
-        RD3(4, "RD3"),
-        RD4(6, "RD4"),
+    enum class StardustDeliveryType (val value : Int) {
+        RD1(0),
+        RD2(2),
+        RD3(4),
+        RD4(6),
     }
 
     enum class StardustAcknowledgeType (val value : Int) {

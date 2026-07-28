@@ -3,13 +3,7 @@ package com.commcrete.stardust.stardust.model
 import android.content.Context
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustCarrier
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
-import com.commcrete.stardust.util.SharedPreferencesUtil
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS3
-
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser.CarrierType
 
 data class StardustConfigurationPackage(
 
@@ -43,30 +37,19 @@ data class StardustConfigurationPackage(
     val deviceSerial: String,
     val sosDestinations: List<String>
 ) {
-    private val TAG = "PresetValidation"
 
-    fun getCurrentRadios (preset : StardustConfigurationParser.CurrentPreset? = null) : Radios? {
-        return getPresetData(preset ?: currentPreset)?.let {
-            Radios(
-                it.xcvrList[0].functionality,
-                it.xcvrList[1].functionality,
-                it.xcvrList[2].functionality,
-                StardustTypeFunctionality.ST,
-            )
-        }
-    }
-
-    private fun getPresetData(preset : StardustConfigurationParser.CurrentPreset): StardustConfigurationParser.Preset? {
+    internal fun getPresetData(preset : StardustConfigurationParser.CurrentPreset): StardustConfigurationParser.Preset? {
         return presets[preset.value]
     }
 
     fun getCenterFrequency(preset : StardustConfigurationParser.CurrentPreset = currentPreset): Frequency? {
         return getPresetData(preset)?.xcvrList?.firstOrNull()?.let {
             val delta: Double = 25.0 / 3.0 / 1000.0
-            val (rx, tx) = when(it.carrier) {
-                StardustCarrier.Carrier1 -> (it.rxFrequency + delta) to (it.txFrequency + delta)
-                StardustCarrier.Carrier2 -> it.rxFrequency to it.txFrequency
-                StardustCarrier.Carrier3 -> (it.rxFrequency - delta) to (it.txFrequency - delta)
+            val (rx, tx) = when(it.carrier.index) {
+                0 -> (it.rxFrequency + delta) to (it.txFrequency + delta)
+                1 -> it.rxFrequency to it.txFrequency
+                2 -> (it.rxFrequency - delta) to (it.txFrequency - delta)
+                else -> return null
             }
             Frequency(rx = rx + frequencyLORX, tx = tx + frequencyLOTX)
         }
@@ -95,11 +78,11 @@ data class StardustConfigurationPackage(
         val requiredFunctionalities = mutableSetOf<FunctionalityType>()
         for (xcvr in xcvrList) {
             // Actual: only for non-default frequency XCVRs
-            if (!xcvr.hasDefaultFrequency() && xcvr.functionality != StardustTypeFunctionality.ST) {
+            if (!xcvr.hasDefaultFrequency() && xcvr.carrier.type != CarrierType.ST) {
                 presetFunctionalities.addAll(xcvr.getOptions())
                 // Required: all allowed options with valid bitwise
                 requiredFunctionalities.addAll(
-                    xcvr.functionality.getAllowedFunctionalityOptions().filter { it.bitwise != -1 }
+                    xcvr.carrier.type.getAllowedFunctionalityOptions().filter { it.bitwise != -1 }
                 )
 
             }
@@ -108,28 +91,12 @@ data class StardustConfigurationPackage(
         return presetFunctionalities to requiredFunctionalities
     }
 
-    private fun getLocalFunctionalitiesByPreset(preset : StardustConfigurationParser.CurrentPreset, context: Context) : Set<FunctionalityType>? {
-        val localKey = when (preset) {
-            StardustConfigurationParser.CurrentPreset.PRESET1 -> KEY_LAST_CARRIERS1
-            StardustConfigurationParser.CurrentPreset.PRESET2 -> KEY_LAST_CARRIERS2
-            StardustConfigurationParser.CurrentPreset.PRESET3 -> KEY_LAST_CARRIERS3
-        }
-        return SharedPreferencesUtil.getCarrier(context, localKey)?.activeFunctionalities
-    }
-
     private fun hasMissingRequiredFunctionalities(
         actual: Set<FunctionalityType>,
         required: Set<FunctionalityType>
     ): Boolean {
         return required.any { it !in actual }
     }
-
-    data class Radios (
-        val xcvr1 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr2 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr3 : StardustConfigurationParser.StardustTypeFunctionality,
-        val xcvr4 : StardustConfigurationParser.StardustTypeFunctionality,
-    )
 
     data class Frequency(val rx: Double, val tx: Double)
 }

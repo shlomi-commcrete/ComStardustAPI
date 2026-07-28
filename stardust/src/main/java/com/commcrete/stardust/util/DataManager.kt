@@ -50,7 +50,6 @@ import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -181,9 +180,9 @@ object DataManager : StardustAPI, PttInterface{
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
                 mPackage.messageNumber = splitData.size
                 mPackage.idNumber = id
-                mPackage.stardustControlByte.stardustDeliveryType = radio.second
+                mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 sendDataToBle(mPackage)
-                delay(if(radio.first == null || radio.first!!.type == StardustConfigurationParser.StardustTypeFunctionality.HR)800 else 4000)
+                delay(if(radio.type == StardustConfigurationParser.CarrierType.HR) 800 else 4000)
             }
         }
         saveSentMessage(context, text, userId = stardustAPIPackage.destination, sender = stardustAPIPackage.source)
@@ -238,7 +237,7 @@ object DataManager : StardustAPI, PttInterface{
             destenation = stardustAPIPackage.source ,
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType =  FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.second)
+        LocationUtils.sendLocation(stardustPackage, location, getClientConnection(context), isHR = radio.deliveryType)
     }
 
     override fun sendImage(context: Context, stardustAPIPackage: StardustAPIPackage, file: File, onFileStatusChange: FileSendUtils.OnFileStatusChange
@@ -266,7 +265,7 @@ object DataManager : StardustAPI, PttInterface{
             source = stardustAPIPackage.destination,
             destenation = stardustAPIPackage.source,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
-        stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
+        stardustPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
         }

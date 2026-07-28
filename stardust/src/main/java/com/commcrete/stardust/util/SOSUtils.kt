@@ -39,7 +39,7 @@ object SOSUtils {
                     destenation = stardustAPIPackage.destination,
                     stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
                     data = data)
-                sosMessage.stardustControlByte.stardustDeliveryType = radio.second
+                sosMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
                 it.addMessageToQueue(sosMessage)
                 saveSOSSent(context, type,stardustAPIPackage, location)

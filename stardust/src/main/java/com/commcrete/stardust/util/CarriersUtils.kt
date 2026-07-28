@@ -7,11 +7,8 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser.StardustTypeFunctionality
+import com.commcrete.stardust.stardust.model.StardustConfigurationParser.CarrierType
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS1
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS2
-import com.commcrete.stardust.util.SharedPreferencesUtil.KEY_LAST_CARRIERS3
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
@@ -24,67 +21,48 @@ import kotlin.collections.forEach
 object CarriersUtils {
 
     var carrierList : MutableLiveData<List<Carrier>> = MutableLiveData()
-    var carrierList1 : List<Carrier> = listOf()
-    var carrierList2 : List<Carrier> = listOf()
-    var carrierList3 : List<Carrier> = listOf()
 
-    fun setPresetsAfterChange (bittelConfigurationPackage: StardustConfigurationPackage) {
+    private val carriersMap: MutableMap<Int, List<Carrier>> = mutableMapOf()
+
+    fun setPresetsAfterChange(configPackage: StardustConfigurationPackage) {
         var index = 0
-        for (preset in bittelConfigurationPackage.presets) {
-            val list = getCarrierLisByPreset(bittelConfigurationPackage, preset)
-            setLocalCarriersByPreset((preset.index), list, DataManager.context)
-            if(index == 0) {
-                carrierList1 = list
-            } else if (index == 1) {
-                carrierList2 = list
-            } else if (index == 2) {
-                carrierList3 = list
-            }
+        carriersMap.clear()
+
+        for (preset in configPackage.presets) {
+            val carriers = getCarriersByPreset(preset)
+            setLocalCarriersByPreset(preset.index, carriers, DataManager.context)
+            carriersMap.put(index, carriers)
             index ++
         }
     }
 
-    fun setPresetsWithoutChange () {
-        getLocalCarriersByPreset(0,DataManager.context)?.let {
-            carrierList1 = it
-        }
-        getLocalCarriersByPreset(1,DataManager.context)?.let {
-            carrierList2 = it
-        }
-        getLocalCarriersByPreset(2,DataManager.context)?.let {
-            carrierList3 = it
+    fun setPresetsWithoutChange() {
+        carriersMap.clear()
+        for (i in 0..2) {
+            val localCarriers = getLocalCarriersByPreset(i,DataManager.context) ?: continue
+            carriersMap.put(i, localCarriers)
         }
     }
 
-    fun updateCurrentPresetList (preset: StardustConfigurationParser.CurrentPreset?) {
+    fun updateCurrentPresetList(preset: StardustConfigurationParser.CurrentPreset?) {
+        val currentCarrierData = preset?.let { carriersMap[preset.value] } ?: listOf()
         Scopes.getMainCoroutine().launch {
-            if(preset == null) {
-                carrierList.value = listOf()
-                return@launch
-            }
-            when (preset) {
-                StardustConfigurationParser.CurrentPreset.PRESET1 -> carrierList.value = carrierList1
-                StardustConfigurationParser.CurrentPreset.PRESET2 -> carrierList.value = carrierList2
-                StardustConfigurationParser.CurrentPreset.PRESET3 -> carrierList.value = carrierList3
-            }
+            carrierList.value = currentCarrierData
         }
     }
 
-    fun getCarrierLisByPreset(bittelConfigurationPackage: StardustConfigurationPackage, preset: StardustConfigurationParser.Preset?) : List<Carrier> {
-        val mutableList : MutableList<Carrier> = arrayListOf()
-        preset?.let {
-            val radios = bittelConfigurationPackage.getCurrentRadios(preset.currentPreset) ?: return@let
-            val defaults1 = preset.xcvrList[0].getOptions().toMutableSet()
-            val defaults2 = preset.xcvrList[1].getOptions().toMutableSet()
-            val defaults3 = preset.xcvrList[2].getOptions().toMutableSet()
+    fun getCarriersByPreset(preset: StardustConfigurationParser.Preset) : List<Carrier> {
+        val carriers = mutableListOf<Carrier> ()
 
-            mutableList.add(Carrier(0, radios.xcvr1,  "RD1", preset.xcvrList[0].carrier, presetActiveFunctionality = defaults1))
-            mutableList.add(Carrier(1, radios.xcvr2,  "RD2", preset.xcvrList[1].carrier, presetActiveFunctionality = defaults2))
-            mutableList.add(Carrier(2, radios.xcvr3,  "RD3", preset.xcvrList[2].carrier, presetActiveFunctionality = defaults3))
-            mutableList.add(Carrier(3, StardustTypeFunctionality.ST,  "RD4"))
+        for (i in 0..2) {
+            val xcvr = preset.xcvrList.getOrNull(i) ?: continue
+            val options = xcvr.getOptions().toMutableSet()
+            val type = xcvr.carrier.type
+            carriers.add(Carrier(index = i, type = type, presetActiveFunctionality = options))
         }
+        carriers.add(Carrier(3, CarrierType.ST))
 
-        return mutableList
+        return carriers
     }
 
     fun setLocalCarrierList () : List<Carrier>?{
@@ -95,77 +73,13 @@ object CarriersUtils {
         return carrierList.value
     }
 
-    fun getRadioToSend (carrier: Carrier? = null, functionalityType: FunctionalityType) :
-            Pair<Carrier, StardustDeliveryType>? {
+    fun getRadioToSend(carrier: Carrier? = null, functionalityType: FunctionalityType): Carrier? {
 
         val selectedCarrier = carrier?.takeIf { it.availableFunctionalities.contains(functionalityType) }
             ?: getDefaultCarrierForFunctionalityType(functionalityType)
             ?: return null
 
-        val deliveryType = when (selectedCarrier.index) {
-            0 -> StardustDeliveryType.RD1
-            1 -> StardustDeliveryType.RD2
-            2 -> StardustDeliveryType.RD3
-            3 -> StardustDeliveryType.RD4
-            else -> StardustDeliveryType.RD1 // Default case
-        }
-
-//        when (functionalityType) {
-//            FunctionalityType.REPORTS -> {
-//                if (carrier?.type == StardustTypeFunctionality.ST) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.TEXT -> {
-//                if (carrier?.type == StardustTypeFunctionality.ST) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.LOCATION -> {
-//                if (carrier?.type == StardustTypeFunctionality.ST) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.PTT -> {
-//                if (carrier?.type != StardustTypeFunctionality.HR) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.BFT -> {
-//                if (carrier?.type != StardustTypeFunctionality.HR) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.FILE -> {
-//                if (carrier?.type == StardustTypeFunctionality.LR) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//            FunctionalityType.IMAGE -> {
-//                if (carrier?.type == StardustTypeFunctionality.LR) {
-//                    return getDefaultRadio(functionalityType)
-//                }
-//            }
-//
-//            FunctionalityType.ACK, FunctionalityType.SOS -> return null
-//        }
-        return Pair(selectedCarrier, deliveryType)
-    }
-
-    private fun getDefaultRadio ( functionalityType: FunctionalityType) :
-            Pair<Carrier, StardustDeliveryType>? {
-
-        val selectedCarrier = getDefaultCarrierForFunctionalityType(functionalityType)
-        if(selectedCarrier == null) return null
-
-        val deliveryType = when (selectedCarrier.index) {
-            0 -> StardustDeliveryType.RD1
-            1 -> StardustDeliveryType.RD2
-            2 -> StardustDeliveryType.RD3
-            3 -> StardustDeliveryType.RD4
-            else -> StardustDeliveryType.RD1 // Default case
-        }
-        return Pair(selectedCarrier, deliveryType)
+        return selectedCarrier
     }
 
     private fun getDefaultCarrierForFunctionalityType (functionalityType: FunctionalityType) : Carrier? {
@@ -188,11 +102,6 @@ object CarriersUtils {
     private fun updateCarrierList (mutableList : List<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList, DataManager.context)
         carrierList.value = mutableList
-    }
-
-
-    fun getCarrierByStardustCarrier(stardustCarrier: StardustConfigurationParser.StardustCarrier): Carrier? {
-        return carrierList.value?.firstOrNull { it.f == stardustCarrier }
     }
 
     fun getCarrierByControl(deliveryType: StardustDeliveryType): Carrier? {
@@ -223,42 +132,28 @@ object CarriersUtils {
         return carrier
     }
 
-    private fun getLocalCarriersByPreset (preset : Int, context: Context) : List<Carrier>? {
-        val local = when (preset) {
-            0 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS1)}
-            1 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS2)}
-            2 -> {SharedPreferencesUtil.getCarriers(context, KEY_LAST_CARRIERS3)}
-            else -> { null}
-        }
-        return local
+    private fun getLocalCarriersByPreset(presetIndex: Int, context: Context) : List<Carrier>? {
+        return SharedPreferencesUtil.getCarriers(context, presetIndex)
     }
 
-    private fun setLocalCarriersByPreset (preset : Int, carriers: List<Carrier>, context: Context) {
-        when (preset) {
-            0 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS1)}
-            1 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS2)}
-            2 -> {SharedPreferencesUtil.setCarriers(context, carriers, SharedPreferencesUtil.KEY_LAST_CARRIERS3)}
-        }
+    private fun setLocalCarriersByPreset(presetIndex: Int, carriers: List<Carrier>, context: Context) {
+        SharedPreferencesUtil.setCarriers(context, carriers, presetIndex)
     }
 
 
     fun reset() {
-        carrierList1 = listOf()
-        carrierList2 = listOf()
-        carrierList3 = listOf()
-        Scopes.getMainCoroutine().launch {
-            carrierList.value = listOf()
-        }
+        carriersMap.clear()
+        carrierList.postValue(listOf())
     }
 }
 
 data class Carrier (
     val index : Int,
-    var type : StardustTypeFunctionality,
-    val name : String,
-    var f : StardustConfigurationParser.StardustCarrier? = null,
+    var type : CarrierType,
     private var presetActiveFunctionality: Set<FunctionalityType>? = null
 ) {
+
+    val deliveryType: StardustDeliveryType = StardustDeliveryType.entries.find { it.ordinal == index } ?: StardustDeliveryType.RD1
 
     @Transient
     private var _functionalityStateMap: Map<FunctionalityType, FunctionalityState>? = null
@@ -289,15 +184,15 @@ data class Carrier (
         if (this === other) return true // Reference equality
         if (other !is Carrier) return false // Type check
 
-        return (index == other.index) &&
-                (type == other.type) &&
-                (name == other.name) // Ignore functionalityTypeList
+        return index == other.index
+               && type == other.type
+               && deliveryType == other.deliveryType
     }
 
     override fun hashCode(): Int {
         return index.hashCode() * 31 +
                 type.hashCode() * 31 +
-                name.hashCode()
+                deliveryType.hashCode()
     }
 
     private fun initFunctionalityStateMap(): Map<FunctionalityType, FunctionalityState> {

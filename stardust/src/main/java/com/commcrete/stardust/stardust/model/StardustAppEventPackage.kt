@@ -5,7 +5,7 @@ import com.commcrete.stardust.util.Carrier
 data class StardustAppEventPackage(
     var eventType: StardustAppEventType? = null,
     var xcvr: Int = 0,
-    var carrier: StardustConfigurationParser.StardustCarrier? = null,
+    var carrier: Carrier? = null,
     var preset: Int? = null,
     var armDelete: Int = 0,
     var senderID: String = "",

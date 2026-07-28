@@ -21,6 +21,7 @@ import com.commcrete.aiaudio.codecs.WavTokenizerDecoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlin.collections.get
+import androidx.core.content.edit
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -128,11 +129,8 @@ object SharedPreferencesUtil {
     private const val KEY_INPUT_CODEC = "codec_type"
 
     //Carriers
-    const val KEY_LAST_CARRIERS = "last_carriers"
-    const val KEY_LAST_CARRIERS1 = "last_carriers1"
-    const val KEY_LAST_CARRIERS2 = "last_carriers2"
-    const val KEY_LAST_CARRIERS3 = "last_carriers3"
-    private const val KEY_LAST_PRESETS = "last_presets"
+    const val KEY_LAST_CARRIERS = "local_carriers"
+    private const val KEY_LAST_PRESETS = "local_presets"
     private const val KEY_SOS_DEFAULT = "sos_default"
     private const val KEY_TEXT_DEFAULT = "text_default"
     private const val KEY_LOCATION_DEFAULT = "location_default"
@@ -570,7 +568,6 @@ object SharedPreferencesUtil {
     }
 
     fun getPresets(context: Context): List<StardustConfigurationParser.Preset>? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         val carriersJson = getPrefs(context).getString(KEY_LAST_PRESETS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
@@ -581,17 +578,19 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers(context: Context, carriers: List<Carrier>, key: String = KEY_LAST_CARRIERS) {
+    fun setCarriers(context: Context, carriers: List<Carrier>, index: Int? = null) {
         val gson = GsonBuilder()
             .registerTypeAdapter(Carrier::class.java, CarrierSerializer())
             .create()
 
         val carriersJson = gson.toJson(carriers)
 
-        getPrefs(context).edit().putString(key, carriersJson).apply()
+        val key = "$KEY_LAST_CARRIERS${index ?: ""}"
+        getPrefs(context).edit { putString(key, carriersJson) }
     }
 
-    fun getCarriers(context: Context, key: String = KEY_LAST_CARRIERS): List<Carrier>? {
+    fun getCarriers(context: Context, index: Int? = null): List<Carrier>? {
+        val key = "$KEY_LAST_CARRIERS${index ?: ""}"
         val carriersJson = getPrefs(context).getString(key, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
