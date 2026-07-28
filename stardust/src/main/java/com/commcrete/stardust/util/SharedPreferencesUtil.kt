@@ -118,11 +118,8 @@ object SharedPreferencesUtil {
     private const val KEY_INPUT_CODEC = "codec_type"
 
     //Carriers
-    const val KEY_LAST_CARRIERS = "last_carriers"
-    const val KEY_LAST_CARRIERS1 = "last_carriers1"
-    const val KEY_LAST_CARRIERS2 = "last_carriers2"
-    const val KEY_LAST_CARRIERS3 = "last_carriers3"
-    private const val KEY_LAST_PRESETS = "last_presets"
+    const val KEY_LAST_CARRIERS = "local_carriers"
+    private const val KEY_LAST_PRESETS = "local_presets"
     private const val KEY_SOS_DEFAULT = "sos_default"
     private const val KEY_TEXT_DEFAULT = "text_default"
     private const val KEY_LOCATION_DEFAULT = "location_default"
@@ -590,17 +587,18 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setCarriers(carriers: List<Carrier>, key: String = KEY_LAST_CARRIERS) {
+    fun setCarriers(carriers: List<Carrier>, index: Int? = null) {
         val gson = GsonBuilder()
             .registerTypeAdapter(Carrier::class.java, CarrierSerializer())
             .create()
 
         val carriersJson = gson.toJson(carriers)
-
+        val key = "$KEY_LAST_CARRIERS${index ?: ""}"
         getPrefs().edit { putString(key, carriersJson) }
     }
 
-    fun getCarriers(key: String = KEY_LAST_CARRIERS): List<Carrier>? {
+    fun getCarriers(index: Int? = null): List<Carrier>? {
+        val key = "$KEY_LAST_CARRIERS${index ?: ""}"
         val carriersJson = getPrefs().getString(key, null)
 
         return if (!carriersJson.isNullOrEmpty()) {

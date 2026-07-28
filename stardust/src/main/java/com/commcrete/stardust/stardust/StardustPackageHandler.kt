@@ -36,7 +36,6 @@ import com.commcrete.stardust.stardust.model.StardustGroupStatusParser
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.AppEvents
-import com.commcrete.stardust.util.CarriersUtils.getCarrierByStardustCarrier
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
 import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
@@ -228,7 +227,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                         rssi = sdPackage.deviceConnectionRssi,
                         signalRssi = sdPackage.signalRssi,
                         snr = sdPackage.snr,
-                        carrier = sdPackage.carrier?.let { getCarrierByStardustCarrier(it) }
+                        carrier = sdPackage.carrier
                 ))
             }
         }

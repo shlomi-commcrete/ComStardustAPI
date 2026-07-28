@@ -741,7 +741,7 @@ object PttSendManager {
 
             bittelPackage?.let { bittelPackage ->
                 bittelPackage.stardustControlByte.stardustPartType = if(isLast) StardustControlByte.StardustPartType.LAST else StardustControlByte.StardustPartType.MESSAGE
-                bittelPackage.stardustControlByte.stardustDeliveryType = radio.second
+                bittelPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
                 DataManager.sendDataToBle(bittelPackage)
             }

@@ -185,9 +185,9 @@ object DataManager : StardustAPI, PttInterface {
                 mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
                 mPackage.messageNumber = splitData.size
                 mPackage.idNumber = id
-                mPackage.stardustControlByte.stardustDeliveryType = radio.second
+                mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 sendDataToBle(mPackage)
-                delay(if(radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.HR) 800 else 4000)
+                delay(if(radio.type == StardustConfigurationParser.CarrierType.HR) 800 else 4000)
             }
         }
     }
@@ -217,7 +217,7 @@ object DataManager : StardustAPI, PttInterface {
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
 
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType = FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(chatId,stardustPackage, location, getClientConnection(), isHR = radio.second)
+        LocationUtils.sendLocation(chatId,stardustPackage, location, getClientConnection(), isHR = radio.deliveryType)
     }
 
     override fun sendImage(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
@@ -269,7 +269,7 @@ object DataManager : StardustAPI, PttInterface {
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
-        stardustPackage.stardustControlByte.stardustDeliveryType = radio.second
+        stardustPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
         }
