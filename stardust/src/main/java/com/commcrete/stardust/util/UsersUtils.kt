@@ -312,16 +312,9 @@ object UsersUtils {
                 val databases = async {
                     cleanAllDatabases(DataManager.context)
                 }
-                val phone = async { SharedPreferencesUtil.removePhone(DataManager.context) }
-                val password = async { SharedPreferencesUtil.removePassword(DataManager.context) }
                 val appUser = async { SharedPreferencesUtil.removeAppUser(DataManager.context) }
-                val user = async { SharedPreferencesUtil.removeUser(DataManager.context) }
 
-                databases.await() &&
-                        phone.await() &&
-                        password.await() &&
-                        appUser.await() &&
-                        user.await()
+                databases.await() && appUser.await()
             }
         }
 

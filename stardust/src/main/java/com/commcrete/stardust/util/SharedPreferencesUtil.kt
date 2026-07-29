@@ -40,21 +40,8 @@ object SharedPreferencesUtil {
     private const val KEY_APP_USER = "app_user"
 
     //Preferences
-    private const val KEY_CODEC_HANDLE_GAIN = "handle_gain"
     private const val KEY_AUDIO_GAIN = "handle_ai_gain"
-    private const val KEY_ENABLE_AUTO_GAIN_CONTROL = "enable_auto_gain_control"
     private const val KEY_ENABLE_NOISE_SUPPRESSOR = "enable_noise_suppressor"
-    private const val KEY_ENABLE_ACOUSTIC_ECHO_CONTROL = "enable_acoustic_echo_control"
-    // Configurable, multiband alternative to platform AGC. When true, the
-    // recorder attaches an `android.media.audiofx.DynamicsProcessing` effect
-    // to the AudioRecord session instead of the boolean platform AGC.
-    // API 28+; falls back to AGC on older devices or when the effect is
-    // not available on the device.
-    private const val KEY_ENABLE_DYNAMICS_PROCESSING = "enable_dynamics_processing"
-    // Input gain (dB) applied at the head of the DynamicsProcessing chain.
-    // Used as the primary "make-up gain" knob — the PCM2900C in the jbox has
-    // a quiet fixed analog stage and benefits from +6 to +12 dB here.
-    private const val KEY_DP_INPUT_GAIN_DB = "dp_input_gain_db"
     private const val KEY_CODEC_RECORDING_TYPE = "recording_type"
     private const val KEY_AI_RECORDING_TYPE = "ai_recording_type"
     private const val KEY_BITTEL_BIT_SERVER = "enable_bittel_server"
@@ -129,15 +116,8 @@ object SharedPreferencesUtil {
     private const val KEY_INPUT_CODEC = "codec_type"
 
     //Carriers
-    const val KEY_LAST_CARRIERS = "local_carriers"
+    private const val KEY_LAST_CARRIERS = "local_carriers"
     private const val KEY_LAST_PRESETS = "local_presets"
-    private const val KEY_SOS_DEFAULT = "sos_default"
-    private const val KEY_TEXT_DEFAULT = "text_default"
-    private const val KEY_LOCATION_DEFAULT = "location_default"
-    private const val KEY_PTT_DEFAULT = "ptt_default"
-    private const val KEY_BFT_DEFAULT = "bft_default"
-    private const val KEY_FILE_DEFAULT = "file_default"
-    private const val KEY_IMAGE_DEFAULT = "image_default"
 
     //Location
     private const val KEY_LOCATION_FORMAT = "location_format"
@@ -161,44 +141,6 @@ object SharedPreferencesUtil {
         }
         return context.getSharedPreferences(PACKAGE_NAME, Context.MODE_PRIVATE)
 
-    }
-
-    fun getUserID(context: Context): String? {
-        return getPrefs(context).getString(KEY_USER_ID, null)
-    }
-
-    fun getPhoneNumber(context: Context): String? {
-        return getPrefs(context).getString(KEY_PHONE_NUMBER, null)
-    }
-
-    fun savePhoneNumber(context: Context, phoneNumber: String) {
-        getPrefs(context).edit().putString(KEY_PHONE_NUMBER, phoneNumber).apply()
-    }
-
-    fun getPassword(context: Context): String? {
-        return getPrefs(context).getString(KEY_PASSWORD, null)
-    }
-
-    fun savePassword(context: Context, password: String) {
-        getPrefs(context).edit().putString(KEY_PASSWORD, password).apply()
-    }
-
-    fun removePassword (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_PASSWORD).apply()
-        return true
-    }
-
-    fun removePhone (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_PHONE_NUMBER).apply()
-        return true
-    }
-
-    fun removeUserID(context: Context) {
-        getPrefs(context).edit().remove(KEY_USER_ID).apply()
-    }
-
-    fun setUserID(context: Context , userId : String){
-        getPrefs(context).edit().putString(KEY_USER_ID, userId).apply()
     }
 
     fun setBittelDevice(context: Context , bittelDevice : String) {
@@ -280,35 +222,6 @@ object SharedPreferencesUtil {
 
     }
 
-    fun getEspPortSelected(context: Context) : Boolean {
-        return getPrefs(context).getBoolean(KEY_ESP_PORT, true)
-    }
-
-    fun setEspPort(context: Context, isSelected : Boolean){
-        getPrefs(context).edit().putBoolean(KEY_ESP_PORT, isSelected).apply()
-    }
-
-    fun getFirebaseToken(context: Context) : String?{
-        return getPrefs(context).getString(KEY_FIREBASE_TOKEN, "")
-    }
-
-    fun setUser(context: Context , user : String?){
-        getPrefs(context).edit().putString(KEY_USER_OBJ, user).apply()
-    }
-
-    fun removeUser (context: Context) : Boolean {
-        getPrefs(context).edit().remove(KEY_USER_OBJ).apply()
-        return true
-    }
-
-    fun getUser(context: Context) : User?{
-        val userString = getPrefs(context).getString(KEY_USER_OBJ, "")
-        if(!userString.isNullOrEmpty()){
-            var user = Gson().fromJson(userString, User::class.java)
-            return user
-        }
-        return null
-    }
 
     fun setDeveloperMode(context: Context , isDeveloper : Boolean = false) {
         getPrefs(context).edit().putBoolean(KEY_DEVELOPER, isDeveloper).apply()
@@ -319,17 +232,14 @@ object SharedPreferencesUtil {
     }
 
     private fun getPreferencesBoolean (context: Context, key :String) : Boolean {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getBoolean(key, false)
     }
 
     private fun getPreferencesInt (context: Context, key :String, default : Int = 0) : Int {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getInt(key, default)
     }
 
     private fun getPreferencesString (context: Context, key :String, default : String = "") : String? {
-        val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         return getPrefs(context).getString(key, default)
     }
 
