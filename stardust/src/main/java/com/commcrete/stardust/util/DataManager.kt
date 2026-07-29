@@ -36,6 +36,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLoca
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.FileSender.OnFileStatusChange
@@ -487,7 +488,7 @@ object DataManager : StardustAPI, PttInterface {
 
     override fun getCarriers(): List<Carrier>? {
         checkInitialized()
-        return CarriersUtils.setLocalCarrierList ()
+        return CarriersUtils.setLocalCarrierList()?.filter { it.deliveryType != StardustDeliveryType.RD4 }
     }
 
     override fun getChatId(): String {
