@@ -45,7 +45,7 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
         pkg.stardustControlByte.stardustPartType =
             if (frame.isTerminal) StardustControlByte.StardustPartType.LAST
             else StardustControlByte.StardustPartType.MESSAGE
-        pkg.stardustControlByte.stardustDeliveryType = radio.second
+        pkg.stardustControlByte.stardustDeliveryType = radio.deliveryType
         pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
 
         DataManager.sendDataToBle(pkg)

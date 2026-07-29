@@ -30,7 +30,7 @@ object CarriersUtils {
 
         for (preset in configPackage.presets) {
             val carriers = getCarriersByPreset(preset)
-            setLocalCarriersByPreset(preset.index, carriers, DataManager.context)
+            setLocalCarriersByPreset(preset.index, carriers)
             carriersMap.put(index, carriers)
             index ++
         }
@@ -39,7 +39,7 @@ object CarriersUtils {
     fun setPresetsWithoutChange() {
         carriersMap.clear()
         for (i in 0..2) {
-            val localCarriers = getLocalCarriersByPreset(i,DataManager.context) ?: continue
+            val localCarriers = getLocalCarriersByPreset(i) ?: continue
             carriersMap.put(i, localCarriers)
         }
     }
@@ -132,12 +132,12 @@ object CarriersUtils {
         return carrier
     }
 
-    private fun getLocalCarriersByPreset(presetIndex: Int, context: Context) : List<Carrier>? {
-        return SharedPreferencesUtil.getCarriers(context, presetIndex)
+    private fun getLocalCarriersByPreset(presetIndex: Int) : List<Carrier>? {
+        return SharedPreferencesUtil.getCarriers(presetIndex)
     }
 
-    private fun setLocalCarriersByPreset(presetIndex: Int, carriers: List<Carrier>, context: Context) {
-        SharedPreferencesUtil.setCarriers(context, carriers, presetIndex)
+    private fun setLocalCarriersByPreset(presetIndex: Int, carriers: List<Carrier>) {
+        SharedPreferencesUtil.setCarriers(carriers, presetIndex)
     }
 
 

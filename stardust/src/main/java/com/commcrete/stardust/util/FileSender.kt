@@ -257,7 +257,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 destination = data.stardustAPIPackage.receiverId,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = dataToSend)
-            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
             it.addMessageToQueue(fileStartMessage)
         }
     }
@@ -327,14 +327,14 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 functionalityType = functionalityType,
                 carrier = data.stardustAPIPackage.carrier
             ) ?: return
-            sendInterval = if (radio.first.type == StardustConfigurationParser.StardustTypeFunctionality.ST) 300L else 900L
+            sendInterval = if (radio.type == StardustConfigurationParser.CarrierType.ST) 300L else 900L
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
                 source = data.stardustAPIPackage.senderId,
                 destination = data.stardustAPIPackage.receiverId,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = stardustFilePackage.toArrayInt()
             )
-            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.second
+            fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
             if (stardustFilePackage.isLast) {
                 fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
             }
@@ -384,13 +384,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         }
 
         fun calculateSendTime(numOfPackages: Int, functionalityType: FunctionalityType): String {
-            val radio: Pair<Carrier?, StardustControlByte.StardustDeliveryType?>? =
-                getRadioToSend(null, functionalityType)
+            val radio = getRadioToSend(null, functionalityType)
 
-            val totalTime =
-                if (radio?.first != null &&
-                    radio.first?.component2() == StardustConfigurationParser.StardustTypeFunctionality.ST
-                ) 0.3 else 1.3
+            val totalTime = if (radio?.type == StardustConfigurationParser.CarrierType.ST) 0.3 else 1.3
 
             val totalSeconds = numOfPackages * totalTime // Total time in seconds as a Double
             val minutes = totalSeconds.toInt() / 60 // Whole minutes
