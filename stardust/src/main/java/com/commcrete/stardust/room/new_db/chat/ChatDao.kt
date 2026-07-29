@@ -48,7 +48,15 @@ interface ChatDao {
     @Transaction
     suspend fun insertChatWithParticipants(chat: ChatEntity, participantIds: List<Int>) {
         upsertChat(chat)
-        replaceParticipants(chat.id, participantIds)
+        // `chats.name` is UNIQUE: when a chat with this name already exists under a different id,
+        // the upsert-by-primary-key above matches nothing and chat.id is never stored. Linking
+        // participants to that missing id would violate the chat_id foreign key (SQLITE_CONSTRAINT
+        // 787) and crash. Only wire participants when the chat we intended to create is actually
+        // present — otherwise a chat by this name already exists and there is nothing to create,
+        // so leave its participants untouched rather than clobbering them.
+        if (getChatByChatId(chat.id) != null) {
+            replaceParticipants(chat.id, participantIds)
+        }
     }
 
     @Transaction
