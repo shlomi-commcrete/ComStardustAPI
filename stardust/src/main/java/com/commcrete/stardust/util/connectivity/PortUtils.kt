@@ -3,9 +3,10 @@ package com.commcrete.stardust.util.connectivity
 
 import android.os.Handler
 import android.os.Looper
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.transport.TransportId
-import com.commcrete.stardust.transport.TransportRegistry
+import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
@@ -27,9 +28,18 @@ object PortUtils {
     fun startUpdatingPort() {
         job = Scopes.getMainCoroutine().launch {
             while (isActive) {
-                TransportRegistry.active()?.let { transport ->
-                    transport.updateBlePort()
-                    Timber.tag("startUpdatingPort").d("updatePort over ${transport.id}")
+                // BLE and USB are mutually exclusive — pick the transport-specific port-mode
+                // command explicitly rather than routing through a shared interface that used to
+                // silently misdispatch (see BittelProtocol KDoc).
+                when {
+                    BleManager.isUsbEnabled() -> {
+                        BittelUsbManager2.setUsbPortModeOnRadio()
+                        Timber.tag("startUpdatingPort").d("USB active → setUsbPortModeOnRadio")
+                    }
+                    BleManager.isBluetoothConnected() -> {
+                        DataManager.getClientConnection().setBlePortModeOnRadio()
+                        Timber.tag("startUpdatingPort").d("BLE active → setBlePortModeOnRadio")
+                    }
                 }
                 delay(20000)
             }

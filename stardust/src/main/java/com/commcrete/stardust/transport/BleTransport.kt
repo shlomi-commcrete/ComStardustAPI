@@ -31,7 +31,5 @@ internal class BleTransport(private val conn: ClientConnection) : Transport {
         conn.reconnectToDevice()
     }
 
-    override fun updateBlePort() = conn.updateBlePort()
-
     override fun saveConfiguration() = conn.saveConfiguration()
 }

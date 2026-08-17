@@ -1,6 +1,7 @@
 package com.commcrete.stardust.stardust
 
 
+import android.util.Log
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.ConfigurationUtils
@@ -18,7 +19,14 @@ internal object StardustIncomingConfigurationHandler {
 
     fun parseAndApplyConfiguration(packet: StardustPackage): ApplyResult {
         val cfg = StardustConfigurationParser().parseConfiguration(packet)
-            ?: return ApplyResult(applied = false, hasPresetsWithoutConfig = false)
+        if (cfg == null) {
+            Log.w(
+                "ConfigDebug",
+                "parseConfiguration returned NULL opCode=${packet.stardustOpCode} " +
+                    "dataLen=${packet.getDataSizeLength()} dataStr=${packet.getDataAsString()} bytes=[${packet.toHex()}]"
+            )
+            return ApplyResult(applied = false, hasPresetsWithoutConfig = false)
+        }
         SharedPreferencesUtil.saveLastSosDestinations(cfg.sosDestinations)
         Scopes.getMainCoroutine().launch {
             ConfigurationUtils.bittelConfiguration.value = cfg

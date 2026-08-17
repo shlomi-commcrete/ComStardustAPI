@@ -2,6 +2,7 @@ package com.commcrete.stardust.audio.v2.application.receive
 
 import com.commcrete.stardust.audio.v2.application.port.AudioCodec
 import com.commcrete.stardust.audio.v2.domain.Gain
+import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.StreamKey
 import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.ConcurrentHashMap
@@ -21,6 +22,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class StreamRegistry(
     private val scope: CoroutineScope,
+    private val onDecoded: (StreamKey, PcmChunk) -> Unit = { _, _ -> },
+    private val onEvicted: (StreamKey) -> Unit = {},
     private val idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS,
     private val maxSinks: Int = DEFAULT_MAX_SINKS,
 ) {
@@ -43,6 +46,7 @@ class StreamRegistry(
                 sampleRateHz = codec.sampleRateHz,
                 initialGain = effective(k),
                 onClosed = ::onStreamClosed,
+                onDecoded = onDecoded,
                 idleTimeoutMs = idleTimeoutMs,
                 scope = scope,
             ).also { built = it }
@@ -79,6 +83,7 @@ class StreamRegistry(
 
     private fun onStreamClosed(key: StreamKey) {
         streams.remove(key)
+        onEvicted(key)
     }
 
     private fun reclaimIfOverBudget() {

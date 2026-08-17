@@ -5,6 +5,7 @@ import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.audio.v2.domain.StreamKey
 import com.commcrete.stardust.audio.v2.framework.PttSendRouting
+import com.commcrete.stardust.audio.v2.framework.PttSendStore
 import com.commcrete.stardust.audio.v2.framework.SendRoute
 import com.commcrete.stardust.util.Carrier
 import kotlinx.coroutines.CoroutineScope
@@ -19,20 +20,27 @@ import kotlinx.coroutines.launch
 class RecorderUtilsBridge(
     private val send: PttSendCoordinator,
     private val routing: PttSendRouting,
+    private val sendStore: PttSendStore,
     private val scope: CoroutineScope,
 ) {
     @Volatile private var currentId: RecordingId? = null
 
-    /** Key-down. [source] is this device's id, [destination] the peer id, [carrier] the radio (or null for default). */
-    suspend fun startRecording(codecId: CodecId, source: String, destination: String, carrier: Carrier?) {
+    /**
+     * Key-down. [source] is this device's id, [destination] the peer id, [chatId] the chat the PTT
+     * belongs to (for the history row), [carrier] the radio (or null for default).
+     */
+    suspend fun startRecording(codecId: CodecId, chatId: String, source: String, destination: String, carrier: Carrier?) {
+        val startedAtMs = System.currentTimeMillis()
         val id = send.restart(codecId, StreamKey(destination)) { newId ->
             routing.register(newId, SendRoute(source, destination, carrier))
         }
         currentId = id
-        // Release routing once the recording (including its post-key-up drain) has fully finalized.
+        // After the recording (incl. its post-key-up drain + mirror WAV) finalizes: release routing
+        // and persist the SENT history row.
         scope.launch {
             send.awaitFinalized(id)
             routing.release(id)
+            sendStore.onFinalized(id, chatId, destination, codecId, startedAtMs)
         }
     }
 

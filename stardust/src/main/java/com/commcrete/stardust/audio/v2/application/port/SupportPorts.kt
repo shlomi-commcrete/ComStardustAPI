@@ -41,3 +41,12 @@ interface NativeModulePool<T> {
 interface Clock {
     fun nowMs(): Long
 }
+
+/**
+ * Holds a partial wake-lock for a recording's lifetime so screen-off can't suspend the capture/encode
+ * coroutines. Refcounted in the impl — every [acquire] must be balanced by exactly one [release].
+ */
+interface KeepAlive {
+    fun acquire()
+    fun release()
+}

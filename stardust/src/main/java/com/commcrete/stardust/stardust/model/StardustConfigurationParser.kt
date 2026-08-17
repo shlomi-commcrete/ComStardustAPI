@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
+import android.util.Log
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.util.Carrier
@@ -152,114 +153,118 @@ class StardustConfigurationParser : StardustParser() {
         }
     }
 
-    fun parseConfiguration(StardustPackage: StardustPackage) : StardustConfigurationPackage? {
-        StardustPackage.data?.let { intArray ->
-            try {
+    fun parseConfiguration(pkg: StardustPackage) : StardustConfigurationPackage? {
+        val intArray = pkg.data
+        if (intArray == null) {
+            Log.w("ConfigDebug", "parseConfiguration: pkg.data is NULL (opCode=${pkg.stardustOpCode}) -> returning null")
+            return null
+        }
+        Log.d("ConfigDebug", "parseConfiguration: parsing data size=${intArray.size} data=[${intArray.joinToString(" ") { "%02X".format(it and 0xFF) }}]")
+        try {
 
-                val byteArray = intArrayToByteArray(intArray.toMutableList())
-                var offset = 0
-                val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
-                offset += sizeLength
-                //Preset 1
-                val presetsBytes = cutByteArray(byteArray, presetParsetsLength, offset)
-                val presets = parsePresets(presetsBytes)
-                offset += presetParsetsLength
+            val byteArray = intArrayToByteArray(intArray.toMutableList())
+            var offset = 0
+            val sizeBytes = cutByteArray(byteArray, sizeLength, offset)
+            offset += sizeLength
+            //Preset 1
+            val presetsBytes = cutByteArray(byteArray, presetParsetsLength, offset)
+            val presets = parsePresets(presetsBytes)
+            offset += presetParsetsLength
 
-                val LOTXFreqBytes = cutByteArray(byteArray, LOTXFreqLength, offset)
-                offset += LOTXFreqLength
-                val LORXFreqBytes = cutByteArray(byteArray, LORXFreqLength, offset)
-                offset += LORXFreqLength
-                val LOTXPowerBytes = cutByteArray(byteArray, LOTXPowerLength, offset)
-                offset += LOTXPowerLength
-                val LORXPowerBytes = cutByteArray(byteArray, LORXPowerLength, offset)
-                offset += LORXPowerLength
+            val LOTXFreqBytes = cutByteArray(byteArray, LOTXFreqLength, offset)
+            offset += LOTXFreqLength
+            val LORXFreqBytes = cutByteArray(byteArray, LORXFreqLength, offset)
+            offset += LORXFreqLength
+            val LOTXPowerBytes = cutByteArray(byteArray, LOTXPowerLength, offset)
+            offset += LOTXPowerLength
+            val LORXPowerBytes = cutByteArray(byteArray, LORXPowerLength, offset)
+            offset += LORXPowerLength
 
-                val currentPresetBytes = cutByteArray(byteArray, currentPresetLength, offset)
-                offset += currentPresetLength
+            val currentPresetBytes = cutByteArray(byteArray, currentPresetLength, offset)
+            offset += currentPresetLength
 
-                val bittelType = cutByteArray(byteArray, bittelTypeLength, offset)
-                offset += bittelTypeLength
-                val portType = cutByteArray(byteArray, portTypeLength, offset)
-                offset += portTypeLength
-                val crcType = cutByteArray(byteArray, crcTypeLength, offset)
-                offset += crcTypeLength
-                val serverByteType = cutByteArray(byteArray, serverByteTypeLength, offset)
-                offset += serverByteTypeLength
-                val debugCanTrasmit = cutByteArray(byteArray, debuIgnoreCanTrasmitLength, offset)
-                offset += debuIgnoreCanTrasmitLength
-                val snifferModeBytes = cutByteArray(byteArray, snifferModeLength, offset)
-                offset += snifferModeLength
-                val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
-                offset += bittelAddressLength
-                val appIdBytes = cutByteArray(byteArray, appAddressLength, offset)
-                offset += appAddressLength
-                val logBytes = cutByteArray(byteArray, logModeLength, offset)
-                offset += logModeLength
-                val antennaBytes = cutByteArray(byteArray, antennaTypeLength, offset)
-                offset += antennaTypeLength
-                val tOutBytes = cutByteArray(byteArray, tOutLength, offset)
-                offset += tOutLength
-                val SOSDataBytes = cutByteArray(byteArray, SOSDataLength, offset)
-                offset += SOSDataLength
-                val radioLODeduction = cutByteArray(byteArray, radioLODeductionLength, offset)
-                offset += radioLODeductionLength
-                val radioXcvr4DeductionBytes = cutByteArray(byteArray, radioXcvr4DeductionLength, offset)
-                offset += radioXcvr4DeductionLength
-                val deviceModelBytes = cutByteArray(byteArray, deviceModelLength, offset)
-                offset += deviceModelLength
-                val deviceSerialBytes = cutByteArray(byteArray, deviceSerialLength, offset)
-                offset += deviceSerialLength
-                val licenceNumberBytes = cutByteArray(byteArray, licenceNumberLength, offset)
-                offset += licenceNumberLength
-                val transmitterModeBytes = cutByteArray(byteArray, transmitterModeLength, offset)
-                offset += transmitterModeLength
-                val power12V = cutByteArray(byteArray, power12VLength, offset)
-                offset += power12VLength
-                val powerBattery = cutByteArray(byteArray, powerBatteryLength, offset)
-                offset += powerBatteryLength
-                val batteryChargeStatus = cutByteArray(byteArray, batteryChargeStatusLength, offset)
-                offset += batteryChargeStatusLength
-                val mcuTemperature = cutByteArray(byteArray, mcuTemperatureLength, offset)
-                offset += mcuTemperatureLength
-                val rdpLevel = cutByteArray(byteArray, rdpLevelLength, offset)
-                offset += rdpLevelLength
-                val deviceTypeBytes = cutByteArray(byteArray, deviceTypeLength, offset)
-                offset += deviceTypeLength
+            val bittelType = cutByteArray(byteArray, bittelTypeLength, offset)
+            offset += bittelTypeLength
+            val portType = cutByteArray(byteArray, portTypeLength, offset)
+            offset += portTypeLength
+            val crcType = cutByteArray(byteArray, crcTypeLength, offset)
+            offset += crcTypeLength
+            val serverByteType = cutByteArray(byteArray, serverByteTypeLength, offset)
+            offset += serverByteTypeLength
+            val debugCanTrasmit = cutByteArray(byteArray, debuIgnoreCanTrasmitLength, offset)
+            offset += debuIgnoreCanTrasmitLength
+            val snifferModeBytes = cutByteArray(byteArray, snifferModeLength, offset)
+            offset += snifferModeLength
+            val bittelIdBytes = cutByteArray(byteArray, bittelAddressLength, offset)
+            offset += bittelAddressLength
+            val appIdBytes = cutByteArray(byteArray, appAddressLength, offset)
+            offset += appAddressLength
+            val logBytes = cutByteArray(byteArray, logModeLength, offset)
+            offset += logModeLength
+            val antennaBytes = cutByteArray(byteArray, antennaTypeLength, offset)
+            offset += antennaTypeLength
+            val tOutBytes = cutByteArray(byteArray, tOutLength, offset)
+            offset += tOutLength
+            val SOSDataBytes = cutByteArray(byteArray, SOSDataLength, offset)
+            offset += SOSDataLength
+            val radioLODeduction = cutByteArray(byteArray, radioLODeductionLength, offset)
+            offset += radioLODeductionLength
+            val radioXcvr4DeductionBytes = cutByteArray(byteArray, radioXcvr4DeductionLength, offset)
+            offset += radioXcvr4DeductionLength
+            val deviceModelBytes = cutByteArray(byteArray, deviceModelLength, offset)
+            offset += deviceModelLength
+            val deviceSerialBytes = cutByteArray(byteArray, deviceSerialLength, offset)
+            offset += deviceSerialLength
+            val licenceNumberBytes = cutByteArray(byteArray, licenceNumberLength, offset)
+            offset += licenceNumberLength
+            val transmitterModeBytes = cutByteArray(byteArray, transmitterModeLength, offset)
+            offset += transmitterModeLength
+            val power12V = cutByteArray(byteArray, power12VLength, offset)
+            offset += power12VLength
+            val powerBattery = cutByteArray(byteArray, powerBatteryLength, offset)
+            offset += powerBatteryLength
+            val batteryChargeStatus = cutByteArray(byteArray, batteryChargeStatusLength, offset)
+            offset += batteryChargeStatusLength
+            val mcuTemperature = cutByteArray(byteArray, mcuTemperatureLength, offset)
+            offset += mcuTemperatureLength
+            val rdpLevel = cutByteArray(byteArray, rdpLevelLength, offset)
+            offset += rdpLevelLength
+            val deviceTypeBytes = cutByteArray(byteArray, deviceTypeLength, offset)
+            offset += deviceTypeLength
 
-                val bittelConfigurationPackage = StardustConfigurationPackage(
-                    licenseType = byteArrayToInt(licenceNumberBytes).let { licenceNumber ->
-                        LicenseType.entries.find { it.type == licenceNumber } ?: LicenseType.UNDEFINED },
-                    presets = presets,
-                    powerLOTX = byteArrayToInt(LOTXPowerBytes.reversedArray()),
-                    powerLORX = byteArrayToInt(LORXPowerBytes.reversedArray()),
-                    frequencyLOTX = byteArrayToUInt32(LOTXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    frequencyLORX = byteArrayToUInt32(LORXFreqBytes.reversedArray()).toDouble().div(MHz),
-                    currentPreset = CurrentPreset.entries[byteArrayToInt(currentPresetBytes)],
-                    bittelType = StardustType.entries[byteArrayToInt(bittelType)],
-                    portType = getPortType(byteArrayToInt(portType)),
-                    crcType = byteArrayToInt(crcType),
-                    serverByteType = byteArrayToInt(serverByteType),
-                    debugIgnoreCanTransmit = byteArrayToBoolean(debugCanTrasmit),
-                    snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
-                    appId = appIdBytes.reversedArray().toHex().substring(0,8),
-                    stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
-                    sosXCVR = SOSDataBytes.copyOfRange(0, 1).toHex().take(1).toInt(),
-                    sosDestinations = parseSosDestinations(SOSDataBytes),
-                    deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
-                    deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
-                    antenna = AntennaType.entries[byteArrayToInt(antennaBytes)],
-                    radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
-                    power12V = byteArrayToFloat(power12V.reversedArray()),
-                    powerBattery = byteArrayToFloat(powerBattery.reversedArray()),
-                    batteryChargeStatus = StardustBatteryCharge.values()[byteArrayToInt(batteryChargeStatus)],
-                    mcuTemperature = byteArrayToInt(mcuTemperature),
-                    rdpLevel = StardustRDPLevel.entries[byteArrayToInt(rdpLevel)],
-                )
-                return bittelConfigurationPackage
-            } catch (e : Exception) {
-                e.printStackTrace()
-            }
-
+            val bittelConfigurationPackage = StardustConfigurationPackage(
+                licenseType = byteArrayToInt(licenceNumberBytes).let { licenceNumber ->
+                    LicenseType.entries.find { it.type == licenceNumber } ?: LicenseType.UNDEFINED },
+                presets = presets,
+                powerLOTX = byteArrayToInt(LOTXPowerBytes.reversedArray()),
+                powerLORX = byteArrayToInt(LORXPowerBytes.reversedArray()),
+                frequencyLOTX = byteArrayToUInt32(LOTXFreqBytes.reversedArray()).toDouble().div(MHz),
+                frequencyLORX = byteArrayToUInt32(LORXFreqBytes.reversedArray()).toDouble().div(MHz),
+                currentPreset = CurrentPreset.entries[byteArrayToInt(currentPresetBytes)],
+                bittelType = StardustType.entries[byteArrayToInt(bittelType)],
+                portType = getPortType(byteArrayToInt(portType)),
+                crcType = byteArrayToInt(crcType),
+                serverByteType = byteArrayToInt(serverByteType),
+                debugIgnoreCanTransmit = byteArrayToBoolean(debugCanTrasmit),
+                snifferMode = SnifferMode.entries[byteArrayToInt(snifferModeBytes)],
+                appId = appIdBytes.reversedArray().toHex().substring(0,8),
+                stardustId = bittelIdBytes.reversedArray().toHex().substring(0,8),
+                sosXCVR = SOSDataBytes.copyOfRange(0, 1).toHex().take(1).toInt(),
+                sosDestinations = parseSosDestinations(SOSDataBytes),
+                deviceModel = deviceModelBytes.toString(Charsets.UTF_8),
+                deviceSerial = deviceSerialBytes.toString(Charsets.UTF_8),
+                antenna = AntennaType.entries[byteArrayToInt(antennaBytes)],
+                radioLODeduction = byteArrayToFloat(radioLODeduction.reversedArray()),
+                power12V = byteArrayToFloat(power12V.reversedArray()),
+                powerBattery = byteArrayToFloat(powerBattery.reversedArray()),
+                batteryChargeStatus = StardustBatteryCharge.values()[byteArrayToInt(batteryChargeStatus)],
+                mcuTemperature = byteArrayToInt(mcuTemperature),
+                rdpLevel = StardustRDPLevel.entries[byteArrayToInt(rdpLevel)],
+            )
+            return bittelConfigurationPackage
+        } catch (e : Exception) {
+            Log.w("ConfigDebug", "parseConfiguration THREW while parsing (data size=${intArray.size}): ${e.message}", e)
+            e.printStackTrace()
         }
         return null
     }

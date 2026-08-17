@@ -87,10 +87,15 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     fun handleStardustPackage(bittelPackage: StardustPackage?, randomID: String) {
-        val mPackage = bittelPackage ?: return
+        val mPackage = bittelPackage ?: run {
+            Log.w("ConfigDebug", "handleStardustPackage bittelPackage=NULL (dropped) id=$randomID")
+            return
+        }
+        Log.d("ConfigDebug", "handleStardustPackage ENTER opCode=${mPackage.stardustOpCode} id=$randomID savedOpCode=${savedPackage?.stardustOpCode}")
 
         synchronized(packageProcessingLock) {
             if (isDuplicate(mPackage)) {
+                Log.w("ConfigDebug", "handleStardustPackage -> isDuplicate == true for $randomID (opCode=${mPackage.stardustOpCode})")
                 resetTimer()
                 return
             }
@@ -108,11 +113,13 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             }
 
             if (StardustInitConnectionHandler.onIncoming(mPackage)) {
+                Log.w("ConfigDebug", "handleStardustPackage -> StardustInitConnectionHandler.onIncoming for $randomID" )
                 synchronized(packageProcessingLock) { resetTimer() }
                 return@launch
             }
             Timber.tag("InitHandler").d("not handled by init handler")
 
+            Log.w("ConfigDebug", "handleStardustPackage -> dispatchPackage for $randomID" )
             dispatchPackage(mPackage, randomID)
             synchronized(packageProcessingLock) { resetTimer() }
         }
@@ -268,12 +275,15 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleAdminModeResponse() {
-        if(BleManager.isUsbEnabled()){
-            BittelUsbManager2.updateBlePort()
-            Timber.tag("startUpdatingPort").d("updateUsbPort")
-        }else if (BleManager.isBluetoothConnected()) {
-            DataManager.getClientConnection().updateBlePort()
-            Timber.tag("startUpdatingPort").d("updateBlePort")
+        // BLE and USB are mutually exclusive by design. Dispatch to the transport-specific
+        // port-mode command — never the wrong one, since the two methods do OPPOSITE things
+        // (BLE keeps the radio in BLE mode; USB switches it to USB mode / disables BLE).
+        if (BleManager.isUsbEnabled()) {
+            BittelUsbManager2.setUsbPortModeOnRadio()
+            Timber.tag("startUpdatingPort").d("USB session → setUsbPortModeOnRadio")
+        } else if (BleManager.isBluetoothConnected()) {
+            DataManager.getClientConnection().setBlePortModeOnRadio()
+            Timber.tag("startUpdatingPort").d("BLE session → setBlePortModeOnRadio")
         }
     }
 
@@ -512,14 +522,19 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handlePTTAI(mPackage: StardustPackage) {
-        PlayerUtils.onPTTAiReceived(dataPackage = mPackage)
+        if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
+            PttV2Wiring.init(DataManager.appContext)
+            PttV2Wiring.router.onPackage(mPackage, StardustPackageUtils.StardustOpCode.SEND_PTT_AI.codeID)
+        } else {
+            PlayerUtils.onPTTAiReceived(dataPackage = mPackage)
+        }
     }
 
     private fun handlePTT(mPackage: StardustPackage) {
-        // v2 receive path (flag-guarded). Default flag = false → legacy PlayerUtils path.
+        // v2 receive path (flag-guarded). Semantic codec is CODEC2 here even for SPEECH SEND_MESSAGE.
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
             PttV2Wiring.init(DataManager.appContext)
-            PttV2Wiring.router.onPackage(mPackage)
+            PttV2Wiring.router.onPackage(mPackage, StardustPackageUtils.StardustOpCode.SEND_PTT.codeID)
         } else {
             PlayerUtils.onPTTCodecReceived(dataPackage = mPackage)
         }

@@ -6,6 +6,7 @@ import android.content.Context.USB_SERVICE
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
+import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
@@ -77,6 +78,10 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (device: UsbDevice) {
+        if (!RegisteredUserUtils.isUserLoggedIn()) {
+            Timber.tag("SerialInOutputManager").d("Skipping USB connect: no user logged in")
+            return
+        }
         if (isJboxAudioDevice(device)) {
             isJboxAudioPresent = true
             connectToAudioDevice( device)
@@ -266,8 +271,15 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
-    override fun updateBlePort() {
+    /**
+     * Tells the radio to run in USB-active mode (BLUETOOTH_ENABLED_USB / BLUETOOTH_DISABLED_USB).
+     * Call ONLY from a USB session — sending this over BLE would disable BLE on the radio and is
+     * exactly the sync-error bug that reconnect-after-pair used to hit when the shared
+     * `updateBlePort` interface method routed the wrong implementation.
+     */
+    fun setUsbPortModeOnRadio() {
         val (src, dst) = requireLocalSrcDst() ?: return
+        android.util.Log.d("ConfigDebug", "BittelUsbManager2.setUsbPortModeOnRadio → ${getUartPortType()} (radio to USB mode) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
 
         val uartPort = getUartPortType().type.intToByteArray().reversedArray()
         val data = StardustPackageUtils.byteArrayToIntArray(uartPort)

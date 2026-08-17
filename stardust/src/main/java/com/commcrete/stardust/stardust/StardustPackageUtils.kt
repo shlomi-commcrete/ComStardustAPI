@@ -16,12 +16,17 @@ object StardustPackageUtils {
     const val Ack = 0x01
     const val Nack = 0x02
     private val packagesList : MutableList<StardustPackageParser> = mutableListOf()
+    // packagesList is the inbound reassembly buffer, touched from the BLE binder thread and the USB
+    // read thread (both call handlePackageReceived) AND cleared by the main-looper reassembly-timeout
+    // runnable. It is a plain ArrayList, so every access is serialised on this lock — otherwise the
+    // timer's clear() racing a mid-parse get(lastIndex) throws IndexOutOfBoundsException.
+    private val packagesLock = Any()
     val packageLiveData : MutableLiveData<StardustPackage?> = MutableLiveData()
     private val handler : Handler = Handler(Looper.getMainLooper())
     private var lastByteArray : ByteArray? = null
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
         packageLiveData.value = null
-        packagesList.clear()
+        synchronized(packagesLock) { packagesList.clear() }
     }
     private val handlerByteArray : Handler = Handler(Looper.getMainLooper())
     private val runnableByteArray : Runnable = kotlinx.coroutines.Runnable {
@@ -740,40 +745,47 @@ object StardustPackageUtils {
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
 //            logByteArray("handlePackageReceivedbyteArray $randomID", byteArray)
         Log.d("handlePackageReceived $randomID", "handlePackageReceived")
-        try {
-            if(packagesList.isNotEmpty() && packagesList[packagesList.lastIndex] == null ){
-                packagesList.removeAt(packagesList.lastIndex)
-            }
-        } catch (e : Exception) {
-            e.printStackTrace()
-        }
-        Log.d("handlePackageReceived $randomID", "removeAt")
 
-        if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
+        // Parse under the lock; extract what to hand off. All packagesList access is confined here.
+        var bittelPackage: StardustPackage? = null
+        var spareData: ByteArray? = null
+        synchronized(packagesLock) {
+            try {
+                if(packagesList.isNotEmpty() && packagesList[packagesList.lastIndex] == null ){
+                    packagesList.removeAt(packagesList.lastIndex)
+                }
+            } catch (e : Exception) {
+                e.printStackTrace()
+            }
+
+            if(packagesList.isEmpty() || packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.VALID){
                 packagesList.add(StardustPackageParser())
             }
-        Log.d("handlePackageReceived $randomID", "add")
 
-        val isFinished = packagesList[packagesList.lastIndex].populateByteBuffer(byteArray)
-        Log.d("handlePackageReceived $randomID", "isFinished")
-        val mPackage =  packagesList[packagesList.lastIndex]
-        if(isFinished == StardustPackageParser.PackageState.VALID){
-            val dataForStardustPackage = packagesList[packagesList.lastIndex]
-            val bittelPackage = dataForStardustPackage.mPackage
-            dataForStardustPackage.spareData?.let {
-                if(it.isNotEmpty()){
-                    handlePackageReceived(it, randomID)
-                }
+            val parser = packagesList[packagesList.lastIndex]
+            val isFinished = parser.populateByteBuffer(byteArray)
+            if(isFinished == StardustPackageParser.PackageState.VALID){
+                bittelPackage = parser.mPackage
+                spareData = parser.spareData
+                if (bittelPackage != null) packagesList.remove(parser)
+            } else if (parser.packageState == StardustPackageParser.PackageState.INVALID_DATA) {
+                packagesList.remove(parser)
             }
-            bittelPackage?.let {
-                bittelPackageHandler?.handleStardustPackage( it, randomID)
-                packagesList.remove(mPackage)
-            }
-        } else if (packagesList[packagesList.lastIndex].packageState == StardustPackageParser.PackageState.INVALID_DATA) {
-            packagesList.remove(mPackage)
-
         }
-//        }
+
+        // Hand off OUTSIDE the lock so the main-thread reassembly-timeout clear() can never block
+        // behind slow package handling (ANR). Spare bytes are re-fed first (unchanged ordering).
+        spareData?.let {
+            if(it.isNotEmpty()){
+                android.util.Log.d("ConfigDebug", "reassembly: spare bytes present size=${it.size} — recursing")
+                handlePackageReceived(it, randomID)
+            }
+        }
+        bittelPackage?.let {
+            android.util.Log.d("ConfigDebug", "reassembly COMPLETE opCode=${it.stardustOpCode} dataNull=${it.data == null} dataSize=${it.data?.size} — dispatching")
+            bittelPackageHandler?.handleStardustPackage( it, randomID)
+        }
+
         resetTimer()
         resetTimerByteArray()
     }

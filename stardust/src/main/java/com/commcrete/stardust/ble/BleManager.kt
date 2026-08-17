@@ -72,7 +72,7 @@ object BleManager {
         return isNetworkConnected && isNetworkToggleEnabled
     }
 
-    fun isBluetoothConnected() : Boolean{
+    fun isBluetoothConnected() : Boolean {
         return isBleConnected && getClientConnection().isBluetoothEnabled()
     }
 

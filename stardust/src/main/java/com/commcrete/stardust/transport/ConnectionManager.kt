@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothAdapter
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
+import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -103,8 +104,6 @@ object ConnectionManager {
 
     private fun derive(active: TransportId?, s: State): ConnectionState = when {
         s == State.BLUETOOTH_OFF -> ConnectionState.BluetoothOff
-        // Terminal errors are surfaced regardless of transport presence — evaluated before the
-        // active==null gate so a failure isn't lost as plain Disconnected when the link drops.
         s == State.CANCELED || StardustInitConnectionHandler.hasUnsyncableError() ->
             ConnectionState.Error(toConnectionError(s))
         active == null -> if (s == State.SEARCHING) ConnectionState.Searching else ConnectionState.Disconnected
@@ -187,6 +186,7 @@ object ConnectionManager {
 
     private fun shouldAutoReconnect(): Boolean =
         autoReconnectDesired &&
+            RegisteredUserUtils.isUserLoggedIn() &&
             BleManager.isPaired.value == true &&
             !BleManager.isUSBConnected &&
             isBluetoothOn() &&

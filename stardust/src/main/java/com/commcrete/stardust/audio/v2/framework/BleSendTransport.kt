@@ -1,5 +1,6 @@
 package com.commcrete.stardust.audio.v2.framework
 
+import com.commcrete.stardust.audio.v2.application.codec.CodecRegistry
 import com.commcrete.stardust.audio.v2.application.port.SendTransport
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
 import com.commcrete.stardust.enums.FunctionalityType
@@ -29,8 +30,13 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
         val route = routing.get(owner) ?: return
         val radio = CarriersUtils.getRadioToSend(route.carrier, functionalityType = FunctionalityType.PTT) ?: return
 
+        // Resolve the wire opcode from the frame's codec (CODEC2 → SEND_PTT 0x15, WavTokenizer → SEND_PTT_AI 0x3A).
+        val opcode = CodecRegistry.byCodecId(frame.codecId).sendOpcode
+        val stardustOpCode = StardustPackageUtils.StardustOpCode.values().firstOrNull { it.codeID == opcode } ?: return
+
         val audioIntArray = StardustPackageUtils.byteArrayToIntArray(frame.payload)
-        if (audioIntArray.endsWithSuffix()) {
+        // SUFFIX-collision randomization is a SEND_PTT (CODEC2) concern only — never mutate AI token payloads.
+        if (opcode == StardustPackageUtils.StardustOpCode.SEND_PTT.codeID && audioIntArray.endsWithSuffix()) {
             val num = Random.nextInt(0, 41)
             audioIntArray[audioIntArray.lastIndex] = num
             audioIntArray[audioIntArray.lastIndex - 1] = num
@@ -39,7 +45,7 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
         val pkg = StardustPackageUtils.getStardustPackage(
             source = route.source,
             destination = route.destination,
-            stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_PTT,
+            stardustOpCode = stardustOpCode,
             data = audioIntArray,
         )
         pkg.stardustControlByte.stardustPartType =

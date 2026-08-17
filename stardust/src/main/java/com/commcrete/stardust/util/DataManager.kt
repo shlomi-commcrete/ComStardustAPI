@@ -378,6 +378,17 @@ object DataManager : StardustAPI, PttInterface {
 
     fun bondOnStartup() {
         checkInitialized()
+        val user = RegisteredUserUtils.currentUserFlow.value
+        android.util.Log.d("ConfigDebug",
+            "bondOnStartup ENTER user.appId=${user?.appId} user.deviceId=${user?.deviceId} " +
+                "isBluetoothEnabled=${getClientConnection().isBluetoothEnabled()}"
+        )
+        // Only attempt to (re)connect once a user is logged in.
+        if (!RegisteredUserUtils.isUserLoggedIn()) {
+            Timber.w("bondOnStartup skipped: no user logged in")
+            android.util.Log.w("ConfigDebug", "bondOnStartup SKIPPED — no user logged in")
+            return
+        }
         getClientConnection().initBleStatus()
         // Check if Bluetooth is enabled; if not, user will see a dialog
         if (!getClientConnection().isBluetoothEnabled()) {
@@ -391,8 +402,10 @@ object DataManager : StardustAPI, PttInterface {
         PairingRepository.reconcile()
 
         val pairedAddress = PairingRepository.currentPairedAddress()
+        android.util.Log.d("ConfigDebug", "bondOnStartup pairedAddress=$pairedAddress")
         if (pairedAddress != null) {
             val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(pairedAddress)
+            android.util.Log.d("ConfigDebug", "bondOnStartup resolvedDevice=${device?.address}")
             if (device != null) {
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
                 getClientConnection().bondToBleDeviceStartup(device)

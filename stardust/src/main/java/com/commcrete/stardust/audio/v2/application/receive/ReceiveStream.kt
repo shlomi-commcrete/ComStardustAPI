@@ -6,6 +6,7 @@ import com.commcrete.stardust.audio.v2.application.port.PlaybackSink
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
 import com.commcrete.stardust.audio.v2.domain.Gain
+import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.StreamKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -35,6 +36,7 @@ class ReceiveStream(
     private val sampleRateHz: Int,
     private val initialGain: Gain,
     private val onClosed: (StreamKey) -> Unit,
+    private val onDecoded: (StreamKey, PcmChunk) -> Unit,
     private val idleTimeoutMs: Long,
     private val scope: CoroutineScope,
 ) {
@@ -54,6 +56,7 @@ class ReceiveStream(
                     val result = withTimeoutOrNull(idleTimeoutMs) { incoming.receiveCatching() } ?: break
                     val frame = result.getOrNull() ?: break            // channel closed
                     val pcm = CodecRegistry.withCodec(codecId) { decoder.decode(frame) }
+                    onDecoded(key, pcm)                                // notify integration (persist/replay)
                     sink.write(pcm)
                     if (frame.isTerminal) break                        // end-of-PTT
                 }

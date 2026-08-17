@@ -3,6 +3,7 @@ package com.commcrete.stardust.audio.v2.application.send
 import com.commcrete.stardust.audio.v2.application.codec.CodecRegistry
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.application.port.Clock
+import com.commcrete.stardust.audio.v2.application.port.KeepAlive
 import com.commcrete.stardust.audio.v2.application.port.LocalMirror
 import com.commcrete.stardust.audio.v2.application.port.MessageStore
 import com.commcrete.stardust.audio.v2.domain.CodecId
@@ -38,6 +39,7 @@ class PttSendCoordinator(
     private val dspFactory: (targetRateHz: Int) -> PttAudioProcessorV2,
     private val mirrorFactory: (RecordingId) -> LocalMirror,
     private val store: MessageStore,
+    private val keepAlive: KeepAlive,
     private val clock: Clock,
     private val watchdogMs: Long,
     private val scope: CoroutineScope,
@@ -77,6 +79,7 @@ class PttSendCoordinator(
             outbound = sequencer.reserve(id),
             mirror = mirrorFactory(id),
             store = store,
+            keepAlive = keepAlive,
             clock = clock,
             watchdogMs = watchdogMs,
             scope = scope,

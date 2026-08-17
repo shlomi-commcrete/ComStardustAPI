@@ -24,8 +24,11 @@ class PttReceiveCoordinator(private val registry: StreamRegistry) {
         registry.getOrCreate(key, codec).onFrame(frame)
     }
 
-    /** UI: set the playback level for one incoming PTT (does not un-mute). */
-    fun setVolume(key: StreamKey, gain: Gain) = registry.setVolume(key, gain)
+    /** UI: set the playback level for one incoming PTT. A positive gain also un-mutes the stream. */
+    fun setVolume(key: StreamKey, gain: Gain) {
+        if (gain.value > 0f) registry.setMuted(key, false)
+        registry.setVolume(key, gain)
+    }
 
     /** UI: mute/un-mute one incoming PTT independently of all others. */
     fun setMuted(key: StreamKey, isMuted: Boolean) = registry.setMuted(key, isMuted)

@@ -36,7 +36,5 @@ internal object UsbTransport : Transport {
         BittelUsbManager2.reconnectToDevice()
     }
 
-    override fun updateBlePort() = BittelUsbManager2.updateBlePort()
-
     override fun saveConfiguration() = BittelUsbManager2.saveConfiguration()
 }

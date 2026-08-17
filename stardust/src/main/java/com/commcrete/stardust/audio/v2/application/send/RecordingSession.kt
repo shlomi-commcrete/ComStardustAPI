@@ -5,6 +5,7 @@ import com.commcrete.stardust.audio.v2.application.port.AudioCodec
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.application.port.Clock
 import com.commcrete.stardust.audio.v2.application.port.EncoderSession
+import com.commcrete.stardust.audio.v2.application.port.KeepAlive
 import com.commcrete.stardust.audio.v2.application.port.LocalMirror
 import com.commcrete.stardust.audio.v2.application.port.MessageStore
 import com.commcrete.stardust.audio.v2.domain.RecordingId
@@ -46,6 +47,7 @@ class RecordingSession(
     private val outbound: OutboundBuffer,
     private val mirror: LocalMirror,
     private val store: MessageStore,
+    private val keepAlive: KeepAlive,
     private val clock: Clock,
     private val watchdogMs: Long,
     private val scope: CoroutineScope,
@@ -63,6 +65,7 @@ class RecordingSession(
             val startMs = clock.nowMs()
             var frameCount = 0
             var reason = TerminalReason.LAST
+            keepAlive.acquire() // held until the finally below — screen-off must not suspend encode/drain
             try {
                 store.onRecordingStarted(id, codec.codecId, peer)
                 capture.start(id).collect { raw ->
@@ -97,6 +100,7 @@ class RecordingSession(
                     runCatching { dsp.close() }
                     runCatching { mirror.finalizeMirror() }
                     runCatching { store.onRecordingFinalized(id, frameCount, reason) }
+                    runCatching { keepAlive.release() } // balances the acquire above, exactly once
                 }
             }
         }
