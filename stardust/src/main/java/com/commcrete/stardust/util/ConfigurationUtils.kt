@@ -7,6 +7,7 @@ import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.FirmwareVersion
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.StardustPackage
 import kotlinx.coroutines.launch
@@ -76,6 +77,28 @@ object ConfigurationUtils {
                 CarriersUtils.updateCurrentPresetList(it)
             }
         }
+    }
+
+    /**
+     * The connected device's firmware as a comparable triple, or null if unknown/unparseable.
+     * Uses the same tolerant parser the config parser uses ("Ver_24.0.7", "Ver 24.0.7", "24.0.7", …).
+     */
+    val currentFirmwareVersion: FirmwareVersion?
+        get() = FirmwareVersion.parse(firmwareVersion)
+
+    /**
+     * Minimum-version check: true iff the device firmware is >= the given version. Returns false when
+     * the version is unknown (conservative — treated as legacy). Prefer this over comparing version
+     * strings so all version logic stays in one place.
+     *
+     * e.g. `isFirmwareAtLeast(24, 0, 7)` is true for 24.0.7, 24.0.8, 24.1.0, 25.x.x, …
+     */
+    fun isFirmwareAtLeast(major: Int, minor: Int, patch: Int): Boolean =
+        isFirmwareAtLeast(FirmwareVersion(major, minor, patch))
+
+    fun isFirmwareAtLeast(threshold: FirmwareVersion): Boolean {
+        val current = currentFirmwareVersion ?: return false
+        return current >= threshold
     }
 
     fun handleVersion(mPackage: StardustPackage) {

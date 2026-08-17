@@ -50,6 +50,23 @@ data class StardustConfigurationPackage(
     val sosDestinations: List<String>
 ) {
 
+    internal fun getPresetData(preset : CurrentPreset): Preset? {
+        return presets[preset.value]
+    }
+
+    fun getCenterFrequency(preset : CurrentPreset = currentPreset): Frequency? {
+        return getPresetData(preset)?.xcvrList?.firstOrNull()?.let {
+            val delta: Double = 25.0 / 3.0 / 1000.0
+            val (rx, tx) = when(it.carrier.index) {
+                0 -> (it.rxFrequency + delta) to (it.txFrequency + delta)
+                1 -> it.rxFrequency to it.txFrequency
+                2 -> (it.rxFrequency - delta) to (it.txFrequency - delta)
+                else -> return null
+            }
+            Frequency(rx = rx + frequencyLORX, tx = tx + frequencyLOTX)
+        }
+    }
+
     fun presetsWithoutConfig(): List<Preset> {
         return presets.filter { preset ->
 
@@ -92,4 +109,6 @@ data class StardustConfigurationPackage(
     ): Boolean {
         return required.any { it !in actual }
     }
+
+    data class Frequency(val rx: Double, val tx: Double)
 }
