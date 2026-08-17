@@ -18,7 +18,7 @@ internal object StardustIncomingConfigurationHandler {
     )
 
     fun parseAndApplyConfiguration(packet: StardustPackage): ApplyResult {
-        val cfg = StardustConfigurationParser().parseConfiguration(packet)
+        val cfg = StardustConfigurationParser().parseConfiguration(packet, ConfigurationUtils.firmwareVersion)
         if (cfg == null) {
             Log.w(
                 "ConfigDebug",

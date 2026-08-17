@@ -11,7 +11,7 @@ import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
@@ -263,11 +263,11 @@ object BittelUsbManager2 : BittelProtocol {
         usbDevicePermissionHandler.unregister()
     }
 
-    private fun getUartPortType(): StardustConfigurationParser.PortType {
+    private fun getUartPortType(): PortType {
         return when(ConfigurationUtils.bittelConfiguration.value?.portType) {
-            StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_BLE,
-            StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_USB -> StardustConfigurationParser.PortType.BLUETOOTH_DISABLED_USB
-            else -> StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_USB
+            PortType.BLUETOOTH_DISABLED_BLE,
+            PortType.BLUETOOTH_DISABLED_USB -> PortType.BLUETOOTH_DISABLED_USB
+            else -> PortType.BLUETOOTH_ENABLED_USB
         }
     }
 

@@ -26,7 +26,7 @@ import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.transport.TransportId
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
@@ -1477,7 +1477,7 @@ internal class ClientConnection(): BittelProtocol {
         val (src, dst) = requireLocalSrcDst() ?: return
         Log.d("ConfigDebug", "ClientConnection.setBlePortModeOnRadio → BLUETOOTH_ENABLED_BLE (keep BLE) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
 
-        val uartPort = (StardustConfigurationParser.PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
+        val uartPort = (PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
         val data = StardustPackageUtils.byteArrayToIntArray(uartPort)
         val txPackage = StardustPackageUtils.getStardustPackage(
             source = src ,

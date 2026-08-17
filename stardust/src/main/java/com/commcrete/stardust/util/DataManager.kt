@@ -35,7 +35,8 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
@@ -188,7 +189,7 @@ object DataManager : StardustAPI, PttInterface {
                 mPackage.idNumber = id
                 mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
                 sendDataToBle(mPackage)
-                delay(if(radio.type == StardustConfigurationParser.CarrierType.HR) 800 else 4000)
+                delay(if(radio.type == CarrierType.HR) 800 else 4000)
             }
         }
     }
@@ -321,7 +322,7 @@ object DataManager : StardustAPI, PttInterface {
         return RecorderUtils.canRecord
     }
 
-    override fun switchToPreset(preset: StardustConfigurationParser.CurrentPreset) {
+    override fun switchToPreset(preset: CurrentPreset) {
         val (src, dst) = requireLocalSrcDst() ?: return
 
         val msg = StardustPackageUtils.getStardustPackage(

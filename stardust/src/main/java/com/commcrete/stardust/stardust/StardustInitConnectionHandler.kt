@@ -37,8 +37,9 @@ object StardustInitConnectionHandler {
         UPDATING_SMARTPHONE_ADDR,      // 2) update address
         DELETING_GROUPS,               // 3) delete groups
         ADDING_GROUPS,                 // 4) add groups
-        READING_CONFIGURATION,         // 5) get configuration
-        UPDATING_ADMIN_MODE,           // 6) update admin mode
+        READING_VERSION,               // 5) get firmware version (selects config wire format)
+        READING_CONFIGURATION,         // 6) get configuration
+        UPDATING_ADMIN_MODE,           // 7) update admin mode
         SUCCESS,
         CANCELED,
         RUNNING,
@@ -52,6 +53,9 @@ object StardustInitConnectionHandler {
 
     private const val MAX_ATTEMPTS = 3
     private const val STEP_TIMEOUT_MS = 15_000L
+    // Shorter than a normal step: legacy firmware never answers GET_VERSION, so we fall back
+    // quickly instead of stalling init for the full step timeout.
+    private const val VERSION_STEP_TIMEOUT_MS = 4_000L
     private val attempts: MutableMap<State, Int> = mutableMapOf()
     private val conn: ClientConnection get() = DataManager.getClientConnection()
     private var timeoutJob: Job? = null
@@ -162,7 +166,7 @@ object StardustInitConnectionHandler {
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE -> if (state == State.ADDING_GROUPS) {
                 handleAckOrRetry(
                     p,
-                    onAck = { transitionTo(State.READING_CONFIGURATION) { requestConfiguration() } },
+                    onAck = { transitionTo(State.READING_VERSION) { requestVersion() } },
                     onRetry = { sendAddGroups() }
                 ); return true
             }
@@ -185,9 +189,16 @@ object StardustInitConnectionHandler {
                 ); return true
             }
 
-            // Optional: capture version anytime
+            // Version response: consume it to advance the READING_VERSION step; otherwise just
+            // capture it opportunistically (older firmware may push it unsolicited).
             StardustPackageUtils.StardustOpCode.RECEIVE_VERSION -> {
-                handleVersion(p); return false
+                handleVersion(p)
+                if (state == State.READING_VERSION) {
+                    timeoutJob?.cancel()
+                    transitionTo(State.READING_CONFIGURATION) { requestConfiguration() }
+                    return true
+                }
+                return false
             }
 
             else -> {}
@@ -226,7 +237,8 @@ object StardustInitConnectionHandler {
         timeoutJob = CoroutineScope(Dispatchers.IO).launch {
             try {
                 // awaitCancellation is clearer than delay(Long.MAX_VALUE)
-                withTimeout(STEP_TIMEOUT_MS) { awaitCancellation() }
+                val stepTimeout = if (step == State.READING_VERSION) VERSION_STEP_TIMEOUT_MS else STEP_TIMEOUT_MS
+                withTimeout(stepTimeout) { awaitCancellation() }
             } catch (e: TimeoutCancellationException) {
                 // Only act if we're still in the same step (avoid stale callbacks)
                 if (state != step) return@launch
@@ -244,6 +256,12 @@ object StardustInitConnectionHandler {
                     }
                     State.DELETING_GROUPS -> retryOrFail{ sendDeleteGroups() }
                     State.ADDING_GROUPS -> retryOrFail{ sendAddGroups() }
+                    State.READING_VERSION -> {
+                        // Older firmware never answers GET_VERSION — fall back to the legacy wire
+                        // format and continue rather than failing the connection.
+                        Log.d("ConfigDebug", "READING_VERSION timed out — assuming legacy format, continuing")
+                        transitionTo(State.READING_CONFIGURATION) { requestConfiguration() }
+                    }
                     State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
                     State.UPDATING_ADMIN_MODE -> retryOrFail { sendUpdateAdminMode() }
                     else -> {}
@@ -358,7 +376,20 @@ object StardustInitConnectionHandler {
         GroupsUtils.sendAddAllGroups()
     }
 
-    // 5) Get configuration
+    // 5) Get firmware version (selects the config wire format for the next step)
+    private fun requestVersion() {
+        val (src, dst) = requireLocalSrcDst() ?: return
+        val pkg = StardustPackageUtils.getStardustPackage(
+            source = src,
+            destination = dst,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.GET_VERSION
+        )
+        conn.addMessageToQueue(pkg)
+        Timber.tag("InitHandler").d("Sent GET_VERSION")
+        Log.d("ConfigDebug", "SENT GET_VERSION src=$src dst=$dst bytes=[${pkg.toHex()}]")
+    }
+
+    // 6) Get configuration
     private fun requestConfiguration() {
         val (src, dst) = requireLocalSrcDst() ?: return
         val pkg = StardustPackageUtils.getStardustPackage(
@@ -425,9 +456,7 @@ object StardustInitConnectionHandler {
     }
 
     private fun handleVersion(p: StardustPackage) {
-        Scopes.getMainCoroutine().launch {
-            ConfigurationUtils.bittelVersion.value = p.getDataAsString()
-        }
+        ConfigurationUtils.handleVersion(p)
     }
 
     fun requireLocalSrcDst(): Pair<String, String>? {
@@ -479,7 +508,7 @@ object StardustInitConnectionHandler {
     }
 
     fun isSyncing(): Boolean {
-        return state in setOf(State.RUNNING, State.REQUESTING_ADDRESSES, State.UPDATING_SMARTPHONE_ADDR, State.DELETING_GROUPS, State.ADDING_GROUPS, State.READING_CONFIGURATION, State.UPDATING_ADMIN_MODE)
+        return state in setOf(State.RUNNING, State.REQUESTING_ADDRESSES, State.UPDATING_SMARTPHONE_ADDR, State.DELETING_GROUPS, State.ADDING_GROUPS, State.READING_VERSION, State.READING_CONFIGURATION, State.UPDATING_ADMIN_MODE)
     }
 
     fun hasConnectionError(): Boolean {

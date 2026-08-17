@@ -8,7 +8,7 @@ import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.FileSender
@@ -68,7 +68,7 @@ interface StardustAPI {
     fun reconnectToCurrentDevice()
     fun canRecord(): MutableLiveData<Boolean>
 
-    fun switchToPreset(preset: StardustConfigurationParser.CurrentPreset)
+    fun switchToPreset(preset: CurrentPreset)
 
     /**
      * Stardust devices already bonded to the phone that are not the app's current device —

@@ -6,8 +6,9 @@ import com.commcrete.stardust.enums.FunctionalitySelectionState
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser.CarrierType
+import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.google.gson.Gson
 import com.google.gson.JsonElement
@@ -44,14 +45,14 @@ object CarriersUtils {
         }
     }
 
-    fun updateCurrentPresetList(preset: StardustConfigurationParser.CurrentPreset?) {
+    fun updateCurrentPresetList(preset: CurrentPreset?) {
         val currentCarrierData = preset?.let { carriersMap[preset.value] } ?: listOf()
         Scopes.getMainCoroutine().launch {
             carrierList.value = currentCarrierData
         }
     }
 
-    fun getCarriersByPreset(preset: StardustConfigurationParser.Preset) : List<Carrier> {
+    fun getCarriersByPreset(preset: Preset) : List<Carrier> {
         val carriers = mutableListOf<Carrier> ()
 
         for (i in 0..2) {

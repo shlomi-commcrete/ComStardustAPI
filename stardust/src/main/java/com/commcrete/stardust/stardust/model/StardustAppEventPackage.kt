@@ -1,5 +1,6 @@
 package com.commcrete.stardust.stardust.model
 
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.util.Carrier
 
 data class StardustAppEventPackage(
@@ -32,8 +33,8 @@ data class StardustAppEventPackage(
         }
     }
 
-    fun getCurrentPreset() : StardustConfigurationParser.CurrentPreset? {
-        return preset?.let { StardustConfigurationParser.CurrentPreset.fromValue(it) }
+    fun getCurrentPreset() : CurrentPreset? {
+        return preset?.let { CurrentPreset.fromValue(it) }
     }
 
     data class RSSIPackage (

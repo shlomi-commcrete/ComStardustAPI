@@ -3,21 +3,21 @@ package com.commcrete.stardust.util
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.SnifferMode
 import kotlinx.coroutines.launch
 
 object AdminUtils {
 
-    val adminModeLiveData : MutableLiveData<StardustConfigurationParser.SnifferMode> = MutableLiveData()
+    val adminModeLiveData : MutableLiveData<SnifferMode> = MutableLiveData()
 
-    fun setAdminMode(snifferMode: StardustConfigurationParser.SnifferMode) {
+    fun setAdminMode(snifferMode: SnifferMode) {
         SharedPreferencesUtil.setAdminMode(snifferMode)
         Scopes.getMainCoroutine().launch {
             adminModeLiveData.value = snifferMode
         }
     }
 
-    private fun getAdminMode() : StardustConfigurationParser.SnifferMode {
+    private fun getAdminMode() : SnifferMode {
         return SharedPreferencesUtil.getAdminMode()
     }
 

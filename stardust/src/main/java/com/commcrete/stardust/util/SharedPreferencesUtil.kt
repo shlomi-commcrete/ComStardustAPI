@@ -12,7 +12,8 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.Preset
+import com.commcrete.stardust.stardust.model.config.SnifferMode
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -481,13 +482,13 @@ object SharedPreferencesUtil {
         return getPreferencesString(KEY_LAST_USER, "") ?: ""
     }
 
-    fun setAdminMode(snifferMode: StardustConfigurationParser.SnifferMode) {
+    fun setAdminMode(snifferMode: SnifferMode) {
         getPrefs().edit { putInt(KEY_ADMIN_MODE, snifferMode.type) }
     }
 
-    fun getAdminMode(): StardustConfigurationParser.SnifferMode {
+    fun getAdminMode(): SnifferMode {
         val type = getPrefs().getInt(KEY_ADMIN_MODE, 0)
-        return StardustConfigurationParser.SnifferMode.entries[type]
+        return SnifferMode.entries[type]
     }
 
     fun getAdminLocalMode(): AdminUtils.AdminLocal {
@@ -567,18 +568,18 @@ object SharedPreferencesUtil {
         }
     }
 
-    fun setPresets(preset: List<StardustConfigurationParser.Preset>) {
+    fun setPresets(preset: List<Preset>) {
         val presetJson = Gson().toJson(preset) // Convert list to JSON
         getPrefs().edit { putString(KEY_LAST_PRESETS, presetJson) } // Save JSON as a string
     }
 
-    fun getPresets(): List<StardustConfigurationParser.Preset>? {
+    fun getPresets(): List<Preset>? {
         val carriersJson = getPrefs().getString(KEY_LAST_PRESETS, null)
 
         return if (!carriersJson.isNullOrEmpty()) {
             val type = object :
-                TypeToken<List<StardustConfigurationParser.Preset>>() {}.type // Define the type of List<Carrier>
-            Gson().fromJson<List<StardustConfigurationParser.Preset>>(
+                TypeToken<List<Preset>>() {}.type // Define the type of List<Carrier>
+            Gson().fromJson<List<Preset>>(
                 carriersJson,
                 type
             ) // Convert JSON string back to List<Carrier>

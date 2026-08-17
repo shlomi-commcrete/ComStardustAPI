@@ -11,7 +11,7 @@ import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.CarrierType
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
@@ -327,7 +327,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 functionalityType = functionalityType,
                 carrier = data.stardustAPIPackage.carrier
             ) ?: return
-            sendInterval = if (radio.type == StardustConfigurationParser.CarrierType.ST) 300L else 900L
+            sendInterval = if (radio.type == CarrierType.ST) 300L else 900L
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
                 source = data.stardustAPIPackage.senderId,
                 destination = data.stardustAPIPackage.receiverId,
@@ -386,7 +386,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         fun calculateSendTime(numOfPackages: Int, functionalityType: FunctionalityType): String {
             val radio = getRadioToSend(null, functionalityType)
 
-            val totalTime = if (radio?.type == StardustConfigurationParser.CarrierType.ST) 0.3 else 1.3
+            val totalTime = if (radio?.type == CarrierType.ST) 0.3 else 1.3
 
             val totalSeconds = numOfPackages * totalTime // Total time in seconds as a Double
             val minutes = totalSeconds.toInt() / 60 // Whole minutes

@@ -3,11 +3,19 @@ package com.commcrete.stardust.stardust.model
 
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LicenseType
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser.CarrierType
+import com.commcrete.stardust.stardust.model.config.AirEncryptionMode
+import com.commcrete.stardust.stardust.model.config.AntennaType
+import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.PortType
+import com.commcrete.stardust.stardust.model.config.Preset
+import com.commcrete.stardust.stardust.model.config.SnifferMode
+import com.commcrete.stardust.stardust.model.config.StardustRDPLevel
+import com.commcrete.stardust.stardust.model.config.StardustType
 
 data class StardustConfigurationPackage(
 
-    val presets: List<StardustConfigurationParser.Preset>,
+    val presets: List<Preset>,
     //LO Outputs
     var frequencyLOTX: Double,
     var frequencyLORX: Double,
@@ -15,23 +23,26 @@ data class StardustConfigurationPackage(
     var powerLORX: Int,
 
     //Current Preset
-    val currentPreset: StardustConfigurationParser.CurrentPreset,
+    val currentPreset: CurrentPreset,
 
-    var bittelType: StardustConfigurationParser.StardustType,
-    var portType: StardustConfigurationParser.PortType,
+    var gpsEnabled: Boolean,
+    var stardustType: StardustType,
+    var portType: PortType,
     var crcType: Int,
-    var serverByteType: Int,
-    var debugIgnoreCanTransmit: Boolean,
-    var snifferMode: StardustConfigurationParser.SnifferMode,
+    var airEncryptionMode: AirEncryptionMode,
+    var snifferMode: SnifferMode,
     var appId: String,
-    val antenna: StardustConfigurationParser.AntennaType,
-    var radioLODeduction: Float,
     var stardustId: String,
+    var logDebugMode: Int,
+    var logStreamEnable: Int,
+    val antenna: AntennaType,
+    var radioLODeduction: Float,
+    var radioXcvr4Deduction: Float,
+    var relayMode: Int,
     var power12V: Float,
     var powerBattery: Float,
-    var batteryChargeStatus: StardustConfigurationParser.StardustBatteryCharge,
     var mcuTemperature: Int,
-    var rdpLevel: StardustConfigurationParser.StardustRDPLevel,
+    var rdpLevel: StardustRDPLevel,
     var licenseType: LicenseType,
     val deviceModel: String,
     val deviceSerial: String,
@@ -39,24 +50,7 @@ data class StardustConfigurationPackage(
     val sosDestinations: List<String>
 ) {
 
-    internal fun getPresetData(preset : StardustConfigurationParser.CurrentPreset): StardustConfigurationParser.Preset? {
-        return presets[preset.value]
-    }
-
-    fun getCenterFrequency(preset : StardustConfigurationParser.CurrentPreset = currentPreset): Frequency? {
-        return getPresetData(preset)?.xcvrList?.firstOrNull()?.let {
-            val delta: Double = 25.0 / 3.0 / 1000.0
-            val (rx, tx) = when(it.carrier.index) {
-                0 -> (it.rxFrequency + delta) to (it.txFrequency + delta)
-                1 -> it.rxFrequency to it.txFrequency
-                2 -> (it.rxFrequency - delta) to (it.txFrequency - delta)
-                else -> return null
-            }
-            Frequency(rx = rx + frequencyLORX, tx = tx + frequencyLOTX)
-        }
-    }
-
-    fun presetsWithoutConfig(): List<StardustConfigurationParser.Preset> {
+    fun presetsWithoutConfig(): List<Preset> {
         return presets.filter { preset ->
 
             val (defaultFunctionalities, requiredFunctionalities) = preset.collectFunctionalities()
@@ -74,7 +68,7 @@ data class StardustConfigurationPackage(
         }
     }
 
-    private fun StardustConfigurationParser.Preset.collectFunctionalities(): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
+    private fun Preset.collectFunctionalities(): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
         val presetFunctionalities = mutableSetOf<FunctionalityType>()
         val requiredFunctionalities = mutableSetOf<FunctionalityType>()
         for (xcvr in xcvrList) {
@@ -98,7 +92,4 @@ data class StardustConfigurationPackage(
     ): Boolean {
         return required.any { it !in actual }
     }
-
-    data class Frequency(val rx: Double, val tx: Double)
 }
-

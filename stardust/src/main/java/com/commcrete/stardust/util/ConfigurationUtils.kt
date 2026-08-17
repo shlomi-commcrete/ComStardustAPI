@@ -6,7 +6,8 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
-import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.StardustPackage
 import kotlinx.coroutines.launch
 
@@ -16,11 +17,17 @@ object ConfigurationUtils {
     val bittelVersion = MutableLiveData<String>()
     val bittelConfiguration = MutableLiveData<StardustConfigurationPackage?>()
 
+    // Synchronous mirror of the firmware version string. Set the instant a version packet is
+    // handled so the config parser can read it without racing the async LiveData post.
+    @Volatile
+    var firmwareVersion: String? = null
+        private set
+
     var currentConfig : StardustConfigurationPackage? = null
-    private var _currentPreset = MutableLiveData<StardustConfigurationParser.CurrentPreset?> (null)
-    var currentPreset: LiveData<StardustConfigurationParser.CurrentPreset?> = _currentPreset
-    var selectedPreset : StardustConfigurationParser.Preset? = null
-    var presetsList : List<StardustConfigurationParser.Preset> = listOf()
+    private var _currentPreset = MutableLiveData<CurrentPreset?> (null)
+    var currentPreset: LiveData<CurrentPreset?> = _currentPreset
+    var selectedPreset : Preset? = null
+    var presetsList : List<Preset> = listOf()
 
     var licensedFunctionalities: Map<FunctionalityType, LimitationType> = mapOf()
 
@@ -32,7 +39,7 @@ object ConfigurationUtils {
         }
     }
 
-    fun setCurrentPresetLocal(preset : StardustConfigurationParser.CurrentPreset) {
+    fun setCurrentPresetLocal(preset : CurrentPreset) {
         _currentPreset.postValue(preset)
         val config = currentConfig ?: return
 
@@ -45,15 +52,15 @@ object ConfigurationUtils {
         stardustAppEventPackage.carrier = selectedPreset?.xcvrList?.getOrNull(stardustAppEventPackage.xcvr)?.carrier
     }
 
-    private fun getLastPresets () : List<StardustConfigurationParser.Preset>?{
+    private fun getLastPresets () : List<Preset>?{
         return SharedPreferencesUtil.getPresets()
     }
 
-    private fun setLastPresets (presets : List<StardustConfigurationParser.Preset>){
+    private fun setLastPresets (presets : List<Preset>){
         return SharedPreferencesUtil.setPresets(presets)
     }
 
-    fun isPresetsChanged (presets : List<StardustConfigurationParser.Preset>): Boolean {
+    fun isPresetsChanged (presets : List<Preset>): Boolean {
         val lastPresets = getLastPresets()
         setLastPresets(presets)
         return lastPresets != presets
@@ -72,8 +79,10 @@ object ConfigurationUtils {
     }
 
     fun handleVersion(mPackage: StardustPackage) {
+        val version = mPackage.getDataAsString()
+        firmwareVersion = version
         Scopes.getMainCoroutine().launch {
-            bittelVersion.value = mPackage.getDataAsString()
+            bittelVersion.value = version
         }
     }
 
@@ -82,6 +91,7 @@ object ConfigurationUtils {
         presetsList = listOf()
         licensedFunctionalities = mapOf()
         selectedPreset = null
+        firmwareVersion = null
         Scopes.getMainCoroutine().launch {
             _currentPreset.value = null
             bittelVersion.value = ""
