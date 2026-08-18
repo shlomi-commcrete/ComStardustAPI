@@ -1,6 +1,7 @@
 package com.commcrete.stardust.room.new_db
 
 
+import androidx.room.ColumnInfo
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.contacts.ContactConflictEngine
 import com.commcrete.stardust.contacts.ContactConflicts
@@ -41,6 +42,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
+import kotlin.Int
 
 /**
  * Unified repository facade. Every public method delegates to one of five
@@ -501,7 +503,12 @@ class AppRepository(
             receiverID = pkg.receiverId,
             extraData = extraData,
             state = state,
-            epochTimeMs = epochTimeMs
+            epochTimeMs = epochTimeMs,
+            carrierType = pkg.carrier?.type?.type,
+            rd = pkg.carrier?.deliveryType?.value,
+//            freqMhz =,
+//            carrierRange =
+
         )
         return messages.saveMessage(message, pkg.groupId)
     }

@@ -7,6 +7,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
+import com.commcrete.stardust.stardust.model.config.CarrierType
 import java.util.Locale
 
 @Entity(
@@ -31,28 +32,30 @@ data class MessageEntity(
 
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-
     @ColumnInfo(name = "chat_id")
     var chatId: String? = null,
-
     @ColumnInfo(name = "sender_id")
     var senderID: String,
-
     @ColumnInfo(name = "receiver_id")
     var receiverID: String,
-
     @ColumnInfo(name = "extra_data")
     var extraData: MessageExtraData? = null,
-
     @ColumnInfo(name = "state")
     var state: MessageState? = MessageState.SENT,
-
     @ColumnInfo(name = "type")
     val type: MessageType = extraData.toMessageType(),
-
     @ColumnInfo(name = "epoch_time_ms")
     val epochTimeMs: Long = System.currentTimeMillis(),
-) {
+
+    @ColumnInfo(name = "carrier_type")
+    val carrierType: Int? = null,
+    @ColumnInfo(name = "rd")
+    val rd: Int? = null,
+    @ColumnInfo(name = "freq_Mhz")
+    val freqMhz: Double? = null,
+    @ColumnInfo(name = "carrier_range")
+    val carrierRange: String = ""
+    ) {
 
 
     init {
@@ -71,7 +74,7 @@ data class MessageEntity(
         val geo = extraData as? MessageExtraData.GeoData ?: return location
         location.latitude = geo.latitude
         location.longitude = geo.longitude
-        geo.altitude?.let { location.altitude = it }
+        geo.altitude.let { location.altitude = it }
         return location
     }
 
