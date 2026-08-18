@@ -36,6 +36,8 @@ object StardustPackageUtils {
 
     init {
         try {
+
+            Log.d("ConfigDebug","StardustPackageUtils init")
             bittelPackageHandler = DataManager.getStardustPackageHandler()
         }catch (e : Exception) {
             e.printStackTrace()

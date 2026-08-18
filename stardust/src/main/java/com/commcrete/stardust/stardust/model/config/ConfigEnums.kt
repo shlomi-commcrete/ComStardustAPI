@@ -40,6 +40,18 @@ enum class PortType(val type: Int) {
     BLUETOOTH_ENABLED_USB(3),
 }
 
+enum class StardustBatteryCharge(val type: Int) {
+    NON_RECOVERABLE_FAULT(0),
+    RECOVERABLE_FAULT(1),
+    CHARGE_IN_PROGRESS(2),
+    CHARGE_COMPLETED(3);
+
+    companion object {
+        fun fromValue(value: Int): StardustBatteryCharge =
+            entries.find { it.type == value } ?: NON_RECOVERABLE_FAULT
+    }
+}
+
 enum class AirEncryptionMode(val value: Int) {
     CBC(0),
     FIPS(1);

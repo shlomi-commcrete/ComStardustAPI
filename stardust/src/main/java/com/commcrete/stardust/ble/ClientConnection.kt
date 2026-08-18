@@ -73,6 +73,9 @@ internal class ClientConnection(): BittelProtocol {
     // still-used member.
     private val context: Context get() = DataManager.appContext
 
+    // Written on the BLE callback thread (onServicesDiscovered / disconnect), read on send-coroutine
+    // threads — @Volatile so the send path always sees the current (or null-after-close) GATT.
+    @Volatile
     var gattConnection : BluetoothGatt? = null
     var mDevice : BluetoothDevice? = null
         get() {
@@ -1240,16 +1243,19 @@ internal class ClientConnection(): BittelProtocol {
 
     @SuppressLint("MissingPermission")
     fun sendDataTest(byteArray: ByteArray, i: Int){
-        gattConnection?.getService(Characteristics.getConnectChar(deviceLastDigit))?.getCharacteristic(uuid)
+        // Snapshot once so getService and writeCharacteristic act on the same GATT even if a
+        // reconnect swaps gattConnection mid-call.
+        val gatt = gattConnection ?: return
+        gatt.getService(Characteristics.getConnectChar(deviceLastDigit))?.getCharacteristic(uuid)
             ?.let {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val write = gattConnection?.writeCharacteristic(
+                    val write = gatt.writeCharacteristic(
                         it,
                         byteArray,
                         WRITE_TYPE_NO_RESPONSE
                     )
                 } else {
-                    val write = gattConnection?.writeCharacteristic(it)
+                    val write = gatt.writeCharacteristic(it)
 
                 }
             }

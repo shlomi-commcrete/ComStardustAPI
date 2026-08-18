@@ -10,6 +10,7 @@ import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.config.SnifferMode
+import com.commcrete.stardust.stardust.model.config.StardustBatteryCharge
 import com.commcrete.stardust.stardust.model.config.StardustRDPLevel
 import com.commcrete.stardust.stardust.model.config.StardustType
 
@@ -41,6 +42,7 @@ data class StardustConfigurationPackage(
     var relayMode: Int,
     var power12V: Float,
     var powerBattery: Float,
+    var batteryChargeStatus: StardustBatteryCharge,
     var mcuTemperature: Int,
     var rdpLevel: StardustRDPLevel,
     var licenseType: LicenseType,

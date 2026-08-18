@@ -1,10 +1,9 @@
 package com.commcrete.stardust.stardust.model
 
-import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 
 
-class StardustAppEventParser : StardustParser(){
+class StardustAppEventParser : StardustParser() {
 
     fun parseAppEvent(dataPackage: StardustPackage) : StardustAppEventPackage {
         val deviceEventPackage = StardustAppEventPackage()
@@ -65,21 +64,39 @@ class StardustAppEventParser : StardustParser(){
         offset: Int,
         deviceEventPackage: StardustAppEventPackage
     ) {
+        when(eventType) {
+            StardustAppEventPackage.StardustAppEventType.RXSuccess -> {
+                parseSenderId(byteArray, offset, deviceEventPackage)
+                val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource()
+                if(deviceEventPackage.senderID.equals(rssiReportSource, true)) {
+                    var newOffset = offset + SENDER_ID_LENGTH
+                    val rssi = cutByteArray(byteArray, RSSI_LENGTH, newOffset)
+                    parseRSSI(rssi, deviceEventPackage)
+                    newOffset = newOffset + RSSI_LENGTH
+                    val snr = cutByteArray(byteArray, SNR_LENGTH, newOffset)
+                    parseSnr(snr, deviceEventPackage)
+
+                    newOffset = newOffset + SNR_LENGTH
+                    val signalRssi = cutByteArray(byteArray, SIGNAL_RSSI_LENGTH, newOffset)
+                    parseSignalRssi(signalRssi, deviceEventPackage)
+                }
+            }
+            StardustAppEventPackage.StardustAppEventType.ArmDelete,
+            StardustAppEventPackage.StardustAppEventType.Delete -> {
+                parseSenderId(byteArray, offset, deviceEventPackage)
+            }
+            else -> {}
+        }
+
+    }
+
+    private fun parseSenderId(
+        byteArray: ByteArray,
+        offset: Int,
+        deviceEventPackage: StardustAppEventPackage
+    ) {
         val appIDBytes = cutByteArray(byteArray, SENDER_ID_LENGTH, offset)
         parseIDSender(appIDBytes, deviceEventPackage)
-        val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource()
-        if(deviceEventPackage.senderID.equals(rssiReportSource, true)) {
-            var newOffset = offset + SENDER_ID_LENGTH
-            val rssi = cutByteArray(byteArray, RSSI_LENGTH, newOffset)
-            parseRSSI(rssi, deviceEventPackage)
-            newOffset = newOffset + RSSI_LENGTH
-            val snr = cutByteArray(byteArray, SNR_LENGTH, newOffset)
-            parseSnr(snr, deviceEventPackage)
-
-            newOffset = newOffset + SNR_LENGTH
-            val signalRssi = cutByteArray(byteArray, SIGNAL_RSSI_LENGTH, newOffset)
-            parseSignalRssi(signalRssi, deviceEventPackage)
-        }
     }
 
     private fun parseSignalRssi(

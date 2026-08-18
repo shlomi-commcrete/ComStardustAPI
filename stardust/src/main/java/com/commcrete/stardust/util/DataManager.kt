@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.location.Location
+import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
@@ -126,6 +127,8 @@ object DataManager : StardustAPI, PttInterface {
         BleManager.initBleConnectState()
         if(clientConnection == null) {
             clientConnection = ClientConnection()
+
+            Log.d("ConfigDebug","RECYCLED!!!! getClientConnection")
         }
         getStardustPackageHandler()
         return clientConnection!!

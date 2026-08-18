@@ -10,6 +10,7 @@ import com.commcrete.stardust.stardust.model.config.FirmwareVersion
 import com.commcrete.stardust.stardust.model.config.LeaseCalculator
 import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.config.SnifferMode
+import com.commcrete.stardust.stardust.model.config.StardustBatteryCharge
 import com.commcrete.stardust.stardust.model.config.StardustRDPLevel
 import com.commcrete.stardust.stardust.model.config.StardustType
 import com.commcrete.stardust.util.ByteReader
@@ -76,6 +77,9 @@ class StardustConfigurationParser : StardustParser() {
             val relayMode = reader.u8()
             val power12V = reader.f32le()
             val powerBattery = reader.f32le()
+            // The device includes a battery-charge-status byte here even though the C reference
+            // (config_parser.c) omits it — confirmed against a live 233-byte 24.0.7 payload.
+            val batteryChargeStatus = StardustBatteryCharge.fromValue(reader.u8())
             val mcuTemperature = reader.i8()
             val rdpLevel = StardustRDPLevel.entries[reader.u8()]
             val stardustType = StardustType.fromValue(reader.u8()) // device_type, last byte
@@ -105,6 +109,7 @@ class StardustConfigurationParser : StardustParser() {
                 relayMode = relayMode,
                 power12V = power12V,
                 powerBattery = powerBattery,
+                batteryChargeStatus = batteryChargeStatus,
                 mcuTemperature = mcuTemperature,
                 rdpLevel = rdpLevel,
                 licenseType = licenseType,
