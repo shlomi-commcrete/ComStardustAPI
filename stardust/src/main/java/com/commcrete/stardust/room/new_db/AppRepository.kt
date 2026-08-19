@@ -1,7 +1,6 @@
 package com.commcrete.stardust.room.new_db
 
 
-import androidx.room.ColumnInfo
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.contacts.ContactConflictEngine
 import com.commcrete.stardust.contacts.ContactConflicts
@@ -15,7 +14,6 @@ import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsFullParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
-import com.commcrete.stardust.room.new_db.chat.ShortParticipantInfo
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
@@ -29,11 +27,10 @@ import com.commcrete.stardust.room.new_db.internal.MessagesRepository
 import com.commcrete.stardust.room.new_db.internal.RepositoryCaches
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
-import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.DataManager
-import com.commcrete.stardust.util.DataManager.appContext
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
+import com.commcrete.stardust.room.new_db.message.MessageType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -44,30 +41,18 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
 import kotlin.Int
 
+
 /**
- * Unified repository facade. Every public method delegates to one of five
- * domain-focused sub-repositories under `internal/`:
+ * Unified repository facade. Delegates to five domain sub-repositories:
+ * [RepositoryCaches], [ChatsRepository], [ContactsRepository],
+ * [MessagesRepository], [LegacyMigrator].
  *
- *  - [RepositoryCaches] — shared groupId / contact / chatId in-memory caches.
- *  - [ChatsRepository]  — chat reads, creation helpers, deletion, legacy-id
- *    resolution.
- *  - [ContactsRepository] — contact inserts (which trigger chat creation),
- *    name + lookup helpers, group-id queries, roster reads.
- *  - [MessagesRepository] — message reads, the `saveMessage` pipeline,
- *    unseen counters, archival, inbound chat resolution. Owns the
- *    save-mutex shared with `deleteChat` and `clearData`.
- *  - [LegacyMigrator] — one-shot migration from the three legacy databases.
+ * Field order follows the dependency DAG and must not be reshuffled:
+ *   caches -> chats -> contacts -> messages -> legacyMigrator -> cachedContacts
  *
- * # Initialization order
- * Field declarations follow the dependency DAG strictly:
- *
- *   caches → chats → contacts → messages → legacyMigrator
- *
- * `chats` references `messages` only inside a lambda passed for save-lock
- * bridging, so the lambda's late lookup is fine. `messages` and
- * `legacyMigrator` reference `contacts` directly via method references that
- * resolve at call time, but they are declared **after** `contacts`, so the
- * member is initialized by the time those references are first invoked.
+ * Message reads accept optional MessageType filters (`types` / `excludeTypes`).
+ * This class deliberately knows nothing about lanes, streams, or seen-intervals —
+ * those are plugin presentation concepts.
  */
 class AppRepository(
     private val chatsDao: ChatDao,
@@ -75,18 +60,12 @@ class AppRepository(
     private val messagesDao: MessageDao,
 ) {
 
-    /**
-     * In-memory caches for groupIds, contact-id resolution, and received-package
-     * chatId resolution. See [RepositoryCaches] for the per-cache contract.
-     */
+    // ─────────────────────────────────────────────────────────────────────
+    // Sub-repositories (declaration order = dependency order)  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
     private val caches: RepositoryCaches = RepositoryCaches(contactsDao)
 
-    /**
-     * Chats domain. [deleteChat] runs under the same save-lock as
-     * [MessagesRepository.saveMessage] via a lambda that defers the lookup
-     * of [messages] until invocation time (so the forward reference is
-     * resolved only after [messages] has been initialized below).
-     */
     private val chats: ChatsRepository = ChatsRepository(
         chatsDao = chatsDao,
         contactsDao = contactsDao,
@@ -94,10 +73,6 @@ class AppRepository(
         withSaveLock = { block -> messages.withSaveLock { block() } },
     )
 
-    /**
-     * Contacts domain. Insert paths funnel chat creation through [chats], so
-     * `chats` must be initialized first.
-     */
     private val contacts: ContactsRepository = ContactsRepository(
         contactsDao = contactsDao,
         chatsDao = chatsDao,
@@ -108,12 +83,6 @@ class AppRepository(
         },
     )
 
-    /**
-     * Messages domain. Owns `saveMutex` (exposed via [MessagesRepository.withSaveLock]
-     * for `deleteChat` / `clearData`). Auto-create flow funnels back through
-     * [contacts.insertContactWithChat][ContactsRepository.insertContactWithChat],
-     * which is why `contacts` is declared first.
-     */
     private val messages: MessagesRepository = MessagesRepository(
         messagesDao = messagesDao,
         chatsDao = chatsDao,
@@ -124,169 +93,99 @@ class AppRepository(
         insertContactWithChat = contacts::insertContactWithChat,
     )
 
-    /**
-     * Legacy-DB migration + cleanup. Bulk-inserts go through
-     * [contacts.insertContactsWithChats][ContactsRepository.insertContactsWithChats]
-     * so the cache is warmed exactly as it is for live inserts.
-     */
     private val legacyMigrator: LegacyMigrator = LegacyMigrator(
         messagesDao = messagesDao,
         insertContacts = contacts::insertContactsWithChats,
     )
 
-    // ─────────────────────────────────────────────────────────────────────
-    // Contacts — delegated to [ContactsRepository]
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Inserts all contacts and **creates a fresh chat for each one**.
-     *
-     * **Intended usage**: called once at login, with a freshly-cleared DB
-     * (contacts are wiped on logout). Re-running against a non-empty DB
-     * duplicates chats — because chat creation here does not de-duplicate.
-     * For post-login writes (adding a single contact, resolving a conflict,
-     * renaming an existing contact), go through [applyContactOperations],
-     * which routes edits to `RenameExisting` / `UpdateExisting` and never
-     * re-creates chats.
-     *
-     * See [insertContactWithChat] for per-contact logic.
-     */
-    suspend fun insertContactsWithChats(contactsToInsert: List<FullContactData>) =
-        contacts.insertContactsWithChats(contactsToInsert)
-
-    /**
-     * Inserts a single contact and creates a chat for it:
-     * - USER / DEVICE → private chat + added to every existing GROUP chat.
-     * - GROUP → new group chat populated with all existing non-group members.
-     */
-    suspend fun insertContactWithChat(contact: FullContactData) =
-        contacts.insertContactWithChat(contact)
-
-    /** Live stream of group IDs from the dedicated group-id table, linked to GROUP chats. */
-    fun observeGroupIds(): Flow<List<String>> = contacts.observeGroupIds()
-
-    /** Returns all known group IDs from the dedicated group-id source. */
-    suspend fun getAllGroupIds(): List<String> = contacts.getAllGroupIds()
-
-    /** True when [id] belongs to a known GROUP contact. */
-    suspend fun isGroupId(id: String?): Boolean = contacts.isGroupId(id)
-
-    /** True when any value in [ids] belongs to a known GROUP contact. */
-    suspend fun hasAnyGroupId(ids: Collection<String?>): Boolean = contacts.hasAnyGroupId(ids)
-
-    /**
-     * Returns the display name of the contact that owns [id], searching across
-     * user IDs, group IDs, and device IDs. Returns null if no contact owns [id].
-     */
-    suspend fun getContactNameById(id: String): String? = contacts.getContactNameById(id)
-
-    suspend fun getContactNameByIdOrId(id: String): String = contacts.getContactNameByIdOrId(id)
-
-    /**
-     * Returns the display name of the GROUP contact that owns [groupId].
-     * Returns null if no group contact owns that ID.
-     */
-    suspend fun getGroupNameById(groupId: String): String? = contacts.getGroupNameById(groupId)
-
-    /** Returns the GROUP contact that owns [groupId], or null when not found. */
-    suspend fun getGroupContactById(groupId: String): ContactEntity? =
-        contacts.getGroupContactById(groupId)
-
-    /**
-     * Returns true when a contact owns [mainCommunicationId] across USER / GROUP / DEVICE
-     * identity tables — i.e. the value matches the semantics of
-     * [FullContactData.getMainCommunicationId].
-     *
-     * Hits the in-memory contacts cache first (which is keyed by the same
-     * normalized ids), and falls back to a single-shot DB lookup on miss.
-     * Blank / null inputs return false.
-     */
-    suspend fun isContactExistsByMainCommunicationId(mainCommunicationId: String?): Boolean =
-        contacts.isContactExistsByMainCommunicationId(mainCommunicationId)
-
-    /**
-     * Returns the contactId that owns [mainCommunicationId], or null when none does.
-     * Same lookup path as [isContactExistsByMainCommunicationId] — cache first, then DB.
-     */
-    suspend fun findContactIdByMainCommunicationId(mainCommunicationId: String?): Int? =
-        contacts.findContactIdByMainCommunicationId(mainCommunicationId)
-
-    /**
-     * Bulk variant of [isContactExistsByMainCommunicationId]: given a list of
-     * MainCommunicationIds, returns the subset that has NO known contact in the DB.
-     *
-     * - Null / blank entries are filtered out.
-     * - Duplicates in the input are collapsed; first-occurrence order preserved.
-     * - Hits the in-memory contacts cache first; only ids that miss the cache
-     *   trigger a single bulk DB query.
-     */
-    suspend fun findUnknownMainCommunicationIds(mainCommunicationIds: List<String>): List<String> =
-        contacts.findUnknownMainCommunicationIds(mainCommunicationIds)
-
-    /**
-     * Every contact stored in the database, mapped to [FullContactData]:
-     * USER (with linked devices), DEVICE, and GROUP contacts — including the
-     * registered user. Not filtered by self.
-     */
-    suspend fun getAllContacts(): List<FullContactData> = contacts.getAllContacts()
-
-    /**
-     * Reactive variant of [getAllContacts] — re-emits whenever the contacts
-     * data changes (including contacts auto-created from incoming messages or
-     * file import). Includes USER, DEVICE and GROUP contacts, not filtered by self.
-     */
-    fun observeAllContacts(): Flow<List<FullContactData>> = contacts.observeAllContacts()
-
-    // ─────────────────────────────────────────────────────────────────────
-    // Contact conflict domain (shared by the contact editor and bulk import)
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * App-lifetime cache of **every** contact, shared by every consumer so the
-     * DB is observed once rather than per screen/flow. `null` until the first
-     * load completes; started eagerly on the application scope.
-     */
     private val cachedContacts: StateFlow<List<FullContactData>?> =
         observeAllContacts().stateIn(
             RepositoryProvider.AppScopes.applicationScope, SharingStarted.Eagerly, null,
         )
 
-    /** The shared cache as a StateFlow (`null` = not loaded yet). */
+    // ─────────────────────────────────────────────────────────────────────
+    // Contacts — reads  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
+    suspend fun getAllContacts(): List<FullContactData> = contacts.getAllContacts()
+
+    fun observeAllContacts(): Flow<List<FullContactData>> = contacts.observeAllContacts()
+
+    suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> =
+        contacts.getUserAndGroupContactsExceptSelf()
+
+    fun observeUserAndGroupContactsExceptSelf(): Flow<List<FullContactData>> =
+        contacts.observeUserAndGroupContactsExceptSelf()
+
+    suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> =
+        contacts.getUserAndDeviceContactsExceptSelf()
+
+    suspend fun getContactNameById(id: String): String? = contacts.getContactNameById(id)
+
+    suspend fun getContactNameByIdOrId(id: String): String = contacts.getContactNameByIdOrId(id)
+
+    suspend fun getGroupNameById(groupId: String): String? = contacts.getGroupNameById(groupId)
+
+    suspend fun getGroupContactById(groupId: String): ContactEntity? =
+        contacts.getGroupContactById(groupId)
+
+    suspend fun isContactExistsByMainCommunicationId(mainCommunicationId: String?): Boolean =
+        contacts.isContactExistsByMainCommunicationId(mainCommunicationId)
+
+    suspend fun findContactIdByMainCommunicationId(mainCommunicationId: String?): Int? =
+        contacts.findContactIdByMainCommunicationId(mainCommunicationId)
+
+    suspend fun findUnknownMainCommunicationIds(mainCommunicationIds: List<String>): List<String> =
+        contacts.findUnknownMainCommunicationIds(mainCommunicationIds)
+
+    fun observeGroupIds(): Flow<List<String>> = contacts.observeGroupIds()
+
+    suspend fun getAllGroupIds(): List<String> = contacts.getAllGroupIds()
+
+    suspend fun isGroupId(id: String?): Boolean = contacts.isGroupId(id)
+
+    suspend fun hasAnyGroupId(ids: Collection<String?>): Boolean = contacts.hasAnyGroupId(ids)
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Contacts — writes  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Inserts every contact and creates a fresh chat for each — no de-duplication.
+     * Login-only; re-running on a populated DB duplicates chats. For post-login
+     * edits use [applyContactOperations].
+     */
+    suspend fun insertContactsWithChats(contactsToInsert: List<FullContactData>) =
+        contacts.insertContactsWithChats(contactsToInsert)
+
+    suspend fun insertContactWithChat(contact: FullContactData) =
+        contacts.insertContactWithChat(contact)
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Contact conflicts  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
     fun observeCachedContacts(): StateFlow<List<FullContactData>?> = cachedContacts
 
-    /** The shared cache as drafts; only emits once the roster has loaded. */
     fun observeCachedContactDrafts(): Flow<List<ContactDraft>> =
         cachedContacts.filterNotNull().map { it.map(ContactDraft.Companion::fromFullContactData) }
 
-    /** Current cached drafts, falling back to a one-shot DB read if not warm yet. */
     suspend fun cachedContactDrafts(): List<ContactDraft> =
         (cachedContacts.value ?: getAllContacts()).map(ContactDraft.Companion::fromFullContactData)
 
-    /** Every contact as a flat [ContactDraft] (fresh DB read). */
     suspend fun getAllContactDrafts(): List<ContactDraft> =
         getAllContacts().map(ContactDraft.Companion::fromFullContactData)
 
-    /** Reactive [getAllContactDrafts]. */
     fun observeAllContactDrafts(): Flow<List<ContactDraft>> =
         observeAllContacts().map { list -> list.map(ContactDraft.Companion::fromFullContactData) }
 
-    /** Detects which existing contacts [incoming] collides with (reads the cache). */
     suspend fun findContactConflicts(incoming: ContactDraft): ContactConflicts =
         ContactConflictEngine.detect(incoming, cachedContactDrafts())
 
     /**
-     * Applies resolver output. Runs the operations in the correct order so
-     * identity swaps and message reparenting are observable:
-     *
-     *  1. **UpdateExisting** – strip identities that moved to an incoming contact.
-     *  2. **RenameExisting** – rename the target contact + its chat in place
-     *     (the "same ids, callsign changed" shortcut, no duplicate row/chat).
-     *  3. **Insert** – create the incoming contact and its chat.
-     *  4. **DeleteExisting** – remove owners emptied by a swap; if the delete
-     *     specifies `reparentTo`, the source chat's messages are re-parented to
-     *     the (freshly-inserted) target's chat before the source is deleted.
-     *
-     * [ContactDraft] → [FullContactData] conversion happens only inside step 3.
+     * Applies resolver output in the order that keeps identity swaps and message
+     * re-parenting observable: UpdateExisting -> RenameExisting -> Insert ->
+     * DeleteExisting (re-parenting first when `reparentTo` is set).
      */
     suspend fun applyContactOperations(ops: List<ContactOperation>) {
         val updates = ops.filterIsInstance<ContactOperation.UpdateExisting>()
@@ -311,66 +210,49 @@ class AppRepository(
             contacts.deleteContact(d.target)
         }
 
-        // A local group add/edit/remove must be pushed to the connected device:
-        // wipe its group list and re-send the full (now-updated) set.
-        if (ops.any { it.touchesGroup() }) {
-            GroupsUtils.sendDeleteAllGroups()
-        }
+        if (ops.any { it.touchesGroup() }) GroupsUtils.sendDeleteAllGroups()
     }
 
     private fun ContactOperation.touchesGroup(): Boolean = when (this) {
         is ContactOperation.Insert -> contact.type == ContactType.GROUP
-        is ContactOperation.UpdateExisting -> original.type == ContactType.GROUP || updated.type == ContactType.GROUP
+        is ContactOperation.UpdateExisting ->
+            original.type == ContactType.GROUP || updated.type == ContactType.GROUP
         is ContactOperation.DeleteExisting -> target.type == ContactType.GROUP
         is ContactOperation.RenameExisting -> false
         ContactOperation.Noop -> false
     }
 
-    /** Every USER + GROUP contact except the registered user themselves. */
-    suspend fun getUserAndGroupContactsExceptSelf(): List<FullContactData> =
-        contacts.getUserAndGroupContactsExceptSelf()
-
-    /**
-     * Reactive variant of [getUserAndGroupContactsExceptSelf] — re-emits whenever the
-     * contacts data changes (including contacts auto-created from incoming messages or file import).
-     */
-    fun observeUserAndGroupContactsExceptSelf(): Flow<List<FullContactData>> =
-        contacts.observeUserAndGroupContactsExceptSelf()
-
-    /** Every USER and DEVICE contact except the registered user themselves. */
-    suspend fun getUserAndDeviceContactsExceptSelf(): List<FullContactData> =
-        contacts.getUserAndDeviceContactsExceptSelf()
-
     // ─────────────────────────────────────────────────────────────────────
-    // Chats — delegated to [ChatsRepository]
+    // Chats  [= UNCHANGED]
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * Reactive chat list for the UI. Each [ChatSummary] contains the
-     * last message text/sender and the current unseen count, computed live
-     * from the messages table. The Flow re-emits on every insert/update/delete
-     * in either `new_chats_table` or `new_messages_table`.
-     */
     fun getChatSummaries(): Flow<List<ChatSummary>> = chats.getChatSummaries()
 
-    /** Returns all chat IDs currently stored in the database. */
     suspend fun getChatIds(): List<String> = chats.getChatIds()
 
-    /**
-     * Resolves the chat id for [contact] — the private chat for USER/DEVICE, the
-     * group chat for GROUP. Returns null when the contact isn't saved (so has no
-     * chat yet). Saving a contact creates its chat, so a saved contact resolves.
-     */
+    suspend fun getChatByChatId(chatId: String): ChatEntity? = chats.getChatByChatId(chatId)
+
+    suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? =
+        chats.getChatWithParticipantsByChatId(chatId)
+
+    suspend fun getChatWithParticipantsShortParticipantInfo(
+        chatId: String,
+    ): ChatWithParticipantsAsShortParticipantInfo? =
+        chats.getChatWithParticipantsShortParticipantInfo(chatId)
+
+    suspend fun getChatWithParticipantsFullParticipantInfo(
+        chatId: String,
+    ): ChatWithParticipantsAsFullParticipantInfo? =
+        chats.getChatWithParticipantsFullParticipantInfo(chatId)
+
+    fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
+        chats.observeAllChatsWithShortParticipantInfo()
+
+    suspend fun deleteChat(chatId: String): Boolean = chats.deleteChat(chatId)
+
     suspend fun chatIdForContact(contact: FullContactData): String? =
         contacts.chatIdForContactDraft(ContactDraft.fromFullContactData(contact))
 
-    /**
-     * The "main" contact communication id for [chatId] — the inverse of
-     * [chatIdForContact]:
-     *  - GROUP chat → the group contact's app id,
-     *  - PRIVATE chat → the peer contact's app id (USER) or device id (DEVICE).
-     * Null when the chat or its main participant can't be resolved.
-     */
     suspend fun mainContactIdByChatId(chatId: String): String? {
         val data = getChatWithParticipantsShortParticipantInfo(chatId) ?: return null
         val main = if (data.chat.type == ChatType.GROUP) {
@@ -381,123 +263,99 @@ class AppRepository(
         return main?.id
     }
 
-
-    /** Returns chat by chat ID, or null when chat is missing/invalid. */
-    suspend fun getChatByChatId(chatId: String): ChatEntity? =
-        chats.getChatByChatId(chatId)
-
-    /** Fetches a single chat by its ID with participants. Returns null if not found. */
-    suspend fun getChatWithParticipantsByChatId(chatId: String): ChatWithParticipants? =
-        chats.getChatWithParticipantsByChatId(chatId)
-
-    /**
-     * Retrieves a chat with its participants as lightweight [ShortParticipantInfo]
-     * (id + type only). More efficient than fetching full FullContactData when
-     * you only need to know the participant's communication ID and type.
-     */
-    suspend fun getChatWithParticipantsShortParticipantInfo(chatId: String): ChatWithParticipantsAsShortParticipantInfo? =
-        chats.getChatWithParticipantsShortParticipantInfo(chatId)
-
-    /**
-     * Retrieves a chat with participants as full [FullContactData], including
-     * linked device metadata for USER/DEVICE contacts.
-     */
-    suspend fun getChatWithParticipantsFullParticipantInfo(chatId: String): ChatWithParticipantsAsFullParticipantInfo? =
-        chats.getChatWithParticipantsFullParticipantInfo(chatId)
-
-    /**
-     * Observes all chats with their participants as lightweight
-     * [ShortParticipantInfo] (id + type only). One bulk participant-id
-     * projection per emission — never per-chat or per-participant.
-     */
-    fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
-        chats.observeAllChatsWithShortParticipantInfo()
-
-    /** Deletes a chat by ID. Related messages/participants are deleted by FK cascade. */
-    suspend fun deleteChat(chatId: String): Boolean = chats.deleteChat(chatId)
-
     suspend fun findNewChatIdByPreviousChatId(previousChatId: String): String? =
         chats.findNewChatIdByPreviousChatId(previousChatId)
 
-    /**
-     * Resolves a list of previous chat IDs (groupId / deviceId / userId from the legacy DB)
-     * to new chat IDs, preserving input order.
-     *
-     * Duplicate inputs are resolved with a single DB call each and the result is reused
-     * for subsequent positions, so the list may contain the same value multiple times
-     * without extra queries.
-     *
-     * @return positionally aligned list — `null` at index i means no chat was found for
-     *         `previousChatIds[i]`.
-     */
     suspend fun findNewChatIdsByPreviousChatIds(previousChatIds: List<String>): List<String?> =
         chats.findNewChatIdsByPreviousChatIds(previousChatIds)
 
     // ─────────────────────────────────────────────────────────────────────
-    // Messages — delegated to [MessagesRepository]
+    // Messages — reads
+    //
+    // No LaneKey / LaneLayout here: lanes are a presentation concept and live in
+    // the plugin. This layer sees only MessageType filters. Boundaries are
+    // primitives; callers pass fields off a MessageEntity they already hold.
     // ─────────────────────────────────────────────────────────────────────
 
-    /**
-     * Live feed of the [limit] most-recent messages in [chatId], ordered
-     * chronologically (oldest-first). Re-emits automatically on every insert,
-     * update, or delete — suitable for both group and private chat views.
-     *
-     * For group chats pass [participantId] = null (default).
-     * For private chats pass a [participantId] to restrict to messages where
-     * that contact is sender **or** receiver.
-     */
-    fun getMessages(
+    fun observeMessages(
         chatId: String,
-        participantId: String? = null,
+        participantId: String?,
         limit: Int = PAGE_SIZE,
-    ): Flow<List<MessageEntity>> = messages.getMessages(chatId, participantId, limit)
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): Flow<List<MessageEntity>> =
+        messages.observeMessages(chatId, participantId, limit, types, excludeTypes)
 
-    /**
-     * Fetches the [limit] messages that come just **before** [beforeEpochMs]
-     * in [chatId], ordered chronologically. Pair with [getMessages] for
-     * infinite upward pagination.
-     */
-    suspend fun loadOlderMessages(
+    suspend fun loadOlder(
         chatId: String,
-        beforeEpochMs: Long,
-        participantId: String? = null,
+        participantId: String?,
+        beforeEpochMs: Long?,
+        beforeId: Int?,
         limit: Int = PAGE_SIZE,
-    ): List<MessageEntity> = messages.loadOlderMessages(chatId, beforeEpochMs, participantId, limit)
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): List<MessageEntity> = messages.loadOlder(
+        chatId, participantId, beforeEpochMs, beforeId, limit, types, excludeTypes,
+    )
 
-    /**
-     * Loads a target-scoped page (sender OR receiver == [targetId]) inside one chat.
-     * Returned list is chronological.
-     */
-    suspend fun loadPageForTarget(
-        targetId: String,
+    suspend fun loadNewer(
         chatId: String,
-        page: Int,
-        pageSize: Int = PAGE_SIZE,
-    ): List<MessageEntity> = messages.loadPageForTarget(targetId, chatId, page, pageSize)
-
-    /**
-     * Loads a chat-scoped page (all messages in [chatId] involving the
-     * registered user) for the requested [page] number.
-     */
-    suspend fun loadPageForChat(
-        chatId: String,
-        page: Int,
-        pageSize: Int = PAGE_SIZE,
-    ): List<MessageEntity> = messages.loadPageForChat(chatId, page, pageSize)
-
-    /** Live top-page stream for a single target in one chat. */
-    fun observeLatestForTarget(
-        targetId: String,
-        chatId: String,
+        participantId: String?,
+        afterEpochMs: Long,
+        afterId: Int,
         limit: Int = PAGE_SIZE,
-    ): Flow<List<MessageEntity>> = messages.observeLatestForTarget(targetId, chatId, limit)
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): List<MessageEntity> = messages.loadNewer(
+        chatId, participantId, afterEpochMs, afterId, limit, types, excludeTypes,
+    )
 
+    suspend fun loadAround(
+        chatId: String,
+        participantId: String?,
+        anchorEpochMs: Long,
+        anchorId: Int,
+        limit: Int = PAGE_SIZE,
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): List<MessageEntity> = messages.loadAround(
+        chatId, participantId, anchorEpochMs, anchorId, limit, types, excludeTypes,
+    )
+
+    suspend fun findFirstUnseen(
+        chatId: String,
+        participantId: String?,
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): MessageEntity? = messages.findFirstUnseen(chatId, participantId, types, excludeTypes)
+
+    suspend fun markSeenInRange(
+        chatId: String,
+        participantId: String?,
+        fromEpochMs: Long,
+        fromId: Int,
+        toEpochMs: Long,
+        toId: Int,
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): Int = messages.markSeenInRange(
+        chatId, participantId, fromEpochMs, fromId, toEpochMs, toId, types, excludeTypes,
+    )
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Messages — writes  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
 
     suspend fun saveMessage(message: MessageEntity, groupId: String? = null): Long? =
         messages.saveMessage(message, groupId)
 
-    suspend fun saveMessage(pkg: StardustAPIPackage, extraData: MessageExtraData, state: MessageState, epochTimeMs: Long = System.currentTimeMillis()): Long? {
-        val message = MessageEntity(
+    suspend fun saveMessage(
+        pkg: StardustAPIPackage,
+        extraData: MessageExtraData,
+        state: MessageState,
+        epochTimeMs: Long = System.currentTimeMillis(),
+    ): Long? = messages.saveMessage(
+        MessageEntity(
             chatId = pkg.chatId,
             senderID = pkg.senderId,
             receiverID = pkg.receiverId,
@@ -506,94 +364,75 @@ class AppRepository(
             epochTimeMs = epochTimeMs,
             carrierType = pkg.carrier?.type?.type,
             rd = pkg.carrier?.deliveryType?.value,
-//            freqMhz =,
-//            carrierRange =
+            // TODO: freqMhz / carrierRange once the package exposes them.
+        ),
+        pkg.groupId,
+    )
 
-        )
-        return messages.saveMessage(message, pkg.groupId)
-    }
-
-
-    /**
-     * Resolves chatId for an incoming package using participantId + optional groupId.
-     * Uses cache for hot packet flow and DB lookup on cache miss.
-     */
     suspend fun getChatIdForReceivedPackage(participantId: String, groupId: String?): String =
         messages.getChatIdForReceivedPackage(participantId, groupId)
 
-    /**
-     * Resolves chat for an incoming package using participantId + optional groupId.
-     * Same cache + DB lookup flow as [getChatIdForReceivedPackage].
-     */
     suspend fun getChatForReceivedPackage(participantId: String, groupId: String?): ChatEntity? =
         messages.getChatForReceivedPackage(participantId, groupId)
 
+    // ─────────────────────────────────────────────────────────────────────
+    // Messages — state, deletion, archival  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
     suspend fun updateMessageReceived(messageId: Long) = messages.updateMessageReceived(messageId)
 
-    /** Deletes all messages for [chatId]. */
     suspend fun clearChatMessages(chatId: String) = messages.clearChatMessages(chatId)
 
-    /** Deletes messages for [chatId] whose epoch is within [startTimestamp]..[endTimestamp]. */
     suspend fun clearChatMessagesInRange(
         chatId: String,
         startTimestamp: Long,
         endTimestamp: Long,
     ) = messages.clearChatMessagesInRange(chatId, startTimestamp, endTimestamp)
 
-    // ── Unseen counters ──────────────────────────────────────────────────
-
-    /** Live unseen-message count for [chatId]. */
-    fun observeUnseenCountForChat(chatId: String): Flow<Int> =
-        messages.observeUnseenCountForChat(chatId)
-
-    /** Live unseen-message count for messages in [chatId] where [targetId] is sender OR receiver. */
-    fun observeUnseenCountForTarget(chatId: String, targetId: String): Flow<Int> =
-        messages.observeUnseenCountForTarget(chatId, targetId)
-
-    /**
-     * Live unseen-message counts for every (chatId, targetId) combination
-     * where `chatId IN [chatIds]` and `targetId IN [targetIds]`.
-     */
-    fun observeUnseenCountsForTargets(
-        chatIds: List<String>,
-        targetIds: List<String>,
-    ): Flow<Map<String, Map<String, Int>>> =
-        messages.observeUnseenCountsForTargets(chatIds, targetIds)
-
-    /** Live unseen-message counts for every chat in [chatIds]. */
-    fun observeUnseenCountsForChats(chatIds: List<String>): Flow<Map<String, Int>> =
-        messages.observeUnseenCountsForChats(chatIds)
-
-    /** Live count of every message across all chats currently in state RECEIVED. */
-    fun observeReceivedMessageCount(): Flow<Int> =
-        messages.observeReceivedMessageCount()
-
-    // ── Archival ─────────────────────────────────────────────────────────
-
-    /** Archives a single message by ID. Returns true when a row was updated. */
     suspend fun archiveMessage(messageId: Int): Boolean = messages.archiveMessage(messageId)
 
-    /** Archives multiple messages by ID. Returns number of rows updated. */
-    suspend fun archiveMessages(messageIds: Collection<Int>): Int = messages.archiveMessages(messageIds)
+    suspend fun archiveMessages(messageIds: Collection<Int>): Int =
+        messages.archiveMessages(messageIds)
 
     suspend fun archiveMessagesInRange(startTimestamp: Long, endTimestamp: Long): Boolean =
         messages.archiveMessagesInRange(startTimestamp, endTimestamp)
 
-    /**
-     * Marks all RECEIVED / RECEIVING messages in [chatId] that arrived on or before
-     * [untilEpochMs] as SEEN. Defaults to current system time.
-     */
-    suspend fun updateChatRead(chatId: String, untilEpochMs: Long = System.currentTimeMillis()) =
-        messages.updateChatRead(chatId, untilEpochMs)
-
     // ─────────────────────────────────────────────────────────────────────
-    // Cross-cutting orchestration
+    // Messages — unseen counters
     // ─────────────────────────────────────────────────────────────────────
 
+    fun observeReceivedMessageCount(
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): Flow<Int> = messages.observeReceivedMessageCount(types, excludeTypes)
+
     /**
-     * Lower-cased identifiers (appId + deviceId) of the registered user, or
-     * empty when absent. Wired into [MessagesRepository] for [loadPageForChat].
+     * Live unseen counts keyed by chatId. Use for GROUP chats — the group target
+     * is synthetic, so its unseen count is the chat's unseen count.
      */
+    fun observeUnseenCountsForChats(
+        chatIds: List<String>,
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): Flow<Map<String, Int>> =
+        messages.observeUnseenCountsForChats(chatIds, types, excludeTypes)
+
+    /**
+     * Live unseen counts keyed by chatId -> senderId. PRIVATE chats only:
+     * targetIds match sender_id, and a group's synthetic target id is never a sender.
+     */
+    fun observeUnseenCountsForTargets(
+        chatIds: List<String>,
+        targetIds: List<String>,
+        types: List<MessageType>? = null,
+        excludeTypes: List<MessageType>? = null,
+    ): Flow<Map<String, Map<String, Int>>> =
+        messages.observeUnseenCountsForTargets(chatIds, targetIds, types, excludeTypes)
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Cross-cutting  [= UNCHANGED]
+    // ─────────────────────────────────────────────────────────────────────
+
     private fun registeredUserIds(): List<String> {
         val user = RegisteredUserUtils.currentUserFlow.value ?: return emptyList()
         return listOfNotNull(
@@ -602,42 +441,21 @@ class AppRepository(
         ).distinct()
     }
 
-    /**
-     * Wipes the unified database and the legacy databases. Runs under the
-     * save-lock so no [saveMessage] can be mid-flight when the tables are
-     * cleared.
-     */
     suspend fun clearData(): Boolean = messages.withSaveLock {
         withContext(Dispatchers.IO) {
-
             val newDbCleared = runCatching {
                 AppDatabase.getDatabase().clearAllTables()
                 true
             }.getOrDefault(false)
 
             caches.resetAll()
-
             val legacyCleared = legacyMigrator.clearLegacy()
 
             newDbCleared && legacyCleared
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────
-    // One-time migration from legacy databases
-    // ─────────────────────────────────────────────────────────────────────
-
-    /**
-     * Copies every row from the three legacy databases into this unified
-     * [AppDatabase], then deletes the old database files. Delegates to
-     * [LegacyMigrator.migrate].
-     *
-     * Guarded by a SharedPreferences flag so it runs exactly once per
-     * installation. Safe to call multiple times.
-     */
-    suspend fun migrateFromLegacyDatabases() {
-        legacyMigrator.migrate()
-    }
+    suspend fun migrateFromLegacyDatabases() = legacyMigrator.migrate()
 
     companion object {
         const val PAGE_SIZE = 30
