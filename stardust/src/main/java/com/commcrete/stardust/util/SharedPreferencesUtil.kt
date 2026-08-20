@@ -73,6 +73,7 @@ object SharedPreferencesUtil {
     private const val KEY_LOCATION_ACCURACY = "location_accuracy"
     private const val KEY_LOCATION_INTERVAL = "location_interval"
     private const val KEY_LOCATION_MANUAL = "location_manual"
+    private const val KEY_SPLIT_LOCATIONS = "split_locations_in_chat"
 
     private const val KEY_IS_CONFIG_SAVED = "configSaved"
 
@@ -677,6 +678,13 @@ object SharedPreferencesUtil {
     fun setIsManualLocation(isErased: Boolean) {
         getPrefs().edit { putBoolean(KEY_LOCATION_MANUAL, isErased) }
     }
+
+
+    fun isLocationSplitEnabled(): Boolean =
+        getPrefs().getBoolean(KEY_SPLIT_LOCATIONS, false)
+
+    fun setLocationSplitEnabled(enabled: Boolean) =
+        getPrefs().edit { putBoolean(KEY_SPLIT_LOCATIONS, enabled) }
 
     fun setCodecType(codecType: RecorderUtils.CODE_TYPE) {
         getPrefs().edit { putInt(KEY_INPUT_CODEC, codecType.id) }
