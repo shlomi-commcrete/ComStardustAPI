@@ -21,6 +21,10 @@ import com.google.gson.reflect.TypeToken
 import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import kotlin.collections.get
 import androidx.core.content.edit
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 object SharedPreferencesUtil {
     private const val PACKAGE_NAME = "com.commcrete.bittell"
@@ -685,6 +689,19 @@ object SharedPreferencesUtil {
 
     fun setLocationSplitEnabled(enabled: Boolean) =
         getPrefs().edit { putBoolean(KEY_SPLIT_LOCATIONS, enabled) }
+
+    fun observeLocationSplitEnabled(): Flow<Boolean> = callbackFlow {
+        val prefs = getPrefs()
+        trySend(prefs.getBoolean(KEY_SPLIT_LOCATIONS, false))
+
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { p, key ->
+            if (key == null || key == KEY_SPLIT_LOCATIONS) {
+                trySend(p.getBoolean(KEY_SPLIT_LOCATIONS, false))
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
 
     fun setCodecType(codecType: RecorderUtils.CODE_TYPE) {
         getPrefs().edit { putInt(KEY_INPUT_CODEC, codecType.id) }
