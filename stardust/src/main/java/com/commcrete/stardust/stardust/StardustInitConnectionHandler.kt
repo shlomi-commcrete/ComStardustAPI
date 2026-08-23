@@ -528,7 +528,7 @@ object StardustInitConnectionHandler {
     }
 
     fun isDisconnected(): Boolean {
-        return state == State.DISCONNECTED || state == State.IDLE || state == State.BLUETOOTH_OFF
+        return state == State.DISCONNECTED || state == State.IDLE || isSearchingToConnect() || state == State.BLUETOOTH_OFF
     }
 
     fun isConnectedSuccessfully(): Boolean {
@@ -539,4 +539,23 @@ object StardustInitConnectionHandler {
         if(state != newState) state = newState
     }
 
+    /**
+     * Clears every piece of init-flow state that would otherwise persist across sessions in this
+     * Kotlin-object singleton — `state`, `attempts`, `timeoutJob`, `lastAddresses`. Call this at
+     * the top of any fresh reconnect entry (`bondOnStartup`, adopt-device, etc.) to guarantee the
+     * per-step guards (`isRunning`, `state == X`, `attempts[step] < MAX`, `initStartTriggered`)
+     * begin from a known-clean base.
+     *
+     * Master's `bondOnStartup` implicitly did the equivalent by calling `updateConnectionState(SEARCHING)`
+     * unconditionally before every connect, plus `attempts.clear()` inside `start()`. On this
+     * branch the SEARCHING transition became conditional, exposing every stale state left over
+     * from a previous session's SUCCESS/CANCELED/ENCRYPTION_KEY_ERROR/… as a silent init-blocker.
+     */
+    fun resetForNewSession() {
+        timeoutJob?.cancel()
+        timeoutJob = null
+        attempts.clear()
+        lastAddresses = null
+        state = State.DISCONNECTED
+    }
 }
