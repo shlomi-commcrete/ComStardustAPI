@@ -30,6 +30,7 @@ import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
+import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -226,7 +227,21 @@ class AppRepository(
     // Chats  [= UNCHANGED]
     // ─────────────────────────────────────────────────────────────────────
 
-    fun getChatSummaries(): Flow<List<ChatSummary>> = chats.getChatSummaries()
+    fun getChatSummaries(excludeTypes: List<MessageType> = emptyList()): Flow<List<ChatSummary>> =
+        chats.getChatSummaries(excludeTypes)
+
+    /** Single-chat summary (e.g. an in-chat header), with the same [excludeTypes] semantics. */
+    fun getChatSummary(
+        chatId: String,
+        excludeTypes: List<MessageType> = emptyList(),
+    ): Flow<ChatSummary?> = chats.getChatSummary(chatId, excludeTypes)
+
+    /**
+     * Live unseen counts for the split-out [splitTypes], grouped by chat and type — one entry per
+     * (chatId, type) that currently has unseen messages. Drives the per-type "new X" indicators.
+     */
+    fun observeUnseenCountsBySplitType(splitTypes: List<MessageType>): Flow<List<ChatTypeUnseen>> =
+        chats.observeUnseenCountsBySplitType(splitTypes)
 
     suspend fun getChatIds(): List<String> = chats.getChatIds()
 

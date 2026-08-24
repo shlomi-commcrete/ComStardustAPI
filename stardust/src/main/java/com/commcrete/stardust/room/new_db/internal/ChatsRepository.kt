@@ -5,6 +5,7 @@ import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
 import com.commcrete.stardust.room.new_db.chat.ChatType
+import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipants
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsFullParticipantInfo
 import com.commcrete.stardust.room.new_db.chat.ChatWithParticipantsAsShortParticipantInfo
@@ -14,18 +15,21 @@ import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.message.MessageType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 /**
  * Owns every chats-domain operation backed by [ChatDao]:
  *
  *  - **Reads** — chat lists and summaries
- *    ([getChatSummaries], [getChatIds], [getShortChatDataByChatId],
- *    [getChatWithParticipantsByChatId], [getChatWithParticipantsShortParticipantInfo],
+ *    ([getChatSummaries], [getChatSummary], [observeUnseenCountsBySplitType],
+ *    [getChatIds], [getChatWithParticipantsByChatId],
+ *    [getChatWithParticipantsShortParticipantInfo],
  *    [getChatWithParticipantsFullParticipantInfo],
  *    [observeAllChatsWithShortParticipantInfo]).
  *  - **Writes** — chat creation helpers shared with contacts-insertion paths
@@ -57,8 +61,26 @@ internal class ChatsRepository(
     suspend fun getChatByChatId(chatId: String): ChatEntity? =
         chatsDao.getChatByChatId(chatId)
 
-    /** See `AppRepository.getChatSummaries`. */
-    fun getChatSummaries(): Flow<List<ChatSummary>> = chatsDao.getAllChatsSummaries()
+    /**
+     * See `AppRepository.getChatSummaries`. [excludeTypes] is excluded from both the last-message
+     * pick and the unread count; the empty default matches the previous view-backed behaviour.
+     */
+    fun getChatSummaries(excludeTypes: List<MessageType> = emptyList()): Flow<List<ChatSummary>> =
+        chatsDao.getChatSummaries(excludeTypes)
+
+    /** See `AppRepository.getChatSummary`. Single-chat summary, same exclusion semantics. */
+    fun getChatSummary(
+        chatId: String,
+        excludeTypes: List<MessageType> = emptyList(),
+    ): Flow<ChatSummary?> = chatsDao.getChatSummary(chatId, excludeTypes)
+
+    /** See `AppRepository.observeUnseenCountsBySplitType`. Maps DAO rows to the domain model. */
+    fun observeUnseenCountsBySplitType(splitTypes: List<MessageType>): Flow<List<ChatTypeUnseen>> =
+        chatsDao.observeUnseenCountsBySplitType(splitTypes)
+            .map { rows ->
+                rows.map { ChatTypeUnseen(chatId = it.chatId, messageType = it.messageType, count = it.count) }
+            }
+            .flowOn(Dispatchers.IO)
 
     /** See `AppRepository.getChatIds`. */
     suspend fun getChatIds(): List<String> = withContext(Dispatchers.IO) {
@@ -288,4 +310,3 @@ internal class ChatsRepository(
             normalized.map { key -> if (key.isEmpty()) null else resolved[key] }
         }
 }
-

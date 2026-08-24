@@ -8,7 +8,6 @@ import androidx.room.TypeConverters
 import com.commcrete.stardust.room.Converters
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
-import com.commcrete.stardust.room.new_db.chat.ChatSummary
 import com.commcrete.stardust.room.new_db.chat.ChatParticipantEntity
 import com.commcrete.stardust.room.new_db.contact.ContactDeviceEntity
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
@@ -51,7 +50,6 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         MessageEntity::class,
         ChatParticipantEntity::class,
     ],
-    views = [ChatSummary::class],
     version = 1,
     exportSchema = false
 )

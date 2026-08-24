@@ -8,6 +8,7 @@ import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
 import androidx.room.ColumnInfo
+import com.commcrete.stardust.room.new_db.message.MessageType
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -17,6 +18,13 @@ interface ChatDao {
     data class PreviousChatIdRow(
         @ColumnInfo(name = "previous_id") val previousId: String,
         @ColumnInfo(name = "chat_id") val chatId: String,
+    )
+
+    /** (chatId, messageType, count) row for unseen messages of the split-out types. */
+    data class ChatTypeUnseenRow(
+        @ColumnInfo(name = "chatId") val chatId: String,
+        @ColumnInfo(name = "messageType") val messageType: MessageType,
+        @ColumnInfo(name = "count") val count: Int,
     )
 
     // ── Single chat ──────────────────────────────────────────────────────
@@ -91,14 +99,122 @@ interface ChatDao {
         }
     }
 
-    // ── Queries ──────────────────────────────────────────────────────────
+    // ── Chat summaries ───────────────────────────────────────────────────
+    //
+    // ChatSummary is a plain query-result POJO (no longer a @DatabaseView). The projection below is
+    // the single source of that SQL, parameterized by the message types to exclude from BOTH the
+    // last-message pick and the unread count. Passing an empty list excludes nothing (`NOT IN ()`
+    // is always true in SQLite), so callers that don't split types just pass emptyList().
+    //
+    // State ints — SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5.
 
-    @Query("SELECT * FROM chat_summary ORDER BY lastMessageEpochMs DESC")
-    fun getAllChatsSummaries(): Flow<List<ChatSummary>>
+    /** Whole chats list, newest last-message first. [excludedTypes] = message types to hide. */
+    @Query("""
+        SELECT
+            c.id                                            AS chatId,
+            c.type                                          AS chatType,
+            c.name                                          AS name,
+            c.image                                         AS image,
+            lm.type                                         AS lastMessageType,
+            lm.state                                        AS lastMessageState,
+            lm.extra_data                                   AS lastMessageExtraData,
+            lm.sender_id                                    AS lastSenderId,
+            COALESCE(ct.name, lm.sender_id)                 AS lastSenderName,
+            lm.epoch_time_ms                                AS lastMessageEpochMs,
+            COALESCE(unseen.unseen_count, 0)                AS unseenCount
+        FROM chats c
+        LEFT JOIN (
+            SELECT m.chat_id, m.type, m.state, m.extra_data, m.sender_id, m.epoch_time_ms
+            FROM messages m
+            JOIN (
+                SELECT chat_id, MAX(epoch_time_ms) AS max_epoch_time_ms
+                FROM messages
+                WHERE state != 5 AND type NOT IN (:excludedTypes)
+                GROUP BY chat_id
+            ) latest
+                ON latest.chat_id = m.chat_id
+               AND latest.max_epoch_time_ms = m.epoch_time_ms
+            WHERE m.type NOT IN (:excludedTypes)
+        ) lm
+            ON lm.chat_id = c.id
+        LEFT JOIN app_contact_user_ids u
+            ON u.user_id = lm.sender_id
+        LEFT JOIN app_contact_devices d
+            ON d.device_id = lm.sender_id
+        LEFT JOIN contacts ct
+            ON ct.id = COALESCE(u.contact_id, d.contact_id)
+        LEFT JOIN (
+            SELECT chat_id, COUNT(*) AS unseen_count
+            FROM messages
+            WHERE state IN (2) AND type NOT IN (:excludedTypes)
+            GROUP BY chat_id
+        ) unseen
+            ON unseen.chat_id = c.id
+        ORDER BY lastMessageEpochMs DESC
+    """)
+    fun getChatSummaries(excludedTypes: List<MessageType>): Flow<List<ChatSummary>>
 
-    /** Single-chat summary — useful for a header while the user is inside a chat. */
-    @Query("SELECT * FROM chat_summary WHERE chatId = :chatId LIMIT 1")
-    fun getChatSummary(chatId: String): Flow<ChatSummary?>
+    /** Single-chat summary (e.g. an in-chat header). Same projection, filtered to one chat. */
+    @Query("""
+        SELECT
+            c.id                                            AS chatId,
+            c.type                                          AS chatType,
+            c.name                                          AS name,
+            c.image                                         AS image,
+            lm.type                                         AS lastMessageType,
+            lm.state                                        AS lastMessageState,
+            lm.extra_data                                   AS lastMessageExtraData,
+            lm.sender_id                                    AS lastSenderId,
+            COALESCE(ct.name, lm.sender_id)                 AS lastSenderName,
+            lm.epoch_time_ms                                AS lastMessageEpochMs,
+            COALESCE(unseen.unseen_count, 0)                AS unseenCount
+        FROM chats c
+        LEFT JOIN (
+            SELECT m.chat_id, m.type, m.state, m.extra_data, m.sender_id, m.epoch_time_ms
+            FROM messages m
+            JOIN (
+                SELECT chat_id, MAX(epoch_time_ms) AS max_epoch_time_ms
+                FROM messages
+                WHERE state != 5 AND type NOT IN (:excludedTypes)
+                GROUP BY chat_id
+            ) latest
+                ON latest.chat_id = m.chat_id
+               AND latest.max_epoch_time_ms = m.epoch_time_ms
+            WHERE m.type NOT IN (:excludedTypes)
+        ) lm
+            ON lm.chat_id = c.id
+        LEFT JOIN app_contact_user_ids u
+            ON u.user_id = lm.sender_id
+        LEFT JOIN app_contact_devices d
+            ON d.device_id = lm.sender_id
+        LEFT JOIN contacts ct
+            ON ct.id = COALESCE(u.contact_id, d.contact_id)
+        LEFT JOIN (
+            SELECT chat_id, COUNT(*) AS unseen_count
+            FROM messages
+            WHERE state IN (2) AND type NOT IN (:excludedTypes)
+            GROUP BY chat_id
+        ) unseen
+            ON unseen.chat_id = c.id
+        WHERE c.id = :chatId
+        LIMIT 1
+    """)
+    fun getChatSummary(chatId: String, excludedTypes: List<MessageType>): Flow<ChatSummary?>
+
+    /**
+     * Live unseen (state RECEIVED = 2) counts for the split-out [splitTypes], grouped by chat and
+     * type. Drives the per-type "new X received" indicators in the chats list. Empty [splitTypes]
+     * yields no rows.
+     */
+    @Query("""
+        SELECT chat_id AS chatId, type AS messageType, COUNT(*) AS count
+        FROM messages
+        WHERE state = 2 AND type IN (:splitTypes)
+        GROUP BY chat_id, type
+    """)
+    fun observeUnseenCountsBySplitType(splitTypes: List<MessageType>): Flow<List<ChatTypeUnseenRow>>
+
+    // ── Other chat queries ───────────────────────────────────────────────
 
     @Query("SELECT id FROM chats WHERE type = 'GROUP'")
     suspend fun getAllGroupChatIds(): List<String>
