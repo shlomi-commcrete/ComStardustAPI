@@ -224,8 +224,9 @@ class AppRepository(
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Chats  [= UNCHANGED]
+    // Chats
     // ─────────────────────────────────────────────────────────────────────
+
 
     fun getChatSummaries(excludeTypes: List<MessageType> = emptyList()): Flow<List<ChatSummary>> =
         chats.getChatSummaries(excludeTypes)
@@ -259,6 +260,13 @@ class AppRepository(
         chatId: String,
     ): ChatWithParticipantsAsFullParticipantInfo? =
         chats.getChatWithParticipantsFullParticipantInfo(chatId)
+
+    /**
+     * The single [FullContactData] a chat is "about": the lone participant of a
+     * PRIVATE chat, or the GROUP contact of a GROUP chat. Null when unresolved.
+     */
+    suspend fun getContactForChat(chatId: String): FullContactData? =
+        chats.getContactForChat(chatId)
 
     fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
         chats.observeAllChatsWithShortParticipantInfo()

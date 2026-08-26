@@ -381,7 +381,6 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     fun bondOnStartup() {
-        checkInitialized()
         val user = RegisteredUserUtils.currentUserFlow.value
         android.util.Log.d("ConfigDebug",
             "bondOnStartup ENTER user.appId=${user?.appId} user.deviceId=${user?.deviceId} " +
@@ -411,6 +410,14 @@ object DataManager : StardustAPI, PttInterface {
             val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(pairedAddress)
             android.util.Log.d("ConfigDebug", "bondOnStartup resolvedDevice=${device?.address}")
             if (device != null) {
+                // Case 2 (saved-in-app device): unconditionally reset every piece of per-session
+                // state that could silently block init on a reconnect — the InitConnectionHandler
+                // singleton (state / attempts / timeoutJob / lastAddresses), and the
+                // ClientConnection per-instance CAS gates (servicesDiscoveredHandled,
+                // initStartTriggered, mtuRequested, hasCallback). Only THEN move to SEARCHING and
+                // fire the connect. Skipping this reset was the reconnect regression vs master.
+                StardustInitConnectionHandler.resetForNewSession()
+                getClientConnection().resetForNewSession()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
                 getClientConnection().bondToBleDeviceStartup(device)
                 return

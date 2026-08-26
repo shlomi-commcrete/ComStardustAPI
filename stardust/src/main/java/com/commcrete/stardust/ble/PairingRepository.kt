@@ -145,6 +145,9 @@ object PairingRepository {
         SharedPreferencesUtil.setBittelDevice(device.address)
         display?.let { SharedPreferencesUtil.setBittelDeviceName(it) }
         setPaired(true)
+        // Same singleton reset as bondOnStartup — adopt is another Case 2 entry point.
+        StardustInitConnectionHandler.resetForNewSession()
+        DataManager.getClientConnection().resetForNewSession()
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
         DataManager.getClientConnection().bondToBleDeviceStartup(device)
         Timber.tag(TAG).d("Adopted pre-paired device ${device.address}")

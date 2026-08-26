@@ -92,6 +92,11 @@ object BleManager {
         when(newStatus) {
             ConnectionType.USB -> {
                 if (lastConnectionStatus == ConnectionType.BLE) {
+                    // Case 3 (USB takeover of live BLE): tear down BLE without unpair. Also
+                    // disable the BLE auto-reconnect watchdog — otherwise, when USB later drops
+                    // (Case 4), the watchdog would immediately auto-reconnect BLE, contradicting
+                    // the "SDK stays idle; host shows dialog" policy for Case 4.
+                    ConnectionManager.disableAutoReconnect()
                     getClientConnection().disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
                 }
             }
@@ -99,6 +104,15 @@ object BleManager {
             ConnectionType.BLE -> {}
 
             else -> {
+                // Transport went null. Two possible histories:
+                //   - USB was active and just unplugged (Case 4): SDK must stay idle so the host
+                //     can show its "connect via BLE / unpair" dialog. Disable the watchdog.
+                //   - BLE was active and just dropped unexpectedly (Case 2 unexpected drop, e.g.
+                //     battery-dies / out-of-range): the watchdog is exactly the recovery
+                //     mechanism, leave it armed.
+                if (lastConnectionStatus == ConnectionType.USB) {
+                    ConnectionManager.disableAutoReconnect()
+                }
                 ConfigurationUtils.reset()
                 CarriersUtils.reset()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)

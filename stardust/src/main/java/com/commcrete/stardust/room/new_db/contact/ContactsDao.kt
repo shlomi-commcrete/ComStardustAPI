@@ -263,6 +263,8 @@ interface ContactsDao {
     )
     suspend fun getChatParticipantIdRows(chatId: String): List<ChatParticipantIdRow>
 
+
+
     /**
      * Returns the contact name for [id] by searching across all three identity
      * tables (user IDs, group IDs, device IDs) in a single query.

@@ -50,7 +50,7 @@ object SOSUtils {
 
     fun ackSOS(stardustAPIPackage: StardustAPIPackage) {
         val sosMessage = StardustPackageUtils.getStardustPackage(
-            source = stardustAPIPackage.receiverId,
+            source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
         DataManager.getClientConnection().addMessageToQueue(sosMessage)

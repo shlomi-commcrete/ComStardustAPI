@@ -127,6 +127,31 @@ internal class ChatsRepository(
         )
     }
 
+    /**
+     * See `AppRepository.getContactForChat`.
+     *
+     * The single contact a chat is "about":
+     *  - PRIVATE → its one participant (USER or DEVICE), reconstructed with device links.
+     *  - GROUP   → the sole GROUP contact among its participants.
+     *
+     * Returns null when the chat is unknown or has no such participant resolved yet.
+     */
+    suspend fun getContactForChat(chatId: String): FullContactData? = withContext(Dispatchers.IO) {
+        val normalizedChatId = normalizeIdOrNull(chatId) ?: return@withContext null
+        val chat = chatsDao.getChatByChatId(normalizedChatId) ?: return@withContext null
+        when (chat.type) {
+            ChatType.GROUP ->
+                mapGroupContactRowsToFullContactData(
+                    contactsDao.getChatGroupContactRows(normalizedChatId),
+                ).firstOrNull()
+
+            ChatType.PRIVATE ->
+                mapAppContactRowsToFullContactData(
+                    contactsDao.getChatUserAndDeviceContactRows(normalizedChatId),
+                ).firstOrNull()
+        }
+    }
+
     /** See `AppRepository.observeAllChatsWithShortParticipantInfo`. */
     fun observeAllChatsWithShortParticipantInfo(): Flow<List<ChatWithParticipantsAsShortParticipantInfo>> =
         combine(

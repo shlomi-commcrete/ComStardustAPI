@@ -186,6 +186,10 @@ internal class ClientConnection(): BittelProtocol {
 
 
     var hasCallback = false
+
+    // Guards connectGatt so exactly ONE connection can be in flight/active at a time. Must be a
+    // CAS, not a plain boolean check — see connectDevice() for the double-connection this prevents.
+    private val connectInFlight = AtomicBoolean(false)
     var deviceName : String?  = ""
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
@@ -247,6 +251,7 @@ internal class ClientConnection(): BittelProtocol {
                             Timber.tag(LOG_TAG).d("Connected but no active intent (user disconnected) — closing stray GATT")
                             gatt?.disconnect()
                             gatt?.close()
+                            connectInFlight.set(false)
                             return
                         }
                         // Request the larger MTU once, only now that we're actually connected —
@@ -263,6 +268,10 @@ internal class ClientConnection(): BittelProtocol {
                         }
                     } else {
                         resetDiscoveryState()
+                        // The link is down. Release the connect gate so a later reconnect can run —
+                        // a drop that doesn't route through disconnectFromBLEDevice would otherwise
+                        // leave the CAS latched and block every future connectGatt.
+                        connectInFlight.set(false)
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
@@ -577,6 +586,13 @@ internal class ClientConnection(): BittelProtocol {
                             Log.d("StardustDataManager", "hasCallback $hasCallback, isUSBConnected: $isUSBConnected")
 
                             if (hasCallback) { return@let }
+                            // Case 2c (BT off → on with saved device): normalize per-session
+                            // state the same way bondOnStartup / adopt do, so a session that was
+                            // torn down by the BT-off branch above doesn't leave singleton state
+                            // (attempts / initStartTriggered / etc.) that silently blocks init on
+                            // the re-attach.
+                            StardustInitConnectionHandler.resetForNewSession()
+                            resetForNewSession()
                             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
                             bondToBleDeviceStartup(it)
                         }
@@ -636,10 +652,20 @@ internal class ClientConnection(): BittelProtocol {
             return
         }
         Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
-        if(!hasCallback) {
-            resetDiscoveryState()
-            device.connectGatt(context, autoConnect, getBleGattCallback(device))
+        // ATOMIC connect gate. The old `if (!hasCallback)` was a non-atomic check-then-act:
+        // hasCallback is only set inside getBleGattCallback(), which is evaluated as the 3rd
+        // ARGUMENT of connectGatt — so two callers (e.g. bondOnStartup + the BT-state observer,
+        // or two bondOnStartup calls) could both pass the check and issue TWO connectGatt calls
+        // for the same device. Both share the cached callback object, so every GATT event and
+        // every notification is then delivered twice — observed live as doubled
+        // onConnectionStateChange / handleServicesDiscovered / CCCD writes, and every protocol
+        // reply arriving twice with the second dropped by the duplicate filter.
+        if (!connectInFlight.compareAndSet(false, true)) {
+            Log.w("ConfigDebug", "connectDevice SKIPPED for ${device.address} — a connectGatt is already in flight/active")
+            return
         }
+        resetDiscoveryState()
+        device.connectGatt(context, autoConnect, getBleGattCallback(device))
     }
 
     @SuppressLint("MissingPermission")
@@ -654,6 +680,7 @@ internal class ClientConnection(): BittelProtocol {
         bleGatChar = null
         gattConnection = null
         hasCallback = false
+        connectInFlight.set(false)
         ConfigurationUtils.reset()
         CarriersUtils.reset()
 
@@ -684,6 +711,19 @@ internal class ClientConnection(): BittelProtocol {
         discoverServicesJob = null
         initStartJob?.cancel()
         initStartJob = null
+    }
+
+    /**
+     * Explicit "prepare for a new session" reset for the per-instance guards that would otherwise
+     * silently no-op a reconnect: the discovery/init CAS flags AND `hasCallback` (the gate that
+     * makes [connectDevice] a no-op if a prior connect didn't tear down). Call from
+     * [com.commcrete.stardust.util.DataManager.bondOnStartup] before every reconnect entry.
+     */
+    fun resetForNewSession() {
+        resetDiscoveryState()
+        hasCallback = false
+        connectInFlight.set(false)
+        pendingBondAddress = null
     }
 
     /**
