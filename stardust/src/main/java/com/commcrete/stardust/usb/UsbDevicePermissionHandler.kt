@@ -43,6 +43,10 @@ object UsbDevicePermissionHandler {
                     "Delivery failure, not a user denial (fix #1 defect B)."
             )
         }
+        // Clear the tracked device too: leaving it set meant a late-arriving result (or the next
+        // one) could be applied to a device that is already gone. Observed live as
+        // "currentDevice=1002 isRequestingPermission=true" surviving a DETACHED event.
+        currentDevice = null
         isRequestingPermission = false
         requestNextPermission()
     }
@@ -98,8 +102,25 @@ object UsbDevicePermissionHandler {
                     )
                 }
 
-                val permissionFlags = PendingIntent.FLAG_IMMUTABLE
-                val requestIntent = Intent(ACTION_USB_PERMISSION)
+                // CONFIRMED ON DEVICE (SM-G736B, sdkInt=36, host targetSdk=34): the previous
+                // `Intent(ACTION_USB_PERMISSION)` + FLAG_IMMUTABLE combination broke this flow in
+                // two independent ways, and the user's grant was silently discarded:
+                //
+                //  A) FLAG_IMMUTABLE — UsbManager fills EXTRA_DEVICE and EXTRA_PERMISSION_GRANTED
+                //     at send() time, and an immutable PendingIntent discards send-time extras. So
+                //     even a delivered broadcast parses as a denial.
+                //  B) Implicit intent — with no package/component set, Android 14+ does not deliver
+                //     the broadcast to our RECEIVER_NOT_EXPORTED runtime receiver at ALL. Observed
+                //     live: onReceive never fired, the 10s timeout expired, and by then
+                //     UsbManager.hasPermission(device) was already TRUE.
+                val requestIntent = Intent(ACTION_USB_PERMISSION).apply {
+                    setPackage(DataManager.appContext.packageName)   // fixes (B)
+                }
+                val permissionFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT  // fixes (A)
+                } else {
+                    PendingIntent.FLAG_UPDATE_CURRENT
+                }
                 val permissionIntent = PendingIntent.getBroadcast(
                     DataManager.appContext, 0,
                     requestIntent,

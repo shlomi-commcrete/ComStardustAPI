@@ -195,11 +195,25 @@ object BittelUsbManager2 : BittelProtocol {
                 "initDataToUsb ABORT — isUSBConnected=${BleManager.isUSBConnected} " +
                     "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
             )
-            UsbDiag.verdict(
-                "USB port is OPEN but the handshake will not run: " +
-                    "isUSBConnected=${BleManager.isUSBConnected} " +
-                    "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
-            )
+            if (!BleManager.isUSBConnected && uartManager == null) {
+                // Observed live, repeating every ~11s during a *BLE* session: PortUtils' ping
+                // watchdog calls ConnectionManager.requestReconnect(TransportId.USB) with the
+                // transport HARD-CODED to USB, so a BLE ping timeout lands here instead of
+                // reconnecting BLE — and it burns the single-flight reconnect slot on the way.
+                UsbDiag.warn(
+                    "initDataToUsb",
+                    "SPURIOUS USB reconnect: no USB port is open and isUSBConnected=false. " +
+                        "Caller is almost certainly PortUtils' hard-coded " +
+                        "requestReconnect(TransportId.USB, \"USB ping timeout\") — see PortUtils.kt:25. " +
+                        "This also suppresses the BLE reconnect that should have happened."
+                )
+            } else {
+                UsbDiag.verdict(
+                    "USB link is up but the handshake will not run: " +
+                        "isUSBConnected=${BleManager.isUSBConnected} " +
+                        "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
+                )
+            }
             return
         }
         android.util.Log.d("ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
