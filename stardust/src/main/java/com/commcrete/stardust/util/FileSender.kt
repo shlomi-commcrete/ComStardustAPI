@@ -245,11 +245,11 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         DataManager.getClientConnection().let {
             val (appId, _) = requireLocalSrcDst() ?: return
 
-            val sosString = "STR"
-            val sosBytes = sosString.toByteArray()
+
+            val bytes = "STR".toByteArray()
             var dataToSend : Array<Int> = arrayOf()
-            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes).size + fileStart.toArrayInt().size)
-            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(sosBytes))
+            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(bytes).size + fileStart.toArrayInt().size)
+            dataToSend = dataToSend.plus(StardustPackageUtils.byteArrayToIntArray(bytes))
             dataToSend = dataToSend.plus(fileStart.toArrayInt())
 
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
