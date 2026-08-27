@@ -155,16 +155,23 @@ class UARTManager() {
         }
     }
 
-    fun send(data: ByteArray) {
-        try {
-            if (serialPort == null) {
-                UsbDiag.warn("UART.send", "DROPPED ${data.size} bytes — serialPort is NULL (port closed or never opened)")
-            }
-            serialPort?.write(data, 3000)
+    /** @return true if the bytes were handed to the port; false if the port is closed or the write failed. */
+    fun send(data: ByteArray): Boolean {
+        val port = serialPort ?: run {
+            UsbDiag.warn("UART.send", "DROPPED ${data.size} bytes — serialPort is NULL (port closed or never opened)")
+            return false
+        }
+        return try {
+            port.write(data, 3000)
+            true
         } catch (e: IOException) {
             Timber.tag("SerialInputOutputManager").e("send : " + e)
-            UsbDiag.error("UART.send", "write failed for ${data.size} bytes", e)
-            // Handle error
+            // Surfaced rather than swallowed: a write that keeps failing is the other way a dead
+            // link stays invisible (the read thread's onRunError is the first). Callers can decide
+            // what to do; nothing is torn down here, because a single transient write failure is
+            // not proof the port is gone.
+            UsbDiag.error("UART.send", "write FAILED for ${data.size} bytes — link may be dead", e)
+            false
         }
     }
 

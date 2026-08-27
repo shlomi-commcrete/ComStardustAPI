@@ -669,8 +669,24 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     @SuppressLint("MissingPermission")
+    /**
+     * Tears down the BLE link. **BLE-scoped only.**
+     *
+     * BLE and USB are mutually exclusive, and when USB is carrying the session this function must
+     * not touch anything the USB session owns. It used to unconditionally
+     * `ConfigurationUtils.reset()`, `CarriersUtils.reset()` and drive the init state to
+     * `DISCONNECTED` — so unpairing BLE while USB was connected wiped the USB session's
+     * configuration and dropped [com.commcrete.stardust.transport.ConnectionState] from
+     * `Ready(USB)` to `LinkUp(USB)`. The UART stayed open, but from the user's point of view the
+     * device had disconnected.
+     */
     fun disconnectFromBLEDevice(disconnectByForce: Boolean = false, withStateUpdate: Boolean = true) {
         if(!disconnectByForce && !StardustInitConnectionHandler.isConnected()) return
+
+        // Whether USB currently owns the shared session state.
+        val usbOwnsSession = BleManager.isUSBConnected
+
+        // ── BLE-local teardown: always safe, USB holds none of this ──
         reconnectJob?.cancel()
         reconnectJob = null
         resetDiscoveryState()
@@ -681,8 +697,14 @@ internal class ClientConnection(): BittelProtocol {
         gattConnection = null
         hasCallback = false
         connectInFlight.set(false)
-        ConfigurationUtils.reset()
-        CarriersUtils.reset()
+
+        // ── Shared session state: belongs to whichever transport is active ──
+        if (usbOwnsSession) {
+            Log.d("ConfigDebug", "disconnectFromBLEDevice: USB is active — keeping configuration, carriers and init state")
+        } else {
+            ConfigurationUtils.reset()
+            CarriersUtils.reset()
+        }
 
         Scopes.getMainCoroutine().launch {
             Timber.tag("Bittel Disconnected").d("Called Function")
@@ -690,10 +712,13 @@ internal class ClientConnection(): BittelProtocol {
 //            com.commcrete.stardust.ble.BleManager.isBleConnected = false
 //            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             BleManager.updateStatus()
+            // RSSI and the internal ping timer are BLE-only, so these are always correct to stop.
             removeRSSITimer()
             removePingTimer()
         }
-        if(withStateUpdate) StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        if(withStateUpdate && !usbOwnsSession) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        }
     }
 
 

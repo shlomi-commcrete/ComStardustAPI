@@ -5,6 +5,7 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
 import com.commcrete.stardust.util.DataManager.cleanAllDatabases
 import com.commcrete.stardust.util.DataManager.unpairDeviceBLE
+import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +41,13 @@ object RegisteredUserUtils {
 
     suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
         coroutineScope {
+            // Stop the port-mode assertion and the keepalive ping BEFORE tearing the link down.
+            // Both are `while(isActive)` loops that otherwise run for the life of the process, and
+            // a ping timeout firing mid-teardown would request a reconnect for the session we are
+            // in the middle of ending. Also covers the security-erase path, which reaches here via
+            // DataManager.logout().
+            PortUtils.stopUpdatingPort()
+
             // BLE unpair first (side-effect, usually must complete)
             unpairDeviceBLE()
             val databases = async {

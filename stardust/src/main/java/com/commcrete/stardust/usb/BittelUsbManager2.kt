@@ -178,11 +178,19 @@ object BittelUsbManager2 : BittelProtocol {
         usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
     }
 
-    private fun  initDataToUsb () {
+    /**
+     * Runs the init handshake over USB.
+     *
+     * @param freshLink true when called right after a USB port was opened — the handshake must run
+     *   unconditionally (per-session state is reset below). false when called as a *reconnect*
+     *   (via [reconnectToDevice] ← `UsbTransport.reconnect` ← the keepalive watchdog), where an
+     *   already-succeeded or in-flight handshake must be left alone.
+     */
+    private fun  initDataToUsb (freshLink: Boolean) {
         val user = RegisteredUserUtils.currentUserFlow.value
         UsbDiag.log(
             "initDataToUsb",
-            "ENTER user.appId=${user?.appId} isUSBConnected=${BleManager.isUSBConnected} " +
+            "ENTER freshLink=$freshLink user.appId=${user?.appId} isUSBConnected=${BleManager.isUSBConnected} " +
                 "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
         )
         if (user == null) {
@@ -196,16 +204,16 @@ object BittelUsbManager2 : BittelProtocol {
                     "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
             )
             if (!BleManager.isUSBConnected && uartManager == null) {
-                // Observed live, repeating every ~11s during a *BLE* session: PortUtils' ping
-                // watchdog calls ConnectionManager.requestReconnect(TransportId.USB) with the
-                // transport HARD-CODED to USB, so a BLE ping timeout lands here instead of
-                // reconnecting BLE — and it burns the single-flight reconnect slot on the way.
+                // Was observed repeating every ~11-40s during a *BLE* session: the PortUtils ping
+                // watchdog (started by the host via DataManager.getPortUtils().startUpdatingPort())
+                // requested a reconnect with the transport HARD-CODED to USB, so a BLE ping timeout
+                // landed here instead of reconnecting BLE — burning the single-flight reconnect slot
+                // on the way. Fixed in PortUtils; this warning should no longer appear.
                 UsbDiag.warn(
                     "initDataToUsb",
                     "SPURIOUS USB reconnect: no USB port is open and isUSBConnected=false. " +
-                        "Caller is almost certainly PortUtils' hard-coded " +
-                        "requestReconnect(TransportId.USB, \"USB ping timeout\") — see PortUtils.kt:25. " +
-                        "This also suppresses the BLE reconnect that should have happened."
+                        "Expected to be extinct after the PortUtils transport-routing fix — if you " +
+                        "still see this, find the caller of UsbTransport.reconnect()."
                 )
             } else {
                 UsbDiag.verdict(
@@ -214,6 +222,27 @@ object BittelUsbManager2 : BittelProtocol {
                         "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
                 )
             }
+            return
+        }
+        // On a RECONNECT (not a freshly opened port), do not restart a handshake that already
+        // succeeded or is still in flight. initDataToUsb() doubles as the USB reconnect entry point
+        // (UsbTransport.reconnect ← the keepalive-ping watchdog), so a single missed ping on a
+        // healthy-but-busy link used to re-run the whole 7-step init from scratch — observed live:
+        // SUCCESS at 11:10:48, then READING_VERSION → SUCCESS again at 11:10:58. A genuinely dead
+        // port cannot be recovered by re-sending the handshake anyway; the detach event tears it
+        // down and a re-attach rebuilds it.
+        //
+        // freshLink == true must NEVER be skipped: a prior BLE session commonly leaves the handler
+        // in SUCCESS, and the USB handshake has to run regardless (the state is reset below).
+        if (!freshLink &&
+            (StardustInitConnectionHandler.isConnectedSuccessfully() || StardustInitConnectionHandler.isSyncing())
+        ) {
+            UsbDiag.log(
+                "initDataToUsb",
+                "SKIPPED reconnect — handshake already " +
+                    (if (StardustInitConnectionHandler.isConnectedSuccessfully()) "SUCCEEDED" else "IN PROGRESS") +
+                    "; not restarting it"
+            )
             return
         }
         android.util.Log.d("ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
@@ -235,7 +264,8 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
-    fun reconnectToDevice() { initDataToUsb() }
+    /** [com.commcrete.stardust.transport.UsbTransport.reconnect] — a re-entry, not a fresh port. */
+    fun reconnectToDevice() { initDataToUsb(freshLink = false) }
 
     fun resetReconnect () {
 //        handlerObject?.removeTimer()
@@ -283,16 +313,25 @@ object BittelUsbManager2 : BittelProtocol {
     fun sendDataToUart (bittelPackage: StardustPackage) {
         // A null uartManager here while isUSBConnected==true is the "sends go nowhere" failure:
         // the flags say USB is up but no port is open.
-        if (uartManager == null) {
+        val manager = uartManager
+        if (manager == null) {
             UsbDiag.warn(
                 "sendDataToUart",
                 "DROPPED ${bittelPackage.stardustOpCode} — uartManager is NULL while " +
                     "isUSBConnected=${BleManager.isUSBConnected}"
             )
-        } else {
-            UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
+            return
         }
-        uartManager?.send(bittelPackage.getStardustPackageToSend())
+        val sent = manager.send(bittelPackage.getStardustPackageToSend())
+        if (sent) {
+            UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
+        } else {
+            UsbDiag.warn(
+                "sendDataToUart",
+                "TX FAILED ${bittelPackage.stardustOpCode} — the port rejected the write. If this " +
+                    "repeats without an onRunError, the link is dead but still reported as connected."
+            )
+        }
     }
 
 
@@ -330,7 +369,12 @@ object BittelUsbManager2 : BittelProtocol {
                 override fun onRunError(e: Exception) {
                     Timber.tag("SerialInOutputManager").d("onRunError uartManagerAudio")
                     Timber.tag("SerialInOutputManager").d(e.message)
-                    // Handle errors
+                    UsbDiag.error("connectToAudioDevice.onRunError", "audio serial IO thread died — tearing the audio link down", e)
+                    // Same gap as the data link: without this, isConnectedAudio / isJboxAudioPresent
+                    // stay true after the port dies, so isJboxAudioConnected() lies and the
+                    // !isConnectedAudio guard blocks a genuine re-connect. Off the IO thread for the
+                    // same executor-shutdown reason as above.
+                    Scopes.getMainCoroutine().launch { disconnectAudio() }
                 }
             },
                 device.deviceId,
@@ -370,8 +414,21 @@ object BittelUsbManager2 : BittelProtocol {
             override fun onRunError(e: Exception) {
                 Timber.tag("SerialInOutputManager").d("onRunError uartManager")
                 Timber.tag("SerialInOutputManager").d(e.message)
-                UsbDiag.error("connectToDevice.onRunError", "serial IO thread died — link is dead but nothing tears it down", e)
-                // Handle errors
+                UsbDiag.error("connectToDevice.onRunError", "serial IO thread died — tearing the USB data link down", e)
+                // The SerialInputOutputManager thread has exited: the port is dead (observed live as
+                // `IOException: USB get_status request failed` from CommonUsbSerialPort.testConnection).
+                // This used to only log, so isUSBConnected stayed true, uartManager stayed non-null
+                // and the SDK kept reporting Ready(USB) forever — writes were swallowed by
+                // UARTManager.send and a detach broadcast does not necessarily follow, because the
+                // device can still be enumerated.
+                //
+                // Dispatched to main: disconnect() writes LiveData via setValue, which is
+                // main-thread-only, and this callback runs on the serial IO executor. Going through
+                // main also avoids shutting that executor down from inside one of its own tasks.
+                Scopes.getMainCoroutine().launch {
+                    disconnect()
+                    UsbDiag.linkState("connectToDevice.onRunError.after")
+                }
             }
         }, device.deviceId)
         Timber.tag("SerialInOutputManager").d("connectionStatus : $connectionStatus")
@@ -384,8 +441,11 @@ object BittelUsbManager2 : BittelProtocol {
                 UsbDiag.log("connectToDevice", "USB UP — setting isUSBConnected=true; note initDataToUsb() runs BEFORE the BLE teardown in updateStatus()")
                 BleManager.isUSBConnected = true
                 BleManager.usbConnectionStatus.value = true
-                initDataToUsb()
+                // Order matters: updateStatus() performs the BLE teardown, so it must run BEFORE
+                // the handshake starts. Previously initDataToUsb() ran first, so the init sequence
+                // began while the BLE GATT was still open — both stacks live at once.
                 BleManager.updateStatus ()
+                initDataToUsb(freshLink = true)
                 UsbDiag.linkState("connectToDevice.afterUpdateStatus")
                 UsbDiag.log(
                     "connectToDevice",

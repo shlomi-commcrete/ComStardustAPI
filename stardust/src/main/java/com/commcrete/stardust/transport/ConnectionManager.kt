@@ -2,6 +2,7 @@ package com.commcrete.stardust.transport
 
 import android.bluetooth.BluetoothAdapter
 import com.commcrete.stardust.ble.BleManager
+import com.commcrete.stardust.ble.PairingRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -177,6 +178,10 @@ object ConnectionManager {
         watchdogJob = Scopes.getDefaultCoroutine().launch {
             while (isActive && autoReconnectDesired) {
                 delay(WATCHDOG_INTERVAL_MS)
+                // Re-derive paired-state from the OS bond registry before deciding, which also
+                // repairs the published BleManager.isPaired for the host UI. No-ops when the bond
+                // set is unreadable, so it can never wipe a valid pairing.
+                PairingRepository.reconcile()
                 if (shouldAutoReconnect()) {
                     requestReconnect(TransportId.BLE, "auto-reconnect watchdog")
                 }
@@ -184,12 +189,30 @@ object ConnectionManager {
         }
     }
 
+    /**
+     * Paired-state is DERIVED here, not read from [BleManager.isPaired].
+     *
+     * That LiveData is written optimistically from several places and cleared from others, and was
+     * observed reading `false` while the device was genuinely app-paired (live capture 2026-08-26:
+     * `linkState: isPaired=false` at 11:09:52 and 11:10:20, while `canStartInit` resolved
+     * `paired=44:B7:D0:71:73:C7` at 11:10:39). Gating the watchdog on that cached value silently
+     * disabled every BLE auto-reconnect in such a window.
+     *
+     * [PairingRepository.currentPairedAddress] intersects the saved address with the OS bond
+     * registry, and deliberately falls back to trusting the saved record when the bond set is
+     * unreadable (Bluetooth off / no CONNECT permission) — so a transient off-state cannot look
+     * like "not paired" either.
+     */
     private fun shouldAutoReconnect(): Boolean =
         autoReconnectDesired &&
             RegisteredUserUtils.isUserLoggedIn() &&
-            BleManager.isPaired.value == true &&
+            PairingRepository.currentPairedAddress() != null &&
             !BleManager.isUSBConnected &&
             isBluetoothOn() &&
+            // NOTE: intentionally Disconnected ONLY. Do not widen this to include Searching until
+            // reconnectToDevice() publishes Searching itself (fix 5) — today Searching also covers
+            // a fresh connect started by bondOnStartup/triggerInitSequence, and firing a reconnect
+            // then would force-disconnect that in-flight attempt.
             _connectionState.value is ConnectionState.Disconnected
 
     /**

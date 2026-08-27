@@ -495,7 +495,15 @@ object DataManager : StardustAPI, PttInterface {
         checkInitialized()
         // Intentional disconnect: stop the auto-reconnect watchdog so we don't fight the tear-down.
         com.commcrete.stardust.transport.ConnectionManager.disableAutoReconnect()
-        cleanupPackageHandlerOnDisconnect()
+        // cleanupOnDisconnect() disposes file receivers and active transfers for ALL transports by
+        // design, so it must not run while USB is still carrying the session — otherwise unpairing
+        // BLE with USB connected kills in-flight USB file transfers too. This entry point is
+        // BLE-scoped (it only ever tears down the BLE link below).
+        if (BleManager.isUSBConnected) {
+            android.util.Log.d("ConfigDebug", "disconnectFromDevice: USB active — skipping package-handler cleanup (BLE-scoped disconnect)")
+        } else {
+            cleanupPackageHandlerOnDisconnect()
+        }
         getClientConnection().disconnectFromBLEDevice(disconnectByForce)
     }
 

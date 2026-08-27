@@ -91,14 +91,29 @@ object BleManager {
 
         when(newStatus) {
             ConnectionType.USB -> {
-                if (lastConnectionStatus == ConnectionType.BLE) {
-                    // Case 3 (USB takeover of live BLE): tear down BLE without unpair. Also
-                    // disable the BLE auto-reconnect watchdog — otherwise, when USB later drops
-                    // (Case 4), the watchdog would immediately auto-reconnect BLE, contradicting
-                    // the "SDK stays idle; host shows dialog" policy for Case 4.
-                    ConnectionManager.disableAutoReconnect()
-                    getClientConnection().disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
-                }
+                // USB takeover: tear BLE down without unpairing. Also disable the BLE
+                // auto-reconnect watchdog — otherwise, when USB later drops, the watchdog would
+                // immediately auto-reconnect BLE, contradicting the "SDK stays idle; the user
+                // decides" policy for a USB unplug.
+                //
+                // This is deliberately UNCONDITIONAL. It used to be guarded by
+                // `lastConnectionStatus == ConnectionType.BLE`, but `connectionStatus` is only BLE
+                // when `isBluetoothConnected()` was true at the previous transition. A BLE link
+                // that was physically up but never finished the init handshake leaves it at `null`,
+                // so the guard skipped the teardown and the BLE GATT stayed open for the entire USB
+                // session. Reaching this branch at all means USB just became the active transport,
+                // which is sufficient reason to drop BLE regardless of what the cached status said.
+                //
+                // Note this branch only runs on an actual transition into USB — `updateStatus`
+                // early-returns above when the computed status is unchanged — so it cannot fire
+                // repeatedly for an already-established USB session.
+                ConnectionManager.disableAutoReconnect()
+                getClientConnection().disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
+                // Keep the observable in sync: the `isUSBConnected` setter clears `isBleConnected`
+                // silently, so without this a host observing `bleConnectionStatus` still sees BLE
+                // connected for the whole USB session. postValue because updateStatus() is reached
+                // from non-main threads (e.g. BittelUsbManager2.disconnect()).
+                bleConnectionStatus.postValue(false)
             }
 
             ConnectionType.BLE -> {}
