@@ -101,6 +101,10 @@ class RecordingSession(
                     runCatching { mirror.finalizeMirror() }
                     runCatching { store.onRecordingFinalized(id, frameCount, reason) }
                     runCatching { keepAlive.release() } // balances the acquire above, exactly once
+                    // Resolved LAST, after the mirror WAV is on disk: awaitFinalized() is what the host
+                    // uses to persist a history row pointing at that file, so completing it earlier
+                    // (next to the seal) loses the race and the row is silently skipped.
+                    finalized.complete(reason)
                 }
             }
         }
@@ -114,10 +118,16 @@ class RecordingSession(
     /** Suspends until this recording has fully finalized, returning why it sealed. */
     suspend fun awaitFinalized(): TerminalReason = finalized.await()
 
+    /**
+     * Suspends until the transmit gate has committed every frame of this recording to the transport.
+     * Strictly later than [awaitFinalized]: sealing only closes the outbound channel, so frames already
+     * buffered are still in flight. Tear down per-recording send state (routing) only after this.
+     */
+    suspend fun awaitTransmitted() = outbound.awaitDrained()
+
     private fun sealOnce(reason: TerminalReason) {
         if (sealed.compareAndSet(false, true)) {
             outbound.seal(reason)
-            finalized.complete(reason)
         }
     }
 }

@@ -11,9 +11,20 @@ package com.commcrete.stardust.audio.v2.domain
  * about "which recording" / "which stream" without touching a codec concretely.
  */
 
-/** Stable identity of a codec plugin, e.g. `CodecId("codec2")`, `CodecId("wavtokenizer")`. Registry key for R1. */
+/**
+ * Stable identity of a codec plugin. Registry key for R1.
+ *
+ * Use the [CodecId.CODEC2] / [CodecId.WAVTOKENIZER] constants rather than re-typing the string at each
+ * call site: these ids are matched by equality across the send, receive and persistence paths, so a typo
+ * in one literal silently breaks dispatch there instead of failing to compile.
+ */
 @JvmInline
-value class CodecId(val value: String)
+value class CodecId(val value: String) {
+    companion object {
+        val CODEC2 = CodecId("codec2")
+        val WAVTOKENIZER = CodecId("wavtokenizer")
+    }
+}
 
 /** Identity of one key-down..key-up capture. Minted monotonically per recording; ordering == start order. */
 @JvmInline

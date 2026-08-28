@@ -83,7 +83,7 @@ object RecorderUtils {
 
             // v2 pipeline (flag-guarded). Both codecs route here when enabled.
             if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
-                val codecId = if (codeType == CODE_TYPE.CODEC2) CodecId("codec2") else CodecId("wavtokenizer")
+                val codecId = if (codeType == CODE_TYPE.CODEC2) CodecId.CODEC2 else CodecId.WAVTOKENIZER
                 return startV2Recording(codecId, chatId, receiverId, carrier)
             }
 
@@ -125,16 +125,16 @@ object RecorderUtils {
      */
     private fun startV2Recording(codecId: CodecId, chatId: String, destination: String, carrier: Carrier?): File? {
         PttV2Wiring.init(DataManager.appContext)
-        val source = DataManager.getSource()
-        Scopes.getDefaultCoroutine().launch {
-            PttV2Wiring.recorderBridge.startRecording(
-                codecId = codecId,
-                chatId = chatId,
-                source = source,
-                destination = destination,
-                carrier = carrier,
-            )
-        }
+        // Called synchronously (the bridge only enqueues) so key-down is ordered before the key-up that
+        // [stopRecording] enqueues. Launching each on its own coroutine imposed no ordering and could
+        // drop the key-up entirely, leaving the mic open until the max-PTT watchdog.
+        PttV2Wiring.recorderBridge.startRecording(
+            codecId = codecId,
+            chatId = chatId,
+            source = DataManager.getSource(),
+            destination = destination,
+            carrier = carrier,
+        )
         return null
     }
 
@@ -291,7 +291,10 @@ object RecorderUtils {
         Log.d("AudioRecorder", "Stop recording")
 
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
-            Scopes.getDefaultCoroutine().launch { PttV2Wiring.recorderBridge.stopRecording() }
+            // init() is idempotent — guards against a stop arriving before any start ever wired the
+            // bridge (its `lateinit` would otherwise throw here).
+            PttV2Wiring.init(DataManager.appContext)
+            PttV2Wiring.recorderBridge.stopRecording()
         } else if (codeType == CODE_TYPE.CODEC2) {
             stopCodec2Recording(chatId, receiverId, carrier, file)
         } else {

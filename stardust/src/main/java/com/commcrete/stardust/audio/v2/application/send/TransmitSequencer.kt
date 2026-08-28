@@ -52,7 +52,9 @@ class TransmitSequencer(
     /** Reserve the next start-order slot and its private buffer. Call under the coordinator's restart mutex. */
     fun reserve(id: RecordingId): OutboundBuffer {
         val buffer = OutboundBuffer(TransmitTicket(ticketSeq.incrementAndGet()), id)
-        queue.trySend(buffer) // UNLIMITED — never fails unless shut down
+        // UNLIMITED — only fails after shutdown, in which case nothing will ever drain this buffer, so
+        // release its waiters here rather than leaving awaitDrained() suspended forever.
+        if (queue.trySend(buffer).isFailure) buffer.markDrained()
         return buffer
     }
 
@@ -60,23 +62,35 @@ class TransmitSequencer(
     fun shutdown() {
         queue.close()
         loop.cancel()
+        // Release anything still queued so awaitDrained() callers can never hang on a dead actor.
+        while (true) {
+            val buffer = queue.tryReceive().getOrNull() ?: break
+            buffer.markDrained()
+        }
     }
 
     private suspend fun drainHead(buffer: OutboundBuffer) {
         val headStart = clock.nowMs()
-        for (frame in buffer.channel()) {
-            if (clock.nowMs() - headStart > headTimeoutMs) {
-                // Abort-fence: force-close (unblocks the producer) and discard the rest of this
-                // recording's tail so its late frames can never interleave with the next recording.
-                buffer.seal(TerminalReason.TIMEOUT)
-                break
+        try {
+            for (frame in buffer.channel()) {
+                if (clock.nowMs() - headStart > headTimeoutMs) {
+                    // Abort-fence: force-close (unblocks the producer) and discard the rest of this
+                    // recording's tail so its late frames can never interleave with the next recording.
+                    buffer.seal(TerminalReason.TIMEOUT)
+                    break
+                }
+                val policy = CodecRegistry.byCodecId(frame.codecId).completionPolicy()
+                // Hard ceiling: a stuck ACK/write resolves as committed-with-loss instead of hanging the gate.
+                withTimeoutOrNull(policy.deadlineMs) {
+                    policy.awaitCommitted(frame, transport)
+                }
             }
-            val policy = CodecRegistry.byCodecId(frame.codecId).completionPolicy()
-            // Hard ceiling: a stuck ACK/write resolves as committed-with-loss instead of hanging the gate.
-            withTimeoutOrNull(policy.deadlineMs) {
-                policy.awaitCommitted(frame, transport)
-            }
+            // Channel closed (LAST / ERROR / TIMEOUT / CANCELLED) or watchdog break → advance to next buffer.
+        } finally {
+            // Signals "this recording's frames are all on the transport" — per-recording send state
+            // (routing) may only be torn down now, NOT at the terminal seal. In a `finally` so a
+            // cancelled/aborted head still releases its waiters.
+            buffer.markDrained()
         }
-        // Channel closed (LAST / ERROR / TIMEOUT / CANCELLED) or watchdog break → advance to next buffer.
     }
 }

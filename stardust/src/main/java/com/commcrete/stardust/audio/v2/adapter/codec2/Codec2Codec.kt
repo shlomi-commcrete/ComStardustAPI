@@ -24,7 +24,7 @@ class Codec2Codec(
     private val completionDeadlineMs: Long = Codec2CompletionPolicy.DEFAULT_DEADLINE_MS,
 ) : AudioCodec {
 
-    override val codecId = CodecId("codec2")
+    override val codecId = CodecId.CODEC2
     override val sampleRateHz = 8_000
     override val sendOpcode = 0x15
     override val transmitSemantics = TransmitSemantics.ACK_TRACKED

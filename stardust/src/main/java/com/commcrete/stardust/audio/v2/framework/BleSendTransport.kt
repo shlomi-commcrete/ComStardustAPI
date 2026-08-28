@@ -32,7 +32,7 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
 
         // Resolve the wire opcode from the frame's codec (CODEC2 → SEND_PTT 0x15, WavTokenizer → SEND_PTT_AI 0x3A).
         val opcode = CodecRegistry.byCodecId(frame.codecId).sendOpcode
-        val stardustOpCode = StardustPackageUtils.StardustOpCode.values().firstOrNull { it.codeID == opcode } ?: return
+        val stardustOpCode = pttOpCodeFor(opcode) ?: return
 
         val audioIntArray = StardustPackageUtils.byteArrayToIntArray(frame.payload)
         // SUFFIX-collision randomization is a SEND_PTT (CODEC2) concern only — never mutate AI token payloads.
@@ -48,13 +48,33 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
             stardustOpCode = stardustOpCode,
             data = audioIntArray,
         )
-        pkg.stardustControlByte.stardustPartType =
-            if (frame.isTerminal) StardustControlByte.StardustPartType.LAST
-            else StardustControlByte.StardustPartType.MESSAGE
-        pkg.stardustControlByte.stardustDeliveryType = radio.deliveryType
+        // getStardustPackage hands back the OpCode enum constant's OWN StardustControlByte instance.
+        // Mutating it in place would rewrite that shared constant for every future package of this
+        // opcode (and ClientConnection mutates `stardustServer` on it too), so swap in a copy first.
+        pkg.stardustControlByte = pkg.stardustControlByte.copy(
+            stardustPartType =
+                if (frame.isTerminal) StardustControlByte.StardustPartType.LAST
+                else StardustControlByte.StardustPartType.MESSAGE,
+            stardustDeliveryType = radio.deliveryType,
+        )
         pkg.checkXor = StardustPackageUtils.getCheckXor(pkg.getStardustPackageToCheckXor())
 
         DataManager.sendDataToBle(pkg)
+    }
+
+    /**
+     * Map a codec's wire opcode to its PTT [StardustPackageUtils.StardustOpCode].
+     *
+     * This MUST NOT be done with `values().firstOrNull { it.codeID == opcode }`: `SEND_MESSAGE`,
+     * `SEND_SOS` and `SEND_PTT` all carry `codeID = 0x15`, and `values()` is declaration order, so that
+     * lookup resolves 0x15 to SEND_MESSAGE — whose control byte says PackageType=DATA + DEMAND_ACK
+     * instead of SPEECH + NO_DEMAND_ACK. The radio then never treats the packet as voice, and a peer
+     * dispatches it to `handleText` instead of `handlePTT`.
+     */
+    private fun pttOpCodeFor(opcode: Int): StardustPackageUtils.StardustOpCode? = when (opcode) {
+        StardustPackageUtils.StardustOpCode.SEND_PTT.codeID -> StardustPackageUtils.StardustOpCode.SEND_PTT
+        StardustPackageUtils.StardustOpCode.SEND_PTT_AI.codeID -> StardustPackageUtils.StardustOpCode.SEND_PTT_AI
+        else -> null
     }
 
     private fun Array<Int>.endsWithSuffix(): Boolean {

@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicLong
  */
 class PttSendCoordinator(
     private val sequencer: TransmitSequencer,
-    private val captureProvider: () -> CaptureSource,
+    private val captureProvider: (codecId: CodecId, nativeRateHz: Int) -> CaptureSource,
     private val dspFactory: (targetRateHz: Int) -> PttAudioProcessorV2,
     private val mirrorFactory: (RecordingId) -> LocalMirror,
     private val store: MessageStore,
@@ -69,21 +69,30 @@ class PttSendCoordinator(
         val codec = CodecRegistry.byCodecId(codecId)
         val id = RecordingId(idSeq.incrementAndGet())
         beforeStart(id)
-        val session = RecordingSession(
-            id = id,
-            peer = peer,
-            codec = codec,
-            capture = captureProvider(),
-            dsp = dspFactory(codec.sampleRateHz),
-            encoder = codec.newEncoderSession(id),
-            outbound = sequencer.reserve(id),
-            mirror = mirrorFactory(id),
-            store = store,
-            keepAlive = keepAlive,
-            clock = clock,
-            watchdogMs = watchdogMs,
-            scope = scope,
-        )
+        val outbound = sequencer.reserve(id)
+        // The ticket is already queued at the gate, so anything that throws while building the session
+        // (an unavailable native encoder, a mic that won't open) MUST still seal the buffer — otherwise
+        // its channel never closes, the gate's head blocks on it forever, and PTT send dies process-wide.
+        val session = try {
+            RecordingSession(
+                id = id,
+                peer = peer,
+                codec = codec,
+                capture = captureProvider(codecId, codec.sampleRateHz),
+                dsp = dspFactory(codec.sampleRateHz),
+                encoder = codec.newEncoderSession(id),
+                outbound = outbound,
+                mirror = mirrorFactory(id),
+                store = store,
+                keepAlive = keepAlive,
+                clock = clock,
+                watchdogMs = watchdogMs,
+                scope = scope,
+            )
+        } catch (t: Throwable) {
+            outbound.seal(TerminalReason.ERROR)
+            throw t
+        }
         sessions[id] = session
         currentCapture = session
         session.start()
@@ -102,6 +111,14 @@ class PttSendCoordinator(
     /** Suspends until [id] has fully finalized (terminal LAST / ERROR / TIMEOUT / CANCELLED). */
     suspend fun awaitFinalized(id: RecordingId): TerminalReason =
         sessions[id]?.awaitFinalized() ?: TerminalReason.CANCELLED
+
+    /**
+     * Suspends until the transmit gate has put every frame of [id] on the transport. Later than
+     * [awaitFinalized] — callers that release per-recording send state (routing) must await THIS.
+     */
+    suspend fun awaitTransmitted(id: RecordingId) {
+        sessions[id]?.awaitTransmitted()
+    }
 
     // The single session currently holding the mic (null between key-up and the next key-down).
     @Volatile

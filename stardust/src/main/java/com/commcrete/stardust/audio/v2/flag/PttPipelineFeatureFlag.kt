@@ -5,12 +5,9 @@ import android.content.Context
 /**
  * The single switch that routes PTT through the v2 pipeline instead of the legacy path.
  *
- * Default is **false** — with the flag off, `RecorderUtils` and `StardustPackageHandler` behave
- * exactly as before and none of the v2 code runs, so shipping this delegation is a no-op in
- * production until someone opts in (staging / QA / a dev toggle).
- *
- * Scope note: only the CODEC2 path is wired to v2 today. The AI (WavTokenizer) path stays on the
- * legacy code regardless of this flag until its adapter lands.
+ * Default is **true** — v2 is the live pipeline for BOTH codecs. Calling `setEnabled(context, false)`
+ * puts `RecorderUtils` and `StardustPackageHandler` back on the legacy path (`AudioRecorderCodec2` /
+ * `PttSendManager` / `PlayerUtils`), which is the fallback if a v2 regression shows up in the field.
  */
 object PttPipelineFeatureFlag {
 

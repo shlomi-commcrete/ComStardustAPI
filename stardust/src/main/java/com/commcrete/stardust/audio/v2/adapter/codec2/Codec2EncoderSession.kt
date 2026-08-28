@@ -55,10 +55,27 @@ class Codec2EncoderSession(
             addPacked(Codec2FramePacker.packTwo(it, Codec2FramePacker.EMPTY_FRAME), out)
             pending4 = null
         }
-        // Whatever is left (0..76 bytes) is the terminal frame — always emitted so the receiver ends cleanly.
+        // Whatever is left (1..76 bytes) becomes the terminal frame. A ZERO-length payload is never
+        // transmitted (legacy Codec2SendPipeline.finish only sent a non-empty remainder, and a
+        // `length = 0` SPEECH package is not something the radio expects) — instead the terminal flag
+        // moves onto the last real frame. If the recording produced nothing at all, nothing is sent and
+        // the receiver ends the stream on its idle timeout, exactly as with legacy.
         val payload = ByteArray(packetBuffer.size) { packetBuffer[it] }
         packetBuffer.clear()
-        out.add(frameOf(payload, terminal = true))
+        if (payload.isNotEmpty()) {
+            out.add(frameOf(payload, terminal = true))
+        } else if (out.isNotEmpty()) {
+            val last = out.removeAt(out.lastIndex)
+            out.add(
+                EncodedFrame(
+                    codecId = last.codecId,
+                    payload = last.payload,
+                    isTerminal = true,
+                    owner = last.owner,
+                    seq = last.seq,
+                )
+            )
+        }
         return out
     }
 

@@ -9,6 +9,7 @@ import com.commcrete.stardust.audio.v2.adapter.codec2.Codec2Codec
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.audio.v2.application.codec.CodecBootstrap
 import com.commcrete.stardust.audio.v2.application.port.KeepAlive
+import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.audio.v2.application.receive.PttReceiveCoordinator
@@ -46,10 +47,22 @@ object PttV2Wiring {
 
     private val routing = PttSendRouting()
 
+    /**
+     * Double-checked locking, and [initialized] is set only on success: the flag used to be set before
+     * the body ran, so two callers could race (the receive path calls this per packet) and — worse — a
+     * throw mid-body left `recorderBridge` permanently uninitialized, turning every later key-down into
+     * an `UninitializedPropertyAccessException`. A failed init is now simply retried by the next caller.
+     */
     fun init(context: Context) {
         if (initialized) return
-        initialized = true
+        synchronized(this) {
+            if (initialized) return
+            build(context)
+            initialized = true
+        }
+    }
 
+    private fun build(context: Context) {
         val clock = SystemClock()
         // KeepAlive port backed directly by the legacy refcounted wake-lock object — no wrapper class.
         val keepAlive = object : KeepAlive {
@@ -76,8 +89,25 @@ object PttV2Wiring {
 
         val sendCoordinator = PttSendCoordinator(
             sequencer = sequencer,
-            captureProvider = { MicCaptureSource(context) },
-            dspFactory = { targetRate -> ResampleGainDsp(targetRate) { SharedPreferencesUtil.getAudioGain() / 100f } },
+            // Capture at the OWNING CODEC's native rate with that codec's configured audio source —
+            // WavTokenizer needs 24 kHz (legacy AudioRecorderAI) and CODEC2 needs 8 kHz. A fixed 8 kHz
+            // for both band-limits AI audio to 4 kHz and then upsamples it, which produces garbage tokens.
+            captureProvider = { codecId, nativeRate ->
+                MicCaptureSource(
+                    context = context,
+                    requestedRateHz = nativeRate,
+                    audioSource = if (codecId == CodecId.CODEC2) SharedPreferencesUtil.getCodecAudioSource()
+                    else SharedPreferencesUtil.getAIAudioSource(),
+                )
+            },
+            dspFactory = { targetRate ->
+                ResampleGainDsp(
+                    targetRateHz = targetRate,
+                    // Read once per recording, as legacy did at recording start.
+                    noiseSuppressionEnabled = SharedPreferencesUtil.getNoiseSuppressorEnableState(),
+                    gainProvider = { SharedPreferencesUtil.getAudioGain() / 100f },
+                )
+            },
             mirrorFactory = { id ->
                 if (DataManager.getSavePTTFilesRequired()) WavLocalMirror(sendStore.mirrorFile(id))
                 else NoOpLocalMirror

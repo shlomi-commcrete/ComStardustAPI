@@ -37,6 +37,31 @@ object AIModuleInitializer {
         }
     }
 
+    /**
+     * Await initialization (idempotent) and return the encoder.
+     *
+     * Prefer this over reading [wavTokenizerEncoder] directly: [initModules] is fire-and-forget, so a
+     * PTT key-down that lands moments after it throws `UninitializedPropertyAccessException` on the bare
+     * `lateinit`. Throws [IllegalStateException] with a clear message when the AI codec is genuinely
+     * unavailable in this process (see [PyTorchInitGate]).
+     */
+    suspend fun awaitEncoder(): WavTokenizerEncoder {
+        initModulesSuspending()
+        check(::wavTokenizerEncoder.isInitialized) {
+            "WavTokenizer encoder unavailable — AI codec is not enabled in this process"
+        }
+        return wavTokenizerEncoder
+    }
+
+    /** Await initialization (idempotent) and return the decoder. See [awaitEncoder]. */
+    suspend fun awaitDecoder(): WavTokenizerDecoder {
+        initModulesSuspending()
+        check(::wavTokenizerDecoder.isInitialized) {
+            "WavTokenizer decoder unavailable — AI codec is not enabled in this process"
+        }
+        return wavTokenizerDecoder
+    }
+
     /** Suspend variant for callers that already run in a coroutine and want to await completion. */
     suspend fun initModulesSuspending() = initLock.withLock {
         if (initialized) return@withLock

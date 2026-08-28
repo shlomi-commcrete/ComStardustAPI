@@ -45,7 +45,7 @@ class StardustPackageRouter(
         )
         // App-integration: first packet sets up the history row + startedReceivingPTT (has the pkg here);
         // receivePTT is delivered as decoded PCM from the decode path (PttReceiveStore).
-        val encoderType = if (codec.codecId == CodecId("codec2")) EncoderType.CODEC2 else EncoderType.AI
+        val encoderType = if (codec.codecId == CodecId.CODEC2) EncoderType.CODEC2 else EncoderType.AI
         store.onPacket(pkg, streamKey, encoderType)
         receive.onFrame(opcode, streamKey, frame)
     }

@@ -26,7 +26,7 @@ class WavTokenizerCodec(
     private val completionDeadlineMs: Long = AiCompletionPolicy.DEFAULT_DEADLINE_MS,
 ) : AudioCodec {
 
-    override val codecId = CodecId("wavtokenizer")
+    override val codecId = CodecId.WAVTOKENIZER
     override val sampleRateHz = 24_000
     override val sendOpcode = 0x3A
     override val transmitSemantics = TransmitSemantics.FIRE_AND_FORGET

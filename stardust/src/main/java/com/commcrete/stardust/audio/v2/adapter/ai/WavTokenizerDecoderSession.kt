@@ -21,7 +21,8 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
  */
 class WavTokenizerDecoderSession : DecoderSession {
 
-    private val decoder = AIModuleInitializer.wavTokenizerDecoder
+    /** Resolved lazily and cached — see [WavTokenizerEncoderSession]; `initModules()` is fire-and-forget. */
+    private var decoder: WavTokenizerDecoder? = null
 
     private var state: WavTokenizerDecoder.InternalState = WavTokenizerDecoder.InternalState.INITIAL
     private var lastTokens: List<Long>? = null
@@ -35,10 +36,11 @@ class WavTokenizerDecoderSession : DecoderSession {
         val previousTokens = if (started) lastTokens else null
         val previousSamples = if (started) lastSamples else null
 
+        val model = decoder()
         if (!started) state = WavTokenizerDecoder.InternalState.INITIAL
-        decoder.restoreInternalState(state)
-        val pcm = decoder.decode(tokens, previousTokens, previousSamples, modelType)
-        state = decoder.snapshotInternalState()
+        model.restoreInternalState(state)
+        val pcm = model.decode(tokens, previousTokens, previousSamples, modelType)
+        state = model.snapshotInternalState()
 
         lastTokens = tokens
         lastSamples = pcm
@@ -49,7 +51,11 @@ class WavTokenizerDecoderSession : DecoderSession {
     override fun close() {
         lastTokens = null
         lastSamples = null
+        decoder = null
     }
+
+    private suspend fun decoder(): WavTokenizerDecoder =
+        decoder ?: AIModuleInitializer.awaitDecoder().also { decoder = it }
 
     private companion object {
         const val SAMPLE_RATE_HZ = 24_000

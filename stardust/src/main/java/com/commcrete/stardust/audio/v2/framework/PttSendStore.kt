@@ -35,7 +35,7 @@ class PttSendStore(private val context: Context) {
         val file = mirrorFile(id)
         if (!file.exists()) return
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
-        val encoderType = if (codecId == CodecId("codec2")) EncoderType.CODEC2 else EncoderType.AI
+        val encoderType = if (codecId == CodecId.CODEC2) EncoderType.CODEC2 else EncoderType.AI
         scope.launch {
             runCatching {
                 DataManager.getAppRepo().saveMessage(

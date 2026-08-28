@@ -4,6 +4,7 @@ import com.commcrete.stardust.audio.v2.domain.EncodedFrame
 import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.audio.v2.domain.TerminalReason
 import com.commcrete.stardust.audio.v2.domain.TransmitTicket
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ClosedSendChannelException
 import kotlinx.coroutines.channels.ReceiveChannel
@@ -23,6 +24,16 @@ class OutboundBuffer(
     capacity: Int = DEFAULT_CAPACITY,
 ) {
     private val frames = Channel<EncodedFrame>(capacity)
+
+    /**
+     * Completed by the [TransmitSequencer] once it has finished with this buffer — i.e. every frame it
+     * is going to commit has been handed to the transport. [seal] alone does NOT mean "transmitted":
+     * sealing only closes the channel, and up to [capacity] already-produced frames may still be queued
+     * for the gate. Anything that tears down per-recording send state (transport routing, in
+     * particular) must await this, not just the terminal seal — otherwise the tail of the recording is
+     * dropped on the floor by the transport.
+     */
+    private val drained = CompletableDeferred<Unit>()
 
     @Volatile
     var reason: TerminalReason? = null
@@ -45,6 +56,14 @@ class OutboundBuffer(
 
     /** The sequencer's read side. Iterating it drains in FIFO order until the buffer is sealed and empty. */
     fun channel(): ReceiveChannel<EncodedFrame> = frames
+
+    /** Called by the [TransmitSequencer] when it is done with this buffer. Idempotent. */
+    fun markDrained() {
+        drained.complete(Unit)
+    }
+
+    /** Suspends until the sequencer has finished committing this recording's frames. */
+    suspend fun awaitDrained() = drained.await()
 
     companion object {
         const val DEFAULT_CAPACITY = 256

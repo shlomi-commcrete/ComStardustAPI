@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.adapter.ai
 
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
+import com.commcrete.stardust.ai.codec.WavTokenizerEncoder
 import com.commcrete.stardust.audio.v2.application.port.EncoderSession
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
@@ -24,8 +25,12 @@ class WavTokenizerEncoderSession(
     private val codecId: CodecId,
 ) : EncoderSession {
 
-    // Shared model instance (assumes AIModuleInitializer.initModules ran — same assumption as legacy PttSendManager).
-    private val encoder = AIModuleInitializer.wavTokenizerEncoder
+    /**
+     * Resolved lazily and cached, NOT in a property initializer: `AIModuleInitializer.initModules()` is
+     * fire-and-forget, so constructing this session right after a cold start would read an
+     * uninitialized `lateinit` and throw before the recording ever begins.
+     */
+    private var encoder: WavTokenizerEncoder? = null
 
     private val pending = ArrayList<Short>(AiFramePacker.EXPECTED_SAMPLES * 2)
     private var seq = 0
@@ -33,10 +38,12 @@ class WavTokenizerEncoderSession(
     override suspend fun encode(chunk: PcmChunk): List<EncodedFrame> {
         val out = ArrayList<EncodedFrame>()
         for (s in chunk.samples) pending.add(s)
+        if (pending.size < AiFramePacker.EXPECTED_SAMPLES) return out
+        val model = encoder()
         while (pending.size >= AiFramePacker.EXPECTED_SAMPLES) {
             val window = ShortArray(AiFramePacker.EXPECTED_SAMPLES) { pending[it] }
             pending.subList(0, AiFramePacker.EXPECTED_SAMPLES).clear()
-            out += frameOf(encoder.encode(window), terminal = false)
+            out += frameOf(model.encode(window), terminal = false)
         }
         return out
     }
@@ -45,8 +52,11 @@ class WavTokenizerEncoderSession(
         if (pending.isEmpty()) return listOf(frameOf(LongArray(0), terminal = true))
         val window = ShortArray(pending.size) { pending[it] }
         pending.clear()
-        return listOf(frameOf(encoder.encode(window), terminal = true))
+        return listOf(frameOf(encoder().encode(window), terminal = true))
     }
+
+    private suspend fun encoder(): WavTokenizerEncoder =
+        encoder ?: AIModuleInitializer.awaitEncoder().also { encoder = it }
 
     override fun close() {
         pending.clear()

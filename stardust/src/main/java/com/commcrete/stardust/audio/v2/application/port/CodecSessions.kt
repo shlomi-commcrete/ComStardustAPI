@@ -21,7 +21,12 @@ interface EncoderSession : AutoCloseable {
     /** Encode one captured+DSP'd chunk into zero or more wire frames. */
     suspend fun encode(chunk: PcmChunk): List<EncodedFrame>
 
-    /** Flush remaining audio at key-up. The last returned frame MUST have `isTerminal = true`. */
+    /**
+     * Flush remaining audio at key-up. If any frames are returned, the last one MUST have
+     * `isTerminal = true`. Returning an empty list is allowed for a recording that produced no audio —
+     * an empty-payload frame must NOT be synthesised just to carry the terminal flag, since that puts a
+     * zero-length package on the wire; the receiver falls back to its idle timeout in that case.
+     */
     suspend fun drain(): List<EncodedFrame>
 
     /**
