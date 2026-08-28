@@ -101,6 +101,10 @@ class PttReceiveStore(private val context: Context) {
             }
             ctx.messageId?.let { DataManager.getAppRepo().updateMessageReceived(it) }
         }
+        // Closes the pair started by startedReceivingPTT. Fired after the WAV is written, so a host that
+        // reacts by opening the file sees a complete one. Separate runCatching: a persistence failure
+        // above must not swallow the app's end-of-stream signal.
+        runCatching { DataManager.getCallbacks()?.stopReceivingPTT(ctx.apiPkg) }
     }
 
     private fun shortsToLePcm16(samples: ShortArray): ByteArray {

@@ -47,6 +47,31 @@ interface StardustAPI {
     fun sendMessage(chatId: String, stardustAPIPackage: StardustAPIPackage, text : String)
     fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File?
     fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File)
+
+    /**
+     * Set the playback level of ONE incoming PTT stream, independently of every other stream.
+     *
+     * [streamId] identifies the stream and comes from the receive callbacks — it is
+     * `stardustAPIPackage.groupId ?: stardustAPIPackage.senderId` as delivered by
+     * [StardustAPICallbacks.startedReceivingPTT] / [StardustAPICallbacks.receivePTT]. Note a group PTT is
+     * one stream per GROUP, not per talker.
+     *
+     * [level] is clamped to `0f..1f` (`0f` silence, `1f` unity); values above 1 give no extra boost. Any
+     * level greater than 0 also un-mutes the stream.
+     *
+     * Applies immediately to a live stream and is remembered for a stream that has not started yet, so it
+     * is safe to call before the first packet arrives. The value persists after the stream ends, so the
+     * next PTT from the same peer/group reuses it. There is no getter — keep the level in the app if the
+     * UI needs to display it. No-op while the SDK is on the legacy PTT pipeline.
+     */
+    fun setPttVolume(streamId: String, level: Float)
+
+    /**
+     * Mute or un-mute ONE incoming PTT stream without losing its chosen level: un-muting restores the
+     * level previously set via [setPttVolume] rather than snapping to unity. See [setPttVolume] for where
+     * [streamId] comes from. No-op while the SDK is on the legacy PTT pipeline.
+     */
+    fun setPttMuted(streamId: String, muted: Boolean)
     fun sendLocation(chatId: String, stardustAPIPackage: StardustAPIPackage, location: Location)
     fun sendImage(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>
     fun sendFile(data: FileTransferData.Send, onFileStatusChange: FileSender.OnFileStatusChange): Deferred<Boolean>

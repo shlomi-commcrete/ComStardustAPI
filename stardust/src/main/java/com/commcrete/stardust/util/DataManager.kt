@@ -44,6 +44,9 @@ import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.FileSender.OnFileStatusChange
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
+import com.commcrete.stardust.audio.v2.adapter.VolumeUiAdapter
+import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
+import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.CoroutineScope
@@ -212,6 +215,27 @@ object DataManager : StardustAPI, PttInterface {
     override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File) {
         checkInitialized()
         RecorderUtils.stopRecording(chatId = chatId, receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
+    }
+
+    override fun setPttVolume(streamId: String, level: Float) {
+        pttVolumeAdapter()?.setVolume(streamId, level)
+    }
+
+    override fun setPttMuted(streamId: String, muted: Boolean) {
+        pttVolumeAdapter()?.setMuted(streamId, muted)
+    }
+
+    /**
+     * Per-stream volume exists only on the v2 PTT pipeline (the legacy path plays every incoming PTT
+     * through one process-wide AudioTrack), so this returns null — and the API call becomes a no-op —
+     * when the flag is off. [PttV2Wiring.init] is idempotent and needed here because the host may set a
+     * level before any PTT has been sent or received, which is what otherwise wires the pipeline up.
+     */
+    private fun pttVolumeAdapter(): VolumeUiAdapter? {
+        checkInitialized()
+        if (!PttPipelineFeatureFlag.isEnabled(appContext)) return null
+        PttV2Wiring.init(appContext)
+        return PttV2Wiring.volumeAdapter
     }
 
     override fun sendLocation(chatId: String, stardustAPIPackage: StardustAPIPackage, location: Location) {
