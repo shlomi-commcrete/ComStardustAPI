@@ -5,6 +5,9 @@ import android.os.Environment
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
+import com.commcrete.stardust.PttRecordingError
+import com.commcrete.stardust.PttRecordingEvent
+import com.commcrete.stardust.PttRecordingState
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.ai.codec.PttSession
 import com.commcrete.stardust.audio.v2.domain.CodecId
@@ -52,6 +55,32 @@ object RecorderUtils {
         File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Stardust_ptt_files")
             .also { it.mkdirs() }
 
+    // ── Outgoing-recording lifecycle (StardustAPICallbacks.onPttRecordingStateChanged) ────────────
+
+    /**
+     * What one in-flight recording needs in order to describe itself to the host. Kept per recording id
+     * rather than in a single "current" field because [PttRecordingState.SENT] can land AFTER the next
+     * key-down: on the v2 pipeline the microphone is released at key-up while encoding and the ordered
+     * send continue, so recording N's SENT routinely races recording N+1's STARTED.
+     *
+     * [emitted] makes each state at-most-once per recording, which the retry paths need — legacy
+     * `stopRecordingNow` can run up to three times for one key-up.
+     */
+    private class PttRecordingInfo(
+        val id: String,
+        val chatId: String,
+        val receiverId: String,
+        val codeType: CODE_TYPE?,
+    ) {
+        val emitted: MutableSet<PttRecordingState> = java.util.EnumSet.noneOf(PttRecordingState::class.java)
+    }
+
+    private val recordingIdSeq = java.util.concurrent.atomic.AtomicLong(0)
+    private val recordings = java.util.concurrent.ConcurrentHashMap<String, PttRecordingInfo>()
+
+    /** Id of the recording that currently owns the mic; the async [PttRecordingState.SENT] uses its own. */
+    @Volatile private var currentRecordingId: String? = null
+
     // ──────────────────────────────────────────────────────────────────────
 
     fun init(pttInterface: PttInterface) {
@@ -73,10 +102,22 @@ object RecorderUtils {
     ): File? {
         Log.d("AudioRecorder", "Start recording")
 
+        // Minted before the guard so a REJECTED key-down is still reportable: the host asked for a
+        // recording and gets a self-describing ERROR event for it, with its own id.
+        val recording = PttRecordingInfo(
+            id = "ptt-${System.currentTimeMillis()}-${recordingIdSeq.incrementAndGet()}",
+            chatId = chatId,
+            receiverId = receiverId,
+            codeType = codeType,
+        )
+        recordings[recording.id] = recording
+
         if (!recordingInProgress.compareAndSet(false, true)) {
             Log.w("AudioRecorder", "startRecording ignored: a recording session is already in progress")
+            notifyPttRecordingError(PttRecordingError.ALREADY_RECORDING, recording.id)
             return null
         }
+        currentRecordingId = recording.id
 
         try {
             Scopes.getMainCoroutine().launch { canRecord.value = false }
@@ -84,18 +125,30 @@ object RecorderUtils {
             // v2 pipeline (flag-guarded). Both codecs route here when enabled.
             if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
                 val codecId = if (codeType == CODE_TYPE.CODEC2) CodecId.CODEC2 else CodecId.WAVTOKENIZER
-                return startV2Recording(codecId, chatId, receiverId, carrier)
+                return startV2Recording(codecId, chatId, receiverId, carrier, recording.id)
             }
 
             return if (codeType == CODE_TYPE.CODEC2) {
-                startCodec2Recording(receiverId, carrier)
+                // AudioRecorderCodec2 opens the mic synchronously inside startRecording, so by the time it
+                // returns the device state is already decisive: capturing → STARTED, otherwise the mic is
+                // held by something else. A null file means the file setup failed and nothing started.
+                val file = startCodec2Recording(receiverId, carrier)
+                when {
+                    file == null -> notifyPttRecordingError(PttRecordingError.UNKNOWN, recording.id)
+                    audioRecorderCodec2?.isCapturing() == true -> notifyPttRecordingStarted()
+                    else -> notifyPttRecordingError(PttRecordingError.MIC_UNAVAILABLE, recording.id)
+                }
+                file
             } else {
+                // AI reports STARTED/STOPPED from AudioRecorderAI's own state callback and ERROR from its
+                // onError — the mic is opened on that recorder's coroutine. See setupAIRecorder.
                 startAIRecording(chatId, receiverId, carrier)
             }
         } catch (t: Throwable) {
             // Don't leave the guard stuck on if the start path itself throws before a
             // matching stopRecording() call would otherwise clear it.
             recordingInProgress.set(false)
+            notifyPttRecordingError(PttRecordingError.UNKNOWN, recording.id)
             throw t
         }
     }
@@ -123,19 +176,102 @@ object RecorderUtils {
      * [PttV2Wiring.recorderBridge]. Returns null: v2 owns its own file/persistence lifecycle, so there
      * is no legacy File handle to hand back (the matching [stopRecording] v2 branch ignores `file`).
      */
-    private fun startV2Recording(codecId: CodecId, chatId: String, destination: String, carrier: Carrier?): File? {
+    private fun startV2Recording(
+        codecId: CodecId,
+        chatId: String,
+        destination: String,
+        carrier: Carrier?,
+        recordingId: String,
+    ): File? {
         PttV2Wiring.init(DataManager.appContext)
         // Called synchronously (the bridge only enqueues) so key-down is ordered before the key-up that
         // [stopRecording] enqueues. Launching each on its own coroutine imposed no ordering and could
         // drop the key-up entirely, leaving the mic open until the max-PTT watchdog.
+        //
+        // [recordingId] rides along so the bridge can report SENT/ERROR against the right recording once
+        // the transmit gate drains — by then the next recording may already own the mic.
         PttV2Wiring.recorderBridge.startRecording(
             codecId = codecId,
             chatId = chatId,
             source = DataManager.getSource(),
             destination = destination,
             carrier = carrier,
+            recordingId = recordingId,
         )
         return null
+    }
+
+    /**
+     * [PttRecordingState.STARTED] — the microphone is genuinely capturing. Deliberately NOT reported when
+     * [startRecording] is entered, because the two differ in every pipeline: the in-progress guard can
+     * reject the key-down, the file setup can fail, and on v2 [startRecording] only enqueues the key-down
+     * while the `AudioRecord` opens a moment later on the capture thread.
+     *
+     * Reported from each pipeline's own "mic is open" point — [MicCaptureSource] (v2),
+     * [startCodec2Recording]'s return (legacy CODEC2, mic opened synchronously) and [AudioRecorderAI]'s
+     * state callback (legacy AI, mic opened on its own coroutine) — so the host sees one signal
+     * regardless of which pipeline is active.
+     */
+    internal fun notifyPttRecordingStarted() = emit(currentRecordingId, PttRecordingState.STARTED)
+
+    /**
+     * [PttRecordingState.STOPPED] — key-up, microphone released. Encoding and the ordered send continue
+     * after this on the v2 pipeline; [notifyPttRecordingSent] is the "it is all on the link" signal.
+     */
+    internal fun notifyPttRecordingStopped() = emit(currentRecordingId, PttRecordingState.STOPPED)
+
+    /**
+     * [PttRecordingState.SENT] — every packet of [id] has been handed to the radio link. Terminal, so the
+     * recording is forgotten here.
+     *
+     * The v2 pipeline passes [id] explicitly because this lands after key-up, by which time the next
+     * recording may already own the mic. The legacy pipelines cannot overlap, so they use the default.
+     */
+    internal fun notifyPttRecordingSent(id: String? = currentRecordingId) =
+        emit(id, PttRecordingState.SENT, terminal = true)
+
+    /**
+     * [PttRecordingState.ERROR] — terminal. The first error wins: the recording is forgotten here, so a
+     * generic follow-up (e.g. the pipeline reporting a non-LAST terminal reason after a specific
+     * `MIC_UNAVAILABLE`) is dropped rather than reaching the host as a second, vaguer event.
+     */
+    internal fun notifyPttRecordingError(error: PttRecordingError, id: String? = currentRecordingId) =
+        emit(id, PttRecordingState.ERROR, error = error, terminal = true)
+
+    /**
+     * Deliver one lifecycle event, at most once per state per recording. A [terminal] state also drops the
+     * recording, which is what makes ERROR suppress any later SENT (and vice versa).
+     *
+     * Runs on whichever thread reached the event (the capture thread for STARTED/STOPPED), and swallows a
+     * throwing host callback: on the v2 capture path an escaping exception would kill the very recording
+     * being announced.
+     */
+    private fun emit(
+        id: String?,
+        state: PttRecordingState,
+        error: PttRecordingError? = null,
+        terminal: Boolean = false,
+    ) {
+        val info = id?.let { recordings[it] } ?: return
+        synchronized(info) {
+            if (!info.emitted.add(state)) return
+            if (terminal) {
+                recordings.remove(info.id)
+                // Only on terminal: STOPPED must NOT clear it, because on the legacy pipelines the
+                // post-key-up SENT still resolves through `currentRecordingId`.
+                if (info.id == currentRecordingId) currentRecordingId = null
+            }
+        }
+        val event = PttRecordingEvent(
+            recordingId = info.id,
+            state = state,
+            chatId = info.chatId,
+            receiverId = info.receiverId,
+            codeType = info.codeType,
+            error = error,
+        )
+        runCatching { DataManager.getCallbacks()?.onPttRecordingStateChanged(event) }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "onPttRecordingStateChanged threw for $event") }
     }
 
     private fun startAIRecording(chatId: String, receiverId: String, carrier: Carrier?): File? {
@@ -200,10 +336,21 @@ object RecorderUtils {
             }
             onError = { throwable ->
                 Timber.w(throwable, "AudioRecorderAI error")
+                // Covers "AudioRecord initialization failed" (mic held elsewhere) as well as any capture
+                // or encode failure; ERROR is terminal, so it suppresses the SENT that would follow.
+                notifyPttRecordingError(PttRecordingError.MIC_UNAVAILABLE)
             }
             onStateChanged = { recording ->
                 Log.d(LOG_TAG, "Recording state changed: $recording (session ${session.id})")
-                if (!recording) finishAIRecording(session)
+                // AudioRecorderAI.start() only launches a coroutine, so this is the first point at which
+                // the AI path is genuinely recording — notifying from startRecording would be too early.
+                // The false branch is the mic actually being released.
+                if (recording) {
+                    notifyPttRecordingStarted()
+                } else {
+                    notifyPttRecordingStopped()
+                    finishAIRecording(session)
+                }
             }
         }
 
@@ -344,6 +491,9 @@ object RecorderUtils {
             delay(3000)
             PttSendManager.finish(session)
             AudioRecordingKeepAlive.release()
+            // Best-effort SENT for the legacy AI path: unlike v2's transmit gate there is no
+            // "every frame is on the link" signal here, so this is "the session was finalized".
+            notifyPttRecordingSent()
         }
     }
 

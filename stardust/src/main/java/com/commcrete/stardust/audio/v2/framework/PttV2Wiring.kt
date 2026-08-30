@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.framework
 
 import android.content.Context
+import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.audio.v2.adapter.RecorderUtilsBridge
 import com.commcrete.stardust.audio.v2.adapter.StardustPackageRouter
 import com.commcrete.stardust.audio.v2.adapter.VolumeUiAdapter
@@ -11,6 +12,7 @@ import com.commcrete.stardust.audio.v2.application.codec.CodecBootstrap
 import com.commcrete.stardust.audio.v2.application.port.KeepAlive
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
+import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.audio.v2.application.receive.PttReceiveCoordinator
 import com.commcrete.stardust.audio.v2.application.receive.StreamRegistry
@@ -98,6 +100,12 @@ object PttV2Wiring {
                     requestedRateHz = nativeRate,
                     audioSource = if (codecId == CodecId.CODEC2) SharedPreferencesUtil.getCodecAudioSource()
                     else SharedPreferencesUtil.getAIAudioSource(),
+                    // The mic is opened and released asynchronously here, so the host-facing lifecycle is
+                    // reported from the capture thread rather than from RecorderUtils.startRecording /
+                    // stopRecording, which only enqueue. SENT comes later still, from the bridge.
+                    onCaptureStarted = { RecorderUtils.notifyPttRecordingStarted() },
+                    onCaptureStopped = { RecorderUtils.notifyPttRecordingStopped() },
+                    onCaptureFailed = { RecorderUtils.notifyPttRecordingError(PttRecordingError.MIC_UNAVAILABLE) },
                 )
             },
             dspFactory = { targetRate ->

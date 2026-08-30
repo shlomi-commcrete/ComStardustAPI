@@ -33,6 +33,16 @@ class MicCaptureSource(
     private val context: Context,
     private val requestedRateHz: Int,
     private val audioSource: Int,
+    /**
+     * Invoked once, on the capture thread, when the `AudioRecord` is confirmed to be recording — the
+     * host-visible "PTT recording started" moment. It is NOT the key-down: the bridge only enqueues that,
+     * and it may still be rejected or fail before the mic opens.
+     */
+    private val onCaptureStarted: () -> Unit = {},
+    /** Invoked once the microphone has actually been released (key-up, watchdog, or cancellation). */
+    private val onCaptureStopped: () -> Unit = {},
+    /** Invoked instead of [onCaptureStarted] when the microphone could not be opened. */
+    private val onCaptureFailed: () -> Unit = {},
 ) : CaptureSource {
 
     @Volatile private var running = false
@@ -51,8 +61,14 @@ class MicCaptureSource(
 
         val recorder = AudioRecord(plan.audioSource, rate, CHANNEL, ENCODING, bufferBytes)
         AudioCaptureConfig.applyInputRoute(context, recorder, plan.preferredInputDevice)
-        recorder.startRecording()
-        running = true
+        // Judged by the real device state rather than "startRecording() returned": a mic held by another
+        // app or an in-progress call surfaces as an uninitialized record or a non-RECORDING state, not as
+        // an exception. Announcing a recording that is not actually capturing is what this guards.
+        val capturing = recorder.state == AudioRecord.STATE_INITIALIZED &&
+            runCatching { recorder.startRecording() }.isSuccess &&
+            recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        running = capturing
+        if (capturing) onCaptureStarted() else onCaptureFailed()
 
         val read = ShortArray(frameSamples)
         val pending = ArrayList<Short>(frameSamples * 2)
@@ -75,6 +91,9 @@ class MicCaptureSource(
             // this in AudioRecorderCodec2.stopRecordingNow's finally; without it the phone stays pinned
             // to the PTT communication device and later capture/playback is silent or misrouted.
             runCatching { AudioCaptureConfig.clearInputRoute(context) }
+            // The mic is only now genuinely released — that is the host's "recording stopped". Skipped
+            // when it never opened, since that recording was already reported as failed.
+            if (capturing) onCaptureStopped()
         }
     }.flowOn(Dispatchers.IO)
 

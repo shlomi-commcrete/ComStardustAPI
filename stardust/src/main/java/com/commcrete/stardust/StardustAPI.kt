@@ -41,6 +41,60 @@ enum class BleUnavailableReason {
     UNKNOWN,
 }
 
+/**
+ * Where an outgoing PTT recording is in its lifecycle. Reported through
+ * [StardustAPICallbacks.onPttRecordingStateChanged].
+ *
+ * The normal sequence is [STARTED] → [STOPPED] → [SENT]. They are distinct moments, not synonyms: the
+ * microphone is released at key-up ([STOPPED]) while encoding and transmission continue for some time
+ * afterwards ([SENT]). [ERROR] is terminal and replaces whatever would have followed — a recording that
+ * errors never reports [SENT].
+ *
+ * Each state is reported at most once per recording.
+ */
+enum class PttRecordingState {
+    /** The microphone is open and capturing. Not merely "startPTT was called". */
+    STARTED,
+    /** Key-up: the microphone has been released. Encoding and transmission are still in progress. */
+    STOPPED,
+    /** Every packet of this recording has been handed to the radio link. Terminal. */
+    SENT,
+    /** The recording failed and produced nothing further — see [PttRecordingEvent.error]. Terminal. */
+    ERROR,
+}
+
+/** Why a PTT recording failed. Accompanies [PttRecordingState.ERROR]. */
+enum class PttRecordingError {
+    /** A recording was already in progress, so this key-down was ignored. */
+    ALREADY_RECORDING,
+    /** The microphone could not be opened — typically another app or a call holds it. */
+    MIC_UNAVAILABLE,
+    /** The encoder was unavailable (e.g. the AI models are not loaded in this process). */
+    ENCODER_UNAVAILABLE,
+    /** Anything else: the capture/encode/transmit pipeline failed or was cancelled. */
+    UNKNOWN,
+}
+
+/**
+ * One lifecycle event of one outgoing PTT recording.
+ *
+ * [recordingId] is minted by the SDK at key-down and is unique per recording (including for a key-down
+ * rejected with [PttRecordingError.ALREADY_RECORDING], which gets its own id). Use it to correlate the
+ * events of a single recording — a [SENT][PttRecordingState.SENT] can arrive after the NEXT recording has
+ * already started, so matching on [receiverId] alone is not sufficient.
+ *
+ * [chatId], [receiverId] and [codeType] echo the values passed to [StardustAPI.startPTT].
+ */
+data class PttRecordingEvent(
+    val recordingId: String,
+    val state: PttRecordingState,
+    val chatId: String,
+    val receiverId: String,
+    val codeType: RecorderUtils.CODE_TYPE?,
+    /** Set only when [state] is [PttRecordingState.ERROR]. */
+    val error: PttRecordingError? = null,
+)
+
 interface StardustAPI {
 
     // Send to the SDK
@@ -112,6 +166,19 @@ interface StardustAPI {
 // Receive from the SDK
 interface StardustAPICallbacks {
     fun pttMaxTimeoutReached ()
+
+    /**
+     * One outgoing PTT recording changed state — started, stopped, fully sent, or failed. Replaces the
+     * separate started/stopped callbacks so every stage carries the same payload
+     * ([PttRecordingEvent]: recording id, chat, receiver, codec, and the error when there is one).
+     *
+     * Called on whichever SDK thread reached that moment — the capture thread for
+     * [PttRecordingState.STARTED] / [PttRecordingState.STOPPED], a background thread for
+     * [PttRecordingState.SENT] — so hop to the main thread before touching UI. Exceptions thrown here are
+     * caught and logged by the SDK; on the capture path an escaping exception would otherwise kill the
+     * very recording being announced.
+     */
+    fun onPttRecordingStateChanged(event: PttRecordingEvent)
     fun receiveMessage(stardustAPIPackage: StardustAPIPackage, text : String)
     fun receiveLocation(stardustAPIPackage: StardustAPIPackage, location: Location)
     fun receiveSOS(stardustAPIPackage: StardustAPIPackage, sosPackage: SOSPackage)

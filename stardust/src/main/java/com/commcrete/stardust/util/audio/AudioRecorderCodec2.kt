@@ -85,6 +85,14 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         numOfPackage = 0
     }
 
+    /**
+     * Whether the microphone actually opened. `startRecording()` does not throw when the device is held
+     * by another app or a call — it leaves the record in a non-RECORDING state — so this is what
+     * [RecorderUtils] checks before announcing the recording as started.
+     */
+    fun isCapturing(): Boolean =
+        recorder?.recordingState == AudioRecord.RECORDSTATE_RECORDING
+
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
         AudioRecordingKeepAlive.acquire(DataManager.appContext)
@@ -269,6 +277,12 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
             flushPipelineEnd()
             Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally after sendRecordEnd")
+            // Host-facing lifecycle. The mic was released in the block above, and flushPipelineEnd has
+            // just queued the last packet — legacy has no per-packet transmit confirmation, so "sent"
+            // here means "handed to the BLE queue", weaker than the v2 pipeline's SENT. Both are
+            // emit-once, which matters because this path retries up to three times per key-up.
+            RecorderUtils.notifyPttRecordingStopped()
+            RecorderUtils.notifyPttRecordingSent()
         }
         Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
     }

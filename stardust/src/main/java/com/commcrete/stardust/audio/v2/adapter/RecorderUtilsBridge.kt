@@ -1,9 +1,12 @@
 package com.commcrete.stardust.audio.v2.adapter
 
+import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.audio.v2.application.send.PttSendCoordinator
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.audio.v2.domain.StreamKey
+import com.commcrete.stardust.audio.v2.domain.TerminalReason
+import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.audio.v2.framework.PttSendRouting
 import com.commcrete.stardust.audio.v2.framework.PttSendStore
 import com.commcrete.stardust.audio.v2.framework.SendRoute
@@ -41,6 +44,8 @@ class RecorderUtilsBridge(
         val destination: String,
         val carrier: Carrier?,
         val startedAtMs: Long,
+        /** Host-facing recording id minted by `RecorderUtils`; correlates the SENT/ERROR events. */
+        val recordingId: String,
     ) : Cmd
 
     private object Stop : Cmd
@@ -55,7 +60,12 @@ class RecorderUtilsBridge(
                 // Per-command isolation: a failure handling one key-down (e.g. the AI models never
                 // loaded) must not kill the loop and take PTT down for the rest of the process.
                 runCatching { handle(cmd) }
-                    .onFailure { Timber.tag(TAG).e(it, "PTT v2 command failed: ${cmd::class.simpleName}") }
+                    .onFailure {
+                        Timber.tag(TAG).e(it, "PTT v2 command failed: ${cmd::class.simpleName}")
+                        if (cmd is Start) {
+                            RecorderUtils.notifyPttRecordingError(errorFor(it), cmd.recordingId)
+                        }
+                    }
             }
         }
     }
@@ -70,9 +80,10 @@ class RecorderUtilsBridge(
         source: String,
         destination: String,
         carrier: Carrier?,
+        recordingId: String,
     ) {
         commands.trySend(
-            Start(codecId, chatId, source, destination, carrier, System.currentTimeMillis())
+            Start(codecId, chatId, source, destination, carrier, System.currentTimeMillis(), recordingId)
         )
     }
 
@@ -98,12 +109,28 @@ class RecorderUtilsBridge(
         // outlive the transmit — releasing it at finalize drops the recording's still-queued tail,
         // because BleSendTransport silently skips any frame whose route is gone.
         scope.launch {
-            send.awaitFinalized(id)
+            val reason = send.awaitFinalized(id)
             send.awaitTransmitted(id)
             routing.release(id)
             sendStore.onFinalized(id, cmd.chatId, cmd.destination, cmd.codecId, cmd.startedAtMs)
+            // Only a clean LAST means the whole recording reached the link. TIMEOUT means the gate's
+            // watchdog discarded the tail; ERROR/CANCELLED mean the pipeline gave up — none of those are
+            // "sent". A more specific error (e.g. MIC_UNAVAILABLE) already reported wins over this one.
+            if (reason == TerminalReason.LAST) {
+                RecorderUtils.notifyPttRecordingSent(cmd.recordingId)
+            } else {
+                RecorderUtils.notifyPttRecordingError(PttRecordingError.UNKNOWN, cmd.recordingId)
+            }
         }
     }
+
+    /** An encoder that never became available is worth distinguishing from a generic pipeline failure. */
+    private fun errorFor(t: Throwable): PttRecordingError =
+        if (t is UninitializedPropertyAccessException || t is IllegalStateException) {
+            PttRecordingError.ENCODER_UNAVAILABLE
+        } else {
+            PttRecordingError.UNKNOWN
+        }
 
     private suspend fun handleStop() {
         val id = currentId ?: return
