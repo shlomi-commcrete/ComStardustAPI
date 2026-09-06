@@ -22,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import timber.log.Timber
 import java.io.File
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
@@ -390,18 +391,20 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
             val totalSeconds = numOfPackages * totalTime // Total time in seconds as a Double
             val minutes = totalSeconds.toInt() / 60 // Whole minutes
-            val seconds = totalSeconds % 60 // Remaining seconds
+            // Remaining seconds, rounded to 2 decimals for display
+            val seconds = String.format(Locale.US, "%.2f", totalSeconds % 60)
 
-            return if (minutes > 0) {
-                String.format(
-                    "%d minute%s and %.1f second%s",
-                    minutes,
-                    if (minutes > 1) "s" else "",
-                    seconds,
-                    if (seconds > 1.0) "s" else ""
-                )
+            return if (minutes > 0) { "$minutes min $seconds sec"
+//                String.format(
+//                    "%d minute%s %.1f second%s",
+//                    minutes,
+//                    if (minutes > 1) "s" else "",
+//                    seconds,
+//                    if (seconds > 1.0) "s" else ""
+//                )
             } else {
-                String.format("%.1f second%s", totalSeconds, if (totalSeconds > 1.0) "s" else "")
+                " $seconds sec"
+                //String.format("%.1f second%s", totalSeconds, if (totalSeconds > 1.0) "s" else "")
             }
         }
 
