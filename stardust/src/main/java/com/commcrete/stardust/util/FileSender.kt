@@ -22,8 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import timber.log.Timber
 import java.io.File
-import java.util.Locale
 import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class FileSender(val data: FileUtils.FileTransferData.Send) {
@@ -389,10 +389,10 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
             val totalTime = if (radio?.type == CarrierType.ST) 0.3 else 1.3
 
-            val totalSeconds = numOfPackages * totalTime // Total time in seconds as a Double
-            val minutes = totalSeconds.toInt() / 60 // Whole minutes
-            // Remaining seconds, rounded to 2 decimals for display
-            val seconds = String.format(Locale.US, "%.2f", totalSeconds % 60)
+            // Round to whole seconds first so minutes/seconds stay consistent
+            val totalSeconds = (numOfPackages * totalTime).roundToInt()
+            val minutes = totalSeconds / 60 // Whole minutes
+            val seconds = totalSeconds % 60 // Remaining whole seconds
 
             return if (minutes > 0) { "$minutes min $seconds sec"
 //                String.format(
