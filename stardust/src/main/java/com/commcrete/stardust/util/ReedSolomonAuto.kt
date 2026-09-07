@@ -181,6 +181,25 @@ class ReedSolomon(
         }
     }
 
+    /**
+     * Positions in the codeword produced by [encode] that carry parity rather than file
+     * data.
+     *
+     * Not simply the last [Ptotal] positions: [planBlocks] splits a codeword longer than
+     * 255 packets into blocks, and [encode] emits each block's data followed by that
+     * block's parity, so the parity packets are interleaved. This is the only correct way
+     * to tell one kind from the other.
+     */
+    fun parityIndices(): Set<Int> {
+        val out = HashSet<Int>(Ptotal.coerceAtLeast(0))
+        var index = 0
+        for (block in blocks) {
+            index += block.k
+            repeat(block.p) { out.add(index++) }
+        }
+        return out
+    }
+
     // ---- encode full dataPackets (length Ktotal) into codeword (Ktotal+Ptotal) sequentially ----
     fun encode(dataPackets: List<Packet>): List<ByteArray> {
         require(dataPackets.size == Ktotal) { "encode expects exactly K=$Ktotal data packets" }

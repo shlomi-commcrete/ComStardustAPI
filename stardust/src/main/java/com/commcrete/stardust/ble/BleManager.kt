@@ -128,6 +128,11 @@ object BleManager {
                 if (lastConnectionStatus == ConnectionType.USB) {
                     ConnectionManager.disableAutoReconnect()
                 }
+                // No transport left, so any file/image transfer in flight is over
+                // whether or not the disconnect was intentional. Record it now — an
+                // unexpected drop never reaches disconnectFromDevice(), so this is the
+                // only place a battery-dies / out-of-range / unplug loss is settled.
+                DataManager.failInFlightFileTransfers()
                 ConfigurationUtils.reset()
                 CarriersUtils.reset()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)

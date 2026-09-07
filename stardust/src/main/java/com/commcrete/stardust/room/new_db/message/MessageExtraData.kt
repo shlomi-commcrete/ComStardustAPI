@@ -3,6 +3,7 @@
 package com.commcrete.stardust.room.new_db.message
 
 
+import com.commcrete.stardust.util.FileReceiver
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
 
@@ -23,14 +24,38 @@ sealed class MessageExtraData {
     @SerialName("Attachment")
     data class Attachment(
         val title: String,
+        /**
+         * Absolute path of the local copy of the file. EMPTY when the transfer failed:
+         * a failed transfer writes no file at all, so there is nothing to point at (and
+         * no partial-file artifact to clean up). Check [failure] / the row's state
+         * before opening it.
+         */
         val path: String,
         val subtype: AttachmentType,
         /**
          * Optional cached, display-oriented summary parsed once at persist time.
          * `null` for attachments that need no summary (a plain file/image renders
-         * from [title]/[path] alone). Carries [SharedContactSummary] for CONTACT.
+         * from [title]/[path] alone), and for a failed transfer — there is no file to
+         * summarize. Carries [SharedContactSummary] for CONTACT.
          */
         val fileSummary: FileSummary? = null,
+        /**
+         * Why the transfer did not deliver its file, or `null` when it did. The reason
+         * lives here and nowhere else; the row's [MessageState.FAILED] carries the fact
+         * of the failure.
+         *
+         * Serialized by enum name and OMITTED entirely when `null`, so every row written
+         * before this field existed reads back exactly as it did before.
+         */
+        val failure: FileReceiver.FileFailure? = null,
+        /**
+         * How far an outgoing transfer had got when the user stopped it, or `null` when
+         * it was not cancelled. Set together with [MessageState.CANCELLED], and mutually
+         * exclusive with [failure] — a cancel is not a failure.
+         *
+         * Omitted entirely when `null`, like [failure].
+         */
+        val cancellation: FileTransferCancellation? = null,
     ) : MessageExtraData()
 
     @Serializable

@@ -8,10 +8,13 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -350,6 +353,54 @@ internal class MessagesRepository(
 
     suspend fun updateMessageReceived(messageId: Long) =
         messagesDao.updateMessageState(messageId, MessageState.RECEIVED)
+
+    suspend fun updateMessageState(messageId: Long, state: MessageState) =
+        withContext(Dispatchers.IO) { messagesDao.updateMessageState(messageId, state) }
+
+    /**
+     * Records a file/image transfer failure on an existing (outgoing) message row:
+     * state FAILED plus [failure] merged into the row's extra_data. Returns false if
+     * the write was refused because the row had already settled — see
+     * [MessageDao.markFileTransferFailed].
+     *
+     * The reason is merged here, never assembled by the caller: extra_data already
+     * carries the title, path and summary of the attachment and must survive.
+     */
+    suspend fun markFileTransferFailed(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val attachment = messagesDao.getMessageById(messageId)?.extraData
+            as? MessageExtraData.Attachment
+        messagesDao.markFileTransferFailed(
+            messageId = messageId,
+            extraData = attachment?.copy(failure = failure),
+            nowMs = System.currentTimeMillis(),
+        ) > 0
+    }
+
+    /**
+     * Records a user-cancelled outgoing transfer on its message row: state CANCELLED
+     * plus [cancellation] merged into the row's extra_data. Returns false if the write
+     * was refused because the row had already settled — see
+     * [MessageDao.markFileSendCancelled].
+     *
+     * Any failure reason previously recorded on the row is cleared: a transfer the user
+     * stopped is cancelled, not failed, and leaving both on the row would let a UI show
+     * an error for a deliberate stop.
+     */
+    suspend fun markFileSendCancelled(
+        messageId: Long,
+        cancellation: FileTransferCancellation,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val attachment = messagesDao.getMessageById(messageId)?.extraData
+            as? MessageExtraData.Attachment
+        messagesDao.markFileSendCancelled(
+            messageId = messageId,
+            extraData = attachment?.copy(cancellation = cancellation, failure = null),
+            nowMs = System.currentTimeMillis(),
+        ) > 0
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Deletion & archival  [= UNCHANGED]

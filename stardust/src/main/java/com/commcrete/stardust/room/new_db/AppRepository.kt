@@ -18,6 +18,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.internal.ChatsRepository
@@ -28,6 +29,7 @@ import com.commcrete.stardust.room.new_db.internal.RepositoryCaches
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
@@ -403,6 +405,35 @@ class AppRepository(
     // ─────────────────────────────────────────────────────────────────────
 
     suspend fun updateMessageReceived(messageId: Long) = messages.updateMessageReceived(messageId)
+
+    suspend fun updateMessageState(messageId: Long, state: MessageState) =
+        messages.updateMessageState(messageId, state)
+
+    /**
+     * Records a file/image transfer failure on an existing message row (the outgoing
+     * side, where the row was created when the send started): state FAILED plus the
+     * reason merged into the row's extra_data. Returns false when the row had already
+     * settled and the failure was refused.
+     *
+     * The receiving side has no row until a transfer settles, so a failed receive is
+     * persisted as a new FAILED row by [com.commcrete.stardust.util.FileReceiver]
+     * instead of going through here.
+     */
+    suspend fun markFileTransferFailed(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = messages.markFileTransferFailed(messageId, failure)
+
+    /**
+     * Records a user-cancelled outgoing transfer on its message row: state CANCELLED
+     * plus [cancellation] — which says how far the send had got, and so whether the
+     * receiver could still end up with the file. Returns false when the row had already
+     * settled and the cancel was refused.
+     */
+    suspend fun markFileSendCancelled(
+        messageId: Long,
+        cancellation: FileTransferCancellation,
+    ): Boolean = messages.markFileSendCancelled(messageId, cancellation)
 
     suspend fun clearChatMessages(chatId: String) = messages.clearChatMessages(chatId)
 

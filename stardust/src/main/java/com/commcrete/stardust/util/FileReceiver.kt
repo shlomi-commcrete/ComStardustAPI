@@ -15,8 +15,10 @@ import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 class FileReceiver(
     val firstPackage: StardustFileStartPackage,
@@ -34,6 +36,13 @@ class FileReceiver(
     private val runnable : Runnable = Runnable { checkData() }
 
     @Volatile private var isDisposed = false
+
+    /**
+     * Claimed by whichever terminal outcome persists its row first, so exactly one —
+     * the saved file OR a failure — reaches the message DB. A transfer that arrived
+     * beats a failure declared for it afterwards.
+     */
+    private val terminalOutcomePersisted = AtomicBoolean(false)
 
     init {
         data = FileUtils.FileTransferData.Receive(
@@ -79,6 +88,12 @@ class FileReceiver(
         }
     }
 
+    /**
+     * Drops this receiver without recording an outcome. Used when the same sender
+     * restarts a transfer on this transport: the retry replaces this one, and it is the
+     * retry's outcome that belongs in the conversation. Use [failOnDisconnect] when the
+     * transfer is genuinely lost.
+     */
     fun dispose() {
         isDisposed = true
         handler.removeCallbacks(runnable)
@@ -144,18 +159,42 @@ class FileReceiver(
         return maxOf(1, listOfNotNull(spareDelay, totalDelay).minOrNull() ?: 0)
     }
 
+    /**
+     * Settles this transfer as failed: writes the FAILED message row, then tells the
+     * host. Persisting first is deliberate — a host that answers [receiveFailure] by
+     * re-reading the conversation must find the row already there.
+     *
+     * Not guarded on [isDisposed]: the disconnect path fails and then disposes every
+     * receiver, and a guard here would drop the very write that disconnect is for.
+     * [terminalOutcomePersisted] is what keeps it to one outcome per transfer.
+     */
     private fun updateFailure(failure: FileFailure) {
-        if (isDisposed) return
-        Scopes.getMainCoroutine().launch {
-            try {
-                DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
-            } catch (e: Exception) {
-                Log.e("FileReceiver", "Error notifying failure", e)
-            } finally {
-                removeReceiveTimer()
+        if (!terminalOutcomePersisted.compareAndSet(false, true)) return
+        Log.w("FileReceiver", "transfer failed: id=${data.id} name=${data.fileName} reason=$failure")
+        // Seal the receiver before anything asynchronous: the write and the callback
+        // below hop threads, and a package landing in that gap would otherwise still be
+        // able to run the completion path and contradict the failure just declared.
+        removeReceiveTimer()
+        CoroutineScope(Dispatchers.IO).launch {
+            saveFailureToMessages(failure)
+            // Notified after the row exists, never beside it: a host that answers this
+            // by re-reading the conversation must find the failed message there.
+            withContext(Dispatchers.Main) {
+                try {
+                    DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error notifying failure", e)
+                }
             }
         }
     }
+
+    /**
+     * The radio went away mid-transfer: no further package, completion or failure will
+     * ever be reported for this receiver, so settle its row now instead of leaving the
+     * transfer to vanish silently.
+     */
+    fun failOnDisconnect() = updateFailure(FileFailure.DISCONNECTED)
 
     private fun saveFile () {
         removeReceiveTimer()
@@ -164,8 +203,7 @@ class FileReceiver(
             destDir.mkdirs()
         }
         val name = data.fileName
-        val ending = data.fileEnding
-        val type = if(data.fileType == FileUtils.FileType.Image) ".jpg" else ".$ending"
+        val type = fileExtension()
         val ts = System.currentTimeMillis()
         val completeFileName = "$ts"+ "_"+"$name$type"
         val targetFile = File(destDir, "$completeFileName")
@@ -261,33 +299,102 @@ class FileReceiver(
         return ((mainCount - spare) == dataList.size) && lostPackagesIndex.isEmpty()
     }
 
-    private fun saveToMessages (file: File) {
+    /** ".jpg" for an image, otherwise the sender-supplied ending. */
+    private fun fileExtension(): String =
+        if (data.fileType == FileUtils.FileType.Image) ".jpg" else ".${data.fileEnding}"
+
+    /**
+     * Persists the failed transfer as a FAILED attachment row so the conversation shows
+     * that a file was on its way and did not make it, instead of the transfer vanishing.
+     *
+     * There is no row before this point — the receiving side only writes one when a
+     * transfer settles — so this inserts rather than updates, and the row carries no
+     * path and no summary: a failure writes no file to disk at all.
+     */
+    private suspend fun saveFailureToMessages(failure: FileFailure) {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
-        CoroutineScope(Dispatchers.IO).launch {
-            val mFileName = trimUntilUnderscore(file.name)
-            val subtype = data.fileType.toAttachmentType()
+        try {
             DataManager.getAppRepo().saveMessage(
                 message = MessageEntity(
                     chatId = data.chatId,
                     senderID = data.senderId,
                     receiverID = appId,
-                    state = MessageState.RECEIVED,
+                    state = MessageState.FAILED,
                     extraData = MessageExtraData.Attachment(
-                        title = mFileName,
-                        path = file.absolutePath,
-                        subtype = subtype,
-                        // Parse the received contact CSV once here so the conversation
-                        // UI renders from the summary without re-reading the file.
-                        fileSummary = FileUtils.buildFileSummary(file, subtype),
+                        title = "${data.fileName}${fileExtension()}",
+                        path = "",
+                        subtype = data.fileType.toAttachmentType(),
+                        failure = failure,
                     )
                 )
             )
+        } catch (e: Exception) {
+            Log.e("FileReceiver", "Error persisting failed transfer: ${data.fileName}", e)
         }
     }
 
+    private fun saveToMessages (file: File) {
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
+        // Claim the terminal outcome so a failure reported afterwards — a late
+        // watchdog tick, a disconnect landing on the completing transfer — cannot add
+        // a second, contradicting row for the file that did arrive.
+        if (!terminalOutcomePersisted.compareAndSet(false, true)) return
+        CoroutineScope(Dispatchers.IO).launch {
+            val mFileName = trimUntilUnderscore(file.name)
+            val subtype = data.fileType.toAttachmentType()
+            // Caught here rather than left to the default handler: this runs on a bare
+            // scope, so an escaping exception would take the process down over one row.
+            try {
+                DataManager.getAppRepo().saveMessage(
+                    message = MessageEntity(
+                        chatId = data.chatId,
+                        senderID = data.senderId,
+                        receiverID = appId,
+                        state = MessageState.RECEIVED,
+                        extraData = MessageExtraData.Attachment(
+                            title = mFileName,
+                            path = file.absolutePath,
+                            subtype = subtype,
+                            // Parse the received contact CSV once here so the conversation
+                            // UI renders from the summary without re-reading the file.
+                            fileSummary = FileUtils.buildFileSummary(file, subtype),
+                        )
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e("FileReceiver", "Error persisting received transfer: ${file.name}", e)
+            }
+        }
+    }
+
+    /**
+     * Why a file/image transfer did not deliver its file. Covers BOTH directions — a
+     * send failure carries the same reasons (see
+     * [FileSender.OnFileStatusChange.failedSending]) — and is persisted on the message
+     * row as
+     * [com.commcrete.stardust.room.new_db.message.MessageExtraData.Attachment.failure].
+     * A user-cancelled send is NOT one of these; see
+     * [com.commcrete.stardust.room.new_db.message.FileTransferCancellation].
+     *
+     * Persisted BY NAME: members may be added, never renamed or reordered, or an
+     * already-written row stops parsing back.
+     *
+     * The SDK deliberately carries no user-facing wording for these — the app owns every
+     * string it shows. Note [MISSING] means different things in each direction, so it
+     * usually wants two different messages.
+     */
     enum class FileFailure {
+        /**
+         * The transfer ran its course but packages never made it.
+         *
+         * Receiving: more packages were lost than the parity tail could repair.
+         * Sending: packages had no radio to go out on, beyond what parity covers.
+         */
         MISSING,
-        ERROR
+        /** Something went wrong on this side — disk write, unreadable source, no radio to send on. */
+        ERROR,
+        /** The radio went away mid-transfer; nothing was wrong with the transfer itself. */
+        DISCONNECTED,
     }
 
     companion object {

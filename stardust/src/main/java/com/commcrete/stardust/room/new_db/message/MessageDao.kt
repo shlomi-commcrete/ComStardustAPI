@@ -9,7 +9,8 @@ import kotlinx.coroutines.flow.Flow
 
 /**
  *
- * State ints: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5.
+ * State ints: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5,
+ * CANCELLED=6.
  *
  * Optional params use Room's null-or-IN idiom:
  *  - types / excludeTypes: null = no filter. Never pass an empty list.
@@ -218,6 +219,66 @@ interface MessageDao {
 
     @Query("UPDATE messages SET state = :state WHERE id = :messageId")
     suspend fun updateMessageState(messageId: Long, state: MessageState)
+
+    /** One row by id. Backs the read-modify-write of [markFileTransferFailed]. */
+    @Query("SELECT * FROM messages WHERE id = :messageId")
+    suspend fun getMessageById(messageId: Long): MessageEntity?
+
+    /**
+     * Marks an outgoing attachment row FAILED, merging the failure reason into its
+     * existing extra_data. Returns the number of rows written (0 = refused).
+     *
+     * Guarded on what must NOT be overwritten rather than on the state the row is
+     * expected to be in: a transfer that settled — SEEN/RECEIVED by the peer, archived,
+     * or stopped by the user — beats a failure declared for it afterwards. Naming the
+     * expected state instead would make the write match nothing whenever anything else
+     * touched the row first, and the failure would silently vanish.
+     *
+     * `COALESCE(:extraData, extra_data)` leaves the blob alone when the caller could
+     * not parse an attachment out of it: losing the reason is better than losing the
+     * fact of the failure.
+     *
+     * epoch_time_ms moves with the state, inside the same guarded statement so it can
+     * only move when the failure itself takes. The row was stamped when the send
+     * started; giving up on it is news that arrives now, and left at the start time a
+     * failure declared minutes later would sort above everything sent while it tried.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 3,
+            epoch_time_ms = :nowMs
+        WHERE id = :messageId
+          AND state NOT IN (1, 2, 5, 6)
+    """)
+    suspend fun markFileTransferFailed(
+        messageId: Long,
+        extraData: MessageExtraData?,
+        nowMs: Long,
+    ): Int
+
+    /**
+     * Marks an outgoing attachment row CANCELLED, merging how far the send had got into
+     * its existing extra_data. Returns the number of rows written (0 = refused).
+     *
+     * Same guard and same timestamp reasoning as [markFileTransferFailed]: a row the
+     * peer already saw, or that was archived, is not rewritten, and re-cancelling a
+     * cancelled row is a no-op. A row still in flight (SENT/RECEIVING) or already failed
+     * is rewritten — the user's own stop is the more accurate account of what happened.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 6,
+            epoch_time_ms = :nowMs
+        WHERE id = :messageId
+          AND state NOT IN (1, 2, 5, 6)
+    """)
+    suspend fun markFileSendCancelled(
+        messageId: Long,
+        extraData: MessageExtraData?,
+        nowMs: Long,
+    ): Int
 
     /**
      * The only seen-marking write. Bidirectional range, so it serves both

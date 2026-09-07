@@ -193,6 +193,20 @@ interface StardustAPICallbacks {
         data: FileTransferData.Receive,
         percentage: Int,
     )
+    /**
+     * An incoming file/image transfer did not deliver its file — packages were lost
+     * ([FileReceiver.FileFailure.MISSING]), this side could not save it
+     * ([FileReceiver.FileFailure.ERROR]), or the radio went away mid-transfer
+     * ([FileReceiver.FileFailure.DISCONNECTED]).
+     *
+     * A FAILED attachment message carrying the reason has already been written to the
+     * conversation by the time this is called, so re-reading the thread here is safe.
+     * The row has no file path — a failed transfer writes nothing to disk. The app owns
+     * the wording shown for each reason.
+     *
+     * Called on the main thread. The outgoing counterpart is
+     * [com.commcrete.stardust.util.FileSender.OnFileStatusChange.failedSending].
+     */
     fun receiveFailure(
         data: FileTransferData.Receive,
         failure: FileReceiver.FileFailure

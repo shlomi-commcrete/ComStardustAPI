@@ -29,6 +29,7 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.AppRepository
+import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
@@ -283,7 +284,45 @@ object DataManager : StardustAPI, PttInterface {
                 super.updateStep(data, percentage)
                 onFileStatusChange.updateStep(data, percentage)
             }
+
+            override fun failedSending(
+                data: FileUtils.FileTransferData.Send,
+                failure: FileReceiver.FileFailure,
+            ) {
+                super.failedSending(data, failure)
+                onFileStatusChange.failedSending(data, failure)
+                fileSenders.remove(data.id)
+            }
+
+            override fun cancelledSending(
+                data: FileUtils.FileTransferData.Send,
+                cancellation: FileTransferCancellation,
+            ) {
+                super.cancelledSending(data, cancellation)
+                onFileStatusChange.cancelledSending(data, cancellation)
+                fileSenders.remove(data.id)
+            }
         })
+    }
+
+    /**
+     * Settles every file/image transfer that was still in flight when the radio went
+     * away, in both directions: nothing further will ever be sent, received or reported
+     * for them, so each is recorded as [FileReceiver.FileFailure.DISCONNECTED] rather
+     * than left hanging.
+     */
+    internal fun failInFlightFileTransfers() {
+        failInFlightFileSends()
+        bittelPackageHandler?.failInFlightFileReceivers()
+    }
+
+    private fun failInFlightFileSends() {
+        if (fileSenders.isEmpty()) return
+        Timber.w("device disconnected — failing ${fileSenders.size} outgoing file transfer(s) in flight")
+        // Copy first: failOnDisconnect() notifies the host, whose callback removes the
+        // sender from this very map.
+        fileSenders.values.toList().forEach { it.failOnDisconnect() }
+        fileSenders.clear()
     }
 
     override fun stopSendFile(data: FileUtils.FileTransferData.Send) {
@@ -592,6 +631,8 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     private fun cleanupPackageHandlerOnDisconnect() {
+        failInFlightFileSends()
+        // cleanupOnDisconnect() fails the in-flight receives before disposing them.
         bittelPackageHandler?.cleanupOnDisconnect()
     }
 

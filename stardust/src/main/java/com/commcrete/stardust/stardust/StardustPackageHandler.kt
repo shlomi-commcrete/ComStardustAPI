@@ -72,10 +72,29 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         handler.postDelayed(runnable, 1000)
     }
 
+    /**
+     * Records every receive still in flight as
+     * [FileReceiver.FileFailure.DISCONNECTED]. The session is gone, so no further
+     * package, completion or failure will ever be reported for them and each would
+     * otherwise disappear without trace.
+     *
+     * Safe to call more than once and alongside [cleanupOnDisconnect]: a receiver
+     * settles its outcome only once.
+     */
+    internal fun failInFlightFileReceivers() {
+        if (fileReceivers.isEmpty()) return
+        Timber.w("device disconnected — failing ${fileReceivers.size} incoming file transfer(s) in flight")
+        fileReceivers.values.forEach { it.failOnDisconnect() }
+    }
+
     internal fun cleanupOnDisconnect() {
         handlerScope.coroutineContext.cancelChildren()
         synchronized(packageProcessingLock) {
             savedPackage = null
+            // Settle the in-flight receives BEFORE disposing them: dispose() drops a
+            // receiver without recording anything, so failing afterwards would be too
+            // late for the transfers this teardown is killing.
+            failInFlightFileReceivers()
             // Dispose all active receivers to stop their internal Handler timers,
             // regardless of which user/transport they belong to.
             fileReceivers.values.forEach { it.dispose() }
