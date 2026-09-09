@@ -33,7 +33,8 @@ object RepositoryProvider {
                 AppRepository(
                     chatsDao = db.appChatsDao(),
                     contactsDao = db.appContactsDao(),
-                    messagesDao = db.appMessagesDao()
+                    messagesDao = db.appMessagesDao(),
+                    identityLogDao = db.appContactIdentityLogDao(),
                 ).also { repo ->
                     appRepository = repo
                     // Run the one-time migration in the background.

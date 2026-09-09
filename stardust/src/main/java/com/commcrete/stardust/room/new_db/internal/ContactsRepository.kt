@@ -1,6 +1,8 @@
 package com.commcrete.stardust.room.new_db.internal
 
 import android.util.Log
+import com.commcrete.stardust.room.new_db.audit.IdentityKind
+import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.contacts.ContactDraft
@@ -54,12 +56,16 @@ import kotlinx.coroutines.withContext
  *  - [registeredAppIdProvider] returns the registered user's lower-cased
  *    appId (or null when no user is registered). Used by the
  *    *-ExceptSelf roster queries to push the self-filter into SQL.
+ *  - [identityLog] receives an audit row for every identity mapping this class
+ *    creates, moves, strips or deletes. Writes are best-effort and never fail
+ *    the operation they describe; see [IdentityLogRecorder].
  */
 internal class ContactsRepository(
     private val contactsDao: ContactsDao,
     private val chatsDao: ChatDao,
     private val caches: RepositoryCaches,
     private val chats: ChatsRepository,
+    private val identityLog: IdentityLogRecorder,
     private val registeredAppIdProvider: () -> String?,
 ) {
 
@@ -72,8 +78,20 @@ internal class ContactsRepository(
     // ─────────────────────────────────────────────────────────────────────
 
     /** See `AppRepository.insertContactsWithChats`. */
-    suspend fun insertContactsWithChats(contacts: List<FullContactData>) =
+    suspend fun insertContactsWithChats(
+        contacts: List<FullContactData>,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) =
         withContext(Dispatchers.IO) {
+            // Ownership snapshot for the audit trail, taken before addContacts
+            // rewrites any mapping: one query for the whole batch, plus the
+            // pre-insert holdings of each contact this batch is going to touch.
+            val priorOwners = contactsDao.getAllIdToContactRows()
+                .mapNotNull { row -> normalizeIdOrNull(row.normalizedId)?.let { it to row.contactId } }
+                .toMap()
+            val priorHoldings = priorHoldingsFor(contacts, priorOwners)
+
             val inserted = contactsDao.addContacts(contacts)
             val existingGroupChatIds = chatsDao.getAllGroupChatIds()
             val allMemberIds = contactsDao.getAllMemberContactIds()
@@ -101,12 +119,24 @@ internal class ContactsRepository(
                         chats.createGroupChat(data.contact, contactId, allMemberIds)
                     }
                 }
+
+                recordInsert(data, contactId, priorOwners, priorHoldings, source, batchId)
             }
         }
 
     /** See `AppRepository.insertContactWithChat`. */
-    suspend fun insertContactWithChat(contact: FullContactData) =
+    suspend fun insertContactWithChat(
+        contact: FullContactData,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) =
         withContext(Dispatchers.IO) {
+            // Targeted snapshot rather than the full table: this path also serves
+            // the hot auto-create in the message-save pipeline, where the id is
+            // known to be unowned and this costs a single indexed lookup.
+            val priorOwners = priorOwnersOf(contact)
+            val priorHoldings = priorHoldingsFor(listOf(contact), priorOwners)
+
             val contactId = contactsDao.addContact(contact)
             if (contactId == null) {
                 Log.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID for ${contact.contact.name}")
@@ -127,7 +157,80 @@ internal class ContactsRepository(
                     )
                 }
             }
+
+            recordInsert(contact, contactId, priorOwners, priorHoldings, source, batchId)
         }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Identity-audit helpers
+    // ─────────────────────────────────────────────────────────────────────
+
+    /** Every identifier [data] claims: its primary id plus any device links. */
+    private fun claimedIds(data: FullContactData): List<String> = buildList {
+        normalizeIdOrNull(data.getMainCommunicationId())?.let { add(it) }
+        when (data) {
+            is FullContactData.User -> data.devices.forEach { device ->
+                normalizeIdOrNull(device.id)?.let { add(it) }
+            }
+            is FullContactData.Device -> normalizeIdOrNull(data.deviceData.id)?.let { add(it) }
+            is FullContactData.Group -> Unit
+        }
+    }.distinct()
+
+    /** Pre-insert owner of each id [contact] claims, resolved one id at a time. */
+    private suspend fun priorOwnersOf(contact: FullContactData): Map<String, Int> =
+        claimedIds(contact).mapNotNull { id ->
+            contactsDao.findContactIdByMainCommunicationId(id)?.let { id to it }
+        }.toMap()
+
+    /**
+     * What each contact about to be written already holds, keyed by contact id.
+     *
+     * The target is predicted the same way `ContactsDao.addContact` resolves it —
+     * primary id first, then any device link — so the recorder can tell which
+     * mappings the upsert is about to evict via `UNIQUE(contact_id)` /
+     * `UNIQUE(contact_id, slot)`. A wrong prediction only costs a missing audit
+     * detail: the map is keyed by contact id, so a mismatch is simply not found.
+     */
+    private suspend fun priorHoldingsFor(
+        contacts: List<FullContactData>,
+        priorOwners: Map<String, Int>,
+    ): Map<Int, List<IdentityLogRecorder.PriorOwnedId>> {
+        val targets = contacts.mapNotNull { data ->
+            claimedIds(data).firstNotNullOfOrNull { priorOwners[it] }
+        }.distinct()
+        if (targets.isEmpty()) return emptyMap()
+
+        return contactsDao.getOwnedIdRows(targets)
+            .mapNotNull { row ->
+                val idValue = normalizeIdOrNull(row.idValue) ?: return@mapNotNull null
+                val idKind = IdentityKind.entries.firstOrNull { it.name == row.kind }
+                    ?: return@mapNotNull null
+                row.contactId to IdentityLogRecorder.PriorOwnedId(
+                    idKind = idKind,
+                    idValue = idValue,
+                    slot = row.slot,
+                )
+            }
+            .groupBy({ it.first }, { it.second })
+    }
+
+    private suspend fun recordInsert(
+        data: FullContactData,
+        contactId: Int,
+        priorOwners: Map<String, Int>,
+        priorHoldings: Map<Int, List<IdentityLogRecorder.PriorOwnedId>>,
+        source: String,
+        batchId: Long?,
+    ) = identityLog.recordInsert(
+        data = data,
+        contactId = contactId,
+        priorOwnerOf = { id -> priorOwners[id] },
+        priorOwnerName = { id -> contactsDao.getContactById(id)?.name },
+        priorOwnedIds = priorHoldings[contactId].orEmpty(),
+        source = source,
+        batchId = batchId,
+    )
 
     // ─────────────────────────────────────────────────────────────────────
     // Group-id queries
@@ -273,18 +376,56 @@ internal class ContactsRepository(
      * Applies an in-place change to an existing contact resolved from
      * [original]'s identity: renames it and/or strips an identity that has
      * moved to another contact. Leaves the contact otherwise intact.
+     *
+     * Each strip is recorded in `contact_identity_log`: the mapping is deleted
+     * outright here, so this is the only moment the losing side of a swap is
+     * still known.
      */
-    suspend fun updateExistingContact(original: ContactDraft, updated: ContactDraft) = withContext(Dispatchers.IO) {
+    suspend fun updateExistingContact(
+        original: ContactDraft,
+        updated: ContactDraft,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(original) ?: return@withContext
         if (updated.name.isNotBlank() && updated.name != original.name) {
             contactsDao.renameContact(contactId, updated.name)
+            // Contact-only rename — this path deliberately leaves the chat name
+            // alone, so no chat id is recorded on the row.
+            identityLog.recordRename(
+                contactId = contactId,
+                fromName = original.name,
+                toName = updated.name,
+                chatId = null,
+                source = source,
+                batchId = batchId,
+            )
         }
         if (original.hasAppId && !updated.hasAppId) {
-            if (original.type == ContactType.GROUP) contactsDao.removeGroupId(original.appId)
+            val isGroup = original.type == ContactType.GROUP
+            if (isGroup) contactsDao.removeGroupId(original.appId)
             else contactsDao.removeUserId(original.appId)
+            identityLog.recordStrip(
+                idKind = if (isGroup) IdentityKind.GROUP_ID else IdentityKind.USER_ID,
+                idValue = original.appId,
+                fromContactId = contactId,
+                fromName = original.name,
+                fromChatId = chatIdForContact(original.type, contactId),
+                source = source,
+                batchId = batchId,
+            )
         }
         if (original.hasDeviceId && !updated.hasDeviceId) {
             contactsDao.removeDeviceLink(original.deviceId)
+            identityLog.recordStrip(
+                idKind = IdentityKind.DEVICE_ID,
+                idValue = original.deviceId,
+                fromContactId = contactId,
+                fromName = original.name,
+                fromChatId = chatIdForContact(original.type, contactId),
+                source = source,
+                batchId = batchId,
+            )
         }
     }
 
@@ -293,31 +434,74 @@ internal class ContactsRepository(
      * "same ids, callsign changed" case so a matching import updates the name
      * without creating a duplicate contact / chat.
      */
-    suspend fun renameContactAndChat(target: ContactDraft, newName: String) = withContext(Dispatchers.IO) {
+    suspend fun renameContactAndChat(
+        target: ContactDraft,
+        newName: String,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(target) ?: return@withContext
         val trimmed = newName.trim()
         if (trimmed.isBlank() || trimmed.equals(target.name, ignoreCase = true)) return@withContext
         contactsDao.renameContact(contactId, trimmed)
-        chatIdForContact(target.type, contactId)?.let { chatId ->
-            chatsDao.renameChatById(chatId, trimmed)
-        }
+        val chatId = chatIdForContact(target.type, contactId)
+        chatId?.let { chatsDao.renameChatById(it, trimmed) }
+        identityLog.recordRename(
+            contactId = contactId,
+            fromName = target.name,
+            toName = trimmed,
+            chatId = chatId,
+            source = source,
+            batchId = batchId,
+        )
     }
 
     /**
      * Fully removes the contact resolved from [target]'s identity — its chat
      * first (so nothing is orphaned), then the contact row (FK cascades drop
      * its id/device mappings and remaining chat participants).
+     *
+     * The audit row is built before the delete and written after it, so the
+     * trail names the contact and chat that ceased to exist.
      */
-    suspend fun deleteContact(target: ContactDraft) = withContext(Dispatchers.IO) {
+    suspend fun deleteContact(
+        target: ContactDraft,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(target) ?: return@withContext
-        chatIdForContact(target.type, contactId)?.let { chats.deleteChat(it) }
+        val chatId = chatIdForContact(target.type, contactId)
+        val name = contactsDao.getContactById(contactId)?.name ?: target.name
+        val effectiveType = target.effectiveType() ?: target.type
+        val primaryId = target.appId.ifBlank { target.deviceId }
+
+        chatId?.let { chats.deleteChat(it) }
         contactsDao.deleteContactById(contactId)
+
+        identityLog.recordDelete(
+            contactId = contactId,
+            name = name,
+            chatId = chatId,
+            idKind = identityLog.primaryIdKind(effectiveType),
+            idValue = primaryId,
+            source = source,
+            batchId = batchId,
+        )
     }
 
     /** Chat id for [contactId] (private or group depending on [type]). */
     suspend fun chatIdForContactDraft(draft: ContactDraft): String? = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(draft) ?: return@withContext null
         chatIdForContact(draft.type, contactId)
+    }
+
+    /**
+     * Contact id behind [draft]'s identity, or null when it resolves to nothing.
+     * Read before a destructive op so the audit row can name the contact that is
+     * about to stop existing.
+     */
+    suspend fun contactIdForDraft(draft: ContactDraft): Int? = withContext(Dispatchers.IO) {
+        resolveContactId(draft)
     }
 
     private suspend fun chatIdForContact(type: ContactType, contactId: Int): String? = when (type) {

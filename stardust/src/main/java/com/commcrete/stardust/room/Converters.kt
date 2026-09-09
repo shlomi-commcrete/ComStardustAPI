@@ -1,6 +1,8 @@
 package com.commcrete.stardust.room
 
 import androidx.room.TypeConverter
+import com.commcrete.stardust.room.new_db.audit.IdentityChangeKind
+import com.commcrete.stardust.room.new_db.audit.IdentityKind
 import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
@@ -76,6 +78,31 @@ class Converters {
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { v -> ContactType.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
                 ?: ContactType.USER
+
+        @TypeConverter
+        fun fromIdentityChangeKind(kind: IdentityChangeKind?): String? = kind?.name
+
+        /**
+         * Falls back to [IdentityChangeKind.UNKNOWN] rather than null: the column
+         * is NOT NULL, and a row written by a newer build must stay readable
+         * (the log is append-only, so old rows outlive the enum they were
+         * written with).
+         */
+        @TypeConverter
+        fun toIdentityChangeKind(value: String?): IdentityChangeKind =
+            value?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { v -> IdentityChangeKind.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
+                ?: IdentityChangeKind.UNKNOWN
+
+        @TypeConverter
+        fun fromIdentityKind(kind: IdentityKind?): String? = kind?.name
+
+        @TypeConverter
+        fun toIdentityKind(value: String?): IdentityKind? =
+            value?.trim()
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { v -> IdentityKind.entries.firstOrNull { it.name.equals(v, ignoreCase = true) } }
 
         @TypeConverter
         fun fromMessageExtraData(extraData: MessageExtraData?): String? {

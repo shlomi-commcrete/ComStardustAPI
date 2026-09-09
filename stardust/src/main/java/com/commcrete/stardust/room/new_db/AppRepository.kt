@@ -7,6 +7,10 @@ import com.commcrete.stardust.contacts.ContactConflicts
 import com.commcrete.stardust.contacts.ContactDraft
 import com.commcrete.stardust.contacts.ContactOperation
 import com.commcrete.stardust.util.GroupsUtils
+import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogDao
+import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogEntity
+import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
+import com.commcrete.stardust.room.new_db.internal.IdentityLogRecorder
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.room.new_db.chat.ChatSummary
@@ -61,6 +65,13 @@ class AppRepository(
     private val chatsDao: ChatDao,
     private val contactsDao: ContactsDao,
     private val messagesDao: MessageDao,
+    /**
+     * Audit trail of identity ownership changes. Defaulted so the existing
+     * three-argument construction keeps compiling; [RepositoryProvider] passes
+     * it explicitly alongside the other DAOs.
+     */
+    private val identityLogDao: ContactIdentityLogDao =
+        AppDatabase.getDatabase().appContactIdentityLogDao(),
 ) {
 
     // ─────────────────────────────────────────────────────────────────────
@@ -68,6 +79,8 @@ class AppRepository(
     // ─────────────────────────────────────────────────────────────────────
 
     private val caches: RepositoryCaches = RepositoryCaches(contactsDao)
+
+    private val identityLog: IdentityLogRecorder = IdentityLogRecorder(identityLogDao)
 
     private val chats: ChatsRepository = ChatsRepository(
         chatsDao = chatsDao,
@@ -81,6 +94,7 @@ class AppRepository(
         chatsDao = chatsDao,
         caches = caches,
         chats = chats,
+        identityLog = identityLog,
         registeredAppIdProvider = {
             RegisteredUserUtils.currentUserFlow.value?.appId?.takeIf { it.isNotEmpty() }
         },
@@ -93,12 +107,16 @@ class AppRepository(
         caches = caches,
         registeredUserIdsProvider = ::registeredUserIds,
         savePttRequired = { DataManager.getSavePTTFilesRequired() },
-        insertContactWithChat = contacts::insertContactWithChat,
+        insertContactWithChat = { contact ->
+            contacts.insertContactWithChat(contact, IdentityLogSource.AUTO_CREATE)
+        },
     )
 
     private val legacyMigrator: LegacyMigrator = LegacyMigrator(
         messagesDao = messagesDao,
-        insertContacts = contacts::insertContactsWithChats,
+        insertContacts = { contacts ->
+            this.contacts.insertContactsWithChats(contacts, IdentityLogSource.LEGACY_MIGRATION)
+        },
     )
 
     private val cachedContacts: StateFlow<List<FullContactData>?> =
@@ -158,11 +176,15 @@ class AppRepository(
      * Login-only; re-running on a populated DB duplicates chats. For post-login
      * edits use [applyContactOperations].
      */
-    suspend fun insertContactsWithChats(contactsToInsert: List<FullContactData>) =
-        contacts.insertContactsWithChats(contactsToInsert)
+    suspend fun insertContactsWithChats(
+        contactsToInsert: List<FullContactData>,
+        source: String = IdentityLogSource.LOGIN_IMPORT,
+    ) = contacts.insertContactsWithChats(contactsToInsert, source)
 
-    suspend fun insertContactWithChat(contact: FullContactData) =
-        contacts.insertContactWithChat(contact)
+    suspend fun insertContactWithChat(
+        contact: FullContactData,
+        source: String = IdentityLogSource.UNKNOWN,
+    ) = contacts.insertContactWithChat(contact, source)
 
     // ─────────────────────────────────────────────────────────────────────
     // Contact conflicts  [= UNCHANGED]
@@ -189,6 +211,11 @@ class AppRepository(
      * Applies resolver output in the order that keeps identity swaps and message
      * re-parenting observable: UpdateExisting -> RenameExisting -> Insert ->
      * DeleteExisting (re-parenting first when `reparentTo` is set).
+     *
+     * Every row this writes to `contact_identity_log` shares one
+     * [IdentityLogRecorder.nextBatchId], so the strip half and the assign half of
+     * a swap can be read back as the single move they were — see
+     * [identityLogBatch].
      */
     suspend fun applyContactOperations(ops: List<ContactOperation>) {
         val updates = ops.filterIsInstance<ContactOperation.UpdateExisting>()
@@ -196,25 +223,100 @@ class AppRepository(
         val inserts = ops.filterIsInstance<ContactOperation.Insert>()
         val deletes = ops.filterIsInstance<ContactOperation.DeleteExisting>()
 
-        for (u in updates) contacts.updateExistingContact(u.original, u.updated)
-        for (r in renames) contacts.renameContactAndChat(r.target, r.newName)
+        val source = IdentityLogSource.CONFLICT_RESOLUTION
+        val batchId = identityLog.nextBatchId()
+
+        for (u in updates) contacts.updateExistingContact(u.original, u.updated, source, batchId)
+        for (r in renames) contacts.renameContactAndChat(r.target, r.newName, source, batchId)
 
         val toInsert = inserts.mapNotNull { it.contact.toFullContactData() }
-        if (toInsert.isNotEmpty()) insertContactsWithChats(toInsert)
+        if (toInsert.isNotEmpty()) contacts.insertContactsWithChats(toInsert, source, batchId)
 
         for (d in deletes) {
             val reparentToChatId = d.reparentTo?.let { contacts.chatIdForContactDraft(it) }
             if (reparentToChatId != null) {
                 val sourceChatId = contacts.chatIdForContactDraft(d.target)
                 if (sourceChatId != null && sourceChatId != reparentToChatId) {
-                    messagesDao.reassignChat(sourceChatId, reparentToChatId)
+                    // Resolved before the move: the source contact is deleted
+                    // immediately afterwards and stops being resolvable.
+                    val fromContactId = contacts.contactIdForDraft(d.target)
+                    val toContactId = d.reparentTo?.let { contacts.contactIdForDraft(it) }
+                    val moved = messagesDao.reassignChat(sourceChatId, reparentToChatId)
+                    identityLog.recordReparent(
+                        fromChatId = sourceChatId,
+                        toChatId = reparentToChatId,
+                        affectedRows = moved,
+                        fromContactId = fromContactId,
+                        toContactId = toContactId,
+                        fromName = d.target.name,
+                        toName = d.reparentTo?.name,
+                        source = source,
+                        batchId = batchId,
+                    )
                 }
             }
-            contacts.deleteContact(d.target)
+            contacts.deleteContact(d.target, source, batchId)
         }
 
         if (ops.any { it.touchesGroup() }) GroupsUtils.sendDeleteAllGroups()
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Contact identity audit log
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Newest identity changes, newest first — a swap/rename/delete feed for a
+     * diagnostics screen or a bug report attachment.
+     */
+    suspend fun recentIdentityChanges(limit: Int = 200): List<ContactIdentityLogEntity> =
+        identityLog.recent(limit)
+
+    /** Live variant of [recentIdentityChanges]. */
+    fun observeRecentIdentityChanges(limit: Int = 200): Flow<List<ContactIdentityLogEntity>> =
+        identityLogDao.observeRecent(limit)
+
+    /** Full ownership history of one userId / groupId / deviceId, oldest first. */
+    suspend fun identityHistoryForId(id: String): List<ContactIdentityLogEntity> =
+        identityLog.historyForId(id)
+
+    /**
+     * Which contact owned [id] at [atMs]. See
+     * [ContactIdentityLogDao.ownershipAt] for how to read the result — the row's
+     * `kind` decides whether `to_contact_id` is an owner or a strip.
+     */
+    suspend fun identityOwnerAt(id: String, atMs: Long): ContactIdentityLogEntity? =
+        identityLog.ownershipAt(id, atMs)
+
+    /**
+     * Who owned [message]'s sender id when it arrived. Null when the id has not
+     * changed hands since logging began — i.e. the current contact is the right
+     * attribution.
+     */
+    suspend fun identityOwnerWhenReceived(message: MessageEntity): ContactIdentityLogEntity? =
+        identityLog.ownershipAt(message.senderID, message.epochTimeMs)
+
+    /** Everything that ever touched [contactId], on either side of a change. */
+    suspend fun identityHistoryForContact(contactId: Int): List<ContactIdentityLogEntity> =
+        identityLog.historyForContact(contactId)
+
+    /** Every row written by one [applyContactOperations] call, in write order. */
+    suspend fun identityLogBatch(batchId: Long): List<ContactIdentityLogEntity> =
+        identityLog.batch(batchId)
+
+    /**
+     * Bulk `chat_id` rewrites into or out of [chatId] — explains a chat whose
+     * history stops abruptly, or one that gained older messages.
+     */
+    suspend fun messageReparentsForChat(chatId: String): List<ContactIdentityLogEntity> =
+        identityLog.reparentsForChat(chatId)
+
+    /**
+     * Drops audit rows older than [retentionMs]. Returns the number deleted.
+     * Nothing calls this on a timer — the host app decides when to run it.
+     */
+    suspend fun pruneIdentityLog(retentionMs: Long = IDENTITY_LOG_RETENTION_MS): Int =
+        identityLog.prune(System.currentTimeMillis() - retentionMs)
 
     private fun ContactOperation.touchesGroup(): Boolean = when (this) {
         is ContactOperation.Insert -> contact.type == ContactType.GROUP
@@ -513,5 +615,8 @@ class AppRepository(
 
     companion object {
         const val PAGE_SIZE = 30
+
+        /** Default retention for `contact_identity_log`: 90 days. */
+        const val IDENTITY_LOG_RETENTION_MS = 90L * 24 * 60 * 60 * 1000
     }
 }

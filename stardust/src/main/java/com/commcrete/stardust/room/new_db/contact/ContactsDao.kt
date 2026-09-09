@@ -59,6 +59,19 @@ interface ContactsDao {
         @ColumnInfo(name = "contact_id") val contactId: Int,
     )
 
+    /**
+     * One identity mapping owned by a contact, tagged with the table it came
+     * from. [kind] matches the names of
+     * [com.commcrete.stardust.room.new_db.audit.IdentityKind]; [slot] is set for
+     * device links only. See [getOwnedIdRows].
+     */
+    data class OwnedIdRow(
+        @ColumnInfo(name = "contact_id") val contactId: Int,
+        @ColumnInfo(name = "norm_id") val idValue: String,
+        @ColumnInfo(name = "kind") val kind: String,
+        @ColumnInfo(name = "slot") val slot: Int?,
+    )
+
     @Query("SELECT * FROM contacts WHERE id = :id LIMIT 1")
     suspend fun getContactEntity(id: Int): ContactEntity?
 
@@ -120,6 +133,30 @@ interface ContactsDao {
 
     @Query("SELECT contact_id FROM app_contact_user_ids WHERE user_id = :userId LIMIT 1")
     suspend fun findContactIdByUserId(userId: String): Int?
+
+    /**
+     * Every identity mapping [contactIds] currently own, tagged by table.
+     *
+     * Read **before** an upsert to see what that upsert is about to destroy:
+     * `app_contact_user_ids` / `app_contact_group_ids` carry `UNIQUE(contact_id)`
+     * and `app_contact_devices` carries `UNIQUE(contact_id, slot)`, so a REPLACE
+     * upsert evicts the mapping already holding that slot without reporting it.
+     * Used by `IdentityLogRecorder` to record the eviction in
+     * `contact_identity_log`.
+     *
+     * Takes the whole batch at once so a bulk import costs one query, not one
+     * per contact.
+     */
+    @Query(
+        """
+        SELECT contact_id, user_id   AS norm_id, 'USER_ID'   AS kind, NULL AS slot FROM app_contact_user_ids  WHERE contact_id IN (:contactIds)
+        UNION ALL
+        SELECT contact_id, group_id  AS norm_id, 'GROUP_ID'  AS kind, NULL AS slot FROM app_contact_group_ids WHERE contact_id IN (:contactIds)
+        UNION ALL
+        SELECT contact_id, device_id AS norm_id, 'DEVICE_ID' AS kind, slot AS slot FROM app_contact_devices   WHERE contact_id IN (:contactIds)
+        """
+    )
+    suspend fun getOwnedIdRows(contactIds: List<Int>): List<OwnedIdRow>
 
     @Query("SELECT contact_id FROM app_contact_group_ids WHERE group_id = :groupId LIMIT 1")
     suspend fun findContactIdByGroupId(groupId: String): Int?
