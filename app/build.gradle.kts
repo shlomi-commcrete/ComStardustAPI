@@ -5,12 +5,14 @@ plugins {
 
 android {
     namespace = "com.commcrete.api"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.commcrete.api"
         minSdk = 26
-        targetSdk = 34
+        // Matches the ATAK 5.6 plugin target, so the demo app exercises the same runtime rules
+        // (registerReceiver flags, PendingIntent mutability) as the real consumer.
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
 

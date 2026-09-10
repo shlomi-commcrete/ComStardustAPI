@@ -12,10 +12,21 @@ val apiKeyProvider = providers.gradleProperty("Crypt")
 
 val apiKey = apiKeyProvider.orElse("").get()
 
+// SecureKeyUtils.getSecuredKey() feeds BuildConfig.Crypt straight into hexStringToByteArray(), and
+// SecureKeyStore.setKey() requires exactly 32 bytes. An unset or malformed value silently yields a
+// zero-length key at runtime and makes setSecuredKeyDefault() throw IllegalArgumentException, a long
+// way from the build that caused it. Non-hex characters are worse: Character.digit() returns -1 and
+// the key becomes garbage without any error at all. Fail here instead.
+require(apiKey.matches(Regex("[0-9a-fA-F]{64}"))) {
+    val problem = if (apiKey.isEmpty()) "it is not set" else "got ${apiKey.length} character(s)"
+    "Gradle property 'Crypt' must be exactly 64 hex characters (a 32-byte key) - $problem. " +
+        "Set it in gradle.properties, ~/.gradle/gradle.properties, or the Crypt environment variable."
+}
+
 
 android {
     namespace = "com.commcrete.stardust"
-    compileSdk = 34
+    compileSdk = 36
     buildFeatures {
         buildConfig = true // ✅ Enable BuildConfig for library module
     }
@@ -39,6 +50,15 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    // Required by AGP 8.x for the maven-publish "release" publication below.
+    publishing {
+        singleVariant("release") {}
     }
 
 }
@@ -66,9 +86,15 @@ dependencies {
     implementation ("com.jakewharton.timber:timber:5.0.1")
 
     //Data
-    implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
+    // Gson directly rather than via retrofit2:converter-gson - Retrofit is not used anywhere in this
+    // library, and pulling it in dragged okhttp 3.14.9 + okio 1.17.2 onto the consumer's classpath
+    // (ATAK core supplies okhttp 4.11.0 / okio 3.2.0, and okio 3 dropped the okio.Okio class that
+    // okhttp 3.x calls into) as well as pinning gson to 2.8.5.
+    implementation ("com.google.code.gson:gson:2.11.0")
 
-    val room_version = "2.6.1"
+    // Room 2.7+ is required on Kotlin 2.x: room-compiler 2.6.1 bundles a kotlinx-metadata-jvm that
+    // rejects Kotlin 2.2 metadata ("maximum supported version is 2.0.0") and fails kapt.
+    val room_version = "2.7.2"
 
     implementation("androidx.room:room-runtime:$room_version")
     annotationProcessor("androidx.room:room-compiler:$room_version")
@@ -93,8 +119,11 @@ dependencies {
     // optional - Paging 3 Integration
     implementation("androidx.room:room-paging:$room_version")
 
-    //Exo player
-    implementation ("com.google.android.exoplayer:exoplayer:2.19.1")
+    // Media playback is androidx.media3 (see PlayerUtils) - the end-of-life ExoPlayer 2.19.1
+    // artifact that used to sit here had no imports anywhere in the library. It did, however, pull
+    // androidx.media in transitively via exoplayer-ui, which is where USBAudioReceiver's
+    // MediaSessionCompat comes from - so that one is now declared explicitly.
+    implementation ("androidx.media:media:1.7.0")
     //easy permission
     implementation ("pub.devrel:easypermissions:3.0.0")
 

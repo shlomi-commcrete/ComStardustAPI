@@ -47,6 +47,29 @@
     public <init>(...);
 }
 
+# This library also ships classes under com.commcrete.bittell.** and com.commcrete.aiaudio.**
+# (the source files live under .../com/commcrete/stardust/ but declare those packages), so the
+# com.commcrete.stardust.** rules above do not cover them. Consumers import both directly -
+# DemoDataUtil and WavTokenizerDecoder - and the bittel_package models are Gson-serialized, so
+# obfuscating their field names would silently change the wire format.
+-keep class com.commcrete.bittell.** { *; }
+-keep class com.commcrete.aiaudio.** { *; }
+
+-keepnames class com.commcrete.bittell.**
+-keepnames class com.commcrete.aiaudio.**
+
+-keepclassmembers enum com.commcrete.bittell.** {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}
+
+-keepclassmembers class com.commcrete.bittell.** {
+    public <init>(...);
+}
+-keepclassmembers class com.commcrete.aiaudio.** {
+    public <init>(...);
+}
+
 # FBJNI / HybridData kept for JNI field/method names
 -keepclassmembers class com.facebook.jni { *; }
 -keepnames class com.facebook.jni { *; }

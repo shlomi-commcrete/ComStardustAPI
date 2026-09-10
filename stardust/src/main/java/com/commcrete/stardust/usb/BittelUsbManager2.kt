@@ -2,11 +2,8 @@ package com.commcrete.stardust.usb
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.Context.RECEIVER_EXPORTED
-import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.bittell.util.bittel_package.UARTManager
@@ -71,20 +68,20 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.lowercase()?.contains("j-box") == true
+            || device.productName?.lowercase()?.contains("jbox") == true) {
             connectToAudioDevice(context, device)
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        }else if (device.productName == "FT231X USB UART"|| device.productName?.lowercase()?.contains("stardust") == true ) {
             connectToDevice(context, device)
         }
     }
 
     fun disconnectToUnknownDevice (context: Context, device: UsbDevice) {
-        if(device.productName == "FT231X USB UART PTT" || device.productName?.toLowerCase()?.contains("j-box") == true
-            || device.productName?.toLowerCase()?.contains("jbox") == true) {
+        if(device.productName == "FT231X USB UART PTT" || device.productName?.lowercase()?.contains("j-box") == true
+            || device.productName?.lowercase()?.contains("jbox") == true) {
 
             disconnect()
-        }else if (device.productName == "FT231X USB UART"|| device.productName?.toLowerCase()?.contains("stardust") == true ) {
+        }else if (device.productName == "FT231X USB UART"|| device.productName?.lowercase()?.contains("stardust") == true ) {
             disconnectAudio()
         }
         disconnect()
@@ -248,24 +245,14 @@ object BittelUsbManager2 : BittelProtocol {
         // Process the data received from the device
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    // Delegates to UsbDevicePermissionHandler so the receiver has a single registration owner.
+    // Registering it here as well used to double-deliver every attach/detach/permission event.
     fun registerReceiver(context: Context){
-        val filter = IntentFilter()
-        filter.addAction(ACTION_USB_PERMISSION)
-        filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter, RECEIVER_EXPORTED)
-        }else {
-            context.registerReceiver(UsbDevicePermissionHandler.usbPermissionReceiver, filter)
-
-        }
+        UsbDevicePermissionHandler.registerReceiverOnce(context)
     }
 
-    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     fun unregisterReceiver(context: Context){
-//        context.unregisterReceiver(usbReceiver)
-        context.unregisterReceiver(UsbDevicePermissionHandler.usbPermissionReceiver)
+        UsbDevicePermissionHandler.unregisterReceiverOnce(context)
     }
 
     private fun getUartPortType(): StardustConfigurationParser.PortType {
