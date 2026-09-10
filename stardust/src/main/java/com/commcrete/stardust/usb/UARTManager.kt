@@ -9,11 +9,9 @@ import com.hoho.android.usbserial.util.SerialInputOutputManager
 import timber.log.Timber
 import java.io.File
 import java.io.IOException
-import java.util.concurrent.Executors
 
 class UARTManager(private val context: Context) {
     private var serialPort: UsbSerialPort? = null
-    private val executor = Executors.newSingleThreadExecutor()
     private var ioManager: SerialInputOutputManager? = null
 
     interface UARTCallback {
@@ -57,8 +55,19 @@ class UARTManager(private val context: Context) {
             ioManager = SerialInputOutputManager(serialPort).apply {
                 Timber.tag("SerialInputOutputManager").d("SerialInputOutputManager(serialPort).apply ")
                 listener = callback
-                executor.submit(this)
-                Timber.tag("SerialInputOutputManager").d("executor.submit")
+                // Use start() rather than executor.submit(this).
+                //
+                // submit(this) resolves to ExecutorService.submit(Runnable), which binds to
+                // SerialInputOutputManager only because it implements Runnable in the version we
+                // compile against. If a different copy of com.hoho.android.usbserial is on the
+                // runtime classpath (e.g. one shadowing ours from the host app) and that copy does
+                // not implement Runnable, the call dies with
+                //   ClassCastException: SerialInputOutputManager cannot be cast to java.lang.Runnable
+                // start() carries no such dependency, is the API upstream has recommended since
+                // 3.3.3, and pairs with the ioManager?.stop() already in disconnect(). It also
+                // avoids the thread leak the old executor was never shut down to prevent.
+                start()
+                Timber.tag("SerialInputOutputManager").d("ioManager.start()")
             }
             if (onCTSChange != null ) {
                 var previousCtsStatus = serialPort?.cts

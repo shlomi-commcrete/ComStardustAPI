@@ -129,7 +129,13 @@ dependencies {
 
     implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
-    implementation ("com.github.mik3y:usb-serial-for-android:3.8.0")
+    // Pinned to the version ATAK 5.6 core bundles (docs/dependencies.txt).  ATAK loads
+    // plugin classes parent-first, so core's copy of com.hoho.android.usbserial always
+    // wins at runtime - compiling against anything else means compile-time and runtime
+    // APIs can disagree.  3.8.0 vs core's 3.9.0 is exactly how the
+    // "SerialInputOutputManager cannot be cast to java.lang.Runnable" crash happened:
+    // 3.8.0 implements Runnable, 3.9.0 does not (use start()/stop() - see UARTManager).
+    implementation ("com.github.mik3y:usb-serial-for-android:3.9.0")
 
     implementation ("androidx.lifecycle:lifecycle-livedata-ktx:2.8.3")
 
