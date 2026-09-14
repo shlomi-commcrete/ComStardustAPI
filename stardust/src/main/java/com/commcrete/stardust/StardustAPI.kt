@@ -6,6 +6,7 @@ import android.location.Location
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
+import com.commcrete.stardust.enums.ScanFailure
 import com.commcrete.stardust.room.chats.ChatItem
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
@@ -73,6 +74,14 @@ interface StardustAPICallbacks {
     fun onBatteryChanged (battery : Int)
     fun onAppEvent (stardustAppEventPackage: StardustAppEventPackage)
     fun onPermissionDenied (deviceName : String)
+    /**
+     * A BLE scan could not start, or the platform rejected it.  See [ScanFailure] for what each
+     * value means and what the user has to change.
+     *
+     * Has a default no-op body so existing implementers keep compiling; override it to surface the
+     * reason, otherwise a failed scan is indistinguishable from an empty one.
+     */
+    fun onScanFailure (failure: ScanFailure) {}
     fun receiveFailure (
         failure: FileReceivedUtils.FileReceivedData.FileFailure,
         dataStart: StardustFileStartPackage?
