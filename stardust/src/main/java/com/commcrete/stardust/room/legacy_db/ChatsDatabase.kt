@@ -37,6 +37,16 @@ abstract class ChatsDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Closes the database and drops the cached handle. Plain [close] leaves
+         * [INSTANCE] pointing at a closed object, so the next [getDatabase] hands
+         * back a handle that throws on first use.
+         */
+        fun closeAndClear() = synchronized(this) {
+            INSTANCE?.close()
+            INSTANCE = null
+        }
+
         val MIGRATION_28_30 = object : Migration(27, 30) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 // Add the new columns with a default value

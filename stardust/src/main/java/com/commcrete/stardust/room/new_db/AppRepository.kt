@@ -114,6 +114,7 @@ class AppRepository(
 
     private val legacyMigrator: LegacyMigrator = LegacyMigrator(
         messagesDao = messagesDao,
+        chatsDao = chatsDao,
         insertContacts = { contacts ->
             this.contacts.insertContactsWithChats(contacts, IdentityLogSource.LEGACY_MIGRATION)
         },
