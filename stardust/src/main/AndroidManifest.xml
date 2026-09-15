@@ -1,11 +1,95 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      The permissions this library's own code requires.  Dependency manifests (Nordic BLE,
+      play-services-location) are merged only at the consuming *application* level, never into this
+      AAR - so anything we rely on has to be declared here, not inherited from a transitive artifact.
+    -->
+
+    <!-- BLE transport. -->
+    <!--
+      API 26-30 path: the legacy pair plus a location permission is what BluetoothLeScanner
+      requires there.  minSdk is 26, so Android 8-11 is inside the supported range and
+      BleScanner.startScan() fails without BLUETOOTH_ADMIN.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <!--
+      API 31+ path.  BleScanner/BlePermissions test BLUETOOTH_SCAN explicitly and
+      BleManager/ClientConnection need BLUETOOTH_CONNECT for ACTION_REQUEST_ENABLE and for the GATT
+      calls.  BLUETOOTH_CONNECT also arrives via no.nordicsemi.android:ble, but relying on a
+      dependency to declare a permission our own code calls into is a silent-breakage waiting to
+      happen.
+
+      Deliberately NOT flagged usesPermissionFlags="neverForLocation", and the reason is the host, not
+      us.  Verified by merging this library into the demo app: when the app declares BLUETOOTH_SCAN
+      *without* the flag and we declare it with, the merged app manifest comes out flagged - the
+      merger folds our attribute onto the host's element.  So setting it here would change ATAK's own
+      scan semantics process-wide, stripping location-derivable data from every scan result in the
+      host, not just from ours.
+
+      What it would buy, if the ATAK side ever signs off: on API 31+ our scanning would no longer
+      require ACCESS_FINE_LOCATION to be granted or the system location toggle to be on, and the two
+      location permissions below could take maxSdkVersion="30".  The library does not derive position
+      itself (see the comment on those permissions), so nothing else here depends on them.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!--
+      These exist ONLY as the precondition for BLE scanning.  The library never derives position: it
+      has no FusedLocationProviderClient, no requestLocationUpdates and no getLastLocation anywhere -
+      LocationUtils.lastLocation is pushed in by the consumer (ATAK feeds it from its own MapView),
+      and the play-services-location references in SharedPreferencesUtil are priority constants only.
+
+      FINE is required for scan results on API 26-30 (29-30 accepts nothing less than FINE), and on
+      31+ as well because BLUETOOTH_SCAN above is not flagged neverForLocation.  If that flag is ever
+      adopted, both of these can take maxSdkVersion="30".
+
+      COARSE is not a BLE requirement in its own right - FINE alone covers scanning everywhere.  It
+      is here because from targetSdk 31 the system ignores a runtime request for FINE that does not
+      also request COARSE, so without it FINE can never be granted.  The PermissionTracking helpers
+      check both on every branch for the same reason.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- PTT capture: WavRecorder and AudioRecorderAI construct AudioRecord. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!--
+      PlayerUtils/WavRecorder/AudioRecorderAI route audio with startBluetoothSco(),
+      setBluetoothScoOn() and setCommunicationDevice().  Those calls are wrapped in catch-all
+      handlers, so without this permission SCO routing degrades silently instead of failing loudly.
+    -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!--
+      Only the MediaStore insert in WavFileExporter.saveWavToPublicMusicFolder() needs this, and only
+      on API 26-28: scoped storage ignores it from API 29 on, and getExternalFilesDir() never needed
+      it.
+
+      READ_EXTERNAL_STORAGE is declared purely to cap it.  The manifest merger implies it from
+      WRITE_EXTERNAL_STORAGE and injects it into every consumer *uncapped* unless the element is
+      already present - declaring it here is what keeps an unbounded storage permission out of the
+      host app's manifest.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 
     <!-- CompanionDeviceManager association (Stage 5). Optional so it never blocks install. -->
     <uses-feature
         android:name="android.software.companion_device_setup"
         android:required="false" />
+
 </manifest>

@@ -75,6 +75,8 @@ object StardustInitConnectionHandler {
             field = value
 
             Log.d("StardustDataManager", "StardustInitConnectionHandler onDeviceInitialized -> $value")
+            // Deprecated fan-out: ConnectionManager below carries the same news on the unified stream.
+            @Suppress("DEPRECATION")
             DataManager.getCallbacks()?.onDeviceInitialized(value)
             ConnectionManager.onInitStateChanged(value)
         }

@@ -5,10 +5,14 @@ import android.content.Context
 import android.location.Location
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
+import com.commcrete.stardust.enums.ScanFailure
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.transport.ConnectionState
+import com.commcrete.stardust.transport.DiscoveredDevice
+import com.commcrete.stardust.transport.ScanState
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.FileSender
@@ -16,6 +20,7 @@ import com.commcrete.stardust.util.FileUtils.FileTransferData
 import com.commcrete.stardust.util.SOSUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.flow.StateFlow
 import java.io.File
 
 /**
@@ -133,7 +138,50 @@ interface StardustAPI {
     fun requestLocation(stardustAPIPackage: StardustAPIPackage)
     fun sendSOS(stardustAPIPackage: StardustAPIPackage, location: Location, type: SOSUtils.SOS_REPORT_TYPES?)
     fun init(appContext: Context, pluginContext: Context, fileLocation : String)
+
+    /**
+     * The one connection read-model: link + handshake state combined. Collect this instead of
+     * [StardustAPICallbacks.connectionStatusChanged] and [StardustAPICallbacks.onDeviceInitialized].
+     *
+     * It is a `StateFlow`, so a new collector immediately receives the current value and repeated
+     * identical states emit once. Use `state.transport` for which link is carrying the radio and
+     * `state.isUsable` for "can I talk to the device".
+     */
+    fun connectionState(): StateFlow<ConnectionState>
+
+    /**
+     * Starts discovery and returns the one stream a pairing screen needs: the device list (already-
+     * bonded radios included from the first emission), whether a scan is running, and why it
+     * couldn't run. Replaces [scanForDevice] + [StardustAPICallbacks.onScanFailure] +
+     * [StardustAPICallbacks.onAdoptableDevicesFound].
+     *
+     * Call it again to rescan — the SDK's scan window closes on its own and the stream then reports
+     * [ScanState.Stopped].
+     */
+    fun scanForDevices(): StateFlow<ScanState>
+
+    /** Stops discovery. The stream stays valid and reports [ScanState.Stopped]. */
+    fun stopScan()
+
+    /**
+     * Connects to a discovered radio by [DiscoveredDevice.address] and runs the init handshake —
+     * bonding first when the radio isn't bonded yet, adopting the existing bond when it is. One
+     * entry point for both, replacing [connectToDevice] and [adoptDevice]; progress is reported on
+     * [connectionState].
+     */
+    fun connect(address: String)
+
+    @Deprecated(
+        "Collect scanForDevices() instead: it reports failures and already-bonded radios on the " +
+            "same stream, and does not expose the framework ScanResult type.",
+        ReplaceWith("scanForDevices()")
+    )
     fun scanForDevice(): MutableLiveData<List<ScanResult>>
+
+    @Deprecated(
+        "Use connect(address), which also covers already-bonded radios.",
+        ReplaceWith("connect(device.device.address)")
+    )
     fun connectToDevice(device: ScanResult)
     fun disconnectFromDevice(disconnectByForce: Boolean)
     fun logout()
@@ -150,16 +198,24 @@ interface StardustAPI {
     fun switchToPreset(preset: CurrentPreset)
 
     /**
-     * Stardust devices already bonded to the phone that are not the app's current device —
-     * candidates for [adoptDevice]. Empty if Bluetooth is off or CONNECT permission is missing.
+     * Stardust devices already bonded to the phone that are not the app's current device.
+     * Empty if Bluetooth is off or CONNECT permission is missing.
      */
+    @Deprecated(
+        "scanForDevices() already lists these, flagged with DiscoveredDevice.alreadyBonded.",
+        ReplaceWith("scanForDevices()")
+    )
     fun getAdoptableDevices(): List<AdoptableDevice>
 
     /**
      * Adopts an already-bonded device by its MAC [address]: persists it, marks it paired, and
      * connects + syncs to fetch its data. Returns false if the address is not a bonded Stardust
-     * device. Use for pre-paired devices surfaced via [StardustAPICallbacks.onAdoptableDevicesFound].
+     * device.
      */
+    @Deprecated(
+        "Use connect(address), which bonds or adopts as appropriate.",
+        ReplaceWith("connect(address)")
+    )
     fun adoptDevice(address: String): Boolean
 }
 
@@ -211,24 +267,53 @@ interface StardustAPICallbacks {
         data: FileTransferData.Receive,
         failure: FileReceiver.FileFailure
     )
-    fun connectionStatusChanged(connectionType: ConnectionType?)
+    @Deprecated(
+        "Collect StardustAPI.connectionState() and read `state.transport` — one source instead of two.",
+        ReplaceWith("")
+    )
+    fun connectionStatusChanged(connectionType: ConnectionType?) {}
     fun onDeviceConnectionRSSIChanged (rssi : Int)
     fun onSignalRSSIChanged(rssiData: StardustAppEventPackage.RSSIPackage) // called with snr = null if no refresh arrives within 15s (see AppEvents.updateRssiSignalChanged)
     fun onBatteryChanged(battery : Int)
     fun onAppEvent(stardustAppEventPackage: StardustAppEventPackage)
     /**
      * Called when a BLE connection can't be established or is dropped for a determinable reason
-     * ([BleUnavailableReason]) — permission missing, Bluetooth off, unsupported, etc. Replaces the
-     * old permission-only `onPermissionDenied`. [deviceName] is the target device's name/MAC if
-     * known. Default no-op so it's optional to implement.
+     * ([BleUnavailableReason]) — permission missing, Bluetooth off, unsupported, etc.
+     * [deviceName] is the target device's name/MAC if known.
      */
+    @Deprecated(
+        "Collect StardustAPI.connectionState() and handle ConnectionState.Blocked(reason).",
+        ReplaceWith("")
+    )
     fun onConnectionUnavailable(reason: BleUnavailableReason, deviceName: String?) {}
-    fun onDeviceInitialized(state: StardustInitConnectionHandler.State)
+
+    /**
+     * A BLE scan could not start, or the platform rejected it.  See [ScanFailure] for what each
+     * value means and what the user has to change.
+     */
+    @Deprecated(
+        "Collect StardustAPI.scanForDevices() and handle ScanState.Failed(reason).",
+        ReplaceWith("")
+    )
+    fun onScanFailure(failure: ScanFailure) {}
+
+    /**
+     * The SDK's internal handshake state. Exposed before [ConnectionState] existed; it leaks an
+     * internal enum whose values the host has to interpret.
+     */
+    @Deprecated(
+        "Collect StardustAPI.connectionState(): Syncing / Ready / Error / Blocked cover every value.",
+        ReplaceWith("")
+    )
+    fun onDeviceInitialized(state: StardustInitConnectionHandler.State) {}
 
     /**
      * Called when the app is not paired but finds Stardust devices already bonded to the phone
-     * (paired from phone Settings or another app). The host should ask the user whether to use
-     * one and, if so, call [StardustAPI.adoptDevice]. Default no-op for backward compatibility.
+     * (paired from phone Settings or another app).
      */
+    @Deprecated(
+        "scanForDevices() lists these alongside scanned radios, flagged alreadyBonded.",
+        ReplaceWith("")
+    )
     fun onAdoptableDevicesFound(devices: List<AdoptableDevice>) {}
 }

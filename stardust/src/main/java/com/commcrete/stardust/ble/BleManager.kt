@@ -139,6 +139,8 @@ object BleManager {
             }
         }
 
+        // Deprecated fan-out, kept until the host reads the transport off ConnectionState instead.
+        @Suppress("DEPRECATION")
         DataManager.getCallbacks()?.connectionStatusChanged(newStatus)
         ConnectionManager.onTransportChanged()
     }

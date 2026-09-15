@@ -26,6 +26,7 @@ import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.transport.TransportId
+import com.commcrete.stardust.transport.toBlocker
 import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -61,10 +62,35 @@ internal class ClientConnection(): BittelProtocol {
         // so one lost callback can't wedge all subsequent writes.
         const val GATT_OP_TIMEOUT_MS = 5000L
 
-        // Settle delay before service discovery. Kept (not removed) because discovering services
-        // immediately after connecting to a BONDED device hits a known Android race on some OEMs
-        // where discovery silently fails; a short delay lets bonding/encryption settle first.
-        const val SERVICE_DISCOVERY_DELAY_MS = 2000L
+        /**
+         * Settle delay before service discovery, applied once the MTU exchange has answered.
+         * Discovering immediately after connecting to a BONDED device hits a known Android race on
+         * some OEMs where discovery silently fails, so a short settle is still needed — but the old
+         * flat 2000ms was waiting for the MTU callback by guesswork. Now the callback drives it and
+         * this is only the settle.
+         */
+        const val SERVICE_DISCOVERY_SETTLE_MS = 250L
+
+        /**
+         * Fallback for the MTU callback never arriving (some stacks skip it when `requestMtu`
+         * returns false). Deliberately shorter than the 2000ms it replaces: on the path where the
+         * callback DOES arrive — the overwhelming majority — discovery now starts ~1.75s earlier.
+         */
+        const val SERVICE_DISCOVERY_MTU_TIMEOUT_MS = 1500L
+
+        /**
+         * How long a direct (`autoConnect = false`) attempt gets before falling back to Android's
+         * background connection. A direct connect to a radio that is on and in range completes well
+         * inside this; the fallback is for one that is off or out of range.
+         */
+        const val DIRECT_CONNECT_TIMEOUT_MS = 6000L
+
+        /**
+         * Backstop for starting the init handshake. The real trigger is the CCCD write completing
+         * ([BluetoothGattCallback.onDescriptorWrite]) — notifications must be live before the first
+         * request goes out or its reply is missed. This fires only if that callback never arrives.
+         */
+        const val INIT_START_FALLBACK_MS = 500L
     }
     private val TAG = ClientConnection::class.java.simpleName
 
@@ -202,6 +228,21 @@ internal class ClientConnection(): BittelProtocol {
     private var discoverServicesJob: Job? = null
     private var reconnectJob: Job? = null
 
+    /** Ensures exactly one `discoverServices()` per connection, whichever trigger gets there first. */
+    private val discoveryRequested = AtomicBoolean(false)
+
+    /**
+     * The GATT client returned by `connectGatt`, held from the moment the connect is issued.
+     * [gattConnection] is only assigned once services are discovered, so without this a connect
+     * that never completes leaves an un-closeable client behind — and Android allows only a handful
+     * per process before `connectGatt` starts failing outright.
+     */
+    private var pendingGatt: BluetoothGatt? = null
+
+    /** True while a direct attempt is running that should fall back to a background connect. */
+    private val directConnectPending = AtomicBoolean(false)
+    private var patientConnectJob: Job? = null
+
     // Address we are actively bonding to. Lets the bond-state receiver recognise our target
     // before [mDevice] is assigned, and — combined with the receiver's address filter — stops
     // us from reacting to bond changes on unrelated Bluetooth devices (e.g. the user's headset).
@@ -257,21 +298,32 @@ internal class ClientConnection(): BittelProtocol {
                         // Request the larger MTU once, only now that we're actually connected —
                         // previously this fired on every state change (including disconnects/errors),
                         // where it is meaningless and just logs failures.
+                        // The link is up, so the direct attempt succeeded — cancel the fallback to
+                        // a background connect before it can tear this connection down.
+                        directConnectPending.set(false)
+                        patientConnectJob?.cancel()
+                        patientConnectJob = null
+
                         if (mtuRequested.compareAndSet(false, true)) {
                             val requested = gatt?.requestMtu(200)
                             Timber.tag("SetMtu").d("requestMtu(200) initiated=$requested")
                         }
-                        discoverServicesJob?.cancel()
-                        discoverServicesJob = Scopes.getDefaultCoroutine().launch {
-                            delay(SERVICE_DISCOVERY_DELAY_MS)
-                            gatt?.discoverServices()
-                        }
+                        // Normally superseded by onMtuChanged, which schedules discovery as soon as
+                        // the exchange answers instead of waiting out a fixed delay.
+                        scheduleServiceDiscovery(gatt, SERVICE_DISCOVERY_MTU_TIMEOUT_MS, "MTU callback timeout")
                     } else {
                         resetDiscoveryState()
                         // The link is down. Release the connect gate so a later reconnect can run —
                         // a drop that doesn't route through disconnectFromBLEDevice would otherwise
                         // leave the CAS latched and block every future connectGatt.
                         connectInFlight.set(false)
+                        // A direct attempt that failed (typically status 133) escalates immediately
+                        // rather than waiting out DIRECT_CONNECT_TIMEOUT_MS — the radio is off or out
+                        // of range, which is exactly what the background connect is for. Must run
+                        // AFTER the gate is released, or the escalated connectGatt is refused by it.
+                        if (directConnectPending.get()) {
+                            mDevice?.let { escalateToBackgroundConnect(it, "direct connect failed (status=$status)") }
+                        }
                         Scopes.getMainCoroutine().launch {
                             Timber.tag("Bittel Disconnected").d("Status Changed")
                             Timber.tag(LOG_TAG).d("Bittel Disconnected")
@@ -279,6 +331,13 @@ internal class ClientConnection(): BittelProtocol {
                             Log.d("StardustDataManager", "BleManager.isBleConnected = false")
                             BleManager.isBleConnected = false
                             BleManager.bleConnectionStatus.value = false
+                            // BEFORE updateStatus, which publishes the new state: the flags above
+                            // already make the registry report no active transport, so this can open
+                            // the grace window first and updateStatus then derives Searching. Called
+                            // after, the host would still see one Disconnected emission — the exact
+                            // flash this is meant to remove. It also asks for the reconnect now,
+                            // instead of waiting out the next watchdog tick.
+                            ConnectionManager.onLinkLost(TransportId.BLE)
                             BleManager.updateStatus()
                         }
                     }
@@ -349,6 +408,9 @@ internal class ClientConnection(): BittelProtocol {
                     Log.d("ConfigDebug", "onDescriptorWrite status=$status characteristic=${descriptor?.characteristic?.uuid} — notifications ${if (status == BluetoothGatt.GATT_SUCCESS) "ENABLED" else "FAILED"}")
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         Timber.tag("NotificationSetup").d("Notification successfully enabled for ${descriptor?.characteristic?.uuid}")
+                        // Notifications are live, which is the only thing the init flow was waiting
+                        // for — start now instead of sitting out the fallback delay.
+                        Scopes.getDefaultCoroutine().launch { startInitIfReady("CCCD write complete") }
                     } else {
                         Timber.tag("NotificationSetup").e("Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
                     }
@@ -377,6 +439,9 @@ internal class ClientConnection(): BittelProtocol {
                     } else {
                         Timber.tag("SetMtu").w("MTU change failed, status=$status")
                     }
+                    // The exchange is done either way — discovery only had to wait for it to stop
+                    // competing, not to succeed.
+                    scheduleServiceDiscovery(gatt, SERVICE_DISCOVERY_SETTLE_MS, "MTU exchange answered")
                 }
 
 
@@ -512,27 +577,51 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     private fun triggerInitSequence(gatt: BluetoothGatt?) {
         Log.d("StardustDataManager", "onServicesDiscovered")
-        Log.d("ConfigDebug", "triggerInitSequence — updating state to SEARCHING, scheduling initStartJob(500ms)")
+        Log.d("ConfigDebug", "triggerInitSequence — state SEARCHING; init starts on the CCCD write, " +
+            "fallback in ${INIT_START_FALLBACK_MS}ms")
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
 
         initStartJob?.cancel()
         initStartJob = Scopes.getDefaultCoroutine().launch {
-            Log.d("StardustDataManager", "initStartJob")
-            delay(500)
+            delay(INIT_START_FALLBACK_MS)
+            startInitIfReady("fallback delay")
+        }
+    }
 
-            if (!canStartInit()) {
-                Log.w("ConfigDebug", "initStartJob ABORT — canStartInit() returned false (see prior canStartInit log)")
-                return@launch
-            }
+    /**
+     * Starts the init handshake, at most once per connection. Both callers race deliberately — the
+     * CCCD-write callback (fast path) and the fallback delay — and [canStartInit] arbitrates with a
+     * CAS, so whichever arrives second is a no-op.
+     */
+    private fun startInitIfReady(source: String) {
+        if (!canStartInit()) {
+            Log.w("ConfigDebug", "init start SKIPPED ($source) — canStartInit() false (see prior canStartInit log)")
+            return
+        }
+        initStartJob?.cancel()
+        initStartJob = null
 
-            Log.d("StardustDataManager", "canStartInit")
-            Log.d("ConfigDebug", "initStartJob → StardustInitConnectionHandler.start()")
-            StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
-            StardustInitConnectionHandler.start()
+        Log.d("ConfigDebug", "init start ($source) → StardustInitConnectionHandler.start()")
+        StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
+        StardustInitConnectionHandler.start()
 
-            Log.d("StardustDataManager", "after StardustInitConnectionHandler.start()")
-            resetConnectionTimer()
-            resetPingTimer()
+        resetConnectionTimer()
+        resetPingTimer()
+    }
+
+    /**
+     * Issues `discoverServices()` once per connection, after [delayMs]. Callers race (MTU callback
+     * vs. its timeout); [discoveryRequested] makes the loser a no-op.
+     */
+    @SuppressLint("MissingPermission")
+    private fun scheduleServiceDiscovery(gatt: BluetoothGatt?, delayMs: Long, reason: String) {
+        if (discoveryRequested.get()) return
+        discoverServicesJob?.cancel()
+        discoverServicesJob = Scopes.getDefaultCoroutine().launch {
+            delay(delayMs)
+            if (!discoveryRequested.compareAndSet(false, true)) return@launch
+            val started = gatt?.discoverServices()
+            Log.d("ConfigDebug", "discoverServices() initiated=$started after ${delayMs}ms ($reason)")
         }
     }
 
@@ -633,8 +722,9 @@ internal class ClientConnection(): BittelProtocol {
         return null
     }
 
+    /** @return true when a `connectGatt` was actually issued, false when a guard refused it. */
     @SuppressLint("MissingPermission")
-    fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false) {
+    fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false): Boolean {
         Log.d("ConfigDebug",
             "connectDevice addr=${device.address} autoConnect=$autoConnect hasCallback=$hasCallback " +
                 "loggedIn=${RegisteredUserUtils.isUserLoggedIn()} mDevice=${mDevice?.address}"
@@ -644,12 +734,15 @@ internal class ClientConnection(): BittelProtocol {
         // automatic BLE connect attempt when logged out.
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             Timber.tag(LOG_TAG).d("Skipping connect to ${device.address}: no user logged in")
-            return
+            return false
         }
         bleConnectBlockReason()?.let { reason ->
             Timber.tag(LOG_TAG).e("Cannot connect to ${device.address}: $reason")
+            // Unified stream first (what hosts should collect), then the deprecated callback.
+            ConnectionManager.reportBlocked(reason.toBlocker())
+            @Suppress("DEPRECATION")
             DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
-            return
+            return false
         }
         Log.d("StardustDataManager", "connectDevice: ${device.address}, hasCallback: $hasCallback, autoConnect=$autoConnect")
         // ATOMIC connect gate. The old `if (!hasCallback)` was a non-atomic check-then-act:
@@ -662,10 +755,68 @@ internal class ClientConnection(): BittelProtocol {
         // reply arriving twice with the second dropped by the duplicate filter.
         if (!connectInFlight.compareAndSet(false, true)) {
             Log.w("ConfigDebug", "connectDevice SKIPPED for ${device.address} — a connectGatt is already in flight/active")
-            return
+            return false
         }
         resetDiscoveryState()
-        device.connectGatt(context, autoConnect, getBleGattCallback(device))
+        pendingGatt = device.connectGatt(context, autoConnect, getBleGattCallback(device))
+        return true
+    }
+
+    /**
+     * Connects preferring speed, falling back to patience: a direct attempt first, escalating to
+     * Android's background connection only if it doesn't land.
+     *
+     * Every automatic connect used to pass `autoConnect = true` outright. That request goes on the
+     * platform's background connection list and is served by a low-duty-cycle scan, so it routinely
+     * takes 5-30s to attach to a radio that is switched on and advertising a metre away — while a
+     * direct connect to the same radio lands in well under two seconds. The patience only ever
+     * mattered for a radio that is OFF, and this keeps it for exactly that case.
+     */
+    @SuppressLint("MissingPermission")
+    fun connectDevicePatiently(device: BluetoothDevice) {
+        patientConnectJob?.cancel()
+        directConnectPending.set(true)
+        if (!connectDevice(device, autoConnect = false)) {
+            // A guard refused it (logged out, blocked, or another connect already in flight).
+            // Escalating would be wrong — at best it hits the same guard, at worst it closes the
+            // other attempt's GATT client.
+            directConnectPending.set(false)
+            return
+        }
+
+        patientConnectJob = Scopes.getDefaultCoroutine().launch {
+            delay(DIRECT_CONNECT_TIMEOUT_MS)
+            escalateToBackgroundConnect(device, "direct connect silent for ${DIRECT_CONNECT_TIMEOUT_MS}ms")
+        }
+    }
+
+    /**
+     * Switches a failed/stalled direct attempt over to a background connect. Tears the half-open
+     * client down first: [connectDevice]'s CAS gate would otherwise refuse the second attempt, and
+     * the abandoned GATT client would count against the per-process limit.
+     */
+    @SuppressLint("MissingPermission")
+    private fun escalateToBackgroundConnect(device: BluetoothDevice, reason: String) {
+        // Whoever gets here first wins; the other trigger (callback vs. timeout) drops out.
+        if (!directConnectPending.compareAndSet(true, false)) return
+        patientConnectJob?.cancel()
+        patientConnectJob = null
+
+        Log.d("ConfigDebug", "escalating ${device.address} to background connect — $reason")
+        closePendingGatt()
+        connectInFlight.set(false)
+        hasCallback = false
+        connectDevice(device, autoConnect = true)
+    }
+
+    /** Closes the in-flight GATT client unless it is the established connection. */
+    @SuppressLint("MissingPermission")
+    private fun closePendingGatt() {
+        pendingGatt?.takeIf { it !== gattConnection }?.let {
+            runCatching { it.disconnect() }
+            runCatching { it.close() }
+        }
+        pendingGatt = null
     }
 
     @SuppressLint("MissingPermission")
@@ -686,13 +837,38 @@ internal class ClientConnection(): BittelProtocol {
         // Whether USB currently owns the shared session state.
         val usbOwnsSession = BleManager.isUSBConnected
 
+        // Mark the link down NOW, synchronously, before anything below publishes state.
+        //
+        // These two assignments used to live in the main-thread coroutine at the end of this
+        // function (and were commented out there), so `isBleConnected` stayed true until the GATT
+        // callback arrived milliseconds later. The `withStateUpdate` block below runs BEFORE that:
+        // it set the handshake state to DISCONNECTED while the transport flag still said BLE, and
+        // ConnectionManager.derive(active = BLE, s = DISCONNECTED) has exactly one answer for that
+        // combination — LinkUp(BLE). That is the phantom state a host sees between Ready and
+        // Disconnected on every disconnect and unpair.
+        //
+        // Skipped when USB owns the session: the `isUSBConnected` setter already cleared
+        // `isBleConnected`, and this path is then only tearing the BLE link out from under USB.
+        if (!usbOwnsSession) {
+            BleManager.isBleConnected = false
+            // postValue: this runs on whichever thread called disconnect (binder, IO, main).
+            BleManager.bleConnectionStatus.postValue(false)
+        }
+
         // ── BLE-local teardown: always safe, USB holds none of this ──
         reconnectJob?.cancel()
         reconnectJob = null
+        // An intentional teardown must not be resurrected by a pending escalation.
+        directConnectPending.set(false)
+        patientConnectJob?.cancel()
+        patientConnectJob = null
         resetDiscoveryState()
         clearGattQueue()
         gattConnection?.disconnect()
         gattConnection?.close()
+        // Covers a connect that never reached onServicesDiscovered, where gattConnection is null
+        // and this is the only reference to the client.
+        closePendingGatt()
         bleGatChar = null
         gattConnection = null
         hasCallback = false
@@ -732,6 +908,7 @@ internal class ClientConnection(): BittelProtocol {
         servicesDiscoveredHandled.set(false)
         initStartTriggered.set(false)
         mtuRequested.set(false)
+        discoveryRequested.set(false)
         discoverServicesJob?.cancel()
         discoverServicesJob = null
         initStartJob?.cancel()
@@ -784,6 +961,9 @@ internal class ClientConnection(): BittelProtocol {
         }
         bleConnectBlockReason()?.let { reason ->
             Timber.tag(LOG_TAG).e("Cannot bond ${device.address}: $reason")
+            // Unified stream first (what hosts should collect), then the deprecated callback.
+            ConnectionManager.reportBlocked(reason.toBlocker())
+            @Suppress("DEPRECATION")
             DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
             return
         }
@@ -838,8 +1018,9 @@ internal class ClientConnection(): BittelProtocol {
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = true
         }
-        // Startup: the radio may still be off/out of range, so connect patiently in the background.
-        connectDevice(connectedDevice, autoConnect = true)
+        // Direct first (fast when the radio is on and near), escalating to a patient background
+        // connect only if that doesn't land — the radio may still be off/out of range.
+        connectDevicePatiently(connectedDevice)
         this.deviceName = connectedDevice.name
     }
 
@@ -934,6 +1115,11 @@ internal class ClientConnection(): BittelProtocol {
      *   bond is then recoverable on next launch via [PairingRepository] adoption.
      */
     fun removeBittelBond(forceClearLocal: Boolean = false): UnpairResult {
+        // Unpairing is intentional by definition, so kill auto-reconnect here rather than relying on
+        // the caller: DataManager.unpairDeviceBLE() goes through disconnectFromDevice() which does
+        // it, but EraseUtils calls straight in here and would otherwise leave the watchdog armed —
+        // and the teardown below would read as an unexpected drop worth reconnecting.
+        ConnectionManager.disableAutoReconnect()
         val deviceToUnbond = mDevice
             ?: SharedPreferencesUtil.getBittelDevice()
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
@@ -1522,8 +1708,9 @@ internal class ClientConnection(): BittelProtocol {
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             delay(2000)
-            // Background reconnect: device may be off (e.g. battery died) — wait for it patiently.
-            mDevice?.let { connectDevice(it, autoConnect = true) }
+            // Direct first, then patient: a reconnect after an out-of-range blip lands immediately,
+            // while a battery-died radio still gets the background attempt.
+            mDevice?.let { connectDevicePatiently(it) }
         }
     }
 

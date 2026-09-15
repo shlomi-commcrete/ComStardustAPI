@@ -401,18 +401,35 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().addMessageToQueue(msg)
     }
 
+    override fun scanForDevices(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ScanState> {
+        checkInitialized()
+        return com.commcrete.stardust.transport.DeviceDiscovery.start()
+    }
+
+    override fun stopScan() {
+        checkInitialized()
+        com.commcrete.stardust.transport.DeviceDiscovery.stop()
+    }
+
+    @Deprecated(
+        "Collect scanForDevices() instead: it reports failures and already-bonded radios on the " +
+            "same stream, and does not expose the framework ScanResult type.",
+        ReplaceWith("scanForDevices()")
+    )
     override fun scanForDevice() : MutableLiveData<List<ScanResult>> {
         checkInitialized()
-        // Tell the host why a scan won't yield results, so it can prompt the user.
+        // Deprecated path only: the reason also reaches the host through ScanState.Failed, which is
+        // where migrated code reads it from.
+        @Suppress("DEPRECATION")
         val reason = when {
             !getClientConnection().isBluetoothEnabled() -> com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED
             !BlePermissions.hasScanPermission(appContext) -> com.commcrete.stardust.BleUnavailableReason.SCAN_PERMISSION_MISSING
             else -> null
         }
+        @Suppress("DEPRECATION")
         reason?.let { getCallbacks()?.onConnectionUnavailable(it, null) }
-        val bleScanner = getBleScanner()
-        bleScanner.startScan()
-        return bleScanner.getScanResultsLiveData()
+        com.commcrete.stardust.transport.DeviceDiscovery.start()
+        return getBleScanner().getScanResultsLiveData()
     }
 
     fun getStartupBleData() : BluetoothDevice? {
@@ -458,7 +475,10 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().initBleStatus()
         // Check if Bluetooth is enabled; if not, user will see a dialog
         if (!getClientConnection().isBluetoothEnabled()) {
+            @Suppress("DEPRECATION")
             getCallbacks()?.onConnectionUnavailable(com.commcrete.stardust.BleUnavailableReason.BLUETOOTH_DISABLED, null)
+            // BLUETOOTH_OFF derives to ConnectionState.Blocked(BLUETOOTH_OFF), so the unified stream
+            // carries the same news.
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
             return
         }
@@ -494,17 +514,26 @@ object DataManager : StardustAPI, PttInterface {
         if (adoptable.isNotEmpty()) {
             // Hand off to the host. State is left for adoptDevice() to advance (to SEARCHING);
             // if the host ignores the callback the state simply stays DISCONNECTED (the default).
+            @Suppress("DEPRECATION")
             getCallbacks()?.onAdoptableDevicesFound(adoptable)
         } else {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
         }
     }
 
+    @Deprecated(
+        "scanForDevices() already lists these, flagged with DiscoveredDevice.alreadyBonded.",
+        ReplaceWith("scanForDevices()")
+    )
     override fun getAdoptableDevices(): List<com.commcrete.stardust.AdoptableDevice> {
         checkInitialized()
         return PairingRepository.getAdoptableDevices()
     }
 
+    @Deprecated(
+        "Use connect(address), which bonds or adopts as appropriate.",
+        ReplaceWith("connect(address)")
+    )
     override fun adoptDevice(address: String): Boolean {
         checkInitialized()
         return PairingRepository.adopt(address)
@@ -512,11 +541,13 @@ object DataManager : StardustAPI, PttInterface {
 
     /**
      * The unified connection state (single source of truth): link + init-handshake status combined.
-     * Prefer collecting this over juggling [StardustAPICallbacks.connectionStatusChanged] and
-     * [StardustAPICallbacks.onDeviceInitialized] separately.
      */
-    fun getConnectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
+    override fun connectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
         com.commcrete.stardust.transport.ConnectionManager.connectionState
+
+    @Deprecated("Renamed.", ReplaceWith("connectionState()"))
+    fun getConnectionState(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ConnectionState> =
+        connectionState()
 
     // ── Flow facade (Stage 5) ────────────────────────────────────────────────
     // Flow equivalents of the connection callbacks, backed by the existing LiveData. Additive:
@@ -546,12 +577,43 @@ object DataManager : StardustAPI, PttInterface {
 
     fun getCompanionAssociations(): List<String> = CompanionDeviceHelper.getAssociatedAddresses()
 
-    override fun connectToDevice(device: ScanResult) {
+    /**
+     * One entry point for both kinds of radio the pairing screen can show: an advertised one that
+     * still needs bonding, and an already-bonded one that is simply adopted. Which path applies is
+     * the SDK's problem, not the host's — [PairingRepository.adopt] returns false for an address
+     * that isn't bonded, and that's the branch.
+     */
+    @SuppressLint("MissingPermission")
+    override fun connect(address: String) {
         checkInitialized()
-        getClientConnection().bondToBleDevice(device.device,device.scanRecord?.deviceName )
-        val bleScanner = getBleScanner()
-        bleScanner.stopScan()
+        // Scanning while connecting only competes with the GATT connect for the radio.
+        com.commcrete.stardust.transport.DeviceDiscovery.stop()
         this.bleScanner = null
+
+        if (PairingRepository.adopt(address)) return
+
+        val result = com.commcrete.stardust.transport.DeviceDiscovery.scanResultFor(address)
+        val device = result?.device
+            ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address)
+            ?: run {
+                Timber.w("connect($address) failed: no such device")
+                return
+            }
+        // Same per-session reset the adopt path does: a user-driven pair is a new session, and a
+        // stale SUCCESS/CANCELED left in the singleton otherwise blocks the init handshake when
+        // services are discovered.
+        StardustInitConnectionHandler.resetForNewSession()
+        getClientConnection().resetForNewSession()
+        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
+        getClientConnection().bondToBleDevice(device, result?.scanRecord?.deviceName)
+    }
+
+    @Deprecated(
+        "Use connect(address), which also covers already-bonded radios.",
+        ReplaceWith("connect(device.device.address)")
+    )
+    override fun connectToDevice(device: ScanResult) {
+        connect(device.device.address)
     }
 
     override fun disconnectFromDevice(disconnectByForce: Boolean) {

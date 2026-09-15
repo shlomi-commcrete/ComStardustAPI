@@ -1,6 +1,7 @@
 package com.commcrete.stardust.transport
 
 import android.bluetooth.BluetoothAdapter
+import android.os.SystemClock
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.PairingRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -39,6 +40,33 @@ object ConnectionManager {
     private const val MAX_BACKOFF_SHIFT = 20
     private const val WATCHDOG_INTERVAL_MS = 10_000L
 
+    /**
+     * How long after an unexpected drop the state keeps reading [ConnectionState.Searching] instead
+     * of [ConnectionState.Disconnected], while auto-reconnect works on it.
+     *
+     * A radio that is power-cycled reliably costs one failed attempt: its controller accepts the LE
+     * connection while the application firmware is still booting, serves discovery and the CCCD
+     * write, then stops responding — and the link dies on a ~5s supervision timeout (captured
+     * 2026-09-15 17:57:53: `on_le_disconnect Reason : 8` / `GATT_CONN_TIMEOUT`). The next attempt
+     * connects and syncs in ~2s. Publishing `Disconnected` across that window is what makes a
+     * self-healing blip look to the user like a failed reconnect. A sustained outage still falls
+     * through to `Disconnected` once the grace expires.
+     */
+    private const val RECONNECT_GRACE_MS = 30_000L
+
+    /**
+     * How long an accepted reconnect request is assumed to still be working before another is
+     * allowed. [requestReconnect]'s single-flight guard cannot do this on its own: `reconnect()`
+     * returns as soon as the attempt is *launched*, so its job completes in microseconds and every
+     * later request passes the guard. Without this window, the drop-triggered retry, the 10s
+     * watchdog and the ping-timeout watchdog each start an attempt that force-disconnects the one
+     * before it, and nothing is ever given time to land.
+     *
+     * Sized for the slowest legitimate attempt: 2s reconnect delay + up to 6s direct connect +
+     * margin. It is a ceiling, not a schedule — a successful connect clears it immediately.
+     */
+    private const val RECONNECT_ATTEMPT_WINDOW_MS = 15_000L
+
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
 
@@ -60,6 +88,14 @@ object ConnectionManager {
     private var autoReconnectDesired = false
     private var watchdogJob: Job? = null
 
+    /** Deadline (elapsedRealtime) until which a link-down reads as [ConnectionState.Searching]. */
+    @Volatile
+    private var reconnectGraceUntilMs = 0L
+
+    /** Deadline until which an accepted reconnect counts as still in flight. */
+    @Volatile
+    private var attemptInFlightUntilMs = 0L
+
     // ───────────────────────── State derivation ─────────────────────────
 
     /** Called from `BleManager.updateStatus()` whenever a transport link flips. */
@@ -71,10 +107,29 @@ object ConnectionManager {
         recompute()
     }
 
+    /**
+     * The link just went down unexpectedly. Called from the transport's disconnect path.
+     *
+     * Two jobs: open the [RECONNECT_GRACE_MS] window so the UI reads "reconnecting" rather than
+     * "disconnected", and ask for the reconnect NOW instead of waiting out the next watchdog tick —
+     * which cost ~4s of the observed recovery time. Both are no-ops when auto-reconnect isn't
+     * wanted (manual disconnect, unpair, USB takeover), because those clear [autoReconnectDesired].
+     */
+    fun onLinkLost(transport: TransportId) {
+        if (!autoReconnectDesired) {
+            Timber.tag(TAG).d("link lost over $transport — auto-reconnect not desired, staying down")
+            return
+        }
+        reconnectGraceUntilMs = SystemClock.elapsedRealtime() + RECONNECT_GRACE_MS
+        recompute()
+        if (shouldAutoReconnect()) requestReconnect(transport, "link lost")
+    }
+
     @Synchronized
     private fun recompute() {
         val active = TransportRegistry.active()?.id
-        val next = derive(active, lastInitState)
+        val previous = _connectionState.value
+        val next = derive(active, lastInitState, inReconnectGrace())
         _connectionState.value = next
 
         // Reaching a connected state means any pending reconnect is moot and backoff can reset.
@@ -82,16 +137,22 @@ object ConnectionManager {
             reconnectJob?.cancel()
             reconnectJob = null
             attempt.set(0)
+            reconnectGraceUntilMs = 0L
+            attemptInFlightUntilMs = 0L
         }
 
-        // Arm the auto-reconnect watchdog only on an ESTABLISHED BLE link (Syncing/Ready), NOT
-        // LinkUp. LinkUp can be derived spuriously right after a manual disconnect — when the init
-        // state is already DISCONNECTED but BleManager.isBleConnected hasn't propagated to false
-        // yet, derive() yields LinkUp(BLE). Re-arming on that would resurrect the watchdog the user
-        // just disabled. Established states require a non-terminal handshake, which a manual
-        // disconnect never produces. This block shares the monitor with disableAutoReconnect() so a
-        // concurrent disable can't be overwritten.
-        if (isBleEstablished(next)) {
+        // Arm the auto-reconnect watchdog only on the EDGE INTO an established BLE link
+        // (Syncing/Ready), never on a recompute that merely re-observes one.
+        //
+        // Edge-triggering is what makes an unpair stick. `unpairDeviceBLE()` disables auto-reconnect
+        // while the link is still physically up, so the very next recompute still derives
+        // Ready(BLE) — and a level-triggered arm here would immediately undo the disable, leaving
+        // the teardown that follows looking like an unexpected drop to be reconnected.
+        //
+        // LinkUp is excluded for a related reason: it can be derived spuriously right after a manual
+        // disconnect, when the init state is already DISCONNECTED but BleManager.isBleConnected
+        // hasn't propagated to false yet.
+        if (!isBleEstablished(previous) && isBleEstablished(next)) {
             autoReconnectDesired = true
             startReconnectWatchdog()
         }
@@ -103,15 +164,30 @@ object ConnectionManager {
         else -> false
     }
 
-    private fun derive(active: TransportId?, s: State): ConnectionState = when {
-        s == State.BLUETOOTH_OFF -> ConnectionState.BluetoothOff
+    /**
+     * Publishes a [ConnectionState.Blocked] for a connect attempt the phone refused (adapter off,
+     * permission missing). Deliberately NOT latched: the next transport or handshake change
+     * re-derives the state through [recompute], so a blocker never outlives the condition that
+     * produced it.
+     */
+    fun reportBlocked(reason: Blocker) {
+        Timber.tag(TAG).w("connection blocked: $reason")
+        _connectionState.value = ConnectionState.Blocked(reason)
+    }
+
+    private fun derive(active: TransportId?, s: State, inGrace: Boolean): ConnectionState = when {
+        s == State.BLUETOOTH_OFF -> ConnectionState.Blocked(Blocker.BLUETOOTH_OFF)
         s == State.CANCELED || StardustInitConnectionHandler.hasUnsyncableError() ->
             ConnectionState.Error(toConnectionError(s))
-        active == null -> if (s == State.SEARCHING) ConnectionState.Searching else ConnectionState.Disconnected
+        // A link-down inside the post-drop grace is a reconnect in progress, not a dead connection.
+        active == null -> if (s == State.SEARCHING || inGrace) ConnectionState.Searching else ConnectionState.Disconnected
         s == State.SUCCESS -> ConnectionState.Ready(active)
         StardustInitConnectionHandler.isSyncing() -> ConnectionState.Syncing(active)
         else -> ConnectionState.LinkUp(active)
     }
+
+    private fun inReconnectGrace(): Boolean =
+        autoReconnectDesired && SystemClock.elapsedRealtime() < reconnectGraceUntilMs
 
     /** Maps the internal handshake state to the stable public [ConnectionError]. */
     private fun toConnectionError(s: State): ConnectionError = when (s) {
@@ -136,6 +212,23 @@ object ConnectionManager {
         if (reconnectJob?.isActive == true) {
             Timber.tag(TAG).d("reconnect already in progress; ignoring request ($reason)")
             return
+        }
+        // See RECONNECT_ATTEMPT_WINDOW_MS: the job guard above expires almost immediately, so this
+        // is what actually gives an attempt time to land instead of being torn down by the next
+        // trigger. Applied here rather than in shouldAutoReconnect() so that EVERY caller respects
+        // it — the ping-timeout and connection watchdogs come straight in here.
+        val now = SystemClock.elapsedRealtime()
+        if (now < attemptInFlightUntilMs) {
+            Timber.tag(TAG).d("reconnect still in flight for ${attemptInFlightUntilMs - now}ms; ignoring request ($reason)")
+            return
+        }
+        attemptInFlightUntilMs = now + RECONNECT_ATTEMPT_WINDOW_MS
+        // An attempt is under way, so a link-down reads as Searching rather than Disconnected —
+        // including an attempt started from an already-down state, which never passed through
+        // onLinkLost and so had no grace of its own.
+        if (autoReconnectDesired) {
+            reconnectGraceUntilMs = maxOf(reconnectGraceUntilMs, now + RECONNECT_GRACE_MS)
+            recompute()
         }
         val delayMs = backoffDelay()
         Timber.tag(TAG).d("scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
@@ -167,7 +260,7 @@ object ConnectionManager {
      *  - manual disconnect / unpair → [autoReconnectDesired] is cleared (see [disableAutoReconnect]),
      *    and unpair also drops [BleManager.isPaired];
      *  - USB takeover → guarded by `!isUSBConnected` (we don't fight USB while it's connected);
-     *  - Bluetooth off → the state is [ConnectionState.BluetoothOff], not [ConnectionState.Disconnected],
+     *  - Bluetooth off → the state is [ConnectionState.Blocked], not [ConnectionState.Disconnected],
      *    and the adapter-state observer handles re-connect when BT returns.
      * The actual reconnect goes through [requestReconnect], so its single-flight + backoff throttle
      * repeated attempts.
@@ -178,6 +271,9 @@ object ConnectionManager {
         watchdogJob = Scopes.getDefaultCoroutine().launch {
             while (isActive && autoReconnectDesired) {
                 delay(WATCHDOG_INTERVAL_MS)
+                // Republish: nothing else fires when the post-drop grace simply expires, so without
+                // this the state would sit on Searching after auto-reconnect has given up hope.
+                recompute()
                 // Re-derive paired-state from the OS bond registry before deciding, which also
                 // repairs the published BleManager.isPaired for the host UI. No-ops when the bond
                 // set is unreadable, so it can never wipe a valid pairing.
@@ -209,11 +305,15 @@ object ConnectionManager {
             PairingRepository.currentPairedAddress() != null &&
             !BleManager.isUSBConnected &&
             isBluetoothOn() &&
-            // NOTE: intentionally Disconnected ONLY. Do not widen this to include Searching until
-            // reconnectToDevice() publishes Searching itself (fix 5) — today Searching also covers
-            // a fresh connect started by bondOnStartup/triggerInitSequence, and firing a reconnect
-            // then would force-disconnect that in-flight attempt.
-            _connectionState.value is ConnectionState.Disconnected
+            // Deliberately NOT `_connectionState.value is Disconnected` any more: inside the
+            // post-drop grace the published state is Searching, and gating on that would switch the
+            // watchdog off exactly when it is needed. This re-derives the same condition the
+            // published value used to carry, with the grace factored out.
+            //
+            // Still intentionally excludes a real SEARCHING (a fresh connect started by
+            // bondOnStartup / triggerInitSequence): firing a reconnect then would force-disconnect
+            // that in-flight attempt.
+            derive(TransportRegistry.active()?.id, lastInitState, inGrace = false) is ConnectionState.Disconnected
 
     /**
      * False when the adapter is off or absent. Pauses auto-reconnect while Bluetooth is disabled —
@@ -235,5 +335,11 @@ object ConnectionManager {
         watchdogJob = null
         reconnectJob?.cancel()
         reconnectJob = null
+        // Nothing is going to reconnect, so the link-down must read as Disconnected rather than
+        // pretending a reconnect is under way. Deliberately NO recompute() here: at this point the
+        // link is usually still physically up, so it would publish Ready(BLE) — and that used to
+        // re-arm the very watchdog this call disables. The teardown that follows recomputes anyway.
+        reconnectGraceUntilMs = 0L
+        attemptInFlightUntilMs = 0L
     }
 }
