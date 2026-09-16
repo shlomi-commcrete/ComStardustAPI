@@ -13,6 +13,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.lifecycle.Observer
@@ -91,6 +92,18 @@ internal class ClientConnection(): BittelProtocol {
          * request goes out or its reply is missed. This fires only if that callback never arrives.
          */
         const val INIT_START_FALLBACK_MS = 500L
+
+        /**
+         * How long a connect attempt is left alone before a reconnect may supersede it.
+         *
+         * A direct attempt that fails escalates to `autoConnect = true`, which Android serves from
+         * its background connection list with no timeout of its own — it attaches whenever the radio
+         * next advertises, which is exactly the recovery we want. Every `reconnectToDevice()` starts
+         * with a force-disconnect, so without this the watchdog would destroy that pending connect
+         * on each pass and restart from zero. The deadline is the escape hatch for an attempt that
+         * is genuinely wedged.
+         */
+        const val CONNECT_ATTEMPT_STALE_MS = 60_000L
     }
     private val TAG = ClientConnection::class.java.simpleName
 
@@ -242,6 +255,10 @@ internal class ClientConnection(): BittelProtocol {
     /** True while a direct attempt is running that should fall back to a background connect. */
     private val directConnectPending = AtomicBoolean(false)
     private var patientConnectJob: Job? = null
+
+    /** elapsedRealtime of the last `connectGatt`; ages the attempt for [CONNECT_ATTEMPT_STALE_MS]. */
+    @Volatile
+    private var connectStartedAtMs = 0L
 
     // Address we are actively bonding to. Lets the bond-state receiver recognise our target
     // before [mDevice] is assigned, and — combined with the receiver's address filter — stops
@@ -675,6 +692,15 @@ internal class ClientConnection(): BittelProtocol {
                             Log.d("StardustDataManager", "hasCallback $hasCallback, isUSBConnected: $isUSBConnected")
 
                             if (hasCallback) { return@let }
+                            // An intentional disconnect/unpair must not be undone from here.
+                            // LiveData.setValue dispatches on EVERY ACTION_STATE_CHANGED broadcast,
+                            // equal value or not, so without this any adapter-state noise after the
+                            // user disconnected silently reconnects — and publishes SEARCHING while
+                            // doing it, which is what shows as "searching" after an unpair.
+                            if (ConnectionManager.isAutoConnectSuppressed()) {
+                                Log.d("ConfigDebug", "BT-on reconnect suppressed — user disconnected intentionally")
+                                return@let
+                            }
                             // Case 2c (BT off → on with saved device): normalize per-session
                             // state the same way bondOnStartup / adopt do, so a session that was
                             // torn down by the BT-off branch above doesn't leave singleton state
@@ -758,7 +784,24 @@ internal class ClientConnection(): BittelProtocol {
             return false
         }
         resetDiscoveryState()
+        connectStartedAtMs = SystemClock.elapsedRealtime()
         pendingGatt = device.connectGatt(context, autoConnect, getBleGattCallback(device))
+        return true
+    }
+
+    /**
+     * Whether a `connectGatt` issued earlier is still working. [connectInFlight] is the signal —
+     * it is set when the connect is issued and released by the disconnect callback or an explicit
+     * teardown — bounded by [CONNECT_ATTEMPT_STALE_MS] so a wedged attempt can't block recovery
+     * forever.
+     */
+    private fun isConnectAttemptOutstanding(): Boolean {
+        if (!connectInFlight.get()) return false
+        val age = SystemClock.elapsedRealtime() - connectStartedAtMs
+        if (age >= CONNECT_ATTEMPT_STALE_MS) {
+            Log.d("ConfigDebug", "connect attempt is ${age}ms old — stale, allowing it to be superseded")
+            return false
+        }
         return true
     }
 
@@ -891,6 +934,10 @@ internal class ClientConnection(): BittelProtocol {
             // RSSI and the internal ping timer are BLE-only, so these are always correct to stop.
             removeRSSITimer()
             removePingTimer()
+            // So is the 20s connection watchdog, and it was the one being left behind: it is armed
+            // at init start and only cancelled when addresses arrive, so disconnecting mid-handshake
+            // left it pending to fire requestReconnect(BLE) long after the user said stop.
+            removeConnectionTimer()
         }
         if(withStateUpdate && !usbOwnsSession) {
             StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
@@ -1119,7 +1166,10 @@ internal class ClientConnection(): BittelProtocol {
         // the caller: DataManager.unpairDeviceBLE() goes through disconnectFromDevice() which does
         // it, but EraseUtils calls straight in here and would otherwise leave the watchdog armed —
         // and the teardown below would read as an unexpected drop worth reconnecting.
-        ConnectionManager.disableAutoReconnect()
+        //
+        // suppressAutoConnect, not disableAutoReconnect: unpair is the one case where the paths that
+        // ignore the watchdog (Bluetooth-on observer, bondOnStartup) must also stand down.
+        ConnectionManager.suppressAutoConnect()
         val deviceToUnbond = mDevice
             ?: SharedPreferencesUtil.getBittelDevice()
                 ?.takeIf { it.isNotBlank() && !it.equals("empty", ignoreCase = true) }
@@ -1128,20 +1178,41 @@ internal class ClientConnection(): BittelProtocol {
         if (deviceToUnbond == null) {
             if (forceClearLocal) clearLocalPairing()
             disconnectFromBLEDevice(true)
+            publishUnpairedState()
             return UnpairResult.NOT_PAIRED
         }
 
         val unbondStarted = requestUnbond(deviceToUnbond)
-        Timber.tag(LOG_TAG).d("Unbond for ${deviceToUnbond.address}: started=$unbondStarted force=$forceClearLocal")
+        // android.util.Log, not Timber: this library never plants a tree, so Timber output is
+        // invisible in the host and this result could not be seen in a capture.
+        Log.d("ConfigDebug",
+            "removeBittelBond ${deviceToUnbond.address}: osUnbondStarted=$unbondStarted force=$forceClearLocal")
         disconnectFromBLEDevice(true)
+        publishUnpairedState()
 
         return if (unbondStarted || forceClearLocal) {
             clearLocalPairing()
             UnpairResult.UNBONDED
         } else {
-            Timber.tag(LOG_TAG).w("OS unbond failed for ${deviceToUnbond.address}; keeping local pairing so app and OS agree")
+            // `removeBond` is a hidden API and is routinely blocked on recent Android, so this
+            // branch is not rare. Keeping the local pairing is deliberate (app and OS agree), but
+            // auto-connect stays suppressed either way — the user asked to unpair, and the SDK must
+            // not reconnect just because the OS bond survived.
+            Log.w("ConfigDebug",
+                "OS unbond FAILED for ${deviceToUnbond.address} — local pairing kept; host should send the user to Bluetooth settings")
             UnpairResult.STILL_BONDED_KEPT
         }
+    }
+
+    /**
+     * Final republish after an unpair. Every individual step of the teardown can legitimately be a
+     * no-op (link already down, handshake state already DISCONNECTED), which would otherwise leave
+     * the host showing whatever it was shown last — the reason an unpair during a reconnect kept
+     * reading as "searching".
+     */
+    private fun publishUnpairedState() {
+        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        ConnectionManager.refresh()
     }
 
     private fun clearLocalPairing() {
@@ -1704,6 +1775,13 @@ internal class ClientConnection(): BittelProtocol {
 
 
     fun reconnectToDevice () {
+        // Leave an outstanding attempt alone — see CONNECT_ATTEMPT_STALE_MS. Deliberately not
+        // applied to reconnectToDeviceFast(), which is the host acting on the user's behalf and
+        // should always win.
+        if (isConnectAttemptOutstanding()) {
+            Log.d("ConfigDebug", "reconnectToDevice SKIPPED — a connect attempt is still outstanding")
+            return
+        }
         disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {

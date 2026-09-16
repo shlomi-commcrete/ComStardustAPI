@@ -142,6 +142,8 @@ object PairingRepository {
             }
         val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) device.alias else null)
             ?: device.name
+        // Adopting is an explicit connect request; clear any suppression from an earlier disconnect.
+        com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()
         SharedPreferencesUtil.setBittelDevice(device.address)
         display?.let { SharedPreferencesUtil.setBittelDeviceName(it) }
         setPaired(true)

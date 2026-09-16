@@ -38,7 +38,17 @@ object ConnectionManager {
     private const val BASE_DELAY_MS = 1500L
     private const val MAX_DELAY_MS = 30_000L
     private const val MAX_BACKOFF_SHIFT = 20
-    private const val WATCHDOG_INTERVAL_MS = 10_000L
+    /**
+     * How often the auto-reconnect watchdog re-checks. Deliberately slow, because it is a safety
+     * net rather than the primary recovery path: a failed direct connect escalates to Android's
+     * background connect (`autoConnect = true`), which attaches by itself the moment the radio
+     * starts advertising. Each accepted tick begins with a force-disconnect, so a short interval
+     * destroys that pending background connect over and over — the thing most likely to succeed.
+     *
+     * Ticking rarely therefore improves recovery as well as battery. The cost is only how long a
+     * radio that the background connect somehow misses stays unnoticed.
+     */
+    private const val WATCHDOG_INTERVAL_MS = 60_000L
 
     /**
      * How long after an unexpected drop the state keeps reading [ConnectionState.Searching] instead
@@ -88,6 +98,33 @@ object ConnectionManager {
     private var autoReconnectDesired = false
     private var watchdogJob: Job? = null
 
+    /**
+     * Set by [disableAutoReconnect], cleared by [allowAutoConnect]: "the user intentionally
+     * disconnected or unpaired, and has not asked to connect since".
+     *
+     * Distinct from [autoReconnectDesired], which only becomes true once a BLE session has actually
+     * reached Syncing/Ready. That makes it useless as a gate for the paths that connect *without* a
+     * prior session — the Bluetooth-on observer being the important one, since gating it on
+     * autoReconnectDesired would break "Bluetooth was off at startup and comes on later".
+     *
+     * This flag is what stops a disconnect from being quietly undone by the 20s connection watchdog
+     * or by any ACTION_STATE_CHANGED broadcast that happens to arrive afterwards.
+     */
+    @Volatile
+    private var autoConnectSuppressed = false
+
+    /** Whether automatic BLE connects are currently suppressed by an intentional disconnect. */
+    fun isAutoConnectSuppressed(): Boolean = autoConnectSuppressed
+
+    /**
+     * Lifts the suppression. Called from every entry point that represents the user (or the host on
+     * their behalf) asking to connect: startup bonding, connect/adopt, manual reconnect.
+     */
+    fun allowAutoConnect() {
+        if (autoConnectSuppressed) Timber.tag(TAG).d("auto-connect suppression lifted")
+        autoConnectSuppressed = false
+    }
+
     /** Deadline (elapsedRealtime) until which a link-down reads as [ConnectionState.Searching]. */
     @Volatile
     private var reconnectGraceUntilMs = 0L
@@ -95,6 +132,13 @@ object ConnectionManager {
     /** Deadline until which an accepted reconnect counts as still in flight. */
     @Volatile
     private var attemptInFlightUntilMs = 0L
+
+    /**
+     * Republishes the state the moment the grace window lapses. Without it the expiry is only
+     * noticed on the next watchdog tick, which at a 60s interval would leave "reconnecting" on
+     * screen for up to a minute longer than intended.
+     */
+    private var graceExpiryJob: Job? = null
 
     // ───────────────────────── State derivation ─────────────────────────
 
@@ -120,7 +164,7 @@ object ConnectionManager {
             Timber.tag(TAG).d("link lost over $transport — auto-reconnect not desired, staying down")
             return
         }
-        reconnectGraceUntilMs = SystemClock.elapsedRealtime() + RECONNECT_GRACE_MS
+        openReconnectGrace()
         recompute()
         if (shouldAutoReconnect()) requestReconnect(transport, "link lost")
     }
@@ -137,7 +181,7 @@ object ConnectionManager {
             reconnectJob?.cancel()
             reconnectJob = null
             attempt.set(0)
-            reconnectGraceUntilMs = 0L
+            clearReconnectGrace()
             attemptInFlightUntilMs = 0L
         }
 
@@ -170,6 +214,12 @@ object ConnectionManager {
      * re-derives the state through [recompute], so a blocker never outlives the condition that
      * produced it.
      */
+    /**
+     * Re-derives and republishes the state. For callers that finish a teardown whose individual
+     * steps were all no-ops because everything was already in the target state.
+     */
+    fun refresh() = recompute()
+
     fun reportBlocked(reason: Blocker) {
         Timber.tag(TAG).w("connection blocked: $reason")
         _connectionState.value = ConnectionState.Blocked(reason)
@@ -188,6 +238,24 @@ object ConnectionManager {
 
     private fun inReconnectGrace(): Boolean =
         autoReconnectDesired && SystemClock.elapsedRealtime() < reconnectGraceUntilMs
+
+    /** Anchors the grace window and arms the republish for the moment it lapses. */
+    @Synchronized
+    private fun openReconnectGrace() {
+        reconnectGraceUntilMs = SystemClock.elapsedRealtime() + RECONNECT_GRACE_MS
+        graceExpiryJob?.cancel()
+        graceExpiryJob = Scopes.getDefaultCoroutine().launch {
+            delay(RECONNECT_GRACE_MS)
+            recompute()
+        }
+    }
+
+    @Synchronized
+    private fun clearReconnectGrace() {
+        reconnectGraceUntilMs = 0L
+        graceExpiryJob?.cancel()
+        graceExpiryJob = null
+    }
 
     /** Maps the internal handshake state to the stable public [ConnectionError]. */
     private fun toConnectionError(s: State): ConnectionError = when (s) {
@@ -209,6 +277,12 @@ object ConnectionManager {
      */
     @Synchronized
     fun requestReconnect(transport: TransportId, reason: String) {
+        // BLE only: a USB ping-timeout reconnect must still work during a USB session, and entering
+        // USB calls disableAutoReconnect() as part of the takeover.
+        if (transport == TransportId.BLE && autoConnectSuppressed) {
+            Timber.tag(TAG).d("BLE reconnect suppressed by an intentional disconnect ($reason)")
+            return
+        }
         if (reconnectJob?.isActive == true) {
             Timber.tag(TAG).d("reconnect already in progress; ignoring request ($reason)")
             return
@@ -223,11 +297,17 @@ object ConnectionManager {
             return
         }
         attemptInFlightUntilMs = now + RECONNECT_ATTEMPT_WINDOW_MS
-        // An attempt is under way, so a link-down reads as Searching rather than Disconnected —
-        // including an attempt started from an already-down state, which never passed through
-        // onLinkLost and so had no grace of its own.
-        if (autoReconnectDesired) {
-            reconnectGraceUntilMs = maxOf(reconnectGraceUntilMs, now + RECONNECT_GRACE_MS)
+        // Open a grace window for an attempt that started from an already-down state (a manual
+        // reconnect, say) — it never passed through onLinkLost, so it has no window of its own.
+        //
+        // Strictly `== 0L`, i.e. only when no outage is being tracked yet. This must NEVER extend an
+        // existing window: the watchdog retries for as long as the radio is away, and renewing per
+        // attempt made the window unexpirable — the state sat on Searching forever, blinking through
+        // Disconnected for one frame every 30s (captured 2026-09-16 09:54-09:57). The window is
+        // anchored to when the link was lost; retries after it lapses are silent housekeeping, and
+        // the user sees an honest Disconnected until one of them succeeds.
+        if (autoReconnectDesired && reconnectGraceUntilMs == 0L) {
+            openReconnectGrace()
             recompute()
         }
         val delayMs = backoffDelay()
@@ -328,6 +408,22 @@ object ConnectionManager {
      * tapped disconnect, or unpaired) so we don't immediately fight the tear-down. Battery-death /
      * out-of-range drops do NOT call this, so those still auto-reconnect.
      */
+    /**
+     * Stops auto-reconnect AND blocks the connect paths that don't consult it — the Bluetooth-on
+     * observer and [com.commcrete.stardust.util.DataManager.bondOnStartup]. For UNPAIR only.
+     *
+     * Kept separate from [disableAutoReconnect] because the host may have no explicit "connect"
+     * action: if a USB unplug suppressed everything, the app's next `bondOnStartup()` would be
+     * refused and BLE could never come back. An unpair is different — there is deliberately nothing
+     * left to connect to.
+     */
+    @Synchronized
+    fun suppressAutoConnect() {
+        disableAutoReconnect()
+        autoConnectSuppressed = true
+        Timber.tag(TAG).d("auto-connect suppressed (unpair)")
+    }
+
     @Synchronized
     fun disableAutoReconnect() {
         autoReconnectDesired = false
@@ -335,11 +431,19 @@ object ConnectionManager {
         watchdogJob = null
         reconnectJob?.cancel()
         reconnectJob = null
-        // Nothing is going to reconnect, so the link-down must read as Disconnected rather than
-        // pretending a reconnect is under way. Deliberately NO recompute() here: at this point the
-        // link is usually still physically up, so it would publish Ready(BLE) — and that used to
-        // re-arm the very watchdog this call disables. The teardown that follows recomputes anyway.
-        reconnectGraceUntilMs = 0L
+        // Nothing is going to reconnect, so a link-down must read as Disconnected rather than
+        // pretending a reconnect is under way.
+        clearReconnectGrace()
         attemptInFlightUntilMs = 0L
+        // Republish. The teardown that follows this call CANNOT be relied on to do it: when the
+        // link is already down, `updateStatus()` computes the same transport it already had and
+        // early-returns, and `updateConnectionState(DISCONNECTED)` finds the handshake state
+        // already DISCONNECTED and skips — so nothing recomputes and the flow keeps whatever it
+        // last published, typically the Searching from the grace window that was just cleared.
+        //
+        // Safe since arming became edge-triggered: recomputing while the link is still physically
+        // up re-derives the same established state, which is no longer an edge and cannot re-arm
+        // the watchdog this call just stopped.
+        recompute()
     }
 }

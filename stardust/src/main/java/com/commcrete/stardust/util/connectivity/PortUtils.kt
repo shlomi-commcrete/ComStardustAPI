@@ -33,8 +33,47 @@ object PortUtils {
      * the BLE reconnect that should have run was suppressed. Observed live firing every ~11–40 s
      * with no USB device attached at all.
      */
+    /**
+     * Consecutive silence windows: incremented every time [connectionTimeout] elapses with no
+     * incoming package at all, reset by [onTrafficReceived].
+     */
+    private var silentWindows = 0
+
+    /**
+     * How many silent windows make a USB link dead.
+     *
+     * BLE needs no such rule — a radio that stops answering drops the LE link on a supervision
+     * timeout and the GATT callback reports it. USB has no equivalent: if the radio's battery dies
+     * or its MCU hangs while the FTDI bridge stays enumerated and bus-powered, the UART stays open
+     * and `isUSBConnected` stays true forever. Nothing concluded the link was dead, so the state
+     * sat on Syncing/Ready(USB) while the handshake was silently retried in a loop, and the user saw
+     * a dead radio reported as connected.
+     */
+    private const val USB_DEAD_AFTER_SILENT_WINDOWS = 2
+
+    /** Called for every incoming package: proof the radio on the other end is alive. */
+    fun onTrafficReceived() {
+        silentWindows = 0
+    }
+
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
         val transport = TransportRegistry.active()?.id
+        if (transport != null) silentWindows++
+
+        // USB liveness verdict, taken BEFORE the reconnect branches below: reconnecting a link whose
+        // radio is gone just re-runs the handshake forever. Tearing the UART down publishes
+        // Disconnected and lets a later re-attach come back cleanly.
+        if (transport == TransportId.USB && silentWindows >= USB_DEAD_AFTER_SILENT_WINDOWS) {
+            Timber.tag("PortUtils").w(
+                "no USB traffic for $silentWindows windows (${silentWindows * connectionTimeout}ms) — declaring the link dead"
+            )
+            android.util.Log.w("ConfigDebug",
+                "USB link declared dead after ${silentWindows * connectionTimeout}ms of silence — disconnecting")
+            silentWindows = 0
+            BittelUsbManager2.disconnect()
+            return@Runnable
+        }
+
         when {
             // Nothing is connected — there is no link to restore, and the entry points for a fresh
             // connection (host action / attach event / startup) own that case.
@@ -98,13 +137,22 @@ object PortUtils {
                 // returns early unless the handshake reached a connected/terminal state. Arming it
                 // unconditionally is why the timeout fired repeatedly with nothing connected at all
                 // (observed every ~11-40s in the 2026-08-26 capture).
-                if (StardustInitConnectionHandler.isConnected()) resetConnectionTimer() else removeConnectionTimer()
+                // Armed whenever a transport is up, not only once the handshake has finished: a
+                // radio that dies DURING the handshake sends no pings (sendPing no-ops while
+                // syncing) and would otherwise never be noticed. The silence counter is what makes
+                // this safe — incoming handshake traffic resets it, so a slow-but-alive sync is
+                // never mistaken for a dead link.
+                if (TransportRegistry.active() != null) resetConnectionTimer() else {
+                    removeConnectionTimer()
+                    silentWindows = 0
+                }
                 delay(connectionTimeout)
             }
         }
     }
 
     fun onPingReceived () {
+        onTrafficReceived()
         removeConnectionTimer()
 //        DataManager.getUsbManager(DataManager.context).resetReconnect()
     }

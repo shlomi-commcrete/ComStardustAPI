@@ -121,6 +121,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
             cachePackageIfNeeded(mPackage)
             logIncomingPackage(mPackage, randomID)
+            // Any package at all proves the radio is alive. This is the liveness signal PortUtils
+            // counts against — a ping reply is the usual one, but during the init handshake no
+            // pings are sent and the handshake's own traffic has to count instead.
+            DataManager.getPortUtils().onTrafficReceived()
         }
 
         handlerScope.launch {

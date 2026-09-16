@@ -379,7 +379,13 @@ object DataManager : StardustAPI, PttInterface {
         return SecureKeyUtils.getSecuredKey()
     }
 
+    /**
+     * The user asking to connect, so it lifts any suppression left by an earlier intentional
+     * disconnect. Every explicit connect entry point does this — see
+     * [com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect].
+     */
     override fun reconnectToCurrentDevice() {
+        com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()
         checkInitialized()
         getClientConnection().reconnectToDeviceFast()
     }
@@ -470,6 +476,19 @@ object DataManager : StardustAPI, PttInterface {
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             Timber.w("bondOnStartup skipped: no user logged in")
             android.util.Log.w("ConfigDebug", "bondOnStartup SKIPPED — no user logged in")
+            return
+        }
+        // Do NOT connect after an intentional disconnect/unpair. The host calls this on start AND
+        // on resume/other lifecycle events — observed three times in four minutes — so treating it
+        // as "the user asked to connect" (which it previously did, by lifting the suppression) meant
+        // every such call quietly undid a disconnect and re-published SEARCHING.
+        //
+        // No suppression can survive a process restart (the flag lives in a Kotlin object), so a
+        // genuine cold start is never blocked by this. To connect after a disconnect the host calls
+        // connect(address) or reconnectToCurrentDevice(), both of which lift the suppression.
+        if (com.commcrete.stardust.transport.ConnectionManager.isAutoConnectSuppressed()) {
+            android.util.Log.d("ConfigDebug",
+                "bondOnStartup SKIPPED — user disconnected/unpaired; waiting for an explicit connect")
             return
         }
         getClientConnection().initBleStatus()
@@ -586,6 +605,7 @@ object DataManager : StardustAPI, PttInterface {
     @SuppressLint("MissingPermission")
     override fun connect(address: String) {
         checkInitialized()
+        com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()
         // Scanning while connecting only competes with the GATT connect for the radio.
         com.commcrete.stardust.transport.DeviceDiscovery.stop()
         this.bleScanner = null
