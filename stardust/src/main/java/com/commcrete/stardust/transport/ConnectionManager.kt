@@ -169,6 +169,39 @@ object ConnectionManager {
         if (shouldAutoReconnect()) requestReconnect(transport, "link lost")
     }
 
+    /**
+     * The radio went silent: [com.commcrete.stardust.util.connectivity.PortUtils] sent keepalive
+     * pings and nothing at all came back for three consecutive windows (~30s).
+     *
+     * This is the only detector for the failure both transports share — the link is physically up
+     * and the radio behind it is not running. Neither stack notices on its own: a USB bridge stays
+     * enumerated and bus-powered when the radio's MCU hangs, and an LE link only dies on supervision
+     * timeout if the radio's controller stops answering too. Both leave the SDK reporting
+     * Ready/Syncing forever.
+     *
+     * Deliberately publishes an honest **Disconnected** rather than the [ConnectionState.Searching]
+     * that a fresh drop gets: the grace window exists to ride out a blip that usually heals within
+     * one attempt, and 30s of total silence is already well past that. The retry then runs behind
+     * the Disconnected state — the user is told the truth while the SDK keeps working on it.
+     */
+    @Synchronized
+    fun onKeepaliveLost(transport: TransportId, reason: String) {
+        Timber.tag(TAG).w("keepalive lost over $transport — $reason")
+        // Each transport tears itself down and arms its own recovery (USB re-probes a device that
+        // is still attached; BLE has none and is retried just below).
+        try {
+            TransportRegistry.of(transport).onKeepaliveLost(reason)
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "keepalive teardown over $transport failed")
+        }
+        // BLE only. A USB link that went silent is restored by re-probing the attached device, and
+        // if the cable is out there is deliberately nothing to fall back to: a USB unplug stays the
+        // user's decision, which is also why the takeover cleared autoReconnectDesired.
+        if (transport == TransportId.BLE && shouldAutoReconnect()) {
+            requestReconnect(transport, reason, withGrace = false)
+        }
+    }
+
     @Synchronized
     private fun recompute() {
         val active = TransportRegistry.active()?.id
@@ -276,7 +309,7 @@ object ConnectionManager {
      * resets once a connected state is reached.
      */
     @Synchronized
-    fun requestReconnect(transport: TransportId, reason: String) {
+    fun requestReconnect(transport: TransportId, reason: String, withGrace: Boolean = true) {
         // BLE only: a USB ping-timeout reconnect must still work during a USB session, and entering
         // USB calls disableAutoReconnect() as part of the takeover.
         if (transport == TransportId.BLE && autoConnectSuppressed) {
@@ -306,7 +339,11 @@ object ConnectionManager {
         // Disconnected for one frame every 30s (captured 2026-09-16 09:54-09:57). The window is
         // anchored to when the link was lost; retries after it lapses are silent housekeeping, and
         // the user sees an honest Disconnected until one of them succeeds.
-        if (autoReconnectDesired && reconnectGraceUntilMs == 0L) {
+        //
+        // [withGrace] = false is the keepalive verdict: the radio has already been silent for ~30s,
+        // so there is no blip left to ride out and the state must read Disconnected while this
+        // attempt runs.
+        if (withGrace && autoReconnectDesired && reconnectGraceUntilMs == 0L) {
             openReconnectGrace()
             recompute()
         }

@@ -6,7 +6,6 @@ import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.transport.ConnectionManager
-import com.commcrete.stardust.transport.TransportId
 import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.DataManager
@@ -24,75 +23,94 @@ object PortUtils {
     private val handler : Handler = Handler(Looper.getMainLooper())
     private val connectionTimeout = 10000L
     /**
-     * Fired when a keepalive ping goes unanswered for [connectionTimeout].
-     *
-     * The transport MUST be resolved at fire time. This used to be hard-coded to
-     * [TransportId.USB], which meant a BLE session's missed ping asked for a *USB* reconnect:
-     * `UsbTransport.reconnect()` → `initDataToUsb()` aborted immediately (no USB link), and because
-     * [ConnectionManager.requestReconnect] is single-flight, that useless job occupied the slot and
-     * the BLE reconnect that should have run was suppressed. Observed live firing every ~11–40 s
-     * with no USB device attached at all.
-     */
-    /**
      * Consecutive silence windows: incremented every time [connectionTimeout] elapses with no
      * incoming package at all, reset by [onTrafficReceived].
      */
     private var silentWindows = 0
 
     /**
-     * How many silent windows make a USB link dead.
+     * How many unanswered keepalive pings make the radio dead, on EITHER transport.
      *
-     * BLE needs no such rule — a radio that stops answering drops the LE link on a supervision
-     * timeout and the GATT callback reports it. USB has no equivalent: if the radio's battery dies
-     * or its MCU hangs while the FTDI bridge stays enumerated and bus-powered, the UART stays open
-     * and `isUSBConnected` stays true forever. Nothing concluded the link was dead, so the state
-     * sat on Syncing/Ready(USB) while the handshake was silently retried in a loop, and the user saw
-     * a dead radio reported as connected.
+     * This is the only detector for "the link is up and nothing is running behind it", and both
+     * stacks need it:
+     *  - **USB**: if the radio's battery dies or its MCU hangs while the FTDI bridge stays
+     *    enumerated and bus-powered, the UART stays open and `isUSBConnected` stays true forever.
+     *  - **BLE**: the LE supervision timeout only fires if the radio's *controller* stops answering.
+     *    A radio whose application firmware hangs keeps the link alive at the controller level, so
+     *    no GATT callback ever arrives.
+     *
+     * Either way the state sat on Syncing/Ready while the handshake was silently retried in a loop,
+     * and the user saw a dead radio reported as connected.
+     *
+     * Three windows ≈ 30s. A window counts only TOTAL silence — ANY inbound traffic resets the
+     * counter via [onTrafficReceived], a ping reply or otherwise — so a link that is carrying
+     * anything at all (handshake traffic, an unsolicited event, a message) can never reach the
+     * verdict, however long it goes without answering a ping specifically.
      */
-    private const val USB_DEAD_AFTER_SILENT_WINDOWS = 2
+    private const val DEAD_AFTER_UNANSWERED_PINGS = 3
 
-    /** Called for every incoming package: proof the radio on the other end is alive. */
+    /**
+     * Called for every inbound chunk from the radio, from
+     * [com.commcrete.stardust.stardust.StardustPackageUtils.handlePackageReceived] — the single
+     * entry point both transports feed. A ping reply is the usual proof of life, but it is not the
+     * only one: any traffic at all counts, including packages that are not responses to anything we
+     * sent, repeated frames, and bytes that do not complete a package.
+     */
     fun onTrafficReceived() {
         silentWindows = 0
     }
 
+    /**
+     * Fired when a keepalive ping goes unanswered for [connectionTimeout]; [DEAD_AFTER_UNANSWERED_PINGS]
+     * of these in a row is the dead-link verdict.
+     *
+     * The transport MUST be resolved at fire time. This used to be hard-coded to USB, which meant a
+     * BLE session's missed ping asked for a *USB* reconnect: `UsbTransport.reconnect()` →
+     * `initDataToUsb()` aborted immediately (no USB link), and because
+     * [ConnectionManager.requestReconnect] is single-flight, that useless job occupied the slot and
+     * the BLE reconnect that should have run was suppressed. Observed live firing every ~11–40 s
+     * with no USB device attached at all.
+     */
     private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        val transport = TransportRegistry.active()?.id
-        if (transport != null) silentWindows++
-
-        // USB liveness verdict, taken BEFORE the reconnect branches below: reconnecting a link whose
-        // radio is gone just re-runs the handshake forever. Tearing the UART down publishes
-        // Disconnected and lets a later re-attach come back cleanly.
-        if (transport == TransportId.USB && silentWindows >= USB_DEAD_AFTER_SILENT_WINDOWS) {
-            Timber.tag("PortUtils").w(
-                "no USB traffic for $silentWindows windows (${silentWindows * connectionTimeout}ms) — declaring the link dead"
-            )
-            android.util.Log.w("ConfigDebug",
-                "USB link declared dead after ${silentWindows * connectionTimeout}ms of silence — disconnecting")
+        // Nothing is connected — there is no link to probe or restore, and the entry points for a
+        // fresh connection (host action / attach event / startup) own that case.
+        val transport = TransportRegistry.active()?.id ?: run {
+            Timber.tag("PortUtils").d("ping timeout with no active transport — nothing to reconnect")
             silentWindows = 0
-            BittelUsbManager2.disconnect()
+            return@Runnable
+        }
+        silentWindows++
+
+        // A terminal error is not fixed by reconnecting; retrying every 10s would just loop.
+        if (StardustInitConnectionHandler.hasUnsyncableError()) {
+            Timber.tag("PortUtils").d("ping timeout ignored — terminal handshake error, reconnect would loop")
             return@Runnable
         }
 
-        when {
-            // Nothing is connected — there is no link to restore, and the entry points for a fresh
-            // connection (host action / attach event / startup) own that case.
-            transport == null ->
-                Timber.tag("PortUtils").d("ping timeout with no active transport — nothing to reconnect")
-
-            // Never interrupt an in-flight handshake. sendPing() no-ops while syncing, so the timer
-            // would always expire mid-sync; with the transport now resolved correctly, firing here
-            // would force-disconnect a BLE session that is still legitimately negotiating. (The old
-            // hard-coded USB target made this harmless by accident.)
-            StardustInitConnectionHandler.isSyncing() ->
-                Timber.tag("PortUtils").d("ping timeout ignored — init handshake in progress over $transport")
-
-            // A terminal error is not fixed by reconnecting; retrying every 10s would just loop.
-            StardustInitConnectionHandler.hasUnsyncableError() ->
-                Timber.tag("PortUtils").d("ping timeout ignored — terminal handshake error, reconnect would loop")
-
-            else -> ConnectionManager.requestReconnect(transport, "$transport ping timeout")
+        if (silentWindows < DEAD_AFTER_UNANSWERED_PINGS) {
+            Timber.tag("PortUtils").d(
+                "unanswered ping $silentWindows/$DEAD_AFTER_UNANSWERED_PINGS over $transport"
+            )
+            return@Runnable
         }
+
+        // Three windows of TOTAL silence: the link is up and nothing is answering on it. Declare it
+        // down (honestly — the user is not shown a reconnect that has already been failing for 30s)
+        // and let ConnectionManager restore it: re-probe the still-attached device on USB, redial a
+        // paired radio on BLE.
+        //
+        // Deliberately NOT exempted while the init handshake is in flight. sendPing() no-ops during
+        // a sync, so a radio that dies mid-handshake sends nothing and would otherwise never be
+        // noticed; the counter is what makes that safe, since any incoming package — handshake
+        // traffic included — resets it, so a slow-but-alive sync cannot reach this line.
+        val silenceMs = silentWindows * connectionTimeout
+        Timber.tag("PortUtils").w(
+            "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings over $transport (${silenceMs}ms of silence) — declaring the link dead"
+        )
+        android.util.Log.w("ConfigDebug",
+            "$transport link declared dead after ${silenceMs}ms of silence — disconnecting and retrying")
+        silentWindows = 0
+        ConnectionManager.onKeepaliveLost(transport, "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings (${silenceMs}ms)")
     }
 
     /**

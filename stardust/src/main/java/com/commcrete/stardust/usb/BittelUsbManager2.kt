@@ -25,6 +25,9 @@ import com.commcrete.stardust.util.audio.ButtonListener
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.Locale
@@ -90,7 +93,9 @@ object BittelUsbManager2 : BittelProtocol {
                 "uartManager=${if (uartManager == null) "null" else "open"} " +
                 "uartManagerAudio=${if (uartManagerAudio == null) "null" else "open"} " +
                 "stardustDevice=${stardustDevice?.deviceId} audioDevice=${audioDevice?.deviceId} " +
-                "isConnectedAudio=$isConnectedAudio isJboxAudioPresent=$isJboxAudioPresent"
+                "isConnectedAudio=$isConnectedAudio isJboxAudioPresent=$isJboxAudioPresent " +
+                "usbRecovery=${if (isUsbRecoveryInProgress()) "RUNNING" else "idle"} " +
+                "dataDeviceStillAttached=${attachedStardustDataDevice()?.deviceId}"
         )
         UsbDiag.dumpAttachedDevices("dump")
         UsbDiag.linkState("dump")
@@ -198,7 +203,14 @@ object BittelUsbManager2 : BittelProtocol {
             UsbDiag.verdict("USB port is OPEN but the handshake will not run: no logged-in user. The link will look connected and stay silent.")
             return
         }
-        if(!BleManager.isUSBConnected || (BleManager.isUSBConnected && StardustInitConnectionHandler.hasUnsyncableError())) {
+        // The terminal-error half of this guard is scoped to a RECONNECT. On a freshly opened port
+        // it contradicted this function's own contract ("freshLink == true must NEVER be skipped")
+        // and latched a previous session's NO_LICENSE / ENCRYPTION_KEY_ERROR / PRESET_ERROR onto the
+        // next one: the abort happens BEFORE resetForNewSession(), the only thing that clears it, so
+        // the port would open, isUSBConnected would flip true, and no handshake would ever run — a
+        // connected cable permanently reported as not connected. A real error is re-derived by the
+        // handshake we now run; it no longer has to be inherited to be reported.
+        if(!BleManager.isUSBConnected || (!freshLink && StardustInitConnectionHandler.hasUnsyncableError())) {
             Log.w("ConfigDebug",
                 "initDataToUsb ABORT — isUSBConnected=${BleManager.isUSBConnected} " +
                     "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
@@ -267,6 +279,169 @@ object BittelUsbManager2 : BittelProtocol {
     /** [com.commcrete.stardust.transport.UsbTransport.reconnect] — a re-entry, not a fresh port. */
     fun reconnectToDevice() { initDataToUsb(freshLink = false) }
 
+    // ───────────────────────── Dead-link recovery ─────────────────────────
+
+    /** First re-probe delay, doubled per attempt up to [RECOVERY_MAX_DELAY_MS]. */
+    private const val RECOVERY_BASE_DELAY_MS = 5_000L
+    private const val RECOVERY_MAX_DELAY_MS = 30_000L
+
+    private var recoveryJob: Job? = null
+
+    /** One permission request per recovery session — a loop of them would be a dialog storm. */
+    @Volatile
+    private var recoveryPermissionRequested = false
+
+    fun isUsbRecoveryInProgress(): Boolean = recoveryJob?.isActive == true
+
+    /**
+     * The device that would take the DATA role if it were (re-)attached right now, or null.
+     *
+     * Deliberately excludes anything [isJboxAudioDevice] accepts: that matcher is checked FIRST in
+     * [connectToUnknownDevice], so a name it claims can never reach the data branch — re-probing it
+     * as a data device would open the wrong port.
+     */
+    private fun attachedStardustDataDevice(): UsbDevice? {
+        val manager = usbManager
+            ?: runCatching { DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager }.getOrNull()
+            ?: return null
+        return runCatching {
+            manager.deviceList.values.firstOrNull { isStardustDataDevice(it) && !isJboxAudioDevice(it) }
+        }.getOrNull()
+    }
+
+    /**
+     * The USB data link went down **on its own** — the serial IO thread died, or the keepalive
+     * watchdog declared the radio silent ([com.commcrete.stardust.util.connectivity.PortUtils]).
+     * Distinct from [disconnect], which is also the intentional teardown used by a detach and by the
+     * host.
+     *
+     * Tears the port down and then, if the radio is still sitting on the bus, starts re-probing it.
+     * Without that second half a radio whose battery dies (or whose MCU hangs) while plugged in is
+     * unrecoverable: the FTDI bridge stays enumerated and bus-powered, so **no DETACHED/ATTACHED
+     * pair is ever broadcast**, and attach is the SDK's only path back to an open port. The observed
+     * result was `Ready(USB)` → `Disconnected` when the watchdog fired, then `Disconnected` forever
+     * even after the radio booted back up with the cable still in.
+     */
+    fun onDataLinkLost(reason: String) {
+        UsbDiag.warn("onDataLinkLost", "unexpected USB data-link loss: $reason")
+        disconnect()
+        startUsbRecovery(reason)
+    }
+
+    /**
+     * Re-probes the still-attached data device until the port reopens or the device leaves the bus.
+     *
+     * Bounded deliberately:
+     * - **Stops the moment the device is unplugged.** A physical unplug stays user-decided — the
+     *   host shows its "connect via BLE / unpair" prompt and a later re-attach comes in through the
+     *   ATTACHED broadcast. This loop only ever restores a link to hardware that never left.
+     * - **Never touches BLE.** A tick is skipped while a BLE link is up, so a speculative probe
+     *   cannot tear down a working BLE session (opening the port flips `isUSBConnected`, and
+     *   `updateStatus()` would then hand the transport over) only to have the watchdog close it
+     *   again 20s later because the radio is still dead.
+     * - **Backs off** 5s → 10s → 20s → 30s, so a radio that stays dead costs one open/close per 30s
+     *   rather than a hot loop.
+     */
+    @Synchronized
+    private fun startUsbRecovery(reason: String) {
+        val device = attachedStardustDataDevice()
+        if (device == null) {
+            UsbDiag.log(
+                "recovery",
+                "NOT starting ($reason) — no data device on the bus; the device is gone, so an " +
+                    "ATTACHED broadcast (or the host) owns reconnection from here"
+            )
+            return
+        }
+        if (recoveryJob?.isActive == true) {
+            UsbDiag.log("recovery", "already running — not restarting ($reason)")
+            return
+        }
+        recoveryPermissionRequested = false
+        UsbDiag.log(
+            "recovery",
+            "START ($reason) — ${UsbDiag.describe(device)} is STILL enumerated, so no re-attach event " +
+                "will ever come; re-probing it instead"
+        )
+        // The Disconnected that disconnect() just published STANDS. The verdict that got us here is
+        // three unanswered pings — ~30s with nothing on the other end — so the user is told the link
+        // is down, truthfully, and these re-probes run behind that. Publishing "searching" for as
+        // long as a dead radio stays plugged in would be an indefinite promise.
+        recoveryJob = Scopes.getDefaultCoroutine().launch {
+            var attempt = 0
+            while (isActive) {
+                val backoff = (RECOVERY_BASE_DELAY_MS shl attempt.coerceAtMost(3))
+                    .coerceAtMost(RECOVERY_MAX_DELAY_MS)
+                attempt++
+                delay(backoff)
+
+                if (BleManager.isUSBConnected) {
+                    UsbDiag.log("recovery", "STOP — the USB data link is up again")
+                    break
+                }
+                val target = attachedStardustDataDevice()
+                if (target == null) {
+                    UsbDiag.log(
+                        "recovery",
+                        "STOP — the data device left the bus; an unplug is the user's decision, the " +
+                            "host takes it from here"
+                    )
+                    Scopes.getMainCoroutine().launch { publishDisconnectedIfIdle() }
+                    break
+                }
+                if (BleManager.isBluetoothConnected()) {
+                    UsbDiag.log(
+                        "recovery",
+                        "tick #$attempt skipped — a BLE link is up; not tearing it down for a probe " +
+                            "that may find the radio still dead"
+                    )
+                    continue
+                }
+                if (usbManager?.hasPermission(target) != true) {
+                    if (recoveryPermissionRequested) {
+                        UsbDiag.log("recovery", "tick #$attempt skipped — waiting for the permission result")
+                        continue
+                    }
+                    recoveryPermissionRequested = true
+                    UsbDiag.warn(
+                        "recovery",
+                        "permission for ${UsbDiag.describe(target)} is no longer held — requesting it " +
+                            "ONCE (a request per tick would be a dialog storm)"
+                    )
+                    Scopes.getMainCoroutine().launch {
+                        usbDevicePermissionHandler.requestPermissionsForDevices(listOf(target))
+                    }
+                    continue
+                }
+                UsbDiag.log("recovery", "re-probe #$attempt — reopening the port for ${UsbDiag.describe(target)}")
+                // connectToDevice directly, not connectToUnknownDevice: the role was already decided
+                // by attachedStardustDataDevice(). Main thread, matching the ATTACHED path.
+                Scopes.getMainCoroutine().launch { connectToDevice(target) }
+            }
+        }
+    }
+
+    /** Cancels the re-probe loop. Called from every teardown, so an intentional one stays down. */
+    @Synchronized
+    private fun stopUsbRecovery(reason: String) {
+        if (recoveryJob?.isActive != true) return
+        UsbDiag.log("recovery", "CANCELLED — $reason")
+        recoveryJob?.cancel()
+        recoveryJob = null
+        recoveryPermissionRequested = false
+    }
+
+    /**
+     * Settles the published state on a teardown that `updateStatus()` cannot publish for itself —
+     * it early-returns when the transport it computes is unchanged, so a detach arriving while the
+     * link is already down (the end of a re-probe loop, say) would publish nothing at all.
+     */
+    private fun publishDisconnectedIfIdle() {
+        if (!BleManager.isUSBConnected && !BleManager.isBluetoothConnected()) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        }
+    }
+
     fun resetReconnect () {
 //        handlerObject?.removeTimer()
     }
@@ -278,6 +453,10 @@ object BittelUsbManager2 : BittelProtocol {
                 "isUSBConnected(before)=${BleManager.isUSBConnected}",
         )
         try {
+            // Any teardown that comes through here is either intentional (host / detach) or is
+            // about to (re)start recovery itself via onDataLinkLost — in both cases a loop left
+            // over from an earlier loss must not survive and reopen the port behind us.
+            stopUsbRecovery("disconnect()")
             isConnected = false
             uartManager?.disconnect()
             uartManager = null
@@ -285,6 +464,10 @@ object BittelUsbManager2 : BittelProtocol {
             BleManager.isUSBConnected = false
             BleManager.usbConnectionStatus.value = false
             BleManager.updateStatus ()
+            // updateStatus() early-returns when the transport it computes is unchanged, so a
+            // teardown that arrives with the transport ALREADY null — a detach that ends a re-probe
+            // loop, say — publishes nothing and would leave the loop's SEARCHING on screen.
+            publishDisconnectedIfIdle()
             UsbDiag.linkState("disconnect.after")
         }catch (e : Exception) {
             e.printStackTrace()
@@ -425,8 +608,11 @@ object BittelUsbManager2 : BittelProtocol {
                 // Dispatched to main: disconnect() writes LiveData via setValue, which is
                 // main-thread-only, and this callback runs on the serial IO executor. Going through
                 // main also avoids shutting that executor down from inside one of its own tasks.
+                //
+                // onDataLinkLost rather than a bare disconnect(): if the bridge is still enumerated
+                // (a hung radio behind a live FTDI), nothing else will ever reopen this port.
                 Scopes.getMainCoroutine().launch {
-                    disconnect()
+                    onDataLinkLost("serial IO thread died: ${e.message}")
                     UsbDiag.linkState("connectToDevice.onRunError.after")
                 }
             }
@@ -436,6 +622,9 @@ object BittelUsbManager2 : BittelProtocol {
         UsbDiag.log("connectToDevice", "UART open result=$connectionStatus")
         if(connectionStatus == true) {
             stardustDevice = device
+            // The port is open again — end the re-probe loop now rather than waiting for its next
+            // tick to notice (a tick that would otherwise open a SECOND UARTManager).
+            stopUsbRecovery("port reopened")
             Scopes.getMainCoroutine().launch {
                 android.util.Log.d("ConfigDebug", "USB up → isUSBConnected=true, initDataToUsb(), updateStatus() (this is what disconnects BLE)")
                 UsbDiag.log("connectToDevice", "USB UP — setting isUSBConnected=true; note initDataToUsb() runs BEFORE the BLE teardown in updateStatus()")

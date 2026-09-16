@@ -32,6 +32,15 @@ internal object UsbTransport : Transport {
         BittelUsbManager2.disconnect()
     }
 
+    /**
+     * Tears the UART down and starts re-probing the device for as long as it stays on the bus. The
+     * re-probe is the whole point: a radio that dies behind a bus-powered FT231X never produces a
+     * detach/attach pair, and attach is otherwise the only path back to an open port.
+     */
+    override fun onKeepaliveLost(reason: String) {
+        BittelUsbManager2.onDataLinkLost(reason)
+    }
+
     override fun reconnect() {
         BittelUsbManager2.reconnectToDevice()
     }

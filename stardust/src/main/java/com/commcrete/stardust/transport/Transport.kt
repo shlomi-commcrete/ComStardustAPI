@@ -36,6 +36,17 @@ interface Transport : BittelProtocol {
     /** Tears the link down. [force] disconnects even if the session isn't fully connected. */
     fun disconnect(force: Boolean = true)
 
+    /**
+     * The radio stopped answering keepalive pings: the link is up as far as the phone can see, but
+     * nothing is on the other end of it.
+     *
+     * Distinct from [disconnect], which is the INTENTIONAL teardown (the user tapped disconnect, a
+     * USB detach, a USB→BLE takeover). This one is a verdict, and each transport tears itself down
+     * *and* arms whatever recovery it owns — USB re-probes a device that is still enumerated, BLE
+     * has none of its own and is retried by [ConnectionManager] instead.
+     */
+    fun onKeepaliveLost(reason: String)
+
     /** Re-establishes the link to the current/last device. Driven by [ConnectionManager]. */
     fun reconnect()
 }

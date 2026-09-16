@@ -121,10 +121,11 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
             cachePackageIfNeeded(mPackage)
             logIncomingPackage(mPackage, randomID)
-            // Any package at all proves the radio is alive. This is the liveness signal PortUtils
-            // counts against — a ping reply is the usual one, but during the init handshake no
-            // pings are sent and the handshake's own traffic has to count instead.
-            DataManager.getPortUtils().onTrafficReceived()
+            // Liveness (PortUtils.onTrafficReceived) is signalled upstream in
+            // StardustPackageUtils.handlePackageReceived. It was here, but this point is past the
+            // isDuplicate early-return above and only sees fully reassembled packages — so a
+            // repeated frame, or bytes that never completed one, counted as silence despite being
+            // the radio plainly talking to us.
         }
 
         handlerScope.launch {

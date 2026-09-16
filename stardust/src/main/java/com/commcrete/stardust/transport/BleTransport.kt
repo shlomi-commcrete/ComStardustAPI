@@ -27,6 +27,17 @@ internal class BleTransport(private val conn: ClientConnection) : Transport {
         conn.disconnectFromBLEDevice(disconnectByForce = force, withStateUpdate = true)
     }
 
+    /**
+     * A GATT link the radio has stopped answering on. `disconnectByForce` because the session may
+     * never have finished its handshake, and the tear-down must happen either way: without it the
+     * LE link stays open (the phone's supervision timeout only fires if the *radio* stops
+     * advertising its side, which a hung-but-powered radio does not), so the state would sit on
+     * Ready(BLE)/Syncing(BLE) with nothing behind it.
+     */
+    override fun onKeepaliveLost(reason: String) {
+        conn.disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = true)
+    }
+
     override fun reconnect() {
         conn.reconnectToDevice()
     }

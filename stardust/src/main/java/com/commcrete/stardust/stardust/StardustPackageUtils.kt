@@ -8,6 +8,7 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.connectivity.PortUtils
 import timber.log.Timber
 
 object StardustPackageUtils {
@@ -741,6 +742,16 @@ object StardustPackageUtils {
     }
 
     fun handlePackageReceived (byteArray: ByteArray, randomID: String) {
+        // Liveness, counted here at the single inbound entry point rather than downstream: ANY
+        // communication from the radio proves it is alive, not just a PING_RESPONSE. This function
+        // has exactly two callers — the BLE characteristic-changed callback and the USB serial RX —
+        // and both carry bytes that can only have come from the radio, so every arrival counts.
+        //
+        // Placed BEFORE reassembly and BEFORE the duplicate filter in handleStardustPackage, which
+        // is where this used to live: a repeated frame and a fragment that never completes a package
+        // are both still the radio transmitting, and neither used to reset the silence counter that
+        // PortUtils uses to declare the link dead.
+        PortUtils.onTrafficReceived()
         val context = DataManager.appContext
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
         lastByteArray = byteArray
