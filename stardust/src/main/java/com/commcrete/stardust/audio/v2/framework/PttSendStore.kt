@@ -13,6 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 
 /**
@@ -27,7 +28,8 @@ class PttSendStore(private val context: Context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun mirrorFile(id: RecordingId): File = File(context.filesDir, "ptt_v2/${id.value}-mirror.wav")
+    fun mirrorFile(id: RecordingId): File =
+        File(StardustStorage.mediaRoot, "ptt_v2/${id.value}-mirror.wav")
 
     /** Called by the bridge after the recording has finalized (its mirror WAV, if any, is written). */
     fun onFinalized(id: RecordingId, chatId: String, receiverId: String, codecId: CodecId, epochTimeMs: Long) {

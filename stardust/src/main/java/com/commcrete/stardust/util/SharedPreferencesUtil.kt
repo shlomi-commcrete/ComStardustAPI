@@ -150,10 +150,9 @@ object SharedPreferencesUtil {
         return DataManager.appContext.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
     }
 
-    private fun getPrefsPlugin(): SharedPreferences? {
-        return DataManager.pluginContext?.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
-
-    }
+    // No getPrefsPlugin(): DataManager.pluginContext grants the plugin APK's
+    // resources, assets and classloader, not write access to the plugin
+    // package's data directory — we run under ATAK's UID. See setIsErased.
 
     fun getUserID(): String? {
         return getPrefs().getString(KEY_USER_ID, null)
@@ -667,12 +666,45 @@ object SharedPreferencesUtil {
         getPrefs().edit { putString(KEY_KEY_NAME, dest) }
     }
 
+    /**
+     * The security-wipe tripwire: once set, `DataManager.init` refuses to start.
+     *
+     * Reads our own store, falling back **once** to the plugin-context store
+     * this flag used to live in, so a device erased by an older build still
+     * comes back armed. See [setIsErased] for why that store never worked.
+     */
     fun getIsErased(): Boolean {
-        return getPrefsPlugin()?.getBoolean(KEY_ERASE, false) ?: false
+        val prefs = getPrefs()
+        if (prefs.contains(KEY_ERASE)) return prefs.getBoolean(KEY_ERASE, false)
+
+        val legacy = runCatching {
+            DataManager.pluginContext.getSharedPreferences(PACKAGE_NAME, MODE_PRIVATE)
+                .getBoolean(KEY_ERASE, false)
+        }.getOrDefault(false)
+
+        // Adopt it so the fallback runs at most once per install.
+        prefs.edit(commit = true) { putBoolean(KEY_ERASE, legacy) }
+        return legacy
     }
 
+    /**
+     * Records that the device has been wiped.
+     *
+     * Uses `commit()`, not `apply()`: the only caller is
+     * `EraseUtils.handleDelete`, which kills the process about a second later.
+     * An asynchronous write is not guaranteed to reach disk first, and this
+     * flag is worthless if it does not survive the restart.
+     *
+     * Previously this wrote through `DataManager.pluginContext`. That never
+     * worked: ATAK loads plugins into its own process under its own UID
+     * (measured: ATAK 10506, this plugin's package 10517, no `sharedUserId`),
+     * so the plugin package's data directory is not writable from here.
+     * `apply()` swallowed the resulting IO failure, and the flag was silently
+     * lost on every restart — the wipe happened, but the tripwire never
+     * re-armed.
+     */
     fun setIsErased(isErased: Boolean) {
-        getPrefsPlugin()?.edit()?.putBoolean(KEY_ERASE, isErased)?.apply()
+        getPrefs().edit(commit = true) { putBoolean(KEY_ERASE, isErased) }
     }
 
     fun getIsManualLocation(): Boolean {

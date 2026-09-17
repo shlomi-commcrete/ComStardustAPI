@@ -4,7 +4,7 @@ import java.io.File
 import java.io.RandomAccessFile
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
-import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.room.StardustStorage
 
 object PyTorchInitGate {
     private const val LOCK_NAME = "pytorch_once.lock"
@@ -13,7 +13,7 @@ object PyTorchInitGate {
     fun isPrimaryInitializer(): Boolean {
         if (holder != null) return true
         return try {
-            val f = File(DataManager.appContext.filesDir, LOCK_NAME)
+            val f = File(StardustStorage.internalDir("locks"), LOCK_NAME)
             val raf = RandomAccessFile(f, "rw")
             val ch: FileChannel = raf.channel
             val lk: FileLock? = ch.tryLock()  // null if already locked by another classloader

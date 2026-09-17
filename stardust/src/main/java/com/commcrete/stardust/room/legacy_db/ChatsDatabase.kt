@@ -5,8 +5,6 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
 import com.commcrete.stardust.room.legacy_db.chats.ChatItem
 import com.commcrete.stardust.room.legacy_db.chats.ChatsDao
@@ -14,6 +12,12 @@ import com.commcrete.stardust.util.DataManager
 
 @Database(entities = [ChatItem::class], version = 32, exportSchema = false)
 @TypeConverters(Converters.StringArrayConverter::class, Converters.DoubleArrayConverter::class)
+/**
+ * Read-only migration source, consumed and deleted by `LegacyMigrator`.
+ * See [MessagesDatabase] for the two rules that govern the legacy databases:
+ * never open one whose file does not already exist, and no destructive
+ * migration fallback.
+ */
 abstract class ChatsDatabase : RoomDatabase() {
     abstract fun chatsDao() : ChatsDao
 
@@ -31,7 +35,7 @@ abstract class ChatsDatabase : RoomDatabase() {
                     DataManager.appContext,
                     ChatsDatabase::class.java,
                     "chats_database"
-                ).fallbackToDestructiveMigration().build()
+                ).build()
                 INSTANCE = instance
                 return instance
             }
@@ -45,15 +49,6 @@ abstract class ChatsDatabase : RoomDatabase() {
         fun closeAndClear() = synchronized(this) {
             INSTANCE?.close()
             INSTANCE = null
-        }
-
-        val MIGRATION_28_30 = object : Migration(27, 30) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                // Add the new columns with a default value
-                database.execSQL("ALTER TABLE chats_table ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE chats_table ADD COLUMN is_bittel INTEGER NOT NULL DEFAULT 0")
-                database.execSQL("ALTER TABLE chats_table ADD COLUMN image_name TEXT NOT NULL DEFAULT ''")
-            }
         }
     }
 }

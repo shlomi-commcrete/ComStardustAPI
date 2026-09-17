@@ -21,6 +21,16 @@ val apiKey = apiKeyProvider.orElse("").get()
 val rnnoiseHeader = file("src/main/cpp/rnnoise/include/rnnoise.h")
 val enableRnnoise = rnnoiseHeader.exists()
 
+// ─── Room schema export ──────────────────────────────────────────────────────
+// AppDatabase has no destructive-migration fallback, so every schema change
+// needs a real Migration. Exported schemas are what those migrations get
+// written and tested against; they are committed alongside the code.
+kapt {
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
+    }
+}
+
 android {
     namespace = "com.commcrete.stardust"
     compileSdk = 34

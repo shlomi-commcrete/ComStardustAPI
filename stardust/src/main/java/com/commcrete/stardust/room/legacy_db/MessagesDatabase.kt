@@ -5,8 +5,6 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
 import com.commcrete.stardust.room.legacy_db.messages.MessageItem
 import com.commcrete.stardust.room.legacy_db.messages.MessagesDao
@@ -15,6 +13,21 @@ import com.commcrete.stardust.util.DataManager
 @Database(entities = [MessageItem::class], version = 25, exportSchema = false)
 @TypeConverters(Converters.EnumConverter::class)
 
+/**
+ * Read-only migration source, consumed and deleted by `LegacyMigrator` on the
+ * first run against an install that predates the unified `AppDatabase`.
+ *
+ * Two rules apply to all three legacy databases:
+ *
+ *  - **Never open one unless its file already exists.** Room *creates* the file
+ *    on open, and `messages_database` is a generic name in the host's shared
+ *    `databases/` directory — manufacturing it invents a collision with any
+ *    other ATAK plugin that picks the same name. `LegacyMigrator` gates every
+ *    open on existence.
+ *  - **No `fallbackToDestructiveMigration()`.** If a file under this name turns
+ *    out to have a foreign schema it belongs to somebody else; the open must
+ *    fail so the migrator can leave it alone, not drop their tables.
+ */
 abstract class MessagesDatabase : RoomDatabase() {
     abstract fun messagesDao() : MessagesDao
 
@@ -32,7 +45,7 @@ abstract class MessagesDatabase : RoomDatabase() {
                     DataManager.appContext,
                     MessagesDatabase::class.java,
                     "messages_database"
-                ).fallbackToDestructiveMigration().build()
+                ).build()
                 INSTANCE = instance
                 return instance
             }
@@ -46,18 +59,6 @@ abstract class MessagesDatabase : RoomDatabase() {
         fun closeAndClear() = synchronized(this) {
             INSTANCE?.close()
             INSTANCE = null
-        }
-
-        val MIGRATION_15_16 = object : Migration(15, 16) {
-            override fun migrate(database: SupportSQLiteDatabase) {
-                database.execSQL("ALTER TABLE messages_table ADD COLUMN time TEXT NOT NULL DEFAULT '' ")
-            }
-        }
-
-        val MIGRATION_24_25 = object : Migration(24, 25) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE messages_table ADD COLUMN isArchived INTEGER NOT NULL DEFAULT 0")
-            }
         }
     }
 }

@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -198,7 +199,7 @@ class FileReceiver(
 
     private fun saveFile () {
         removeReceiveTimer()
-        val destDir = File("${DataManager.appContext.filesDir}/${data.chatId}/files")
+        val destDir = File(StardustStorage.chatDir(data.chatId), "files")
         if (!destDir.exists()) {
             destDir.mkdirs()
         }

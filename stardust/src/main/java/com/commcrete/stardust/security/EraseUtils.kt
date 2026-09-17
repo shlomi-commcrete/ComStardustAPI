@@ -3,6 +3,8 @@ package com.commcrete.stardust.security
 import android.os.Handler
 import android.os.Looper
 import com.commcrete.stardust.crypto.SecureKeyUtils
+import com.commcrete.stardust.room.StardustStorage
+import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import timber.log.Timber
@@ -31,6 +33,14 @@ object EraseUtils {
             Timber.i("EraseUtils: isErased flag set to true")
             DataManager.logout()
             Timber.i("EraseUtils: User logged out")
+            // logout() empties the tables; this removes the files themselves.
+            // Everything the SDK persists lives under one root, so the wipe is
+            // a single recursive delete rather than a list of database names
+            // that has to be kept in step. Close the database first or the open
+            // handle rewrites its journal as the process winds down.
+            AppDatabase.closeAndClear()
+            val storageWiped = StardustStorage.deleteAll()
+            Timber.i("EraseUtils: Stardust storage wiped = $storageWiped")
             val device = DataManager.getPairedDevices()
             DataManager.getClientConnection().mDevice = device
             // Security wipe: destroy the local pairing record unconditionally, even if the OS

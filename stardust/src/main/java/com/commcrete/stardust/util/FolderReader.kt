@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.internal.normalizeId
 import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
 import kotlinx.coroutines.CoroutineScope
@@ -103,11 +104,12 @@ object FolderReader {
 
     private fun saveFileToInternalStorage(fileName: String, data: ByteArray): String? {
         return try {
-            val context = DataManager.appContext
-            context.openFileOutput(fileName, MODE_PRIVATE).use { fos ->
-                fos.write(data)
-            }
-            File(context.filesDir, fileName).absolutePath
+            // Was openFileOutput(), i.e. the host's files directory root. These
+            // are arbitrary user-supplied file names, so they belong in the
+            // SDK's own media tree rather than loose among ATAK's own files.
+            val file = File(StardustStorage.mediaRoot.apply { mkdirs() }, fileName)
+            file.writeBytes(data)
+            file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -214,7 +216,7 @@ object FolderReader {
     }
 
     private fun savePngFilesToInternalStorage(pngFiles: List<File>) {
-        val internalStorageDir = DataManager.appContext.filesDir
+        val internalStorageDir = StardustStorage.mediaRoot.apply { mkdirs() }
 
         pngFiles.forEach { pngFile ->
             try {
@@ -237,7 +239,7 @@ object FolderReader {
             val bitmap = BitmapFactory.decodeStream(inputStream)
             inputStream?.close()
 
-            val file = File(DataManager.appContext.filesDir, fileName)
+            val file = File(StardustStorage.mediaRoot.apply { mkdirs() }, fileName)
             val outputStream = FileOutputStream(file)
             bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
             outputStream.flush()

@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
@@ -219,7 +220,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      * recorded on, so this must run before the first package goes out.
      */
     private suspend fun saveLocalMessages(): Boolean {
-        val destDir = File("${DataManager.appContext.filesDir}/${data.chatId}/files").also { it.mkdirs() }
+        val destDir = File(StardustStorage.chatDir(data.chatId), "files").also { it.mkdirs() }
         val destFile = File(destDir, data.file.name)
 
         // Try to copy the source into the chat-local directory. We do this in a

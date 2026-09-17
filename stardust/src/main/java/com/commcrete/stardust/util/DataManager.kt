@@ -28,6 +28,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.location.PollingUtils
 import com.commcrete.stardust.room.RepositoryProvider
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -689,8 +690,17 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().addMessageToQueue(pkg)
     }
 
+    /**
+     * Resolves where PTT recordings and received files are written.
+     *
+     * The host's [location] is treated as a *parent*: the SDK writes into a
+     * `stardust/` subdirectory of it, never into it directly. That keeps the
+     * tree unique to this plugin inside a data directory shared by every ATAK
+     * plugin, and lets [StardustStorage.deleteAll] remove it together with the
+     * database on a wipe. See [StardustStorage].
+     */
     fun requireFileLocation (location : String) {
-        this.fileLocation = location
+        this.fileLocation = StardustStorage.initMediaRoot(location)
     }
 
     fun getBleScanner(): BleScanner {
@@ -771,11 +781,36 @@ object DataManager : StardustAPI, PttInterface {
         RemoteConfigUtils.initLocalDefaults()
     }
 
+    /**
+     * The logout wipe: every chat, contact and message row, **and** the PTT
+     * recordings and received files that belong to them.
+     *
+     * The files go with the rows deliberately. `clearData` drops every row that
+     * referenced them, so leaving them behind would strand the previous user's
+     * audio and attachments on disk — unreachable through the UI, still
+     * readable on the device, and inherited by whoever logs in next.
+     *
+     * The database file itself and the extracted models survive; only the media
+     * is removed. The security wipe that takes everything is
+     * [StardustStorage.deleteAll], called from `EraseUtils`.
+     */
     suspend fun cleanAllDatabases(): Boolean {
         checkInitialized()
-        return getAppRepo().clearData()
+        val databasesCleared = getAppRepo().clearData()
+        val mediaCleared = withContext(Dispatchers.IO) { StardustStorage.clearMedia() }
+        return databasesCleared && mediaCleared
     }
 
+    /**
+     * Deletes the media of chats that still exist, leaving the rows in place —
+     * "free up space", not "wipe". Narrower than [cleanAllDatabases], which
+     * drops the rows and all media together, and than
+     * [StardustStorage.deleteAll], which takes the database too.
+     *
+     * Only reaches per-chat directories whose name matches a current chat id,
+     * so media already orphaned by a deleted chat is not its job. Nothing in
+     * the SDK calls this; it exists for the host.
+     */
     suspend fun deleteChatFiles(): CleanResult = withContext(Dispatchers.IO) {
 
         withProcessFileLock("clean_user_files") {
@@ -806,7 +841,13 @@ object DataManager : StardustAPI, PttInterface {
         lockName: String,
         block: () -> T
     ): T {
-        val lockFile = File(appContext.filesDir, "$lockName.lock")
+        // Name-prefixed rather than moved into the SDK's own tree: this function
+        // is public and inline, so it cannot reach the internal StardustStorage.
+        // Lock names like "clean_user_files" are generic and the host's files
+        // directory is shared with every plugin, so the prefix is what keeps
+        // them apart. Locks are process coordination, not data — nothing needs
+        // to wipe them.
+        val lockFile = File(appContext.filesDir, "stardust_$lockName.lock")
         RandomAccessFile(lockFile, "rw").channel.use { channel ->
             channel.lock().use {
                 return block()

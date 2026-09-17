@@ -508,8 +508,11 @@ object RecorderUtils {
             ts = System.currentTimeMillis()
             val directory = File("$fileDir/$chatID")
             val newFile = File("$fileDir/$chatID/$ts-$receiverId.pcm")
+            // mkdirs, not mkdir: fileDir is the SDK's own subdirectory of the
+            // host-supplied location (see StardustStorage), so more than one
+            // level may still be missing.
             if(!directory.exists()){
-                directory.mkdir()
+                directory.mkdirs()
             }
             if(!newFile.exists()){
                 newFile.createNewFile()
@@ -524,11 +527,14 @@ object RecorderUtils {
 
     private fun createFileWav(chatID: String, userId: String) : File{
         ts = System.currentTimeMillis()
-        val context = DataManager.appContext
-        val directory = File("${context.filesDir}/$chatID")
-        val newFile = File("${context.filesDir}/$chatID/$ts-$userId.wav")
+        // Was appContext.filesDir — that put per-chat directories straight into
+        // the host's files directory, which every ATAK plugin shares. Same root
+        // as createFile now, so the wipe reaches these too.
+        val root = DataManager.fileLocation
+        val directory = File("$root/$chatID")
+        val newFile = File("$root/$chatID/$ts-$userId.wav")
         if(!directory.exists()){
-            directory.mkdir()
+            directory.mkdirs()
         }
         if(!newFile.exists()){
             newFile.createNewFile()

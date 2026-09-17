@@ -5,9 +5,8 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.commcrete.stardust.room.Converters
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogDao
 import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogEntity
 import com.commcrete.stardust.room.new_db.chat.ChatDao
@@ -21,19 +20,21 @@ import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.util.DataManager
+import timber.log.Timber
 import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
 
 /**
- * Unified Room database hosting both:
- * 1) legacy-compatible tables (temporary), and
- * 2) new v2 tables under new_db for future development.
+ * The unified Room database — every chat, contact, message and audit row the
+ * SDK owns.
  *
- * Legacy tables:
- *  - chats_table
- *  - contacts_table
- *  - messages_table
+ * Stored at `files/stardust/db/stardust.db` rather than under a name in the host's
+ * shared `databases/` directory; see [StardustStorage] for why that matters in
+ * a process where every ATAK plugin shares one data directory.
  *
- * New tables:
+ * Schema changes need a real [androidx.room.migration.Migration] — there is no
+ * destructive fallback. See `getDatabase`.
+ *
+ * Tables:
  *  - new_chats_table
  *  - app_contacts, app_contact_user_ids, app_devices, app_contact_devices
  *  - new_messages_table
@@ -56,8 +57,8 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         ChatParticipantEntity::class,
         ContactIdentityLogEntity::class,
     ],
-    version = 2,
-    exportSchema = false
+    version = 1,
+    exportSchema = true
 )
 @TypeConverters(
     Converters.StringArrayConverter::class,
@@ -74,61 +75,70 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appContactIdentityLogDao(): ContactIdentityLogDao
 
     companion object {
-        private const val DATABASE_NAME = "app_database"
+
+        /**
+         * The name this database used while it lived in the host's shared
+         * `databases/` directory. Generic enough for another ATAK plugin to
+         * pick, which is why the database moved under [StardustStorage].
+         * Deleted on first open so upgraded installs do not leave a colliding
+         * file behind.
+         */
+        private const val ORPHANED_DATABASE_NAME = "app_database"
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
-        /**
-         * v1 -> v2: adds `contact_identity_log` (see [ContactIdentityLogEntity]).
-         *
-         * A real migration rather than the destructive fallback: v1 databases hold
-         * every chat and message on the device, and dropping them to gain an audit
-         * table would be an absurd trade. The DDL must match what Room generates
-         * for the entity — column order, affinities and index names included —
-         * or the identity check on open fails.
-         */
-        val MIGRATION_1_2: Migration = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    """
-                    CREATE TABLE IF NOT EXISTS `contact_identity_log` (
-                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                        `at_ms` INTEGER NOT NULL,
-                        `kind` TEXT NOT NULL,
-                        `id_kind` TEXT,
-                        `id_value` TEXT,
-                        `from_contact_id` INTEGER,
-                        `to_contact_id` INTEGER,
-                        `from_name` TEXT,
-                        `to_name` TEXT,
-                        `from_chat_id` TEXT,
-                        `to_chat_id` TEXT,
-                        `affected_rows` INTEGER,
-                        `source` TEXT NOT NULL,
-                        `batch_id` INTEGER
+        fun getDatabase(): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: run {
+                    deleteOrphanedDatabase()
+                    Room.databaseBuilder(
+                        DataManager.appContext,
+                        AppDatabase::class.java,
+                        StardustStorage.appDatabasePath()
                     )
-                    """.trimIndent()
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_identity_log_id_value` ON `contact_identity_log` (`id_value`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_identity_log_at_ms` ON `contact_identity_log` (`at_ms`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_identity_log_from_contact_id` ON `contact_identity_log` (`from_contact_id`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_identity_log_to_contact_id` ON `contact_identity_log` (`to_contact_id`)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_contact_identity_log_batch_id` ON `contact_identity_log` (`batch_id`)")
+                        // No fallbackToDestructiveMigration: a version bump
+                        // without a matching Migration must fail loudly rather
+                        // than silently drop every chat and message on the
+                        // device. Schemas are exported (see the room.schemaLocation
+                        // kapt argument) so migrations can be written against
+                        // them.
+                        .build()
+                        .also { INSTANCE = it }
+                }
             }
         }
 
-        fun getDatabase(): AppDatabase {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
-                    DataManager.appContext,
-                    AppDatabase::class.java,
-                    DATABASE_NAME
-                )
-                    .addMigrations(MIGRATION_1_2)
-                    .fallbackToDestructiveMigration()
-                    .build()
-                    .also { INSTANCE = it }
+        /**
+         * Closes the database and drops the cached handle. Plain [close] leaves
+         * [INSTANCE] pointing at a closed object, so the next [getDatabase]
+         * hands back a handle that throws on first use. Mirrors the legacy
+         * databases, and is what makes [StardustStorage.deleteAll] safe.
+         */
+        fun closeAndClear() = synchronized(this) {
+            runCatching { INSTANCE?.close() }
+            INSTANCE = null
+        }
+
+        /**
+         * Removes the pre-subtree database from the host's shared `databases/`
+         * directory. Idempotent and cheap — `deleteDatabase` is a no-op when
+         * the file is absent, so this needs no "already done" flag.
+         *
+         * Note this deletes *our* old file, not a same-named file belonging to
+         * another plugin: we cannot tell the difference, and leaving ours
+         * behind keeps the collision alive. The window is one upgrade.
+         */
+        private fun deleteOrphanedDatabase() {
+            runCatching {
+                val path = DataManager.appContext.getDatabasePath(ORPHANED_DATABASE_NAME)
+                if (path.exists() &&
+                    DataManager.appContext.deleteDatabase(ORPHANED_DATABASE_NAME)
+                ) {
+                    Timber.d("Removed orphaned database $ORPHANED_DATABASE_NAME")
+                }
+            }.onFailure {
+                Timber.w(it, "Could not remove orphaned database $ORPHANED_DATABASE_NAME")
             }
         }
     }

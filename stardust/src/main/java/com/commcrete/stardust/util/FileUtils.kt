@@ -26,19 +26,17 @@ import java.util.UUID
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.FileSummary
 
 object FileUtils {
     fun createFile(folderName : String = "logs"
                            , fileName : String, fileType : String = ".txt") : File {
-        val context = DataManager.appContext
-
-        val directory = File("${context.filesDir}/$folderName")
-        val newFile = File("${context.filesDir}/$folderName/$fileName$fileType")
-        if(!directory.exists()){
-            directory.mkdir()
-        }
+        // Inside the SDK's own subtree: `logs` and `config` are exactly the
+        // folder names another ATAK plugin would pick in the shared files dir.
+        val directory = StardustStorage.internalDir(folderName)
+        val newFile = File(directory, "$fileName$fileType")
         if(!newFile.exists()){
             newFile.createNewFile()
         }
@@ -104,14 +102,14 @@ object FileUtils {
     }
 
     fun clearFile(folderName : String = "logs", fileName : String, fileType : String = ".txt"){
-        val file = File("${DataManager.appContext.filesDir}/$folderName/$fileName$fileType")
+        val file = File(StardustStorage.internalDir(folderName), "$fileName$fileType")
         if(file.exists()){
             file.delete()
         }
     }
 
     fun readFile(folderName : String = "logs", fileName : String, fileType : String = ".txt"): String {
-        val file = File("${DataManager.appContext.filesDir}/$folderName/$fileName$fileType")
+        val file = File(StardustStorage.internalDir(folderName), "$fileName$fileType")
         val stringBuilder = StringBuilder()
 
         try {
@@ -146,8 +144,17 @@ object FileUtils {
         }
     }
 
+    /**
+     * The per-chat media directories.
+     *
+     * Scoped to [StardustStorage.mediaRoot], which only ever contains our own
+     * directories. It used to scan the host's `filesDir` — shared by every ATAK
+     * plugin — and match directory names against our chat ids, so an ATAK or
+     * other-plugin directory that happened to share a name with a chat id was
+     * eligible for recursive deletion by `deleteChatFiles`.
+     */
     suspend fun getAllChatFilesDirs(): List<File> {
-        val rootDir = DataManager.appContext.filesDir
+        val rootDir = StardustStorage.mediaRoot
         val chatIDs: List<String> = DataManager.getAppRepo().getChatIds().map { it }
         return rootDir.listFiles()
             ?.filter { it.isDirectory && chatIDs.contains(it.name)}
@@ -292,7 +299,9 @@ object FileUtils {
     ): File {
         // TODO: export new db
         val appDb = com.commcrete.stardust.room.new_db.AppDatabase.getDatabase()
-        val appDbName = appDb.openHelper.databaseName ?: "app_database"
+        // databaseName is an absolute path (see StardustStorage), and this value
+        // is used as a directory name downstream — take the file name only.
+        val appDbName = appDb.openHelper.databaseName?.substringAfterLast('/') ?: "stardust.db"
         val appSupportDb = appDb.openHelper.writableDatabase
 
         return exportMultipleDatabasesToCsv(

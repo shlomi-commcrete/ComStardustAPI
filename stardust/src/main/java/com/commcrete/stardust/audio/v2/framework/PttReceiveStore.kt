@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 
 /**
@@ -78,7 +79,7 @@ class PttReceiveStore(private val context: Context) {
         if (contexts.containsKey(ev.key.value)) return
         val apiPkg = StardustPackageApiMapper.toStardustAPIPackage(ev.pkg) ?: return
         val ts = System.currentTimeMillis()
-        val file = File(context.filesDir, "${apiPkg.chatId}/$ts-${apiPkg.senderId}.wav")
+        val file = File(StardustStorage.chatDir(apiPkg.chatId), "$ts-${apiPkg.senderId}.wav")
         file.parentFile?.mkdirs()
         val ctx = StreamCtx(apiPkg, file)
         contexts[ev.key.value] = ctx

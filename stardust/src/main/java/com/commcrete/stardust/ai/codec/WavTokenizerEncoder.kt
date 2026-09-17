@@ -1,6 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 import android.util.Log
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -139,7 +140,7 @@ class WavTokenizerEncoder() {
     }
 
     private fun assetFilePath(assetName: String): String {
-        val outFile = File(DataManager.appContext.filesDir, assetName)
+        val outFile = File(StardustStorage.internalDir("models"), assetName)
         if (outFile.exists() && outFile.length() > 0) return outFile.absolutePath
         if(!outFile.exists()) {
             outFile.createNewFile()

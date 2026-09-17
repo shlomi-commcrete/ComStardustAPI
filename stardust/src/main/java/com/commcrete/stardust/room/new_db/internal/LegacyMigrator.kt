@@ -29,6 +29,14 @@ import timber.log.Timber
  *     flag so the work runs at most once per installation. Idempotent and safe
  *     to call on every cold start.
  *
+ *     A legacy database is only ever opened when its file already exists, and
+ *     only the ones actually read are deleted. Both rules exist because these
+ *     names are generic and the host's `databases/` directory is shared with
+ *     every other ATAK plugin: opening an absent one would *create* a colliding
+ *     file, and deleting an unreadable one could destroy another plugin's data.
+ *     An empty legacy database — the usual state when the upgrade happened with
+ *     no logged-in user — needs no copying and is simply removed.
+ *
  *  2. **[clearLegacy]** — wipes the legacy databases and sets the migration-done
  *     flag. Used by `AppRepository.clearData` so that a "wipe everything" action
  *     also clears any pre-migration leftovers and prevents the migrator from
@@ -88,40 +96,70 @@ internal class LegacyMigrator(
 
         if (prefs.getBoolean(KEY_MIGRATION_DONE, false)) return@withContext
 
+        // Nothing to migrate from. Covers a fresh install, and the common
+        // upgrade case where there was no logged-in user so the legacy
+        // databases were never created. Checked BEFORE opening anything:
+        // Room creates the file on open, so an unguarded open would invent
+        // three generic-named databases in the host's shared directory.
+        if (LEGACY_DATABASE_NAMES.none { context.getDatabasePath(it).exists() }) {
+            prefs.edit { putBoolean(KEY_MIGRATION_DONE, true) }
+            Timber.d("Migration: no legacy database present — nothing to do")
+            return@withContext
+        }
+
+        // Legacy databases we actually managed to read. Only these get deleted:
+        // a file we could not open may belong to another plugin that picked the
+        // same generic name, and deleting it would destroy their data.
+        val consumed = mutableSetOf<String>()
+
         try {
             // ── Contacts ──────────────────────────────────────────────────
-            val contacts: List<ChatContact> =
-                ContactsDatabase.getDatabase().contactsDao().getAllContact()
+            val contacts: List<ChatContact> = readLegacy(CONTACTS_DB, consumed) {
+                try {
+                    ContactsDatabase.getDatabase().contactsDao().getAllContact()
+                } finally {
+                    ContactsDatabase.closeAndClear()
+                }
+            }.orEmpty()
             if (contacts.isNotEmpty()) {
                 val parsed: List<FullContactData> =
                     contacts.mapNotNull { it.toFullContactData() }
                 insertContacts(parsed)
                 Timber.d("Migration: copied ${contacts.size} contact(s)")
             }
-            ContactsDatabase.closeAndClear()
 
             // ── Chats ─────────────────────────────────────────────────────
             // Not copied as rows — chats are re-derived from contacts. Read
             // only for the name / image / kind of any chat that needs a
             // placeholder contact built for it below.
-            val legacyChatsById: Map<String, ChatItem> =
-                ChatsDatabase.getDatabase().chatsDao().getAllChats()
-                    .mapNotNull { item -> normalizeIdOrNull(item.chat_id)?.let { it to item } }
-                    .toMap()
-            ChatsDatabase.closeAndClear()
+            val legacyChatsById: Map<String, ChatItem> = readLegacy(CHATS_DB, consumed) {
+                try {
+                    ChatsDatabase.getDatabase().chatsDao().getAllChats()
+                } finally {
+                    ChatsDatabase.closeAndClear()
+                }
+            }.orEmpty()
+                .mapNotNull { item -> normalizeIdOrNull(item.chat_id)?.let { it to item } }
+                .toMap()
 
             // ── Messages ──────────────────────────────────────────────────
-            val messages: List<MessageItem> =
-                MessagesDatabase.getDatabase().messagesDao().getAllMessages()
-            MessagesDatabase.closeAndClear()
+            val messages: List<MessageItem> = readLegacy(MESSAGES_DB, consumed) {
+                try {
+                    MessagesDatabase.getDatabase().messagesDao().getAllMessages()
+                } finally {
+                    MessagesDatabase.closeAndClear()
+                }
+            }.orEmpty()
 
             if (messages.isNotEmpty()) {
                 migrateMessages(messages, legacyChatsById)
             }
 
-            // ── Delete legacy database files ──────────────────────────────
-            LEGACY_DATABASE_NAMES.forEach { context.deleteDatabase(it) }
-            Timber.d("Migration: legacy databases deleted")
+            // ── Delete the legacy database files we consumed ──────────────
+            // An empty legacy database is the normal case for an upgrade with
+            // no logged-in user: there is nothing to copy, so it is simply
+            // removed here rather than left to be retried.
+            deleteLegacyDatabases(consumed)
 
             // ── Mark done ────────────────────────────────────────────────
             prefs.edit { putBoolean(KEY_MIGRATION_DONE, true) }
@@ -130,6 +168,48 @@ internal class LegacyMigrator(
             Timber.e(e, "Migration: failed — legacy data retained, will retry on next launch")
             // Do NOT set the flag — retry on next launch.
         }
+    }
+
+    /**
+     * Reads one legacy database, or returns null without touching the
+     * filesystem when its file is absent.
+     *
+     * A database that is absent counts as [consumed] — there is nothing to
+     * delete. One that throws does **not**: an unreadable file under a generic
+     * name is most likely another plugin's, so it is left exactly where it is
+     * and the rest of the migration carries on without it.
+     */
+    private suspend fun <T> readLegacy(
+        name: String,
+        consumed: MutableSet<String>,
+        read: suspend () -> T,
+    ): T? {
+        if (!DataManager.appContext.getDatabasePath(name).exists()) {
+            consumed += name
+            return null
+        }
+        return runCatching { read() }
+            .onSuccess { consumed += name }
+            .onFailure { Timber.e(it, "Migration: cannot read $name — leaving the file untouched") }
+            .getOrNull()
+    }
+
+    /** Deletes the named legacy database files, logging anything that survives. */
+    private fun deleteLegacyDatabases(names: Set<String>): Boolean {
+        val context = DataManager.appContext
+        var allGone = true
+        names.forEach { dbName ->
+            val gone = runCatching {
+                val path = context.getDatabasePath(dbName)
+                !path.exists() || context.deleteDatabase(dbName)
+            }.getOrDefault(false)
+            if (!gone) {
+                allGone = false
+                Timber.w("Migration: could not delete legacy database $dbName")
+            }
+        }
+        if (allGone) Timber.d("Migration: legacy databases deleted")
+        return allGone
     }
 
     /**
@@ -249,32 +329,36 @@ internal class LegacyMigrator(
      * iff *every* step succeeded; partial failures still attempt the rest.
      */
     suspend fun clearLegacy(): Boolean = withContext(Dispatchers.IO) {
+        val appContext = DataManager.appContext
         var success = true
 
-        runCatching {
-            ChatsDatabase.getDatabase().chatsDao().clearData()
+        // Deleting the file is what actually clears these, and it works whether
+        // or not the schema is readable. Emptying the tables first is only so a
+        // handle another caller is already holding sees no rows. Both steps are
+        // skipped for a database that does not exist — opening one would create
+        // the very file this function is meant to remove.
+        if (appContext.getDatabasePath(CHATS_DB).exists()) {
+            runCatching {
+                ChatsDatabase.getDatabase().chatsDao().clearData()
+            }.onFailure { Timber.w(it, "clearLegacy: could not empty $CHATS_DB") }
             ChatsDatabase.closeAndClear()
-        }.onFailure { success = false }
-
-        runCatching {
-            ContactsDatabase.getDatabase().contactsDao().clearData()
-            ContactsDatabase.closeAndClear()
-        }.onFailure { success = false }
-
-        runCatching {
-            MessagesDatabase.getDatabase().messagesDao().clearData()
-            MessagesDatabase.closeAndClear()
-        }.onFailure { success = false }
-
-        val appContext = DataManager.appContext
-
-        LEGACY_DATABASE_NAMES.forEach { dbName ->
-            val deletedOrMissing = runCatching {
-                val path = appContext.getDatabasePath(dbName)
-                if (!path.exists()) true else appContext.deleteDatabase(dbName)
-            }.getOrDefault(false)
-            if (!deletedOrMissing) success = false
         }
+
+        if (appContext.getDatabasePath(CONTACTS_DB).exists()) {
+            runCatching {
+                ContactsDatabase.getDatabase().contactsDao().clearData()
+            }.onFailure { Timber.w(it, "clearLegacy: could not empty $CONTACTS_DB") }
+            ContactsDatabase.closeAndClear()
+        }
+
+        if (appContext.getDatabasePath(MESSAGES_DB).exists()) {
+            runCatching {
+                MessagesDatabase.getDatabase().messagesDao().clearData()
+            }.onFailure { Timber.w(it, "clearLegacy: could not empty $MESSAGES_DB") }
+            MessagesDatabase.closeAndClear()
+        }
+
+        if (!deleteLegacyDatabases(LEGACY_DATABASE_NAMES.toSet())) success = false
 
         val flagUpdated = runCatching {
             appContext.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -295,10 +379,10 @@ internal class LegacyMigrator(
         /** Batch size for the bulk message insert — bounds peak statement size. */
         private const val MESSAGE_INSERT_CHUNK = 500
 
-        private val LEGACY_DATABASE_NAMES = listOf(
-            "chats_database",
-            "contacts_database",
-            "messages_database",
-        )
+        private const val CHATS_DB = "chats_database"
+        private const val CONTACTS_DB = "contacts_database"
+        private const val MESSAGES_DB = "messages_database"
+
+        private val LEGACY_DATABASE_NAMES = listOf(CHATS_DB, CONTACTS_DB, MESSAGES_DB)
     }
 }

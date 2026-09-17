@@ -9,6 +9,7 @@ import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.Codec2PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ai.codec.PttReceiveManager
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
@@ -157,8 +158,9 @@ object PlayerUtils : BleMediaConnector() {
         val dirSource = dataPackage.chatId
         this.destination = dataPackage.receiverId
 
-        val directory = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}")
-        val file = if(fileToWrite != null) fileToWrite else File("${appContext.filesDir}/${dirSource}/$ts-${dataPackage.senderId}.pcm")
+        val directory = if(fileToWrite != null) fileToWrite else StardustStorage.chatDir(dirSource)
+        val file = if(fileToWrite != null) fileToWrite
+                   else File(StardustStorage.chatDir(dirSource), "$ts-${dataPackage.senderId}.pcm")
 
         if(directory != null) {
             if(!directory.exists()) { directory.mkdir() }
