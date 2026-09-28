@@ -5,6 +5,8 @@ import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.RawRes
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
@@ -27,6 +29,14 @@ import timber.log.Timber
 object SoundPlayer {
 
     private const val TAG = "SoundPlayer"
+
+    /**
+     * Ceiling on [playAndAwait]. [play]'s `onDone` covers completion, playback error and a failed
+     * create/start, but a [MediaPlayer] that reports none of the three would otherwise suspend the
+     * caller forever — and the caller is typically holding something back until the sound ends.
+     */
+    private const val AWAIT_TIMEOUT_MS = 3_000L
+
     private val mainHandler = Handler(Looper.getMainLooper())
 
     /**
@@ -49,6 +59,28 @@ object SoundPlayer {
         val appCtx = context.applicationContext
         mainHandler.post {
             playOnMain(appCtx, resId, volume, onDone)
+        }
+    }
+
+    /**
+     * [play], but suspending until the sound has finished (or failed, or [AWAIT_TIMEOUT_MS] elapsed).
+     *
+     * For callers that must not proceed while the sound is playing — the PTT start beep waits here so
+     * the microphone opens only once it is over and the beep is never part of the recording.
+     *
+     * Returns rather than throwing on timeout: a sound that will not finish must not hold up whatever
+     * was waiting on it.
+     */
+    suspend fun playAndAwait(
+        context: Context,
+        @RawRes resId: Int,
+        volume: Float = 1f,
+        timeoutMs: Long = AWAIT_TIMEOUT_MS,
+    ) {
+        val finished = CompletableDeferred<Unit>()
+        play(context, resId, volume) { finished.complete(Unit) }
+        if (withTimeoutOrNull(timeoutMs) { finished.await() } == null) {
+            Timber.tag(TAG).w("res=$resId did not finish within ${timeoutMs}ms — continuing")
         }
     }
 

@@ -7,7 +7,8 @@ import android.media.AudioRecord
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.RecordingId
-import com.commcrete.stardust.util.audio.TonePlayer
+import com.commcrete.stardust.R
+import com.commcrete.stardust.util.audio.SoundPlayer
 import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -31,8 +32,9 @@ import kotlinx.coroutines.flow.flowOn
  * One instance per recording; [stop] releases the mic on key-up, and collector cancellation also tears
  * the [AudioRecord] down via the `finally`.
  *
- * Opening the mic is preceded by the PTT start tone, which this flow waits out — so the tone is never
- * part of the audio, at the cost of its own duration in key-down-to-capture latency.
+ * Opening the mic is preceded by the PTT start beep (`R.raw.ptt_started_beep`), which this flow waits
+ * out — so the beep is never part of the audio, at the cost of its own duration in key-down-to-capture
+ * latency.
  *
  * [stop] is authoritative rather than advisory: flipping [running] off is not enough, because this loop
  * spends nearly all of its time parked inside a blocking [AudioRecord.read] and only sees the flag when
@@ -72,14 +74,14 @@ class MicCaptureSource(
     @SuppressLint("MissingPermission")
     override fun start(id: RecordingId): Flow<PcmChunk> = flow {
         // "You may speak", before the microphone exists. Playing it here rather than at key-down is what
-        // makes the ordering a guarantee instead of a race: [TonePlayer.playPttStartTone] suspends until
-        // the tone has finished, so it cannot be captured, encoded, transmitted, or written into the
-        // local mirror WAV. It also plays before applyInputRoute below, so it comes out of whatever the
-        // user is listening to rather than through the PTT communication device.
+        // makes the ordering a guarantee instead of a race: [SoundPlayer.playAndAwait] suspends until the
+        // beep has finished, so it cannot be captured, encoded, transmitted, or written into the local
+        // mirror WAV. It also plays before applyInputRoute below, so it comes out of whatever the user is
+        // listening to rather than through the PTT communication device.
         //
-        // Skipped when the key-up already landed — a tap released inside the tone should not delay its
+        // Skipped when the key-up already landed — a tap released inside the beep should not delay its
         // own teardown by playing one.
-        if (!stopRequested) TonePlayer.playPttStartTone()
+        if (!stopRequested) SoundPlayer.playAndAwait(context, R.raw.ptt_started_beep)
 
         val plan = AudioCaptureConfig.buildCapturePlan(
             context = context,
