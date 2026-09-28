@@ -9,12 +9,14 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.message.FileSummary
 import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +29,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.io.File
 
 /**
  * Messages domain, backed by [MessageDao]: lane-aware reads, the serialized
@@ -382,6 +385,59 @@ internal class MessagesRepository(
     }
 
     /**
+     * Settles an incoming transfer's in-flight row as RECEIVED, merging the [path] the
+     * file landed at and its [fileSummary] into the row's extra_data. Returns false if
+     * the write was refused because the row had already settled — see
+     * [MessageDao.markIncomingTransferReceived].
+     *
+     * Merged here rather than assembled by the caller so the title and subtype written
+     * when the transfer started survive: the row is the same message throughout, and only
+     * the two things that were unknowable until the file existed are filled in.
+     */
+    suspend fun markIncomingTransferReceived(
+        messageId: Long,
+        path: String,
+        fileSummary: FileSummary?,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val attachment = messagesDao.getMessageById(messageId)?.extraData
+            as? MessageExtraData.Attachment
+        messagesDao.markIncomingTransferReceived(
+            messageId = messageId,
+            extraData = attachment?.copy(path = path, fileSummary = fileSummary),
+        ) > 0
+    }
+
+    /**
+     * Records an incoming transfer's failure on its in-flight row: state FAILED plus
+     * [failure] merged into the row's extra_data, leaving the row where it sits in the
+     * conversation. Returns false if the write was refused — see
+     * [MessageDao.markIncomingTransferFailed].
+     *
+     * The path is cleared with the same write: a failed transfer has no file, and a row
+     * still pointing at where one would have gone invites a UI to open nothing.
+     */
+    suspend fun markIncomingTransferFailed(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val attachment = messagesDao.getMessageById(messageId)?.extraData
+            as? MessageExtraData.Attachment
+        messagesDao.markIncomingTransferFailed(
+            messageId = messageId,
+            extraData = attachment?.copy(path = "", failure = failure),
+        ) > 0
+    }
+
+    /**
+     * Removes an in-flight row that will never settle, because the sender restarted the
+     * transfer and the retry owns the conversation now. Returns false if the row had
+     * already settled, in which case it is history and stays.
+     */
+    suspend fun deleteInFlightMessage(messageId: Long): Boolean = withContext(Dispatchers.IO) {
+        messagesDao.deleteInFlightMessage(messageId) > 0
+    }
+
+    /**
      * Records a user-cancelled outgoing transfer on its message row: state CANCELLED
      * plus [cancellation] merged into the row's extra_data. Returns false if the write
      * was refused because the row had already settled — see
@@ -403,6 +459,57 @@ internal class MessagesRepository(
             nowMs = System.currentTimeMillis(),
         ) > 0
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Interrupted transfers
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Settles every row still marked RECEIVING from before [cutoffMs], and returns how many
+     * were settled.
+     *
+     * An in-flight row is finalized by the receiver that created it — a PTT stream's actor, a
+     * file transfer's `FileReceiver` — and both live only in memory. A process that dies
+     * mid-transfer therefore leaves a row nothing will ever finish, which reads in the
+     * conversation as a message that has been arriving since yesterday. This is the only thing
+     * that can tell that apart from a transfer genuinely still in flight, and it can only do so
+     * at startup: [cutoffMs] is set before this process built the repository, so a row older
+     * than it cannot belong to anything running now.
+     *
+     * Each row is classified by [settlementForStaleInFlight] and written under a guard that
+     * requires it to still be in flight, so a transfer that settles while the sweep runs keeps
+     * its own outcome.
+     *
+     * Every failure is swallowed: a sweep that cannot run leaves the rows exactly as it found
+     * them, and the next startup tries again.
+     */
+    suspend fun sweepStaleInFlight(cutoffMs: Long): Int = withContext(Dispatchers.IO) {
+        val rows = runCatching { messagesDao.getStaleInFlight(cutoffMs) }
+            .onFailure { Timber.e(it, "Stale sweep: could not read in-flight rows") }
+            .getOrNull()
+            ?: return@withContext 0
+
+        var settled = 0
+        rows.forEach { row ->
+            val settlement = settlementForStaleInFlight(row.extraData, ::hasPlayableAudio)
+            val written = runCatching {
+                messagesDao.settleStaleInFlight(row.id, settlement.state, settlement.extraData)
+            }
+                .onFailure { Timber.w(it, "Stale sweep: could not settle message ${row.id}") }
+                .getOrDefault(0)
+            settled += written
+        }
+
+        if (settled > 0) Timber.d("Stale sweep: settled $settled interrupted transfer(s)")
+        settled
+    }
+
+    /**
+     * Whether the WAV at [path] holds any audio — anything past the 44-byte header. A PTT is
+     * written through as it arrives, so this is how much of the recording survived the crash.
+     */
+    private fun hasPlayableAudio(path: String): Boolean =
+        path.isNotBlank() && runCatching { File(path).length() > WAV_HEADER_BYTES }.getOrDefault(false)
 
     // ─────────────────────────────────────────────────────────────────────
     // Media relocation
@@ -576,5 +683,8 @@ internal class MessagesRepository(
     private companion object {
         /** The message types whose extra data carries a file path. */
         private val MEDIA_PATH_TYPES = listOf(MessageType.ATTACHMENT, MessageType.PTT)
+
+        /** A WAV of exactly this length is a header and no audio. */
+        private const val WAV_HEADER_BYTES = 44L
     }
 }

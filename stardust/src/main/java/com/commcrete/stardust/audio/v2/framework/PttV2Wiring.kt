@@ -58,6 +58,7 @@ object PttV2Wiring {
     private var sequencer: TransmitSequencer? = null
     private var sendCoordinator: PttSendCoordinator? = null
     private var streamRegistry: StreamRegistry? = null
+    private var receiveStore: PttReceiveStore? = null
 
     /**
      * Double-checked locking, and [initialized] is set only on success: the flag used to be set before
@@ -100,6 +101,10 @@ object PttV2Wiring {
             // Releases each stream's AudioTrack and decoder now, rather than leaving them to a
             // cancellation that cannot run their close paths for them.
             streamRegistry?.let { registry -> registry.activeStreams.forEach { runCatching { registry.evict(it) } } }
+            // After the evictions above, so the end-of-stream events they raise are already queued:
+            // the store drains them, closing each WAV it still has open. It owns a thread of its own,
+            // which is why a torn-down pipeline has to tell it to stop.
+            runCatching { receiveStore?.shutdown() }
             scopes.forEach { runCatching { it.cancel() } }
             routing.clear()
             // This instance is process-wide and refcounted; a session killed before its own release ran
@@ -110,6 +115,7 @@ object PttV2Wiring {
             sequencer = null
             sendCoordinator = null
             streamRegistry = null
+            receiveStore = null
             initialized = false
         }
     }
@@ -199,7 +205,7 @@ object PttV2Wiring {
             scope = sendScope,
         )
 
-        val receiveStore = PttReceiveStore(context)
+        val receiveStore = PttReceiveStore(context).also { this.receiveStore = it }
         val registry = StreamRegistry(
             scope = receiveScope,
             onDecoded = { key, pcm -> receiveStore.onDecodedPcm(key, pcm) },

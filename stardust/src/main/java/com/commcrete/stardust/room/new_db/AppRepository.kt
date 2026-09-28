@@ -22,6 +22,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactEntity
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.room.new_db.message.FileSummary
 import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -513,19 +514,60 @@ class AppRepository(
         messages.updateMessageState(messageId, state)
 
     /**
-     * Records a file/image transfer failure on an existing message row (the outgoing
-     * side, where the row was created when the send started): state FAILED plus the
-     * reason merged into the row's extra_data. Returns false when the row had already
-     * settled and the failure was refused.
+     * Records a file/image transfer failure on an existing OUTGOING message row (where
+     * the row was created when the send started): state FAILED plus the reason merged
+     * into the row's extra_data, and the row restamped with the moment it gave up.
+     * Returns false when the row had already settled and the failure was refused.
      *
-     * The receiving side has no row until a transfer settles, so a failed receive is
-     * persisted as a new FAILED row by [com.commcrete.stardust.util.FileReceiver]
-     * instead of going through here.
+     * The incoming side has its own pair, [markIncomingTransferFailed] and
+     * [markIncomingTransferReceived], which leave the timestamp alone.
      */
     suspend fun markFileTransferFailed(
         messageId: Long,
         failure: FileReceiver.FileFailure,
     ): Boolean = messages.markFileTransferFailed(messageId, failure)
+
+    /**
+     * Settles an incoming transfer's in-flight row as RECEIVED, filling in the [path] the
+     * file landed at and its [fileSummary]. Returns false when the row had already
+     * settled and the write was refused.
+     */
+    suspend fun markIncomingTransferReceived(
+        messageId: Long,
+        path: String,
+        fileSummary: FileSummary?,
+    ): Boolean = messages.markIncomingTransferReceived(messageId, path, fileSummary)
+
+    /**
+     * Settles an incoming transfer's in-flight row as FAILED, recording [failure] and
+     * clearing the path. Returns false when the row had already settled and the write
+     * was refused.
+     */
+    suspend fun markIncomingTransferFailed(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = messages.markIncomingTransferFailed(messageId, failure)
+
+    /**
+     * Removes an in-flight row for a transfer that was abandoned because its sender
+     * restarted it. Returns false when the row had already settled, in which case it is
+     * history and stays.
+     */
+    suspend fun deleteInFlightMessage(messageId: Long): Boolean =
+        messages.deleteInFlightMessage(messageId)
+
+    /**
+     * Settles transfers the last run of the app left in flight, and returns how many.
+     * Run once per process, at startup, by [com.commcrete.stardust.room.RepositoryProvider].
+     *
+     * [asOfMs] is when this process built the repository — NOT when the sweep happens to
+     * run, which may be minutes later if the legacy migration is still going. Anything
+     * stamped after it belongs to something running now. [STALE_IN_FLIGHT_GRACE_MS] is
+     * subtracted on top, because the very first received packet of this run is what builds
+     * the repository, so a live transfer's row can be stamped a moment before [asOfMs].
+     */
+    suspend fun sweepStaleInFlight(asOfMs: Long = System.currentTimeMillis()): Int =
+        messages.sweepStaleInFlight(asOfMs - STALE_IN_FLIGHT_GRACE_MS)
 
     /**
      * Records a user-cancelled outgoing transfer on its message row: state CANCELLED
@@ -627,5 +669,12 @@ class AppRepository(
 
         /** Default retention for `contact_identity_log`: 90 days. */
         const val IDENTITY_LOG_RETENTION_MS = 90L * 24 * 60 * 60 * 1000
+
+        /**
+         * How far back of "in flight" the startup sweep leaves alone. Covers the transfer
+         * whose own first packet built the repository — its row is stamped within
+         * milliseconds of the timestamp the sweep measures from, and it is very much alive.
+         */
+        const val STALE_IN_FLIGHT_GRACE_MS = 60_000L
     }
 }

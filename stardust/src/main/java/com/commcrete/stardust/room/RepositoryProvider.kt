@@ -25,11 +25,16 @@ object RepositoryProvider {
      *
      * On first call the repository automatically migrates all data from the
      * legacy chats / contacts / messages databases and removes those files,
-     * then re-points any message row whose media [StardustStorage] has moved.
+     * re-points any message row whose media [StardustStorage] has moved, and
+     * settles any transfer the previous run of the app left in flight.
      */
     fun appRepository(): AppRepository {
         return appRepository ?: synchronized(this) {
             appRepository ?: run {
+                // Read before anything else this process can write, and passed to the sweep
+                // below: every in-flight row older than this was left behind by a previous
+                // run, however long the work in between ends up taking.
+                val builtAtMs = System.currentTimeMillis()
                 val db = AppDatabase.getDatabase()
                 AppRepository(
                     chatsDao = db.appChatsDao(),
@@ -46,6 +51,10 @@ object RepositoryProvider {
                         // carrying legacy paths, and this is what re-points any
                         // of them that StardustStorage has since moved.
                         repo.rewriteRelocatedMediaPaths()
+                        // Last, so it sees the migrated rows too: settles the
+                        // transfers the previous run died in the middle of, which
+                        // nothing else can finish for them.
+                        repo.sweepStaleInFlight(builtAtMs)
                     }
                 }
             }

@@ -560,6 +560,16 @@ object FileUtils {
             override val numOfPackages: Int,
             val deliveryChannel: StardustControlByte.StardustDeliveryType,
             override val timestamp: Long = System.currentTimeMillis(),
+            /**
+             * The conversation row this transfer is filling in, once it exists — the
+             * receiving side now writes an in-flight row when the first package lands, so
+             * progress has a bubble to animate rather than a transient of its own.
+             *
+             * Null only before that row is written, and for the brief window between the
+             * first package and the insert completing: bind progress to it when it is
+             * there, and treat null as "not on screen yet".
+             */
+            val messageId: Long? = null,
         ) : FileTransferData(
             id = id,
             chatId = chatId,

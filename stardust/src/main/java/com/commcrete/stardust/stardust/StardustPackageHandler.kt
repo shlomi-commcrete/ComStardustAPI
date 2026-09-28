@@ -373,6 +373,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 fileReceivers.remove(previousKey)?.dispose()
             }
             fileReceivers[transferKey] = receiver
+            // After the replaced transfer has been disposed, so the row this writes is never the
+            // one that dispose goes on to delete. Writes the in-flight row the conversation shows
+            // while the packages arrive.
+            receiver.start()
         }
 
         when {

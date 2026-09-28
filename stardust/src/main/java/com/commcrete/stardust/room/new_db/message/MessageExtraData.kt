@@ -25,10 +25,14 @@ sealed class MessageExtraData {
     data class Attachment(
         val title: String,
         /**
-         * Absolute path of the local copy of the file. EMPTY when the transfer failed:
-         * a failed transfer writes no file at all, so there is nothing to point at (and
-         * no partial-file artifact to clean up). Check [failure] / the row's state
-         * before opening it.
+         * Absolute path of the local copy of the file. EMPTY while the row's state is
+         * RECEIVING — an incoming transfer is collected package by package and only
+         * assembled into a file once it is complete — and EMPTY when the transfer failed,
+         * because a failed transfer writes no file at all (so there is no partial-file
+         * artifact to clean up either).
+         *
+         * Go by the row's STATE, never by this being non-empty: RECEIVING means the file
+         * is still on its way, FAILED means it never arrived, and [failure] says why.
          */
         val path: String,
         val subtype: AttachmentType,
@@ -63,6 +67,18 @@ sealed class MessageExtraData {
     data class PTT(
         val path: String,
         val encoderType: EncoderType = EncoderType.CODEC2,
+        /**
+         * The recording is cut short: the stream was still arriving when the process died, so the
+         * WAV holds what had been decoded by then and nothing after it. Set by the startup sweep,
+         * never during a live stream — a PTT that ends normally is complete by definition.
+         *
+         * The row is still RECEIVED and the file still plays. This exists so a UI can say the
+         * recording is partial instead of presenting a truncated message as the whole of it.
+         *
+         * Omitted entirely when false, like [Attachment.failure], so every row written before this
+         * field existed reads back exactly as it did.
+         */
+        val truncated: Boolean = false,
     ) : MessageExtraData()
 
     /**

@@ -15,6 +15,8 @@ import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
@@ -30,7 +32,8 @@ class FileReceiver(
     var lastReportedProgress: Int = 0
     val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
-    var data: FileUtils.FileTransferData.Receive
+    /** Written by [start] on an IO thread, read by the progress callbacks on the main one. */
+    @Volatile var data: FileUtils.FileTransferData.Receive
 
     private val receivingInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
@@ -45,6 +48,21 @@ class FileReceiver(
      */
     private val terminalOutcomePersisted = AtomicBoolean(false)
 
+    /**
+     * The in-flight row this transfer is filling in, once [start] has written it. Null until then,
+     * and null for good if the insert was refused — every settle path falls back to inserting a
+     * finished row, which is what the receive side did for every transfer before this existed.
+     */
+    @Volatile private var messageId: Long? = null
+
+    /**
+     * Serializes everything that touches this transfer's row — the insert, the settle, the delete —
+     * because the insert is asynchronous and a transfer can settle before it has run. Holding the
+     * lock is what makes "insert, unless it already settled" and "update if there is a row, else
+     * insert" one decision each rather than two racing ones.
+     */
+    private val rowMutex = Mutex()
+
     init {
         data = FileUtils.FileTransferData.Receive(
             id = getUniqueKey(stardustPackage),
@@ -56,6 +74,51 @@ class FileReceiver(
             deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
             numOfPackages = firstPackage.total,
         )
+    }
+
+    /**
+     * Writes the in-flight row for this transfer: an attachment the conversation can show as
+     * arriving, with no path yet because no file exists until every package is in. Called once,
+     * by whoever registers this receiver, after any previous transfer on the transport has been
+     * replaced — so the retry's row is never the one the abandoned attempt deletes.
+     *
+     * Failure is not fatal and is not retried: [messageId] simply stays null and each settle path
+     * inserts its finished row the way it always did.
+     *
+     * Skipped entirely if the transfer has already settled or been disposed by the time this runs —
+     * both are claimed synchronously by their caller, so seeing either under [rowMutex] means the
+     * row question is answered and an insert now would only add a bubble that never finishes.
+     */
+    fun start() {
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            rowMutex.withLock {
+                if (terminalOutcomePersisted.get() || isDisposed) return@launch
+                try {
+                    val id = DataManager.getAppRepo().saveMessage(
+                        message = MessageEntity(
+                            chatId = data.chatId,
+                            senderID = data.senderId,
+                            receiverID = appId,
+                            state = MessageState.RECEIVING,
+                            extraData = MessageExtraData.Attachment(
+                                title = "${data.fileName}${fileExtension()}",
+                                // No file on disk yet: the packages are still being collected and
+                                // are only assembled once. Readers go by the row's state, not this.
+                                path = "",
+                                subtype = data.fileType.toAttachmentType(),
+                            ),
+                        )
+                    )
+                    messageId = id
+                    // Carried on every later progress callback so the host can bind the animation
+                    // to the bubble this row renders as.
+                    if (id != null) data = data.copy(messageId = id)
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error persisting in-flight transfer: ${data.fileName}", e)
+                }
+            }
+        }
     }
 
     fun addDataPackage(filePackage: StardustFilePackage) {
@@ -94,12 +157,30 @@ class FileReceiver(
      * restarts a transfer on this transport: the retry replaces this one, and it is the
      * retry's outcome that belongs in the conversation. Use [failOnDisconnect] when the
      * transfer is genuinely lost.
+     *
+     * The in-flight row goes with it. An abandoned attempt is not history — leaving it
+     * would put a second, permanently-arriving bubble above the retry that supersedes it.
+     * The delete is guarded on the row still being in flight, so it cannot touch a
+     * transfer that settled in the meantime.
      */
     fun dispose() {
         isDisposed = true
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         dataList.clear()
+        CoroutineScope(Dispatchers.IO).launch {
+            rowMutex.withLock {
+                // Read under the lock: the insert may still have been in flight when isDisposed was
+                // set above, in which case it has already given up and there is nothing to remove.
+                val id = messageId ?: return@launch
+                messageId = null
+                try {
+                    DataManager.getAppRepo().deleteInFlightMessage(id)
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error removing abandoned transfer row $id", e)
+                }
+            }
+        }
     }
 
     fun updateProgress() {
@@ -305,35 +386,56 @@ class FileReceiver(
         if (data.fileType == FileUtils.FileType.Image) ".jpg" else ".${data.fileEnding}"
 
     /**
-     * Persists the failed transfer as a FAILED attachment row so the conversation shows
-     * that a file was on its way and did not make it, instead of the transfer vanishing.
+     * Settles the transfer as failed so the conversation shows that a file was on its way
+     * and did not make it, instead of the transfer vanishing.
      *
-     * There is no row before this point — the receiving side only writes one when a
-     * transfer settles — so this inserts rather than updates, and the row carries no
-     * path and no summary: a failure writes no file to disk at all.
+     * Normally this updates the in-flight row [start] wrote, in place: the bubble the user
+     * has been watching arrive becomes the bubble that failed, keeping its position in the
+     * conversation. Only when there is no such row — the insert was refused — does it fall
+     * back to writing a finished FAILED row, which is what this always did. Either way the
+     * row carries no path and no summary: a failure writes no file to disk at all.
      */
     private suspend fun saveFailureToMessages(failure: FileFailure) {
-        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
-        try {
-            DataManager.getAppRepo().saveMessage(
-                message = MessageEntity(
-                    chatId = data.chatId,
-                    senderID = data.senderId,
-                    receiverID = appId,
-                    state = MessageState.FAILED,
-                    extraData = MessageExtraData.Attachment(
-                        title = "${data.fileName}${fileExtension()}",
-                        path = "",
-                        subtype = data.fileType.toAttachmentType(),
-                        failure = failure,
+        rowMutex.withLock {
+            messageId?.let { id ->
+                try {
+                    if (DataManager.getAppRepo().markIncomingTransferFailed(id, failure)) return
+                    // Refused: the row settled by another path already, so it is not ours to
+                    // overwrite and a second row would contradict it.
+                    Log.d("FileReceiver", "failure not recorded on $id; row already settled")
+                    return
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error failing in-flight row $id; inserting instead", e)
+                }
+            }
+            val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
+            try {
+                DataManager.getAppRepo().saveMessage(
+                    message = MessageEntity(
+                        chatId = data.chatId,
+                        senderID = data.senderId,
+                        receiverID = appId,
+                        state = MessageState.FAILED,
+                        extraData = MessageExtraData.Attachment(
+                            title = "${data.fileName}${fileExtension()}",
+                            path = "",
+                            subtype = data.fileType.toAttachmentType(),
+                            failure = failure,
+                        )
                     )
                 )
-            )
-        } catch (e: Exception) {
-            Log.e("FileReceiver", "Error persisting failed transfer: ${data.fileName}", e)
+            } catch (e: Exception) {
+                Log.e("FileReceiver", "Error persisting failed transfer: ${data.fileName}", e)
+            }
         }
     }
 
+    /**
+     * Settles the transfer as arrived: the in-flight row [start] wrote gets the path the file
+     * landed at and its summary, and becomes RECEIVED in place — same row, same position in the
+     * conversation, so the bubble the user watched arrive is the one they can now open. Falls
+     * back to inserting a finished row when there is no in-flight row to fill in.
+     */
     private fun saveToMessages (file: File) {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         // Claim the terminal outcome so a failure reported afterwards — a late
@@ -343,27 +445,41 @@ class FileReceiver(
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
             val subtype = data.fileType.toAttachmentType()
-            // Caught here rather than left to the default handler: this runs on a bare
-            // scope, so an escaping exception would take the process down over one row.
-            try {
-                DataManager.getAppRepo().saveMessage(
-                    message = MessageEntity(
-                        chatId = data.chatId,
-                        senderID = data.senderId,
-                        receiverID = appId,
-                        state = MessageState.RECEIVED,
-                        extraData = MessageExtraData.Attachment(
-                            title = mFileName,
-                            path = file.absolutePath,
-                            subtype = subtype,
-                            // Parse the received contact CSV once here so the conversation
-                            // UI renders from the summary without re-reading the file.
-                            fileSummary = FileUtils.buildFileSummary(file, subtype),
+            // Parsed once here, for the same reason it always was: so the conversation UI
+            // renders a received contact from the summary without re-reading the file.
+            val summary = FileUtils.buildFileSummary(file, subtype)
+            rowMutex.withLock {
+                messageId?.let { id ->
+                    try {
+                        if (DataManager.getAppRepo()
+                                .markIncomingTransferReceived(id, file.absolutePath, summary)
+                        ) return@launch
+                        Log.d("FileReceiver", "arrival not recorded on $id; row already settled")
+                        return@launch
+                    } catch (e: Exception) {
+                        Log.e("FileReceiver", "Error settling in-flight row $id; inserting instead", e)
+                    }
+                }
+                // Caught here rather than left to the default handler: this runs on a bare
+                // scope, so an escaping exception would take the process down over one row.
+                try {
+                    DataManager.getAppRepo().saveMessage(
+                        message = MessageEntity(
+                            chatId = data.chatId,
+                            senderID = data.senderId,
+                            receiverID = appId,
+                            state = MessageState.RECEIVED,
+                            extraData = MessageExtraData.Attachment(
+                                title = mFileName,
+                                path = file.absolutePath,
+                                subtype = subtype,
+                                fileSummary = summary,
+                            )
                         )
                     )
-                )
-            } catch (e: Exception) {
-                Log.e("FileReceiver", "Error persisting received transfer: ${file.name}", e)
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error persisting received transfer: ${file.name}", e)
+                }
             }
         }
     }
@@ -396,6 +512,17 @@ class FileReceiver(
         ERROR,
         /** The radio went away mid-transfer; nothing was wrong with the transfer itself. */
         DISCONNECTED,
+
+        /**
+         * The app stopped while the transfer was still arriving, so no outcome was ever
+         * reported for it. Recorded by the startup sweep, which is the only thing that can
+         * tell this apart from a transfer still in flight — the receiver that would have
+         * settled it died with the process.
+         *
+         * Receive-only: an interrupted SEND is already covered, because the send row settles
+         * from the sender's own side.
+         */
+        INTERRUPTED,
     }
 
     companion object {

@@ -258,6 +258,94 @@ interface MessageDao {
     ): Int
 
     /**
+     * Settles an INCOMING attachment row that arrived: state RECEIVED, with the path and
+     * summary of the file that landed merged into its extra_data. Returns the number of
+     * rows written (0 = refused).
+     *
+     * Same guard as [markFileTransferFailed], for the same reason. `epoch_time_ms` is
+     * deliberately NOT moved: the row was stamped when the first package arrived and that
+     * is where the message belongs in the conversation — unlike a failure, the arrival is
+     * the event the row already stands for, so moving it would drag a slow transfer below
+     * everything that came in while it ran.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 2
+        WHERE id = :messageId
+          AND state NOT IN (1, 2, 5, 6)
+    """)
+    suspend fun markIncomingTransferReceived(
+        messageId: Long,
+        extraData: MessageExtraData?,
+    ): Int
+
+    /**
+     * Marks an INCOMING attachment row FAILED, merging the failure reason into its
+     * existing extra_data. Returns the number of rows written (0 = refused).
+     *
+     * Separate from [markFileTransferFailed] only over the timestamp, which this one
+     * leaves alone: the receive side's row is already positioned at the moment the
+     * transfer started arriving, and a transfer that dies is not new news arriving now —
+     * it is the same message, settled. Restamping it would reorder the conversation
+     * around a message the reader has been watching in place.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 3
+        WHERE id = :messageId
+          AND state NOT IN (1, 2, 5, 6)
+    """)
+    suspend fun markIncomingTransferFailed(
+        messageId: Long,
+        extraData: MessageExtraData?,
+    ): Int
+
+    // ── Interrupted transfers (startup sweep) ────────────────────────────
+
+    /**
+     * Rows still marked RECEIVING that no live transfer can account for, because they were
+     * stamped before [cutoffMs] — which the sweep sets to before this process built the
+     * repository. Only the process that created an in-flight row can finalize it (the
+     * finalizer is a receiver held in memory), so one that predates this process is
+     * orphaned by definition, not slow.
+     *
+     * Returns whole rows because the sweep has to look at each one's extra_data to decide
+     * what it became; there are normally none, and one or two after a crash.
+     */
+    @Query("SELECT * FROM messages WHERE state = 4 AND epoch_time_ms < :cutoffMs")
+    suspend fun getStaleInFlight(cutoffMs: Long): List<MessageEntity>
+
+    /**
+     * Settles one swept row. Guarded on RECEIVING — narrower than the guard the transfer
+     * paths use — because the sweep acts on a row it read a moment earlier and must lose to
+     * anything that has touched it since. `epoch_time_ms` is never moved: the message keeps
+     * the place in the conversation it has had all along.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = :state
+        WHERE id = :messageId
+          AND state = 4
+    """)
+    suspend fun settleStaleInFlight(
+        messageId: Int,
+        state: MessageState,
+        extraData: MessageExtraData?,
+    ): Int
+
+    /**
+     * Drops an in-flight row outright. Guarded on RECEIVING so it can only ever remove a
+     * transfer that never settled: used when a sender restarts a transfer and the retry
+     * takes over, where the abandoned attempt is not history and should leave nothing
+     * behind. Returns the number of rows deleted (0 = the row had already settled).
+     */
+    @Query("DELETE FROM messages WHERE id = :messageId AND state = 4")
+    suspend fun deleteInFlightMessage(messageId: Long): Int
+
+    /**
      * Marks an outgoing attachment row CANCELLED, merging how far the send had got into
      * its existing extra_data. Returns the number of rows written (0 = refused).
      *
