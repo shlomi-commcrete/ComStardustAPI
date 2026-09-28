@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -600,31 +601,62 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
         private const val FILE_CHUNK_SIZE = 60
 
+        private const val SECONDS_PER_PACKAGE_ST = 0.3
+        private const val SECONDS_PER_PACKAGE_DEFAULT = 1.3
+
         fun calculateNumOfPackages(files: List<File>, spare: Int): Int {
             return files.sumOf { ceil(it.length().toDouble() / FILE_CHUNK_SIZE).toInt() } + spare
         }
 
-        fun calculateSendTime(numOfPackages: Int, functionalityType: FunctionalityType): String {
-            val radio = getRadioToSend(null, functionalityType)
-
-            val totalTime = if (radio?.type == CarrierType.ST) 0.3 else 1.3
-
-            // Round to whole seconds first so minutes/seconds stay consistent
-            val totalSeconds = (numOfPackages * totalTime).roundToInt()
-            val minutes = totalSeconds / 60 // Whole minutes
-            val seconds = totalSeconds % 60 // Remaining whole seconds
-
-            return if (minutes > 0) { "$minutes min $seconds sec"
-//                String.format(
-//                    "%d minute%s %.1f second%s",
-//                    minutes,
-//                    if (minutes > 1) "s" else "",
-//                    seconds,
-//                    if (seconds > 1.0) "s" else ""
-//                )
+        /**
+         * Airtime for one package on the radio this send would actually go out over.
+         *
+         * [carrier] is the one the caller picked, and is resolved the same way the send
+         * itself resolves it. Passing null asks for the default carrier of
+         * [functionalityType], which is only right when the caller has no carrier in hand —
+         * an estimate made with null while the send routes over a different radio quotes
+         * the wrong airtime.
+         */
+        @JvmStatic
+        @JvmOverloads
+        fun secondsPerPackage(functionalityType: FunctionalityType, carrier: Carrier? = null): Double =
+            if (getRadioToSend(carrier, functionalityType)?.type == CarrierType.ST) {
+                SECONDS_PER_PACKAGE_ST
             } else {
-                " $seconds sec"
-                //String.format("%.1f second%s", totalSeconds, if (totalSeconds > 1.0) "s" else "")
+                SECONDS_PER_PACKAGE_DEFAULT
+            }
+
+        /** The estimate as a number, for callers that need to compute with it rather than show it. */
+        @JvmStatic
+        @JvmOverloads
+        fun estimateSendSeconds(
+            numOfPackages: Int,
+            functionalityType: FunctionalityType,
+            carrier: Carrier? = null,
+        ): Double = numOfPackages.coerceAtLeast(0) * secondsPerPackage(functionalityType, carrier)
+
+        @JvmStatic
+        @JvmOverloads
+        fun calculateSendTime(
+            numOfPackages: Int,
+            functionalityType: FunctionalityType,
+            carrier: Carrier? = null,
+        ): String = formatSendTime(estimateSendSeconds(numOfPackages, functionalityType, carrier))
+
+        /** `42 sec` · `12 min 30 sec` · `1 h 24 min 05 sec` */
+        @JvmStatic
+        fun formatSendTime(seconds: Double): String {
+            val total = seconds.roundToInt().coerceAtLeast(0)
+            return when {
+                total < 60 -> String.format(Locale.US, "%d sec", total)
+                total < 3600 -> String.format(Locale.US, "%d min %02d sec", total / 60, total % 60)
+                else -> String.format(
+                    Locale.US,
+                    "%d h %02d min %02d sec",
+                    total / 3600,
+                    (total % 3600) / 60,
+                    total % 60,
+                )
             }
         }
 

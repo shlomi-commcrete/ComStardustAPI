@@ -24,4 +24,10 @@ class PttSendRouting {
     fun register(id: RecordingId, route: SendRoute) { routes[id] = route }
     fun release(id: RecordingId) { routes.remove(id) }
     fun get(id: RecordingId): SendRoute? = routes[id]
+
+    /**
+     * Drop every route. For pipeline shutdown only: this instance outlives one [PttV2Wiring] build, so
+     * without it the next build would start holding routes for recordings that no longer exist.
+     */
+    fun clear() { routes.clear() }
 }

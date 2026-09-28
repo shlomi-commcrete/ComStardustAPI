@@ -8,6 +8,8 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
  * `DataManager.getSavePTTFilesRequired()` is on.
  */
 object NoOpLocalMirror : LocalMirror {
+    /** Nothing is saved, so the send session skips the per-frame self-decode entirely. */
+    override val isActive: Boolean get() = false
     override suspend fun accept(pcm: PcmChunk) = Unit
     override suspend fun finalizeMirror() = Unit
 }

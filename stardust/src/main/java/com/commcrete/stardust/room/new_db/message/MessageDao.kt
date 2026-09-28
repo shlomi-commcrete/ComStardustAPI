@@ -320,6 +320,26 @@ interface MessageDao {
     @Query("UPDATE messages SET state = 5 WHERE epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp")
     suspend fun archiveAllMessages(startTimestamp: Long, endTimestamp: Long): Int
 
+    // ── Media relocation ─────────────────────────────────────────────────
+
+    /**
+     * Every row of the given types, archived ones included: a path that no
+     * longer resolves is just as broken in an archived message as in a live
+     * one. Used only by the media-relocation rewrite, which needs the whole
+     * table once — hence no chat/lane filtering and no paging.
+     */
+    @Query("SELECT * FROM messages WHERE type IN (:types)")
+    suspend fun getMessagesByTypes(types: List<MessageType>): List<MessageEntity>
+
+    /**
+     * Replaces one row's extra_data wholesale. Unguarded, unlike
+     * [markFileTransferFailed] — the caller has just read the row, rewrites
+     * nothing but the path inside it, and runs at startup before a transfer
+     * could be in flight against it.
+     */
+    @Query("UPDATE messages SET extra_data = :extraData WHERE id = :messageId")
+    suspend fun updateExtraData(messageId: Int, extraData: MessageExtraData?): Int
+
     // ── Deletion & re-parenting ──────────────────────────────────────────
 
     @Query("UPDATE messages SET chat_id = :newChatId WHERE chat_id = :oldChatId")

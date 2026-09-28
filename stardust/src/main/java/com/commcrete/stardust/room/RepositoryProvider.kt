@@ -24,7 +24,8 @@ object RepositoryProvider {
      * that combines chats, contacts and messages as tables.
      *
      * On first call the repository automatically migrates all data from the
-     * legacy chats / contacts / messages databases and removes those files.
+     * legacy chats / contacts / messages databases and removes those files,
+     * then re-points any message row whose media [StardustStorage] has moved.
      */
     fun appRepository(): AppRepository {
         return appRepository ?: synchronized(this) {
@@ -41,6 +42,10 @@ object RepositoryProvider {
                     // The flag inside the function guarantees it executes only once.
                     AppScopes.applicationScope.launch {
                         repo.migrateFromLegacyDatabases()
+                        // After it, not beside it: the migration inserts rows
+                        // carrying legacy paths, and this is what re-points any
+                        // of them that StardustStorage has since moved.
+                        repo.rewriteRelocatedMediaPaths()
                     }
                 }
             }

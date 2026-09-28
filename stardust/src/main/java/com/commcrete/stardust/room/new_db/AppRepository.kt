@@ -614,6 +614,14 @@ class AppRepository(
 
     suspend fun migrateFromLegacyDatabases() = legacyMigrator.migrate()
 
+    /**
+     * Re-points message rows at media that `StardustStorage` moved into the
+     * media subtree on this or an earlier launch, and returns how many rows
+     * were rewritten. Idempotent — see
+     * [com.commcrete.stardust.room.new_db.internal.MessagesRepository.rewriteRelocatedMediaPaths].
+     */
+    suspend fun rewriteRelocatedMediaPaths(): Int = messages.rewriteRelocatedMediaPaths()
+
     companion object {
         const val PAGE_SIZE = 30
 

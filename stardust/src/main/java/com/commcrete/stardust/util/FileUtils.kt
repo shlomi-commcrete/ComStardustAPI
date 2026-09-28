@@ -507,11 +507,23 @@ object FileUtils {
         open val numOfPackages: Int,
         open val timestamp: Long = System.currentTimeMillis()) {
 
-        fun remainingTransferTimeAsString(progress: Int): String {
-            // Calculate remaining packages: progress is percentage (0-100)
+        /**
+         * How much longer this transfer has to run, as the operator reads it.
+         *
+         * Abstract because the airtime depends on the radio this transfer is actually
+         * on, and the two cases know that from different places: a send carries the
+         * carrier it was routed to, a receive knows the channel it is arriving on.
+         * The base class has neither, and guessing the functionality's default carrier
+         * is what made this quote the wrong radio's airtime.
+         *
+         * [progress] is a percentage, 0-100.
+         */
+        abstract fun remainingTransferTimeAsString(progress: Int): String
+
+        /** Packages still to go at [progress] percent. */
+        protected fun remainingPackages(progress: Int): Int {
             val completedPackages = (numOfPackages * progress) / 100.0
-            val remainingPackages = (numOfPackages - completedPackages).toInt()
-            return calculateSendTime(remainingPackages, fileType.relatedFunctionalityType())
+            return (numOfPackages - completedPackages).toInt()
         }
 
         data class Send(
@@ -527,7 +539,16 @@ object FileUtils {
             chatId = chatId,
             fileType = fileType,
             numOfPackages = numOfPackages,
-            timestamp = timestamp)
+            timestamp = timestamp) {
+
+            /** The carrier the send was routed to, so the estimate matches the wire. */
+            override fun remainingTransferTimeAsString(progress: Int): String =
+                calculateSendTime(
+                    remainingPackages(progress),
+                    fileType.relatedFunctionalityType(),
+                    stardustAPIPackage.carrier,
+                )
+        }
 
         data class Receive(
             override val id: String = UUID.randomUUID().toString(),
@@ -544,7 +565,20 @@ object FileUtils {
             chatId = chatId,
             fileType = fileType,
             numOfPackages = numOfPackages,
-            timestamp = timestamp)
+            timestamp = timestamp) {
+
+            /**
+             * The channel the file is arriving on, mapped back to its carrier. Falls back
+             * to the functionality's default only when the carrier list has not been
+             * populated yet — the same behaviour every caller got before.
+             */
+            override fun remainingTransferTimeAsString(progress: Int): String =
+                calculateSendTime(
+                    remainingPackages(progress),
+                    fileType.relatedFunctionalityType(),
+                    CarriersUtils.getCarrierByControl(deliveryChannel),
+                )
+        }
     }
 
 

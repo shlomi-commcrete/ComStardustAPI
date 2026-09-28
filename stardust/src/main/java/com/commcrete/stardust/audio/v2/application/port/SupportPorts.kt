@@ -11,10 +11,37 @@ import com.commcrete.stardust.audio.v2.domain.TerminalReason
  * latency can never stall the capture/encode/transmit hot path.
  */
 
-/** Optional self-decoded local WAV mirror for one recording. Save directory is an adapter ctor arg. */
+/**
+ * Optional self-decoded local WAV mirror for one recording. Save directory is an adapter ctor arg.
+ *
+ * [accept] is fed the DECODED PCM of each transmitted frame (see
+ * [com.commcrete.stardust.audio.v2.application.send.RecordingSession]), so the saved file is what the
+ * receiver reconstructs, not the encoder's input.
+ */
 interface LocalMirror {
+
+    /**
+     * Whether this mirror actually persists anything. `false` for the no-op mirror, which lets the
+     * send session skip creating a decoder session and running a decode pass per frame — for the AI
+     * codec that is a full model forward per 500 ms of audio, so it must not run when nothing saves it.
+     */
+    val isActive: Boolean get() = true
+
     suspend fun accept(pcm: PcmChunk)
     suspend fun finalizeMirror()
+}
+
+/**
+ * Announces that a recording hit the max-PTT watchdog, so the host can react the way it did on the
+ * legacy path (`PttSendManager.enforceMaxPttTimeout` / `AudioRecorderCodec2.onPipelinePacketSent`):
+ * the API callback, the end-of-PTT beep, and the `PttInterface` hook.
+ *
+ * Purely an announcement — stopping the capture is [com.commcrete.stardust.audio.v2.application.send.RecordingSession]'s
+ * own job and does not depend on this. Called at most once per recording, from the capture path, so
+ * the implementation must not block.
+ */
+interface MaxPttTimeoutNotifier {
+    fun onMaxTimeoutReached(id: RecordingId)
 }
 
 /**

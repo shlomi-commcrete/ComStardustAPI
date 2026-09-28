@@ -10,7 +10,9 @@ import com.commcrete.stardust.audio.v2.adapter.codec2.Codec2Codec
 import com.commcrete.stardust.ai.codec.AIModuleInitializer
 import com.commcrete.stardust.audio.v2.application.codec.CodecBootstrap
 import com.commcrete.stardust.audio.v2.application.port.KeepAlive
+import com.commcrete.stardust.audio.v2.application.port.MaxPttTimeoutNotifier
 import com.commcrete.stardust.audio.v2.domain.CodecId
+import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.DataManager
@@ -22,6 +24,8 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Framework ring — the composition root that wires the CODEC2 v2 path end-to-end. Call [init] once at
@@ -49,6 +53,12 @@ object PttV2Wiring {
 
     private val routing = PttSendRouting()
 
+    // What [shutdown] needs to get hold of. Rebuilt by every [build]; null while torn down.
+    private var scopes: List<CoroutineScope> = emptyList()
+    private var sequencer: TransmitSequencer? = null
+    private var sendCoordinator: PttSendCoordinator? = null
+    private var streamRegistry: StreamRegistry? = null
+
     /**
      * Double-checked locking, and [initialized] is set only on success: the flag used to be set before
      * the body ran, so two callers could race (the receive path calls this per packet) and — worse — a
@@ -64,6 +74,46 @@ object PttV2Wiring {
         }
     }
 
+    /**
+     * Tear the pipeline down: abort recordings, stop the transmit gate, close receive streams, cancel
+     * every scope, and drop the routing table and the wake lock.
+     *
+     * The host calls this when the SDK's process keeps running but this pipeline should not — plugin
+     * unload, service teardown, logout. Nothing calls it automatically, because only the host knows
+     * which of those has happened; what the SDK guarantees is that afterwards nothing of this build is
+     * still running and the next [init] builds a clean one (every call site re-inits before use).
+     *
+     * Synchronous except for the abort: stopping a microphone means touching the device, and a teardown
+     * on the main thread must not block on it. The abort therefore runs on its own scope — deliberately
+     * not one of [scopes], since it has to outlive them — while everything below proceeds. Cancelling
+     * the scopes is itself enough to end every recording; the abort exists to release the device even
+     * when a capture thread is parked where a cancellation cannot reach it.
+     */
+    fun shutdown() {
+        synchronized(this) {
+            if (!initialized) return
+            val coordinator = sendCoordinator
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                runCatching { coordinator?.abortAll() }
+            }
+            runCatching { sequencer?.shutdown() }
+            // Releases each stream's AudioTrack and decoder now, rather than leaving them to a
+            // cancellation that cannot run their close paths for them.
+            streamRegistry?.let { registry -> registry.activeStreams.forEach { runCatching { registry.evict(it) } } }
+            scopes.forEach { runCatching { it.cancel() } }
+            routing.clear()
+            // This instance is process-wide and refcounted; a session killed before its own release ran
+            // would otherwise leave the CPU pinned awake for good.
+            AudioRecordingKeepAlive.reset()
+
+            scopes = emptyList()
+            sequencer = null
+            sendCoordinator = null
+            streamRegistry = null
+            initialized = false
+        }
+    }
+
     private fun build(context: Context) {
         val clock = SystemClock()
         // KeepAlive port backed directly by the legacy refcounted wake-lock object — no wrapper class.
@@ -71,8 +121,26 @@ object PttV2Wiring {
             override fun acquire() = AudioRecordingKeepAlive.acquire(context)
             override fun release() = AudioRecordingKeepAlive.release()
         }
+        // Port backed by RecorderUtils, where the legacy beep + host callbacks already live, so both
+        // pipelines announce the ceiling identically.
+        val maxTimeoutNotifier = object : MaxPttTimeoutNotifier {
+            override fun onMaxTimeoutReached(id: RecordingId) = RecorderUtils.notifyPttMaxTimeoutReached()
+        }
         val sendStore = PttSendStore(context)
+        val watchdogMs = SharedPreferencesUtil.getPTTTimeout().toLong()
+        // Everything one recording can legitimately spend between key-down and "all frames committed":
+        // the whole max-PTT hold, the grace its microphone gets to actually release, and a spell at the
+        // transmit gate behind a stalled predecessor (the gate discards a head after HEAD_TIMEOUT_MS, so
+        // two of them covers the queue that keeping a recording waiting requires), plus slack. Past this
+        // the recording is not slow, it is stuck, and its routing and session are reclaimed.
+        val finalizeTimeoutMs =
+            watchdogMs + CAPTURE_STOP_GRACE_MS + (2 * HEAD_TIMEOUT_MS) + FINALIZE_SLACK_MS
         val txScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val sendScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val receiveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        scopes = listOf(txScope, sendScope, receiveScope, bridgeScope)
+
         val sequencer = TransmitSequencer(
             transport = BleSendTransport(routing),
             clock = clock,
@@ -123,22 +191,56 @@ object PttV2Wiring {
             store = NoOpMessageStore,
             keepAlive = keepAlive,
             clock = clock,
-            watchdogMs = SharedPreferencesUtil.getPTTTimeout().toLong(),
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+            watchdogMs = watchdogMs,
+            captureStopGraceMs = CAPTURE_STOP_GRACE_MS,
+            finalizeTimeoutMs = finalizeTimeoutMs,
+            maxConcurrentRecordings = MAX_CONCURRENT_RECORDINGS,
+            maxTimeout = maxTimeoutNotifier,
+            scope = sendScope,
         )
 
         val receiveStore = PttReceiveStore(context)
         val registry = StreamRegistry(
-            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            scope = receiveScope,
             onDecoded = { key, pcm -> receiveStore.onDecodedPcm(key, pcm) },
             onEvicted = { key -> receiveStore.onEnd(key) },
         )
         val receiveCoordinator = PttReceiveCoordinator(registry)
 
-        recorderBridge = RecorderUtilsBridge(sendCoordinator, routing, sendStore, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+        recorderBridge = RecorderUtilsBridge(
+            send = sendCoordinator,
+            routing = routing,
+            sendStore = sendStore,
+            finalizeTimeoutMs = finalizeTimeoutMs,
+            scope = bridgeScope,
+        )
         router = StardustPackageRouter(receiveCoordinator, receiveStore)
         volumeAdapter = VolumeUiAdapter(receiveCoordinator)
+
+        this.sequencer = sequencer
+        this.sendCoordinator = sendCoordinator
+        this.streamRegistry = registry
     }
 
     private const val HEAD_TIMEOUT_MS = 60_000L
+
+    /**
+     * How long a recording may take to actually release the microphone after being asked to, before its
+     * session is cancelled out from under it. Sized for the slowest legitimate teardown — finish the
+     * in-flight 40 ms read, release the `AudioRecord`, then undo the communication-device route
+     * (`stopBluetoothSco` is the slow one, and it runs inside the capture flow's `finally`) — because
+     * firing early would turn a healthy key-up into a CANCELLED recording with its tail dropped.
+     */
+    private const val CAPTURE_STOP_GRACE_MS = 3_000L
+
+    /** Headroom on top of the deadlines the finalize ceiling is built from, so it never fires first. */
+    private const val FINALIZE_SLACK_MS = 15_000L
+
+    /**
+     * How many recordings may be encoding at once before the oldest is aborted to make room.
+     *
+     * Two is the designed overlap — recording N flushing its tail while N+1 captures — so three leaves
+     * a spare and still bounds what a mashed PTT button or a stalled wire can stack up.
+     */
+    private const val MAX_CONCURRENT_RECORDINGS = 3
 }

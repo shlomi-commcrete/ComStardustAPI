@@ -1,5 +1,6 @@
 package com.commcrete.stardust.room.new_db.internal
 
+import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 
 /**
  * Messages domain, backed by [MessageDao]: lane-aware reads, the serialized
@@ -403,6 +405,61 @@ internal class MessagesRepository(
     }
 
     // ─────────────────────────────────────────────────────────────────────
+    // Media relocation
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Re-points attachment and PTT rows at media that [StardustStorage] moved
+     * out of its root and into the media subtree, and returns how many rows
+     * were rewritten.
+     *
+     * The move happens in `StardustAPI.init`, which is long before there is a
+     * database to update, so the two halves cannot be one operation: the files
+     * move first and the rows catch up here, on the first use of the
+     * repository. Until they do, the paths point at a file that is no longer
+     * there — a gap of one startup, not of one release.
+     *
+     * Idempotent, and cheap enough to run unguarded by any "done" flag:
+     * [StardustStorage.relocatedMediaPath] answers only for a path that still
+     * names the old location, so the second run rewrites nothing. A flag would
+     * have to survive the process that set it, which is exactly what this is
+     * recovering from.
+     */
+    suspend fun rewriteRelocatedMediaPaths(): Int = withContext(Dispatchers.IO) {
+        val rows = runCatching { messagesDao.getMessagesByTypes(MEDIA_PATH_TYPES) }
+            .onFailure { Timber.e(it, "Media relocation: could not read message rows") }
+            .getOrNull()
+            ?: return@withContext 0
+
+        var rewritten = 0
+        rows.forEach { row ->
+            val relocated = row.extraData?.relocated() ?: return@forEach
+            val updated = runCatching { messagesDao.updateExtraData(row.id, relocated) }
+                .onFailure { Timber.w(it, "Media relocation: could not rewrite message ${row.id}") }
+                .getOrDefault(0)
+            rewritten += updated
+        }
+
+        if (rewritten > 0) Timber.d("Media relocation: re-pointed $rewritten message row(s)")
+        rewritten
+    }
+
+    /**
+     * The same extra data with its file path moved to where the file now is, or
+     * null when nothing needs to change. Only the path is touched — a title or
+     * a cached summary describes the file, not its location.
+     */
+    private fun MessageExtraData.relocated(): MessageExtraData? = when (this) {
+        is MessageExtraData.Attachment ->
+            StardustStorage.relocatedMediaPath(path)?.let { copy(path = it) }
+
+        is MessageExtraData.PTT ->
+            StardustStorage.relocatedMediaPath(path)?.let { copy(path = it) }
+
+        else -> null
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
     // Deletion & archival  [= UNCHANGED]
     // ─────────────────────────────────────────────────────────────────────
 
@@ -514,5 +571,10 @@ internal class MessagesRepository(
                 return MessageTypeFilter(include, exclude)
             }
         }
+    }
+
+    private companion object {
+        /** The message types whose extra data carries a file path. */
+        private val MEDIA_PATH_TYPES = listOf(MessageType.ATTACHMENT, MessageType.PTT)
     }
 }

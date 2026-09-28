@@ -231,6 +231,30 @@ object RecorderUtils {
         emit(id, PttRecordingState.SENT, terminal = true)
 
     /**
+     * The max-PTT ceiling was hit and the mic is being released because of it. Fires exactly what the
+     * legacy paths did — [com.commcrete.stardust.StardustAPICallbacks.pttMaxTimeoutReached], the
+     * end-of-PTT beep and the [PttInterface] hook — from `PttSendManager.enforceMaxPttTimeout` (AI,
+     * which is where the beep came from) and `AudioRecorderCodec2.onPipelinePacketSent` (CODEC2, which
+     * fired the callbacks but never beeped). The v2 pipeline reaches this through
+     * [com.commcrete.stardust.audio.v2.application.port.MaxPttTimeoutNotifier].
+     *
+     * Not a [PttRecordingState]: the recording is not over here — the mic closes, then the tail still
+     * encodes and sends, and the host sees the usual STOPPED → SENT. This is the "why".
+     *
+     * Each leg is separately guarded: this runs on the capture path, and one throwing host callback must
+     * not cost the others or the recording being stopped.
+     */
+    internal fun notifyPttMaxTimeoutReached() {
+        Log.d(LOG_TAG, "PTT max timeout reached")
+        runCatching { DataManager.getCallbacks()?.pttMaxTimeoutReached() }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "pttMaxTimeoutReached threw") }
+        // Dispatches to the main thread itself and self-releases, so it is safe from here.
+        runCatching { SoundPlayer.play(DataManager.appContext, com.commcrete.stardust.R.raw.ptt_finished_beep) }
+        runCatching { pttInterface?.maxPTTTimeoutReached() }
+            .onFailure { Timber.tag(LOG_TAG).w(it, "maxPTTTimeoutReached threw") }
+    }
+
+    /**
      * [PttRecordingState.ERROR] — terminal. The first error wins: the recording is forgotten here, so a
      * generic follow-up (e.g. the pipeline reporting a non-LAST terminal reason after a specific
      * `MIC_UNAVAILABLE`) is dropped rather than reaching the host as a second, vaguer event.

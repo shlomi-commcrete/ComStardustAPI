@@ -14,6 +14,7 @@ import com.commcrete.stardust.util.Carrier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
@@ -33,6 +34,8 @@ class RecorderUtilsBridge(
     private val send: PttSendCoordinator,
     private val routing: PttSendRouting,
     private val sendStore: PttSendStore,
+    /** Ceiling on the post-key-up wait before this recording's routing is released regardless. */
+    private val finalizeTimeoutMs: Long,
     private val scope: CoroutineScope,
 ) {
     private sealed interface Cmd
@@ -109,13 +112,25 @@ class RecorderUtilsBridge(
         // outlive the transmit — releasing it at finalize drops the recording's still-queued tail,
         // because BleSendTransport silently skips any frame whose route is gone.
         scope.launch {
-            val reason = send.awaitFinalized(id)
-            send.awaitTransmitted(id)
+            // Bounded, because everything after it is cleanup that must happen even when the awaits
+            // never resolve: an un-released route keeps this recording's entry — and the peer it names —
+            // alive in the transport for the rest of the process, and no history row is ever written.
+            // The ceiling is generous by design (see the wiring): it is a leak stopper, not an SLA, and
+            // a recording queued behind a slow one at the transmit gate is legitimately slow to finish.
+            val reason = withTimeoutOrNull(finalizeTimeoutMs) {
+                val sealedAs = send.awaitFinalized(id)
+                send.awaitTransmitted(id)
+                sealedAs
+            }
+            if (reason == null) {
+                Timber.tag(TAG).w("recording $id never finished within ${finalizeTimeoutMs}ms; releasing anyway")
+            }
             routing.release(id)
             sendStore.onFinalized(id, cmd.chatId, cmd.destination, cmd.codecId, cmd.startedAtMs)
             // Only a clean LAST means the whole recording reached the link. TIMEOUT means the gate's
-            // watchdog discarded the tail; ERROR/CANCELLED mean the pipeline gave up — none of those are
-            // "sent". A more specific error (e.g. MIC_UNAVAILABLE) already reported wins over this one.
+            // watchdog discarded the tail; ERROR/CANCELLED mean the pipeline gave up; null means it
+            // never finished at all — none of those are "sent". A more specific error (e.g.
+            // MIC_UNAVAILABLE) already reported wins over this one.
             if (reason == TerminalReason.LAST) {
                 RecorderUtils.notifyPttRecordingSent(cmd.recordingId)
             } else {

@@ -5,6 +5,9 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import com.commcrete.stardust.room.Converters
 import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogDao
@@ -97,6 +100,14 @@ abstract class AppDatabase : RoomDatabase() {
                         AppDatabase::class.java,
                         StardustStorage.appDatabasePath()
                     )
+                        // Re-creates the parent directory on every open, not
+                        // just on the one that built this instance. See
+                        // DirectoryCreatingOpenHelper.
+                        .openHelperFactory(
+                            DirectoryCreatingOpenHelper.Factory(
+                                FrameworkSQLiteOpenHelperFactory()
+                            )
+                        )
                         // No fallbackToDestructiveMigration: a version bump
                         // without a matching Migration must fail loudly rather
                         // than silently drop every chat and message on the
@@ -141,5 +152,58 @@ abstract class AppDatabase : RoomDatabase() {
                 Timber.w(it, "Could not remove orphaned database $ORPHANED_DATABASE_NAME")
             }
         }
+    }
+}
+
+/**
+ * An open helper that makes sure `files/stardust/db` exists before it hands the
+ * database over.
+ *
+ * [StardustStorage.appDatabasePath] creates that directory, but it runs once
+ * per process, inside `databaseBuilder`. Room opens the file lazily on the
+ * first query and opens the helper again after every [AppDatabase.closeAndClear],
+ * so anything that removes the directory in between — our own media wipe used
+ * to, a host or user file cleanup still can — leaves a path Room cannot open:
+ * SQLite creates a missing *file*, never a missing *directory*, and the open
+ * fails with `SQLiteCantOpenDatabaseException: Directory … doesn't exist`.
+ * Creating a directory that is already there is one `stat`, so no attempt is
+ * made to remember whether this has run.
+ *
+ * It cannot cover every open: a connection the WAL pool adds on its own, for a
+ * concurrent read, is opened inside the framework and never passes through
+ * here. Keeping the directory in place is still [StardustStorage]'s job — this
+ * only stops one deletion from being fatal for the life of the process.
+ *
+ * A failed `mkdirs` is logged and ignored: the open that follows produces the
+ * real, specific error, and swallowing it here would say less.
+ */
+private class DirectoryCreatingOpenHelper(
+    private val delegate: SupportSQLiteOpenHelper,
+) : SupportSQLiteOpenHelper by delegate {
+
+    override val writableDatabase: SupportSQLiteDatabase
+        get() {
+            ensureDirectory()
+            return delegate.writableDatabase
+        }
+
+    override val readableDatabase: SupportSQLiteDatabase
+        get() {
+            ensureDirectory()
+            return delegate.readableDatabase
+        }
+
+    private fun ensureDirectory() {
+        if (!StardustStorage.ensureDatabaseDirectory()) {
+            Timber.w("Could not create the Stardust database directory before opening $databaseName")
+        }
+    }
+
+    class Factory(
+        private val delegate: SupportSQLiteOpenHelper.Factory,
+    ) : SupportSQLiteOpenHelper.Factory {
+        override fun create(
+            configuration: SupportSQLiteOpenHelper.Configuration,
+        ): SupportSQLiteOpenHelper = DirectoryCreatingOpenHelper(delegate.create(configuration))
     }
 }

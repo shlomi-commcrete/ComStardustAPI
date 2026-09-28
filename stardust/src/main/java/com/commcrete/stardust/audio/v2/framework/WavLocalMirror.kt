@@ -6,12 +6,15 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import java.io.File
 
 /**
- * Framework ring — accumulates a recording's post-DSP PCM and writes it to a WAV on finalize (R3's
- * per-session mirror). One instance per recording; the save directory/file is a constructor arg
+ * Framework ring — accumulates a recording's SELF-DECODED PCM and writes it to a WAV on finalize
+ * (R3's per-session mirror). One instance per recording; the save directory/file is a constructor arg
  * (README invariant #4 — no global save dir). Only wired in when `DataManager.getSavePTTFilesRequired()`.
  *
- * Note: this mirrors the ENCODER INPUT (post-gain/resample), not a self-decode of the transmitted
- * bytes. A true decode-mirror would run the decoder on the encoded frames; deferred until needed.
+ * The chunks come from [com.commcrete.stardust.audio.v2.application.send.RecordingSession]'s mirror
+ * decode of the transmitted frames, so the file is what the receiver reconstructs — matching the
+ * legacy AI (`PttSendManager`) and CODEC2 (`AudioRecorderCodec2`) local files. Unlike legacy CODEC2,
+ * which wrote headerless raw PCM into a `.pcm` file, this always writes a real RIFF/WAVE header via
+ * [WavHelper.createWavFile], at the decoder's own rate (CODEC2 8 kHz, WavTokenizer 24 kHz).
  */
 class WavLocalMirror(private val file: File) : LocalMirror {
 
