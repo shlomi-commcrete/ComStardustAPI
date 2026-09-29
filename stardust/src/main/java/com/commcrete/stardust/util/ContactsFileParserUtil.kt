@@ -32,12 +32,14 @@ object ContactsFileParserUtil {
         val name: String,
         val type: String,
         val image: String,
+        val model: String,
+        val serial: String,
     )
 
     /**
      * Exports contacts to a CSV file matching the legacy TS format:
      *
-     * ID,Device_ID,Name,Type,Image
+     * ID,Device_ID,Name,Type,Image,Model,Serial
      * ...rows...
      *
      * #HASH:<base36>
@@ -114,19 +116,26 @@ object ContactsFileParserUtil {
         val entity = contact.contact
         val image = normalizeImageName(entity.image.orEmpty())
         return when (contact) {
-            is FullContactData.User -> ContactCsvRow(
-                id = contact.userId,
-                deviceId = contact.devices.firstOrNull()?.id.orEmpty(),
-                name = entity.name,
-                type = "app",
-                image = image,
-            )
+            is FullContactData.User -> {
+                val device = contact.devices.firstOrNull()
+                ContactCsvRow(
+                    id = contact.userId,
+                    deviceId = device?.id.orEmpty(),
+                    name = entity.name,
+                    type = "app",
+                    image = image,
+                    model = device?.model.orEmpty(),
+                    serial = device?.serial.orEmpty(),
+                )
+            }
             is FullContactData.Group -> ContactCsvRow(
                 id = contact.groupId,
                 deviceId = "",
                 name = entity.name,
                 type = "group",
                 image = image,
+                model = "",
+                serial = "",
             )
             is FullContactData.Device -> ContactCsvRow(
                 id = "",
@@ -134,12 +143,16 @@ object ContactsFileParserUtil {
                 name = entity.name,
                 type = "device",
                 image = image,
+                model = contact.deviceData.model.orEmpty(),
+                serial = contact.deviceData.serial.orEmpty(),
             )
         }
     }
 
     private fun buildCsvDataContent(rows: List<ContactCsvRow>): String {
-        val headers = listOf("ID", "Device_ID", "Name", "Type", "Image")
+        // Model/Serial are appended after the legacy columns, so a positional
+        // reader of the old format still sees ID..Image where it expects them.
+        val headers = listOf("ID", "Device_ID", "Name", "Type", "Image", "Model", "Serial")
         val textFields = setOf("ID", "Device_ID", "Serial")
 
         val body = rows.map { row ->
@@ -150,6 +163,8 @@ object ContactsFileParserUtil {
                     "Name" -> row.name
                     "Type" -> row.type
                     "Image" -> row.image
+                    "Model" -> row.model
+                    "Serial" -> row.serial
                     else -> ""
                 }
                 encodeCsvValue(value, forceExcelText = textFields.contains(header))
@@ -323,8 +338,12 @@ object ContactsFileParserUtil {
             .mapIndexed { index, header -> decodeCsvField(header).trim().lowercase(Locale.getDefault()) to index }
             .toMap()
 
-        fun List<String>.value(header: String): String {
-            val index = headerMap[header] ?: return ""
+        fun List<String>.value(key: String): String {
+            // Same alias table the Excel reader uses, so both paths accept the
+            // same header spellings ("device id", "img", ...).
+            val index = FolderReader.HEADER_ALIASES[key]?.firstNotNullOfOrNull { headerMap[it] }
+                ?: headerMap[key]
+                ?: return ""
             return decodeCsvField(getOrElse(index) { "" })
         }
 
@@ -340,6 +359,8 @@ object ContactsFileParserUtil {
                 name = fields.value("name"),
                 type = fields.value("type"),
                 image = fields.value("image"),
+                model = fields.value("model"),
+                serial = fields.value("serial"),
             )
             users.add(user)
         }
@@ -387,6 +408,10 @@ object ContactsFileParserUtil {
             val deviceId = contact.deviceId
             val name = contact.name
             val image = contact.image
+            // Blank cells must land as NULL, not "", or the device row records an
+            // empty model/serial that reads as "present but empty" downstream.
+            val model = contact.model.trim().takeIf { it.isNotEmpty() }
+            val serial = contact.serial.trim().takeIf { it.isNotEmpty() }
 
             val type = when(contact.type.lowercase()) {
                 "app" -> ContactType.USER
@@ -400,8 +425,8 @@ object ContactsFileParserUtil {
                     image = image,
                     userId = appId,
                     deviceId = deviceId,
-                    model = contact.model,
-                    serial = contact.serial,
+                    model = model,
+                    serial = serial,
                 )
                 ContactType.GROUP -> FullContactData.Companion.createGroupContact(
                     name = name,
@@ -411,9 +436,12 @@ object ContactsFileParserUtil {
                 ContactType.DEVICE -> FullContactData.Companion.createDeviceContact(
                     name = name,
                     image = image,
-                    deviceId = deviceId,
-                    model = contact.model,
-                    serial = contact.serial,
+                    // FolderReader moves a device row's device_id into `id` when the
+                    // ID column is empty, so fall back to it — otherwise the row is
+                    // rejected for a blank device id and the contact is dropped.
+                    deviceId = deviceId.ifEmpty { appId },
+                    model = model,
+                    serial = serial,
                 )
             }
 

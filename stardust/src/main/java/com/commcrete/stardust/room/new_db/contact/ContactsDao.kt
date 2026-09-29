@@ -128,6 +128,9 @@ interface ContactsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDevice(device: DeviceEntity)
 
+    @Query("SELECT * FROM devices WHERE id = :deviceId LIMIT 1")
+    suspend fun getDeviceById(deviceId: String): DeviceEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertContactDevice(contactDevice: ContactDeviceEntity)
 
@@ -372,15 +375,27 @@ interface ContactsDao {
     @Query("SELECT * FROM contacts WHERE id = :id LIMIT 1")
     suspend fun getContactById(id: Int): ContactEntity?
 
+    /**
+     * USER contacts with their device links joined in, so the rows carry the
+     * device id/model/serial [AppContactRow] declares. A USER with several
+     * devices produces one row per device — the caller's row mapper groups by
+     * `contact.id` and rebuilds the device list from them.
+     */
     @Query(
         """
         SELECT
             c.*,
-            u.user_id AS user_id
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
         FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
         WHERE c.type = 'USER'
-        ORDER BY c.name ASC
+        ORDER BY c.name ASC, cd.slot ASC
         """
     )
     suspend fun getAllAppContactRows(): List<AppContactRow>
@@ -390,24 +405,37 @@ interface ContactsDao {
         """
         SELECT
             c.*,
-            u.user_id AS user_id
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
         FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
         WHERE c.type = 'USER'
-        ORDER BY c.name ASC
+        ORDER BY c.name ASC, cd.slot ASC
         """
     )
     fun observeAllAppContactRows(): Flow<List<AppContactRow>>
 
+    /** Variant of [getAllAppContactRows] that excludes the registered user by user_id. */
     @Query(
         """
         SELECT
             c.*,
-            u.user_id AS user_id
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
         FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
         WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
-        ORDER BY c.name ASC
+        ORDER BY c.name ASC, cd.slot ASC
         """
     )
     suspend fun getAllAppContactRowsExceptUser(excludedUserId: String): List<AppContactRow>
@@ -417,11 +445,17 @@ interface ContactsDao {
         """
         SELECT
             c.*,
-            u.user_id AS user_id
+            u.user_id    AS user_id,
+            d.id         AS device_id,
+            d.model      AS device_model,
+            d.serial     AS device_serial,
+            cd.slot      AS device_slot
         FROM contacts c
         LEFT JOIN app_contact_user_ids u ON u.contact_id = c.id
+        LEFT JOIN app_contact_devices  cd ON cd.contact_id = c.id
+        LEFT JOIN devices              d  ON d.id         = cd.device_id
         WHERE c.type = 'USER' AND (u.user_id IS NULL OR u.user_id != :excludedUserId)
-        ORDER BY c.name ASC
+        ORDER BY c.name ASC, cd.slot ASC
         """
     )
     fun observeAllAppContactRowsExceptUser(excludedUserId: String): Flow<List<AppContactRow>>
@@ -718,7 +752,7 @@ interface ContactsDao {
             is FullContactData.Device -> {
                 val hasPrimaryDevice = normalizedDevices.any { it.id == normalizedPrimaryId }
                 if (!hasPrimaryDevice) {
-                    upsertDevice(DeviceEntity(id = normalizedPrimaryId))
+                    upsertDeviceMerging(DeviceEntity(id = normalizedPrimaryId))
                     upsertContactDevice(ContactDeviceEntity(deviceId = normalizedPrimaryId, contactId = contactId))
                 }
             }
@@ -727,9 +761,24 @@ interface ContactsDao {
 
     private suspend fun upsertDeviceLinks(normalizedDevices: List<DeviceEntity>, contactId: Int) {
         normalizedDevices.forEach { device ->
-            upsertDevice(device)
+            upsertDeviceMerging(device)
             upsertContactDevice(ContactDeviceEntity(deviceId = device.id, contactId = contactId))
         }
+    }
+
+    /**
+     * REPLACE-upsert that keeps the model/serial already stored when the incoming
+     * row carries none — an import from a file without those columns (or a device
+     * row created as a bare identity) must not erase what an earlier import gave us.
+     */
+    private suspend fun upsertDeviceMerging(device: DeviceEntity) {
+        val existing = getDeviceById(device.id)
+        upsertDevice(
+            device.copy(
+                model = device.model?.takeIf { it.isNotBlank() } ?: existing?.model,
+                serial = device.serial?.takeIf { it.isNotBlank() } ?: existing?.serial,
+            )
+        )
     }
 
     private fun String?.normalizedIdOrNull(): String? =

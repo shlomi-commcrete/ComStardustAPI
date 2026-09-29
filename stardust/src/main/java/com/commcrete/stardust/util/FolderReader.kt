@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import timber.log.Timber
@@ -52,20 +53,19 @@ object FolderReader {
 
             val headerMap = buildHeaderIndexMap(headerRow)
 
-            fun Row.get(header: String): String {
-                val cellIndex = headerMap[header.lowercase()]
-                return cellIndex?.let { getCell(cellIndex, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK)?.toString() } ?: ""
-            }
-
             for (rowIndex in 1..sheet.lastRowNum) {
                 val row = sheet.getRow(rowIndex) ?: continue
 
+                // Every column goes through the alias map, so "device id"/"deviceid",
+                // "img"/"picture" and the model/serial columns are all picked up.
                 val excelUser = ExcelUser(
-                    _id       = row.get("id"),
-                    _deviceId = row.get("device_id"),
-                    name     = row.get("name"),
-                    type     = row.get("type"),
-                    image    = row.get("image")
+                    _id       = row.getByAliases(headerMap, "id").orEmpty(),
+                    _deviceId = row.getByAliases(headerMap, "device_id").orEmpty(),
+                    name     = row.getByAliases(headerMap, "name").orEmpty(),
+                    type     = row.getByAliases(headerMap, "type").orEmpty(),
+                    image    = row.getByAliases(headerMap, "image").orEmpty(),
+                    model    = row.getByAliases(headerMap, "model").orEmpty(),
+                    serial   = row.getByAliases(headerMap, "serial").orEmpty(),
                 )
 
 
@@ -290,12 +290,16 @@ object FolderReader {
         "serial" to listOf("serial")
     )
 
+    /** Renders cells the way Excel shows them, so a numeric serial reads "123456", not "123456.0". */
+    private val cellFormatter by lazy { DataFormatter() }
+
     fun Row.getByAliases(headerMap: Map<String, Int>, key: String): String? {
         val index = HEADER_ALIASES[key]
             ?.firstNotNullOfOrNull { headerMap[it] }
             ?: return null
 
-        return getCell(index).toString()
+        val cell = getCell(index, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK) ?: return null
+        return cellFormatter.formatCellValue(cell).trim()
     }
 
     fun getMimeType(uri: Uri): String? {
