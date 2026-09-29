@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.withContext
@@ -194,20 +195,45 @@ class AppRepository(
 
     fun observeCachedContacts(): StateFlow<List<FullContactData>?> = cachedContacts
 
+    /*
+     * The draft projections below convert the WHOLE roster, which is real work on
+     * a large one. `map` alone runs on the CALLER's dispatcher — for a collector
+     * or a caller on `Dispatchers.Main` that is a main-thread pass over every
+     * contact. The conversion is pure CPU (no DB), so it belongs on Default, and
+     * pinning it here means no call site has to remember to wrap it.
+     */
+
     fun observeCachedContactDrafts(): Flow<List<ContactDraft>> =
-        cachedContacts.filterNotNull().map { it.map(ContactDraft.Companion::fromFullContactData) }
+        cachedContacts.filterNotNull()
+            .map { it.map(ContactDraft.Companion::fromFullContactData) }
+            .flowOn(Dispatchers.Default)
 
     suspend fun cachedContactDrafts(): List<ContactDraft> =
-        (cachedContacts.value ?: getAllContacts()).map(ContactDraft.Companion::fromFullContactData)
+        // getAllContacts() hops to IO on its own; only the projection needs Default.
+        (cachedContacts.value ?: getAllContacts()).let { contacts ->
+            withContext(Dispatchers.Default) {
+                contacts.map(ContactDraft.Companion::fromFullContactData)
+            }
+        }
 
     suspend fun getAllContactDrafts(): List<ContactDraft> =
-        getAllContacts().map(ContactDraft.Companion::fromFullContactData)
+        getAllContacts().let { contacts ->
+            withContext(Dispatchers.Default) {
+                contacts.map(ContactDraft.Companion::fromFullContactData)
+            }
+        }
 
     fun observeAllContactDrafts(): Flow<List<ContactDraft>> =
-        observeAllContacts().map { list -> list.map(ContactDraft.Companion::fromFullContactData) }
+        observeAllContacts()
+            .map { list -> list.map(ContactDraft.Companion::fromFullContactData) }
+            .flowOn(Dispatchers.Default)
 
     suspend fun findContactConflicts(incoming: ContactDraft): ContactConflicts =
-        ContactConflictEngine.detect(incoming, cachedContactDrafts())
+        cachedContactDrafts().let { candidates ->
+            withContext(Dispatchers.Default) {
+                ContactConflictEngine.detect(incoming, candidates)
+            }
+        }
 
     /**
      * Applies resolver output in the order that keeps identity swaps and message

@@ -55,6 +55,9 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 import timber.log.Timber
 
+/** Temporary diagnostic tag for the incoming-SOS investigation: `adb logcat -s SOSDebug`. */
+private const val SOS_LOG_TAG = "SOSDebug"
+
 internal class StardustPackageHandler(private var clientConnection: ClientConnection? = null) {
 
     private val fileReceivers = ConcurrentHashMap<String, FileReceiver>()
@@ -112,9 +115,21 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         }
         Log.d("ConfigDebug", "handleStardustPackage ENTER opCode=${mPackage.stardustOpCode} id=$randomID savedOpCode=${savedPackage?.stardustOpCode}")
 
+        if (isSosOpCode(mPackage.stardustOpCode)) {
+            Log.d(SOS_LOG_TAG,
+                "INBOUND op=${mPackage.stardustOpCode} " +
+                    "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) id=$randomID " +
+                    "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
+                    "dataSize=${mPackage.data?.size} data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+            )
+        }
+
         synchronized(packageProcessingLock) {
             if (isDuplicate(mPackage)) {
                 Log.w("ConfigDebug", "handleStardustPackage -> isDuplicate == true for $randomID (opCode=${mPackage.stardustOpCode})")
+                if (isSosOpCode(mPackage.stardustOpCode)) {
+                    Log.w(SOS_LOG_TAG,"INBOUND DROPPED as duplicate: op=${mPackage.stardustOpCode} id=$randomID")
+                }
                 resetTimer()
                 return
             }
@@ -133,10 +148,16 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
             if (mPackage.stardustControlByte.stardustMessageType == StardustControlByte.StardustMessageType.SNIFFED) {
                 // TODO: Handle Sniffed message
+                if (isSosOpCode(mPackage.stardustOpCode)) {
+                    Log.w(SOS_LOG_TAG,"INBOUND DROPPED as SNIFFED: op=${mPackage.stardustOpCode} id=$randomID")
+                }
                 return@launch
             }
 
             if (StardustInitConnectionHandler.onIncoming(mPackage)) {
+                if (isSosOpCode(mPackage.stardustOpCode)) {
+                    Log.w(SOS_LOG_TAG,"INBOUND CONSUMED by init handler: op=${mPackage.stardustOpCode} id=$randomID")
+                }
                 Log.w("ConfigDebug", "handleStardustPackage -> StardustInitConnectionHandler.onIncoming for $randomID" )
                 synchronized(packageProcessingLock) { resetTimer() }
                 return@launch
@@ -148,6 +169,17 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             synchronized(packageProcessingLock) { resetTimer() }
         }
     }
+
+    /**
+     * Diagnostic only: the opcodes an SOS can arrive under, so the investigation log can
+     * follow one from the inbound entry point to the database row.
+     */
+    private fun isSosOpCode(opCode: StardustPackageUtils.StardustOpCode): Boolean =
+        opCode == StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT ||
+            opCode == StardustPackageUtils.StardustOpCode.SEND_SOS_INTERRUPT ||
+            opCode == StardustPackageUtils.StardustOpCode.RECEIVE_SOS ||
+            opCode == StardustPackageUtils.StardustOpCode.SOS ||
+            opCode == StardustPackageUtils.StardustOpCode.SOS_ACK
 
     /** Returns true if [mPackage] is an exact duplicate of the last saved package. */
     private fun isDuplicate(mPackage: StardustPackage): Boolean =
@@ -212,12 +244,24 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             StardustPackageUtils.StardustOpCode.SET_ADMIN_MODE_RESPONSE          -> handleAdminModeResponse()
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE              -> handleAddGroupsResponse()
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE           -> handleDeleteGroupsResponse()
-            StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT            -> handleSOS(mPackage)
+            StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT            -> handleRealSOS(mPackage)
             StardustPackageUtils.StardustOpCode.SOS_ACK                          -> handleSOSAck(mPackage)
             StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT                -> handleAppEvent(mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
             StardustPackageUtils.StardustOpCode.SOS_DESTINATION_UPDATED           -> getConfiguration()
-            else -> {}
+            else -> {
+                // Diagnostic: an SOS opcode the dispatcher has no branch for (RECEIVE_SOS 0x85,
+                // SEND_SOS_INTERRUPT 0xF9 — both local-radio confirmations we deliberately
+                // ignore) dies here without trace. Restricted to the SOS family so the routine
+                // no-op opcodes do not spam the log.
+                if (isSosOpCode(mPackage.stardustOpCode)) Log.d(SOS_LOG_TAG,
+                    "unhandled opCode=${mPackage.stardustOpCode} " +
+                        "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) " +
+                        "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
+                        "dataSize=${mPackage.data?.size} " +
+                        "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+                )
+            }
         }
     }
 
@@ -436,24 +480,136 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         AdminUtils.updateBittelAdminMode()
     }
 
+    /**
+     * A typed SOS REPORT, which reaches us as a SEND_MESSAGE whose payload starts with the
+     * "SOS" marker: `['S','O','S'][report type][8-byte packed location]`, optionally followed
+     * by free text. That layout is what [StardustLocationParser.parseSOS] reads.
+     *
+     * A real SOS carries a different payload and is handled by [handleRealSOS] — the two must
+     * not share a parser, see the note there.
+     */
     private fun handleSOS(mPackage: StardustPackage) {
-        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
+        Log.d(SOS_LOG_TAG,
+            "handleSOS ENTER op=${mPackage.stardustOpCode} " +
+                "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) " +
+                "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
+                "len=${mPackage.length} dataSize=${mPackage.data?.size} " +
+                "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+        )
+
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: run {
+            Log.w(SOS_LOG_TAG,"handleSOS DROPPED: mapper returned null (no registered app user)")
+            return
+        }
+        Log.d(SOS_LOG_TAG,
+            "handleSOS mapped sender=${pkg.senderId} receiver=${pkg.receiverId} " +
+                "group=${pkg.groupId} chat='${pkg.chatId}'"
+        )
 
         handlerScope.launch {
             try {
-                val sosPackage = StardustLocationParser().parseSOS(mPackage) ?: return@launch
+                val sosPackage = StardustLocationParser().parseSOS(mPackage) ?: run {
+                    Log.w(SOS_LOG_TAG,
+                        "handleSOS DROPPED: parseSOS returned null for op=${mPackage.stardustOpCode} " +
+                            "dataSize=${mPackage.data?.size} " +
+                            "(parseSOS needs >= 12 bytes: 'SOS' + type + 8-byte location)"
+                    )
+                    return@launch
+                }
+                Log.d(SOS_LOG_TAG,
+                    "handleSOS parsed type=${sosPackage.sosType} " +
+                        "lat=${sosPackage.location.latitude} lon=${sosPackage.location.longitude} " +
+                        "alt=${sosPackage.location.altitude}"
+                )
 
-                SOSUtils.saveSOSMessage(
+                val rowId = SOSUtils.saveSOSMessage(
                     type = sosPackage.sosType,
                     location = sosPackage.location,
                     stardustAPIPackage = pkg,
                     state = MessageState.RECEIVED
                 )
+                if (rowId == null) {
+                    Log.w(SOS_LOG_TAG,
+                        "handleSOS DROPPED: repository saved no row " +
+                            "(contact/chat resolution failed) sender=${pkg.senderId} " +
+                            "group=${pkg.groupId} chat='${pkg.chatId}'"
+                    )
+                } else {
+                    Log.d(SOS_LOG_TAG,"handleSOS SAVED rowId=$rowId")
+                }
 
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveSOS(pkg, sosPackage)
+                Log.d(SOS_LOG_TAG,
+                    "handleSOS callback receiveSOS delivered=${DataManager.getCallbacks() != null}"
+                )
             } catch (e: Exception) {
+                Log.e(SOS_LOG_TAG, "handleSOS DROPPED: exception while handling SOS", e)
                 Timber.tag("StardustPackageHandler").e(e, "Failed to save SOS message")
+            }
+        }
+    }
+
+    /**
+     * A real SOS raised on another device, which the radio reports as
+     * [StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT].
+     *
+     * Its payload is an 8-byte packed location and NOTHING else — no "SOS" marker and no
+     * report type — so it is read by [StardustLocationParser.parseSOSReal] at offset 0.
+     * Reading it with [StardustLocationParser.parseSOS] instead, as this used to, fails the
+     * 12-byte minimum that layout needs and returns null: the SOS was then discarded without
+     * a row, a callback or a sound. Keep the two parsers apart.
+     *
+     * There is no report type to record, so the row is saved with a null subtype.
+     */
+    private fun handleRealSOS(mPackage: StardustPackage) {
+        Log.d(SOS_LOG_TAG,
+            "handleRealSOS ENTER op=${mPackage.stardustOpCode} " +
+                "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
+                "len=${mPackage.length} dataSize=${mPackage.data?.size} " +
+                "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+        )
+
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: run {
+            Log.w(SOS_LOG_TAG, "handleRealSOS DROPPED: mapper returned null (no registered app user)")
+            return
+        }
+
+        handlerScope.launch {
+            try {
+                val sosPackage = StardustLocationParser().parseSOSReal(mPackage) ?: run {
+                    Log.w(SOS_LOG_TAG,
+                        "handleRealSOS DROPPED: parseSOSReal returned null, " +
+                            "dataSize=${mPackage.data?.size} (needs >= 8 bytes of packed location)"
+                    )
+                    return@launch
+                }
+
+                val rowId = SOSUtils.saveSOSMessage(
+                    type = null,
+                    location = sosPackage.location,
+                    stardustAPIPackage = pkg,
+                    state = MessageState.RECEIVED
+                )
+                if (rowId == null) {
+                    Log.w(SOS_LOG_TAG,
+                        "handleRealSOS DROPPED: repository saved no row " +
+                            "(contact/chat resolution failed) sender=${pkg.senderId} " +
+                            "group=${pkg.groupId} chat='${pkg.chatId}'"
+                    )
+                } else {
+                    Log.d(SOS_LOG_TAG,
+                        "handleRealSOS SAVED rowId=$rowId sender=${pkg.senderId} " +
+                            "group=${pkg.groupId} chat='${pkg.chatId}' " +
+                            "lat=${sosPackage.location.latitude} lon=${sosPackage.location.longitude}"
+                    )
+                }
+
+                PlayerUtils.playNotificationSound()
+                DataManager.getCallbacks()?.receiveRealSOS(pkg, sosPackage.location)
+            } catch (e: Exception) {
+                Log.e(SOS_LOG_TAG, "handleRealSOS DROPPED: exception while handling SOS", e)
+                Timber.tag("StardustPackageHandler").e(e, "Failed to save real SOS message")
             }
         }
     }
