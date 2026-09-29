@@ -65,6 +65,9 @@ import java.util.concurrent.ConcurrentHashMap
 @SuppressLint("StaticFieldLeak")
 object DataManager : StardustAPI, PttInterface {
 
+    /** Body of the chat row written when the user asks a contact for its location. */
+    const val LOCATION_REQUEST_TEXT = "Location Request"
+
     private var clientConnection : ClientConnection?  = null
     private var bittelusbManager : BittelUsbManager2?  = null
     private var bittelPackageHandler : StardustPackageHandler? = null
@@ -340,6 +343,13 @@ object DataManager : StardustAPI, PttInterface {
             stardustOpCode = StardustPackageUtils.StardustOpCode.REQUEST_LOCATION)
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         Scopes.getDefaultCoroutine().launch {
+            // Recorded as a plain outgoing text so the request shows up in the chat the
+            // same way the location that answers it does.
+            getAppRepo().saveMessage(
+                pkg = stardustAPIPackage,
+                extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
+                state = MessageState.SENT,
+            )
             sendDataToBle(stardustPackage)
         }
     }
