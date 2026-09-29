@@ -264,9 +264,26 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         }
     }
 
+    /**
+     * An ack settles the SOS this user already sent — it is not a message of its own, so
+     * nothing is inserted here. [pkg] carries who acknowledged (the individual member, for
+     * a group SOS) and the chat the ack resolved to; the repository matches those back to
+     * the SOS row and appends the acker to it.
+     */
     private fun handleSOSAck(mPackage: StardustPackage) {
         val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
-        DataManager.getCallbacks()?.handleSOSAck(pkg)
+
+        handlerScope.launch {
+            try {
+                DataManager.getAppRepo().recordSosAck(
+                    chatId = pkg.chatId,
+                    ackedBy = pkg.senderId,
+                )
+            } catch (e: Exception) {
+                Timber.tag("StardustPackageHandler").e(e, "Failed to record SOS ack")
+            }
+            DataManager.getCallbacks()?.handleSOSAck(pkg)
+        }
     }
 
     private fun handleDeviceUpdateResponse(mPackage: StardustPackage) {

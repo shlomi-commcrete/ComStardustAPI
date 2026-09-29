@@ -15,8 +15,11 @@ import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import timber.log.Timber
 
 object SOSUtils {
+
+    private const val LOG_TAG = "SOSUtils"
 
     suspend fun sendAlert(
         sosType: SOS_REPORT_TYPES?,
@@ -92,17 +95,65 @@ object SOSUtils {
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
             data = data)
 
-        DataManager.getClientConnection().addMessageToQueue(sosMessage)
+        // Saved BEFORE the packet goes out: the row is the record that this user raised an
+        // SOS, and a save that runs after the send can fail with the alert already on air.
+        // The packet itself is addressed to the local radio, which routes it on — the row is
+        // filed against the destination it will actually reach, see [buildSosMessagePackage].
+        buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
 
-        val realSOSDest = ConfigurationUtils.bittelConfiguration.value?.sosDestinations?.firstNotNullOfOrNull { it }
-        val sosPackage = StardustAPIPackage(
-            senderId = src,
-            receiverId = realSOSDest ?: dst,
+        DataManager.getClientConnection().addMessageToQueue(sosMessage)
+    }
+
+    /**
+     * The package an outgoing SOS is FILED under, which is not how it is addressed on air.
+     * On air an SOS goes to the local radio ([requireLocalSrcDst]'s destination), which
+     * forwards it to the SOS destination configured on the device; in the database it has
+     * to appear in the conversation with whoever will receive it, or it lands in a chat
+     * with this user's own device and nobody ever sees it.
+     *
+     * Returns null when no SOS destination is configured, in which case the SOS is sent but
+     * not recorded — there is no conversation to record it in.
+     */
+    private suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
+        val destination = resolvePrimarySosDestination()
+        if (destination == null) {
+            Timber.tag(LOG_TAG).w("SOS sent but not saved: no SOS destination in the configuration")
+            return null
+        }
+
+        // A group destination must be declared as one: MessagesRepository only resolves the
+        // group chat when groupId is set, and would otherwise open a private chat named
+        // after the group id — where no ack from a member would ever find the row again.
+        val groupId = destination.takeIf { GroupsUtils.isLocalGroupId(it) }
+
+        return StardustAPIPackage(
+            senderId = senderId,
+            receiverId = destination,
+            groupId = groupId,
             requireAck = true,
             isLast = true
         )
+    }
 
-        saveSOSMessage(null , sosPackage, location)
+    /**
+     * The radio's primary (first) SOS destination, or null when none is configured.
+     *
+     * The configuration always carries exactly two fixed-width destination slots, and an
+     * unused slot reads back as a run of 0s or Fs rather than as absent — so an empty slot
+     * has to be recognised by its value, not by nullability. Falls back to the last
+     * destinations seen, which covers an SOS raised before the first configuration read of
+     * this session has come back.
+     */
+    private fun resolvePrimarySosDestination(): String? {
+        val configured = ConfigurationUtils.bittelConfiguration.value?.sosDestinations
+        return configured?.firstOrNull { isRealDestination(it) }
+            ?: SharedPreferencesUtil.getLastSosDestinations().firstOrNull { isRealDestination(it) }
+    }
+
+    /** False for a blank id and for the all-0 / all-F placeholders of an unused slot. */
+    internal fun isRealDestination(id: String?): Boolean {
+        val normalized = id?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return false
+        return normalized.any { it != '0' } && normalized.any { it != 'f' }
     }
 
     suspend fun saveSOSMessage (
@@ -110,9 +161,9 @@ object SOSUtils {
         stardustAPIPackage: StardustAPIPackage,
         location: Location,
         state: MessageState = MessageState.SENT
-    ) {
+    ): Long? {
 
-        DataManager.getAppRepo().saveMessage(
+        return DataManager.getAppRepo().saveMessage(
             pkg = stardustAPIPackage,
             state = state,
             extraData = MessageExtraData.Sos(

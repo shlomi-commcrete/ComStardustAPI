@@ -16,6 +16,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.SosAck
 import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -361,6 +362,59 @@ internal class MessagesRepository(
 
     suspend fun updateMessageState(messageId: Long, state: MessageState) =
         withContext(Dispatchers.IO) { messagesDao.updateMessageState(messageId, state) }
+
+    /**
+     * Records that [ackedBy] acknowledged an SOS this user sent, appending them to the
+     * [MessageExtraData.Sos.acks] list on that SOS's own row. Returns false when no row
+     * matched, when it carries no SOS extra data, or when this acker is already on it.
+     *
+     * The row is found, not passed in: no id survives the round trip to the radio, so
+     * the ack has to be matched back by address. [chatId] — the chat the ack packet
+     * itself resolved to — is tried first, which is exact for a direct SOS and for a
+     * group ack that came back through the group. When that finds nothing, the acker's
+     * chat membership is tried, which catches a group SOS acknowledged straight back to
+     * this user.
+     *
+     * Appending rather than overwriting is the point: an SOS addressed to a group can be
+     * acknowledged by several members, and the first responder is the one worth keeping.
+     * Re-recording the same acker is a no-op, so a retransmitted ack changes nothing.
+     */
+    suspend fun recordSosAck(
+        chatId: String?,
+        ackedBy: String,
+        ackedAtMs: Long = System.currentTimeMillis(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        val ackerId = normalizeIdOrNull(ackedBy) ?: return@withContext false
+        val me = normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.appId)
+            ?: return@withContext false
+
+        val row = findSosRowForAck(chatId, ackerId, me) ?: run {
+            Timber.d("SOS ack from $ackerId matched no SOS sent by this user")
+            return@withContext false
+        }
+        val sos = row.extraData as? MessageExtraData.Sos ?: return@withContext false
+        if (sos.acks.any { it.ackedBy == ackerId }) return@withContext false
+
+        messagesDao.recordSosAck(
+            messageId = row.id.toLong(),
+            extraData = sos.copy(acks = sos.acks + SosAck(ackedBy = ackerId, ackedAtMs = ackedAtMs)),
+        ) > 0
+    }
+
+    /** The SOS row an incoming ack belongs to. See [recordSosAck] for the two passes. */
+    private suspend fun findSosRowForAck(
+        chatId: String?,
+        ackerId: String,
+        me: String,
+    ): MessageEntity? {
+        normalizeIdOrNull(chatId)?.let { normalizedChatId ->
+            messagesDao.findLatestSosSentInChat(normalizedChatId, me, MessageType.SOS)
+                ?.let { return it }
+        }
+
+        val ackerContactId = contactsDao.findContactIdByMainCommunicationId(ackerId) ?: return null
+        return messagesDao.findLatestSosSentToParticipant(me, ackerContactId, MessageType.SOS)
+    }
 
     /**
      * Records a file/image transfer failure on an existing (outgoing) message row:

@@ -514,6 +514,22 @@ class AppRepository(
         messages.updateMessageState(messageId, state)
 
     /**
+     * Records that [ackedBy] acknowledged an SOS this user sent, appending them to the
+     * ack list on that SOS's own row rather than storing the ack as a message of its
+     * own. Returns false when the ack matched no SOS, or when that acker is already
+     * recorded on it.
+     *
+     * [chatId] is the chat the ack packet resolved to; pass it even when blank, the
+     * match then falls back to the acker's chat membership so a group SOS still settles.
+     * See `MessagesRepository.recordSosAck`.
+     */
+    suspend fun recordSosAck(
+        chatId: String?,
+        ackedBy: String,
+        ackedAtMs: Long = System.currentTimeMillis(),
+    ): Boolean = messages.recordSosAck(chatId, ackedBy, ackedAtMs)
+
+    /**
      * Records a file/image transfer failure on an existing OUTGOING message row (where
      * the row was created when the send started): state FAILED plus the reason merged
      * into the row's extra_data, and the row restamped with the moment it gave up.

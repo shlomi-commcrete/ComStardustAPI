@@ -108,6 +108,18 @@ sealed class MessageExtraData {
         override val longitude: Double,
         override val altitude: Double,
         val subtype: SosType? = null,
+        /**
+         * Who has acknowledged this SOS, in arrival order, or EMPTY when nobody has yet.
+         * Only ever filled on an SOS this user SENT: an ack comes back for your own SOS,
+         * never for one you received.
+         *
+         * A list rather than a single acker because an SOS can be addressed to a group,
+         * where every member can respond — see [SosAck].
+         *
+         * Serialized as an empty list by omission, like [Attachment.failure], so every
+         * row written before this field existed reads back exactly as it did.
+         */
+        val acks: List<SosAck> = emptyList(),
     ) : GeoData()
 }
 

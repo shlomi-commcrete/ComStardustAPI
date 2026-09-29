@@ -354,7 +354,13 @@ object DataManager : StardustAPI, PttInterface {
     override fun sendRealSOS(location: Location) {
         checkInitialized()
         CoroutineScope(Dispatchers.IO).launch {
-            SOSUtils.sendSos(location = location)
+            // Caught here because this is a bare launch: an SOS that throws while being
+            // recorded would otherwise take the failure down with it, unreported.
+            try {
+                SOSUtils.sendSos(location = location)
+            } catch (e: Exception) {
+                Timber.tag("SOSUtils").e(e, "Failed to send SOS")
+            }
         }
     }
 

@@ -408,6 +408,73 @@ interface MessageDao {
     @Query("UPDATE messages SET state = 5 WHERE epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp")
     suspend fun archiveAllMessages(startTimestamp: Long, endTimestamp: Long): Int
 
+    // ── SOS acknowledgement ──────────────────────────────────────────────
+
+    /**
+     * The newest SOS [senderId] sent into [chatId], or null when there is none.
+     *
+     * Scoped to rows this user SENT because that is the only kind an ack can belong to:
+     * an SOS you received is someone else's, and its acks go to them. Archived rows (5)
+     * are excluded — an ack is not a reason to resurrect one.
+     */
+    @Query("""
+        SELECT * FROM messages
+        WHERE chat_id = :chatId
+          AND sender_id = :senderId
+          AND type = :type
+          AND state != 5
+        ORDER BY epoch_time_ms DESC, id DESC
+        LIMIT 1
+    """)
+    suspend fun findLatestSosSentInChat(
+        chatId: String,
+        senderId: String,
+        type: MessageType,
+    ): MessageEntity?
+
+    /**
+     * The newest SOS [senderId] sent into ANY chat that [participantContactId] belongs
+     * to, or null when there is none.
+     *
+     * The fallback for a group SOS whose ack comes back addressed to this user directly
+     * instead of through the group: the ack then resolves to a private chat, which is not
+     * where the SOS row sits. Matching through chat membership finds the group SOS the
+     * acker could actually have seen.
+     */
+    @Query("""
+        SELECT m.* FROM messages AS m
+        INNER JOIN chat_participants AS p ON p.chat_id = m.chat_id
+        WHERE m.sender_id = :senderId
+          AND m.type = :type
+          AND p.contact_id = :participantContactId
+          AND m.state != 5
+        ORDER BY m.epoch_time_ms DESC, m.id DESC
+        LIMIT 1
+    """)
+    suspend fun findLatestSosSentToParticipant(
+        senderId: String,
+        participantContactId: Int,
+        type: MessageType,
+    ): MessageEntity?
+
+    /**
+     * Appends an acknowledgement to an SOS row's extra_data. Returns the number of rows
+     * written (0 = refused).
+     *
+     * `COALESCE(:extraData, extra_data)` for the same reason as
+     * [markFileTransferFailed]: a blob the caller could not parse is left alone rather
+     * than blanked. `state` and `epoch_time_ms` are deliberately NOT touched — the row
+     * still stands for the moment the SOS went out, and an ack is something that
+     * happened TO it, not a new position in the conversation.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data)
+        WHERE id = :messageId
+          AND state != 5
+    """)
+    suspend fun recordSosAck(messageId: Long, extraData: MessageExtraData?): Int
+
     // ── Media relocation ─────────────────────────────────────────────────
 
     /**

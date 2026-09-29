@@ -62,23 +62,10 @@ class PttSendStore(private val context: Context) {
                     ),
                 )
             }
-                // TEMPORARY (first-PTT render investigation): when the row actually reached the
-                // table, versus the key-down stamp it carries. Pair with the RENDER_TAG emission
-                // log in MessagesRepository.observeMessages — if a row lands here with no emission
-                // logged for its chat, Room never notified the open observer.
-                .onSuccess { rowId ->
-                    Timber.tag(RENDER_TAG).d(
-                        "row saved id=$rowId chat=$chatId insertedAt=${System.currentTimeMillis()} stampedAt=$epochTimeMs"
-                    )
-                }
-                .onFailure { Timber.tag(RENDER_TAG).w(it, "row NOT saved chat=$chatId stampedAt=$epochTimeMs") }
         }
     }
 
     private companion object {
         const val TAG = "PttV2SendStore"
-
-        /** TEMPORARY — shared with `MessagesRepository.observeMessages` so one logcat filter shows both legs. */
-        const val RENDER_TAG = "PttRenderDebug"
     }
 }

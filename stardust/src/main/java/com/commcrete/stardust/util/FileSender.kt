@@ -34,7 +34,6 @@ import kotlin.math.sqrt
 class FileSender(val data: FileUtils.FileTransferData.Send) {
 
     // Simple vars suffice — these are private and never observed externally
-    private var isSendingInProgress = false
     private var sendingPercentage = 0
     private var isComplete = false
     private val mutablePackagesMap: MutableMap<Float, StardustFilePackage> = mutableMapOf()
@@ -76,7 +75,40 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      */
     private val terminalOutcomeClaimed = AtomicBoolean(false)
 
+    /**
+     * Raised by [stopSendingPackages] and never lowered — one [FileSender] serves one
+     * send, so a cancelled sender stays cancelled.
+     *
+     * This is the send's actual stop signal, and it has to be, because most of a send
+     * happens off the timer: [sendFile] hands back a progress ring immediately and then
+     * does the preparation — saving the row, chunking the file, Reed-Solomon encoding
+     * thousands of packages — on a detached coroutine, seconds of work during which
+     * removing the timer stops nothing because no timer has been posted yet. Every step
+     * that would otherwise carry on past a cancel checks this first.
+     */
+    private val cancelled = AtomicBoolean(false)
+
+    /**
+     * Claimed by whoever records the cancel, so the row is written and
+     * [OnFileStatusChange.cancelledSending] raised exactly once. Both the canceller and
+     * the send coroutine may reach it: the canceller cannot write a row that
+     * [saveLocalMessages] has not created yet, so whichever of the two finds an id first
+     * does the write.
+     */
+    private val cancelRecorded = AtomicBoolean(false)
+
+    /**
+     * Raised once [saveLocalMessages] has returned, whatever its outcome — so a null
+     * [messageId] can be told apart: before this, the row is still coming and a cancel
+     * has to wait for it; after, there will never be one and the cancel is reported as
+     * it stands.
+     */
+    private val localRowSettled = AtomicBoolean(false)
+
     private val runnable: Runnable = Runnable {
+        // Cancelled between this runnable being posted and it running: send nothing and,
+        // by not rescheduling, end the chain here.
+        if (cancelled.get()) return@Runnable
         mutablePackagesMap[current]?.let { sendPackage(it) }
         current += 1f
         resetSendTimer()
@@ -91,7 +123,6 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      */
     fun sendFile(onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
         this.onFileStatusChange = onFileStatusChange
-        isSendingInProgress = true
         val fileList = listOf(data.file)
         val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
         this.onFileStatusChange?.startSending(data)
@@ -99,13 +130,27 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             // Persist the row FIRST: everything below can fail, and a failure needs a
             // row to be recorded on.
             val saved = saveLocalMessages()
+            // Raised after messageId is written and before `cancelled` is read, which is
+            // the other half of the handshake in stopSendingPackages().
+            localRowSettled.set(true)
+
+            // The host has been showing a progress ring since startSending() above, so a
+            // cancel can land anywhere in the preparation below — and until the timer is
+            // posted there is nothing for stopSendingPackages() to remove. Each step
+            // therefore asks first, and the first one also carries the cancel onto the
+            // row that saveLocalMessages() has only just created.
+            if (abortedByCancel()) return@async saved
 
             val started = try {
                 var packages = createPackages(fileList)
+                if (abortedByCancel()) return@async saved
 
                 val startSent = if (data.stardustAPIPackage.spare > 0) {
+                    // Reed-Solomon over every package of the file: seconds of work for an
+                    // image, and the likeliest place for a cancel to land.
                     val dataWithSpare = createSparePackages(packages, data.stardustAPIPackage.spare)
                     packages = dataWithSpare.first
+                    if (abortedByCancel()) return@async saved
                     createStartPackage(totalPackages = numOfPackages, spareData = dataWithSpare.second)
                 } else {
                     createStartPackage(totalPackages = numOfPackages, spareData = 0)
@@ -125,10 +170,65 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
             // No start package means the receiver never learns a transfer is coming, so
             // no package that follows could be assembled into a file — fail it here
-            // rather than let the timer march through packages nothing will accept.
-            if (!started) failTransfer(FileReceiver.FileFailure.ERROR)
+            // rather than let the timer march through packages nothing will accept. A
+            // cancel is not that: it settles the row itself, so it must not fail it too.
+            if (!started && !cancelled.get()) failTransfer(FileReceiver.FileFailure.ERROR)
 
             saved
+        }
+    }
+
+    /**
+     * Whether a cancel has landed — and, if it has, makes sure it is recorded before the
+     * caller walks away. Called at each point in the preparation that would otherwise
+     * carry the send forward.
+     *
+     * Recording here rather than leaving it to [stopSendingPackages] is what covers a
+     * cancel that arrived while [saveLocalMessages] was still running: it had no row id
+     * to write to, so the write is ours to do. [cancelRecorded] keeps that from
+     * duplicating the canceller's own write.
+     */
+    private fun abortedByCancel(): Boolean {
+        if (!cancelled.get()) return false
+        recordCancellation(cancellationSnapshot())
+        return true
+    }
+
+    /**
+     * How far the send has got right now, for a cancel landing at this moment. Read from
+     * the live counters, so it is only meaningful before [stopSendingPackages] resets
+     * them — which is why the canceller takes its own snapshot first.
+     */
+    private fun cancellationSnapshot(): FileTransferCancellation = FileTransferCancellation.of(
+        dataPackagesSent = dataPackagesSent,
+        sparePackagesSent = sparePackagesSent,
+        dataPackages = mutablePackagesMap.size - parityIndices.size,
+        sparePackages = parityIndices.size,
+    )
+
+    /**
+     * Writes [cancellation] onto the local message row and tells the host, at most once
+     * per sender. With no row to write to — [saveLocalMessages] itself failed — the host
+     * is still told, so the transfer does not simply go quiet.
+     */
+    private fun recordCancellation(cancellation: FileTransferCancellation) {
+        if (!cancelRecorded.compareAndSet(false, true)) return
+
+        val id = messageId
+        if (id == null) {
+            Timber.w("Send cancelled with no local message row to record it on")
+            onFileStatusChange?.cancelledSending(data, cancellation)
+            return
+        }
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                DataManager.getAppRepo().markFileSendCancelled(id, cancellation)
+            } catch (e: Exception) {
+                Timber.e(e, "Error recording send cancellation on message $id")
+            }
+            // After the write, for the same reason as failedSending.
+            onFileStatusChange?.cancelledSending(data, cancellation)
         }
     }
 
@@ -143,17 +243,16 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      * send that just finished a no-op on the row.
      */
     fun stopSendingPackages() {
+        // Raised before anything else is read, and in particular before messageId below:
+        // the send coroutine writes messageId and then checks this flag, so between the
+        // two of us the cancel is always seen by at least one — never dropped by both.
+        cancelled.set(true)
+
         val claimed = terminalOutcomeClaimed.compareAndSet(false, true)
         // Snapshot before the counters are reset below.
-        val cancellation = FileTransferCancellation.of(
-            dataPackagesSent = dataPackagesSent,
-            sparePackagesSent = sparePackagesSent,
-            dataPackages = mutablePackagesMap.size - parityIndices.size,
-            sparePackages = parityIndices.size,
-        )
+        val cancellation = cancellationSnapshot()
 
         removeSendTimer()
-        isSendingInProgress = false
         sendingPercentage = 0
         current = 0f
         packagesSent = 0
@@ -182,22 +281,17 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             messageId,
         )
 
-        val id = messageId
-        if (id == null) {
-            Timber.w("Send cancelled with no local message row to record it on")
-            onFileStatusChange?.cancelledSending(data, cancellation)
+        if (!localRowSettled.get()) {
+            // saveLocalMessages() has not returned yet, so there is no row to mark — and
+            // the row it is about to insert would otherwise be left reading as a
+            // normally-sent file. Leave it to the send coroutine: it raises
+            // localRowSettled and then reads `cancelled`, so having seen it unraised here
+            // guarantees it sees the cancel and records it.
+            Timber.tag("FileUpload").d("cancel landed before the local row existed — the send coroutine will record it")
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                DataManager.getAppRepo().markFileSendCancelled(id, cancellation)
-            } catch (e: Exception) {
-                Timber.e(e, "Error recording send cancellation on message $id")
-            }
-            // After the write, for the same reason as failedSending.
-            onFileStatusChange?.cancelledSending(data, cancellation)
-        }
+        recordCancellation(cancellation)
     }
 
     private fun updateStep(numOfPackages: Int) {
@@ -482,6 +576,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     }
 
     private fun resetSendTimer() {
+        // The preparation coroutine can reach here after a cancel removed the timer;
+        // posting again would restart the send the user just stopped.
+        if (cancelled.get()) return
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed(runnable, sendInterval)
@@ -493,7 +590,6 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     }
 
     private fun finishSending() {
-        isSendingInProgress = false
         sendingPercentage = 0
         removeSendTimer()
         current = 0f
@@ -537,7 +633,6 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun failTransfer(failure: FileReceiver.FileFailure) {
         if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
         removeSendTimer()
-        isSendingInProgress = false
         Timber.tag("FileUpload").w("send failed: ${data.file.name} reason=$failure msgId=$messageId")
 
         val id = messageId
