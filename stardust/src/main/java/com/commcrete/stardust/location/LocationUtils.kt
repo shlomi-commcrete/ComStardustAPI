@@ -127,20 +127,28 @@ object LocationUtils  {
                 stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
-            val id = saveLocationMessage(
-                chatId = chatId,
-
-                StardustAPIPackage(
+            // Cannot simply move after the send: [dataPackage.idNumber] below is this row's id,
+            // which the ACK uses to mark it received. It must not be able to STOP the send
+            // either, so a failure costs the row and the ack linkage, never the location.
+            val id = try {
+                saveLocationMessage(
                     chatId = chatId,
-                    senderId = mPackage.getSourceAsString(),
-                    receiverId = mPackage.getDestAsString(),
-                    groupId = mPackage.groupId,
-                    isLast = true
-                ),
-                LocationPackage(location, Date()),
-                MessageState.SENT,
-                isDemandAck
-            )
+
+                    StardustAPIPackage(
+                        chatId = chatId,
+                        senderId = mPackage.getSourceAsString(),
+                        receiverId = mPackage.getDestAsString(),
+                        groupId = mPackage.groupId,
+                        isLast = true
+                    ),
+                    LocationPackage(location, Date()),
+                    MessageState.SENT,
+                    isDemandAck
+                )
+            } catch (e: Exception) {
+                Timber.tag("LocationUtils").e(e, "Location could not be saved; sending it anyway")
+                null
+            }
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             dataPackage.isDemandAck = isDemandAck
             dataPackage.idNumber = id

@@ -16,6 +16,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.SendFailureReason
 import com.commcrete.stardust.room.new_db.message.SosAck
 import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
@@ -435,6 +436,34 @@ internal class MessagesRepository(
             messageId = messageId,
             extraData = attachment?.copy(failure = failure),
             nowMs = System.currentTimeMillis(),
+        ) > 0
+    }
+
+    /**
+     * Records that an outgoing message never reached its destination: state FAILED plus [reason]
+     * merged into the row's extra_data. Returns whether the row ends up carrying this failure —
+     * false only when the write was refused because the row had already settled, see
+     * [MessageDao.markSendFailed].
+     *
+     * The reason is merged here rather than assembled by the caller, so whatever the row already
+     * carries — the text, the attachment's path and summary, an SOS's coordinates and acks —
+     * survives. Applies to any message type, which is why it reads and writes the reason through
+     * [MessageExtraData.sendFailure] / [MessageExtraData.withSendFailure] rather than casting to
+     * one subtype the way the file-transfer calls above do.
+     */
+    suspend fun markSendFailed(
+        messageId: Long,
+        reason: SendFailureReason,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val extraData = messagesDao.getMessageById(messageId)?.extraData
+        // A long message goes out as several packages that share one row id, so each of them
+        // reports the same failure for the same row. Reading the reason back through the base
+        // settles that without caring what kind of message it is: if the row already says this,
+        // there is nothing to write and no second FAILED stamp to apply.
+        if (extraData != null && extraData.sendFailure == reason) return@withContext true
+        messagesDao.markSendFailed(
+            messageId = messageId,
+            extraData = extraData?.withSendFailure(reason),
         ) > 0
     }
 

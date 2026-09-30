@@ -493,7 +493,8 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
-    fun sendDataToUart (bittelPackage: StardustPackage) {
+    /** Returns whether the package actually reached the port, so the caller can report a failure. */
+    fun sendDataToUart (bittelPackage: StardustPackage): Boolean {
         // A null uartManager here while isUSBConnected==true is the "sends go nowhere" failure:
         // the flags say USB is up but no port is open.
         val manager = uartManager
@@ -503,7 +504,7 @@ object BittelUsbManager2 : BittelProtocol {
                 "DROPPED ${bittelPackage.stardustOpCode} — uartManager is NULL while " +
                     "isUSBConnected=${BleManager.isUSBConnected}"
             )
-            return
+            return false
         }
         val sent = manager.send(bittelPackage.getStardustPackageToSend())
         if (sent) {
@@ -515,6 +516,7 @@ object BittelUsbManager2 : BittelProtocol {
                     "repeats without an onRunError, the link is dead but still reported as connected."
             )
         }
+        return sent
     }
 
 

@@ -5,7 +5,8 @@ import com.commcrete.stardust.audio.v2.application.port.TransmitCompletionPolicy
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
 
 /**
- * Adapter ring — CODEC2 is ACK-tracked (opcode 0x15, the legacy `isNeedAck` path).
+ * Adapter ring — CODEC2 PTT (opcode 0x15). The packets are sent NO_DEMAND_ACK, so ClientConnection
+ * never parks them behind an outstanding ACK.
  *
  * The ACK correlation + bounded retransmit live inside the framework `BleSendTransport` (which wraps
  * the legacy DataManager/ClientConnection resend), so [awaitCommitted] simply awaits `transport.send`,

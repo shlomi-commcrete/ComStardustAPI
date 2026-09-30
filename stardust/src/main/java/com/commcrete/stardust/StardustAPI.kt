@@ -7,6 +7,7 @@ import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.enums.ConnectionType
 import com.commcrete.stardust.enums.ScanFailure
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
+import com.commcrete.stardust.room.new_db.message.SendFailureReason
 import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
@@ -235,6 +236,42 @@ interface StardustAPICallbacks {
      * very recording being announced.
      */
     fun onPttRecordingStateChanged(event: PttRecordingEvent)
+    /**
+     * An outgoing package never reached the radio, and no retry is coming for it.
+     *
+     * Fired for EVERY outgoing package — text, location, PTT, file chunk, SOS, configuration —
+     * because a send that dies between the app and the radio used to leave no trace at all:
+     * the package was dropped from the queue and the reason went to a log nobody reads. Use it
+     * to mark the message failed in the UI and to tell the user their message did not go out.
+     *
+     * [messageId] is the id of the row this package belongs to in the messages table — the same
+     * id the sending call recorded — so the failure can be applied straight to that message
+     * without matching on addresses. It is null when the package carries no row of its own:
+     * a keepalive, a configuration read, a file chunk, or a message whose own save failed.
+     *
+     * [reason] says which step dropped it. It carries its own wording — [SendFailureReason.message]
+     * for logs, [SendFailureReason.userMessage] for something short enough to show a person — so an
+     * app can display it without mapping the enum itself. [SendFailureReason.ACK_TIMEOUT] is the
+     * one reason that means the package WAS transmitted and only the confirmation is missing;
+     * every other reason means it never left this device.
+     *
+     * The same reason is also written to the message row before this is called, so a failure
+     * survives a restart: the row goes to [MessageState.FAILED] with the reason on its
+     * [MessageExtraData.sendFailure]. Reading the thread back here already reflects that, unless
+     * the row had settled first — a message the recipient already confirmed is not overwritten.
+     *
+     * A long message is split across several packages that all share one [messageId], so this can
+     * fire more than once for the same row — treat it as idempotent.
+     *
+     * Called on an SDK background thread — hop to the main thread before touching UI. The
+     * default implementation does nothing, so existing consumers keep compiling.
+     */
+    fun onMessageSendFailed(
+        stardustAPIPackage: StardustAPIPackage,
+        messageId: Long?,
+        reason: SendFailureReason,
+    ) {}
+
     fun receiveMessage(stardustAPIPackage: StardustAPIPackage, text : String)
     fun receiveLocation(stardustAPIPackage: StardustAPIPackage, location: Location)
     fun receiveSOS(stardustAPIPackage: StardustAPIPackage, sosPackage: SOSPackage)

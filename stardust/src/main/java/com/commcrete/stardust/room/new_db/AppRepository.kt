@@ -39,6 +39,7 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.SendFailureReason
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -568,6 +569,17 @@ class AppRepository(
         messageId: Long,
         failure: FileReceiver.FileFailure,
     ): Boolean = messages.markFileTransferFailed(messageId, failure)
+
+    /**
+     * Records that an outgoing message never reached its destination: state FAILED plus [reason]
+     * on the row's extra data. Returns whether the row carries this failure afterwards — false
+     * only when it had already settled and the write was refused. Safe to call repeatedly with
+     * the same reason. See `MessagesRepository.markSendFailed`.
+     */
+    suspend fun markSendFailed(
+        messageId: Long,
+        reason: SendFailureReason,
+    ): Boolean = messages.markSendFailed(messageId, reason)
 
     /**
      * Settles an incoming transfer's in-flight row as RECEIVED, filling in the [path] the

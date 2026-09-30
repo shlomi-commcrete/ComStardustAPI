@@ -177,16 +177,25 @@ object DataManager : StardustAPI, PttInterface {
             val messageNum = 1
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
 
-            val id = getAppRepo().saveMessage(
-                message = MessageEntity(
-                    chatId = chatId,
-                    senderID = stardustAPIPackage.senderId,
-                    receiverID = stardustAPIPackage.receiverId,
-                    state = MessageState.SENT,
-                    extraData = MessageExtraData.Text(text = text)
-                ),
-                groupId = stardustAPIPackage.groupId
-            )
+            // This save cannot simply move after the send the way the SOS and location-request
+            // ones did: every split below carries its row id, which the ACK uses to mark the
+            // row received. It must not be able to STOP the send either, so a failure here
+            // costs the record and the ack linkage, never the message.
+            val id = try {
+                getAppRepo().saveMessage(
+                    message = MessageEntity(
+                        chatId = chatId,
+                        senderID = stardustAPIPackage.senderId,
+                        receiverID = stardustAPIPackage.receiverId,
+                        state = MessageState.SENT,
+                        extraData = MessageExtraData.Text(text = text)
+                    ),
+                    groupId = stardustAPIPackage.groupId
+                )
+            } catch (e: Exception) {
+                Timber.tag("DataManager").e(e, "Message could not be saved; sending it anyway")
+                null
+            }
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     source = stardustAPIPackage.senderId,
@@ -344,12 +353,17 @@ object DataManager : StardustAPI, PttInterface {
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         Scopes.getDefaultCoroutine().launch {
             // Recorded as a plain outgoing text so the request shows up in the chat the
-            // same way the location that answers it does.
-            getAppRepo().saveMessage(
-                pkg = stardustAPIPackage,
-                extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
-                state = MessageState.SENT,
-            )
+            // same way the location that answers it does. Wrapped so a database failure
+            // costs the row and never the send.
+            try {
+                getAppRepo().saveMessage(
+                    pkg = stardustAPIPackage,
+                    extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
+                    state = MessageState.SENT,
+                )
+            } catch (e: Exception) {
+                Timber.tag("DataManager").e(e, "Location request could not be saved; sending it anyway")
+            }
             sendDataToBle(stardustPackage)
         }
     }

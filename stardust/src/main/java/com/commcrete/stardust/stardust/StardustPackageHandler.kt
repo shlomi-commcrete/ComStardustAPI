@@ -231,7 +231,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             StardustPackageUtils.StardustOpCode.SEND_FILE                        -> handleDeviceFileResponse(mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_POLYGON_INTERRUPT         -> handleUpdatePolygonFreq()
             StardustPackageUtils.StardustOpCode.SEND_DATA_RESPONSE               -> {
-                DataManager.getClientConnection().handleAckReceived()
+                DataManager.getClientConnection().handleAckReceived(mPackage)
                 handleLocationReceived(mPackage)
             }
             StardustPackageUtils.StardustOpCode.GET_POLYGON_RESPONSE             -> handleUpdatePolygonFreq()

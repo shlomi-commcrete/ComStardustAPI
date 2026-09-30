@@ -14,10 +14,27 @@ import kotlinx.serialization.SerialName
 @Serializable
 sealed class MessageExtraData {
 
+    /**
+     * Why this message never reached its destination, or null when nothing went wrong.
+     *
+     * Declared on the base so it can be READ without knowing what kind of message this is — an app
+     * showing a failed message, and `MessagesRepository.markSendFailed` deciding whether the row
+     * already records this failure, both just ask the extra data. It also means a new subtype
+     * cannot quietly forget to answer for it. Each subtype declares it as its own constructor
+     * property with a null default, which is what keeps it OMITTED from the serialized form when
+     * unset, so every row written before this field existed reads back exactly as it did.
+     *
+     * Set by the SDK when a send is abandoned, alongside the row's [MessageState.FAILED]: the state
+     * carries the fact of the failure, this carries its cause.
+     */
+    abstract val sendFailure: SendFailureReason?
+
+
     @Serializable
     @SerialName("Text")
     data class Text(
         val text: String,
+        override val sendFailure: SendFailureReason? = null,
     ) : MessageExtraData()
 
     @Serializable
@@ -60,6 +77,7 @@ sealed class MessageExtraData {
          * Omitted entirely when `null`, like [failure].
          */
         val cancellation: FileTransferCancellation? = null,
+        override val sendFailure: SendFailureReason? = null,
     ) : MessageExtraData()
 
     @Serializable
@@ -79,6 +97,7 @@ sealed class MessageExtraData {
          * field existed reads back exactly as it did.
          */
         val truncated: Boolean = false,
+        override val sendFailure: SendFailureReason? = null,
     ) : MessageExtraData()
 
     /**
@@ -92,6 +111,20 @@ sealed class MessageExtraData {
         abstract val altitude: Double
     }
 
+    /**
+     * The same extra data with [sendFailure] set, whatever kind of message it belongs to.
+     *
+     * `copy` is not polymorphic, so the branch is unavoidable; it being exhaustive is the point —
+     * a new subtype will not compile until it says how a send failure is recorded on it.
+     */
+    fun withSendFailure(reason: SendFailureReason): MessageExtraData = when (this) {
+        is Text -> copy(sendFailure = reason)
+        is Attachment -> copy(sendFailure = reason)
+        is PTT -> copy(sendFailure = reason)
+        is Location -> copy(sendFailure = reason)
+        is Sos -> copy(sendFailure = reason)
+    }
+
     @Serializable
     @SerialName("Location")
     data class Location(
@@ -99,6 +132,7 @@ sealed class MessageExtraData {
         override val longitude: Double,
         override val altitude: Double,
         val isAckResponse: Boolean = false,
+        override val sendFailure: SendFailureReason? = null,
     ) : GeoData()
 
     @Serializable
@@ -120,6 +154,7 @@ sealed class MessageExtraData {
          * row written before this field existed reads back exactly as it did.
          */
         val acks: List<SosAck> = emptyList(),
+        override val sendFailure: SendFailureReason? = null,
     ) : GeoData()
 }
 

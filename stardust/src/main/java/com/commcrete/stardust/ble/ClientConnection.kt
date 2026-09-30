@@ -36,6 +36,8 @@ import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
+import com.commcrete.stardust.room.new_db.message.SendFailureReason
+import com.commcrete.stardust.stardust.mapper.StardustPackageApiMapper
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
@@ -55,6 +57,8 @@ internal class ClientConnection(): BittelProtocol {
 
     companion object{
         const val LOG_TAG = "stardust_tag"
+        /** Abandoned sends, on android.util.Log so they survive a host that never plants Timber. */
+        const val SEND_LOG_TAG = "StardustSend"
         const val MAX_WRITE_RETRIES = 3
         const val RETRY_DELAY_MS = 500L
         const val WRITE_ERROR_CODE = 2147483647
@@ -62,6 +66,16 @@ internal class ClientConnection(): BittelProtocol {
         // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
         // so one lost callback can't wedge all subsequent writes.
         const val GATT_OP_TIMEOUT_MS = 5000L
+
+        // Send priority: lower goes out first. Ordinary traffic keeps strict FIFO among itself;
+        // an SOS and a PTT frame are both sent as soon as they are queued, and when the two meet
+        // the SOS wins — it is the one message that must not wait behind speech.
+        private const val PRIORITY_SOS = 0
+        private const val PRIORITY_PTT = 1
+        private const val PRIORITY_NORMAL = 2
+
+        /** A PTT frame queued longer than this is dropped: a frame is 880 ms of speech, never worth sending this late. */
+        const val STALE_PTT_MS = 5000L
 
         /**
          * Settle delay before service discovery, applied once the MTU exchange has answered.
@@ -129,42 +143,53 @@ internal class ClientConnection(): BittelProtocol {
     var deviceLastDigit = ""
     var counter  : Int = 0
 
-    val mutableMessageList = mutableListOf<StardustPackage>()
+    /** A package waiting to go out, stamped so a PTT frame that sat too long can be dropped — see [takeNextSendable]. */
+    private class QueuedPackage(val pkg: StardustPackage, val enqueuedAtMs: Long)
+
+    private val messageQueue = ArrayList<QueuedPackage>()
     val mutableAckAwaitingList = mutableListOf<AckSystem>()
 
     // Both lists are plain ArrayLists touched from binder GATT callbacks (onCharacteristicChanged),
-    // Dispatchers.Default/IO retry coroutines, the main-looper resend runnable, and arbitrary caller
+    // Dispatchers.Default/IO retry coroutines, main-looper ACK timers, and arbitrary caller
     // threads. ArrayList is not thread-safe, so ALL access goes through this one lock and each
-    // check-then-act (isNotEmpty -> removeAt(0)) is made atomic.
+    // check-then-act is made atomic.
     private val queueLock = Any()
 
-    private fun enqueueMessage(pkg: StardustPackage) = synchronized(queueLock) { mutableMessageList.add(pkg) }
-    private fun peekFirstMessage(): StardustPackage? = synchronized(queueLock) { mutableMessageList.firstOrNull() }
-
     /**
-     * Removes the SPECIFIC package [pkg] by object identity (not index 0). The inbound ACK carries
-     * no message id (idNumber is a client-only DB tag, never sent to the radio) and the protocol
-     * serialises to one outstanding ACK, so the object reference is the correlation key: each site
-     * removes exactly the package it sent/acked. This stops clearTimer — which fires on EVERY
-     * inbound notification — from dropping a different, queued-but-unsent package (the lost-packet
-     * bug of a blind removeAt(0)). A double-remove of the same package is a harmless no-op.
+     * Serializes [drainQueue], so packages leave in the order [takeNextSendable] picks them and only
+     * one thread writes to the transport at a time. Always taken BEFORE [queueLock], never inside it.
      */
-    private fun removeMessage(pkg: StardustPackage?) {
-        pkg ?: return
-        synchronized(queueLock) {
-            val i = mutableMessageList.indexOfFirst { it === pkg }
-            if (i >= 0) mutableMessageList.removeAt(i)
-        }
+    private val drainLock = Any()
+
+    private fun enqueueMessage(pkg: StardustPackage) = synchronized(queueLock) {
+        messageQueue.add(QueuedPackage(pkg, SystemClock.elapsedRealtime()))
     }
 
     private fun addAwaitingAck(ack: AckSystem) = synchronized(queueLock) { mutableAckAwaitingList.add(ack) }
-    private fun isAckAwaiting(): Boolean = synchronized(queueLock) { mutableAckAwaitingList.isNotEmpty() }
-    private fun removeFirstAwaitingAck(): AckSystem? = synchronized(queueLock) { if (mutableAckAwaitingList.isNotEmpty()) mutableAckAwaitingList.removeAt(0) else null }
-    private fun firstAwaitingAck(): AckSystem? = synchronized(queueLock) { mutableAckAwaitingList.firstOrNull() }
+
+    /** Removes [ack] by identity. A double-remove is a harmless no-op. */
+    private fun removeAwaitingAck(ack: AckSystem) = synchronized(queueLock) {
+        val i = mutableAckAwaitingList.indexOfFirst { it === ack }
+        if (i >= 0) mutableAckAwaitingList.removeAt(i)
+    }
+
+    /**
+     * The message that [peerId]'s ACK belongs to: the oldest one still awaiting an ACK that was
+     * addressed TO that peer. Several ACKs are outstanding at once, so position in the list says
+     * nothing about which message an ACK answers — only the address does.
+     *
+     * The fallback covers a message addressed to a GROUP: the ACK comes back from the member who
+     * received it, never from the group address, so no exact match can exist. Anything that matches
+     * neither is not ours to settle and is left alone.
+     */
+    private fun awaitingAckFor(peerId: String): AckSystem? = synchronized(queueLock) {
+        val peer = peerId.trim()
+        mutableAckAwaitingList.firstOrNull {
+            it.stardustPackage.getDestAsString().trim().equals(peer, ignoreCase = true)
+        } ?: mutableAckAwaitingList.firstOrNull { it.stardustPackage.groupId != null }
+    }
 
 
-    private val handler : Handler = Handler(Looper.getMainLooper())
-    var bittelPackage : StardustPackage? = null
 
     private val connectionTimeout : Long = 20000
     private val bondTimeout : Long = 5000
@@ -195,10 +220,6 @@ internal class ClientConnection(): BittelProtocol {
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.PING)
         addMessageToQueue(versionPackage)
-    }
-
-    private val runnable : Runnable = kotlinx.coroutines.Runnable {
-        peekFirstMessage()?.let { sendMessage(it) }
     }
 
     var lastPlayedTS : Long = 0
@@ -402,7 +423,6 @@ internal class ClientConnection(): BittelProtocol {
                     Timber.tag(LOG_TAG).d("onCharacteristicChanged id=$randomID")
                     characteristic.value?.let {
                         StardustPackageUtils.handlePackageReceived(it, randomID)
-                        clearTimer()
                     }
                 }
 
@@ -1327,67 +1347,203 @@ internal class ClientConnection(): BittelProtocol {
         Timber.tag(LOG_TAG).d("paired device: ${device.name} at ${device.address} + $aliasing")
     }
 
+    /**
+     * Queue [bittelPackage] and send everything that may go now.
+     *
+     * The queue drains itself: each call sends every package that is allowed out, not just the head.
+     * It used to send only the head and rely on a 15 ms timer to move on to the next one — a timer
+     * that every inbound BLE notification cancelled and that SEND_PTT_AI never armed. Once a backlog
+     * formed, each new package pushed out exactly one OLD one, so PTT frames went out late and spaced
+     * apart, and the tail kept trickling out (one per keepalive ping) long after key-up.
+     */
     fun addMessageToQueue(bittelPackage: StardustPackage) {
         enqueueMessage(bittelPackage)
-        peekFirstMessage()?.let { sendMessage(it) }
-    }
-
-    fun isNeedAck (opCode: StardustPackageUtils.StardustOpCode) : Boolean {
-        return opCode != StardustPackageUtils.StardustOpCode.SEND_PTT_AI
+        drainQueue()
     }
 
     private var bleGatChar : BluetoothGattCharacteristic? = null
-    @SuppressLint("MissingPermission")
+
+    /** Same as [addMessageToQueue]; kept for the callers that send directly. [randomID] only tags logs. */
     fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
-        // TODO: check if FunctionalityType is valid by licence here ??
-        if(isAckAwaiting() && isNeedAck(bittelPackage.stardustOpCode)) {
-            Scopes.getDefaultCoroutine().launch {
-                delay(100)
-                sendMessage(bittelPackage, randomID)
+        Timber.tag(LOG_TAG).d("sendMessage $randomID ${bittelPackage.stardustOpCode}")
+        addMessageToQueue(bittelPackage)
+    }
+
+    private fun drainQueue() {
+        synchronized(drainLock) {
+            while (true) {
+                val next = takeNextSendable() ?: break
+                dispatchPackage(next)
             }
+        }
+    }
+
+    /**
+     * Removes and returns the next package to send, or null when the queue is empty.
+     *
+     * Ordinary traffic leaves in the order it was queued. An SOS and a PTT frame jump ahead of it,
+     * because both are worthless late: speech that plays after the next recording is noise, and an
+     * alert that waits behind a backlog is an alert nobody acted on. Where the two meet the SOS
+     * goes first. Priority never reorders packages of the SAME kind — the comparison below keeps
+     * the earliest index on a tie, so a split message's parts stay in sequence.
+     *
+     * NOTHING waits for an outstanding ACK. An ACK is a per-message confirmation, not a lock on the
+     * link: a message to B must go out while a message to A is still unconfirmed, even when both
+     * demand an ACK. Several ACKs are therefore outstanding at once, which is why an arriving ACK is
+     * matched to its own message by peer — see [handleAckReceived] — instead of to whichever one
+     * happened to be sent first.
+     */
+    private fun takeNextSendable(): StardustPackage? = synchronized(queueLock) {
+        val now = SystemClock.elapsedRealtime()
+
+        // Stale PTT is discarded first, so a frame that is already too old to play can never win
+        // the priority comparison below and take a turn ahead of traffic that is still useful.
+        val iterator = messageQueue.iterator()
+        while (iterator.hasNext()) {
+            val queued = iterator.next()
+            if (isPtt(queued.pkg) && now - queued.enqueuedAtMs > STALE_PTT_MS) {
+                iterator.remove()
+                // Safe under queueLock: reportSendFailure only logs and hands the callback to
+                // another coroutine, so it never blocks or re-enters the queue.
+                reportSendFailure(
+                    queued.pkg,
+                    SendFailureReason.DROPPED_STALE,
+                    "queued ${now - queued.enqueuedAtMs}ms",
+                )
+            }
+        }
+        if (messageQueue.isEmpty()) return null
+
+        var bestIndex = 0
+        var bestPriority = sendPriority(messageQueue[0].pkg)
+        for (i in 1 until messageQueue.size) {
+            if (bestPriority == PRIORITY_SOS) break // nothing outranks it; stop looking
+            val priority = sendPriority(messageQueue[i].pkg)
+            // Strictly lower only: an equal priority leaves the earlier package in front, which is
+            // what keeps ordinary messages in the order they were queued.
+            if (priority < bestPriority) {
+                bestIndex = i
+                bestPriority = priority
+            }
+        }
+        return messageQueue.removeAt(bestIndex).pkg
+    }
+
+    private fun sendPriority(pkg: StardustPackage): Int = when {
+        isSos(pkg) -> PRIORITY_SOS
+        isPtt(pkg) -> PRIORITY_PTT
+        else -> PRIORITY_NORMAL
+    }
+
+    /**
+     * Outgoing SOS traffic, which pre-empts everything else:
+     *  - the real SOS opcode;
+     *  - SOS_ACK, the reply telling someone in distress that their alert was seen — as urgent as
+     *    the alert itself, and worthless once they have given up waiting for it;
+     *  - the typed SOS report, which travels as an ordinary SEND_MESSAGE and is distinguishable
+     *    only by the "SOS" marker its payload opens with. The marker sits at index 1 because the
+     *    outgoing payload is prefixed with its own length byte — see `SOSUtils.sendAlert`, and
+     *    `StardustPackageParser`, which strips that byte on receive.
+     */
+    private fun isSos(pkg: StardustPackage): Boolean =
+        pkg.stardustOpCode == StardustPackageUtils.StardustOpCode.SOS ||
+            pkg.stardustOpCode == StardustPackageUtils.StardustOpCode.SOS_ACK ||
+            (pkg.stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_MESSAGE && carriesSosMarker(pkg))
+
+    private fun carriesSosMarker(pkg: StardustPackage): Boolean {
+        val data = pkg.data ?: return false
+        return data.size > 3 && data[1] == 83 && data[2] == 79 && data[3] == 83 // 'S','O','S'
+    }
+
+    /** Whether sending [pkg] will start an [AckSystem] — the exact condition [checkIfPackageDemandsAck] applies. */
+    private fun willTrackAck(pkg: StardustPackage): Boolean =
+        shouldDemandAck(pkg) && isDemandAckEnabled(pkg)
+
+    private fun isPtt(pkg: StardustPackage): Boolean =
+        pkg.stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_PTT ||
+            pkg.stardustOpCode == StardustPackageUtils.StardustOpCode.SEND_PTT_AI
+
+    /**
+     * A package will not reach the radio, and nothing will retry it.
+     *
+     * Every abandoned send goes through here so that exactly one thing is true of all of them:
+     * they are visible. Previously each drop site logged through Timber — which the host app
+     * never plants, so the lines went nowhere — and told the SDK consumer nothing at all, so a
+     * message could die between the app and the radio leaving no trace anywhere.
+     *
+     * Logging uses android.util.Log deliberately: it does not depend on the host planting a tree.
+     */
+    private fun reportSendFailure(
+        bittelPackage: StardustPackage,
+        reason: SendFailureReason,
+        detail: String? = null,
+    ) {
+        val messageId = bittelPackage.idNumber
+        Log.w(
+            SEND_LOG_TAG,
+            "SEND FAILED ${bittelPackage.stardustOpCode} → ${bittelPackage.getDestAsString()} " +
+                "(messageId=$messageId) ${reason.name}: ${reason.message}" +
+                (detail?.let { " ($it)" } ?: "")
+        )
+        // Off the caller's thread: this runs from the drain loop under drainLock, and neither the
+        // database write nor a consumer callback may block the queue or deadlock against it.
+        Scopes.getDefaultCoroutine().launch {
+            // Persisted BEFORE the callback, so a consumer that re-reads the thread sees the row
+            // already marked failed rather than racing the write.
+            if (messageId != null) {
+                try {
+                    DataManager.getAppRepo().markSendFailed(messageId, reason)
+                } catch (e: Exception) {
+                    Log.e(SEND_LOG_TAG, "could not record the failure on message $messageId", e)
+                }
+            }
+            try {
+                DataManager.getCallbacks()?.onMessageSendFailed(
+                    StardustPackageApiMapper.toOutgoingStardustAPIPackage(bittelPackage),
+                    messageId,
+                    reason
+                )
+            } catch (e: Exception) {
+                Log.e(SEND_LOG_TAG, "onMessageSendFailed threw in the consumer", e)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun dispatchPackage(bittelPackage: StardustPackage) {
+        // TODO: check if FunctionalityType is valid by licence here ??
+        bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
+        bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
+        if (!bittelPackage.isAbleToSendAgain()) {
+            reportSendFailure(bittelPackage, SendFailureReason.RETRY_LIMIT_REACHED)
             return
         }
-        bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
-//        bittelPackage.StardustControlByte.bittelServer = if(SharedPreferencesUtil.getIsStardustServerBitEnabled(DataManager.context))
-//            StardustControlByte.StardustServer.SERVER else StardustControlByte.StardustServer.NOT_SERVER
-        Timber.tag(LOG_TAG).d("checkXor $randomID sendMessage")
-        bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
-        Timber.tag(LOG_TAG).d("checkXorfini $randomID sendMessage")
-        if(bittelPackage.isAbleToSendAgain()){
-            if(!BleManager.isBluetoothConnected() && !BleManager.isUSBConnected){
-                Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
-            }
-            Timber.tag(LOG_TAG).d("isAbleToSendAgain $randomID sendMessage")
-
-            Timber.tag(LOG_TAG).d("Sending Package $randomID")
-            if (isNeedAck(bittelPackage.stardustOpCode)) {
-                // The watchdog's only cancellation path is clearTimer(), fired from an
-                // incoming BLE response. Opcodes that never get one (PTT_AI) would have
-                // this fire unconditionally 15ms after every send, and — if system load
-                // delays the synchronous write+dequeue below past that window — resend
-                // whatever is still at mutableMessageList[0], duplicating that packet.
-                Scopes.getDefaultCoroutine().launch {
-                    resetTimer(bittelPackage)
-                }
-            }
-            SharedPreferencesUtil.getAppUser()?.let {
-                Timber.tag(LOG_TAG).d("getAppUser $randomID sendMessage")
-
-                val id = deviceLastDigit
-                val uuid = Characteristics.getWriteChar(id)
-                bittelPackage.updateRetryCounter()
-                if(BleManager.isUSBConnected) {
-                    BittelUsbManager2.sendDataToUart(bittelPackage)
-                }else {
-                    gattConnection?.getService(Characteristics.getConnectChar(id))?.getCharacteristic(uuid)
-                        ?.let {
-                            writePackage(it, bittelPackage, randomID = randomID)
-                        }
-                }
-                removeMessage(bittelPackage)
+        if (SharedPreferencesUtil.getAppUser() == null) {
+            // Used to stay at the head of the queue forever, re-sent every 15 ms by the old timer.
+            reportSendFailure(bittelPackage, SendFailureReason.NO_APP_USER)
+            return
+        }
+        Timber.tag(LOG_TAG).d("Sending Package ${bittelPackage.stardustOpCode}")
+        bittelPackage.updateRetryCounter()
+        if(BleManager.isUSBConnected) {
+            if (!BittelUsbManager2.sendDataToUart(bittelPackage)) {
+                reportSendFailure(bittelPackage, SendFailureReason.USB_WRITE_FAILED)
             }
         }else {
-            removeMessage(bittelPackage)
+            val id = deviceLastDigit
+            val characteristic = gattConnection?.getService(Characteristics.getConnectChar(id))
+                ?.getCharacteristic(Characteristics.getWriteChar(id))
+            if (characteristic != null) {
+                writePackage(characteristic, bittelPackage)
+            } else {
+                // Told apart because they mean different things to an app: nothing is connected at
+                // all, versus BLE up but not yet usable (services still discovering, or a
+                // reconnect swapped the GATT out from under this write).
+                val reason =
+                    if (!BleManager.isBluetoothConnected() && !BleManager.isUSBConnected) SendFailureReason.NOT_CONNECTED
+                    else SendFailureReason.WRITE_CHANNEL_UNAVAILABLE
+                reportSendFailure(bittelPackage, reason)
+            }
         }
     }
 
@@ -1486,7 +1642,11 @@ internal class ClientConnection(): BittelProtocol {
         randomID: String = ""
     ) {
         if (count > MAX_WRITE_RETRIES) {
-            Timber.tag(LOG_TAG).w("Max write retries exceeded for ${bittelPackage.stardustOpCode}")
+            reportSendFailure(
+                bittelPackage,
+                SendFailureReason.GATT_WRITE_FAILED,
+                "$MAX_WRITE_RETRIES attempts",
+            )
             return
         }
         Timber.tag(LOG_TAG).d("writePackage enqueue attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
@@ -1617,42 +1777,30 @@ internal class ClientConnection(): BittelProtocol {
      * Creates an AckSystem for the package and adds it to the waiting queue.
      */
     private fun createAndStartAckSystem(bittelPackage: StardustPackage) {
-        val ackSystem = AckSystem(bittelPackage, createAckCallback())
+        // The callback removes its OWN AckSystem by identity rather than the head of the list.
+        // With several ACKs outstanding at once the head is rarely the one that just settled, and
+        // removing it would leave the real one pending forever while marking the wrong row.
+        lateinit var ackSystem: AckSystem
+        val notify = object : AckSystem.AckSystemNotify {
+            override fun onFailure() {
+                removeAwaitingAck(ackSystem)
+                // The package WAS written to the radio; what failed is the confirmation. Reported
+                // through the same channel so the app has one place to learn a message did not
+                // make it, whether it died before the radio or after.
+                reportSendFailure(bittelPackage, SendFailureReason.ACK_TIMEOUT)
+            }
+
+            override fun onSuccess() {
+                removeAwaitingAck(ackSystem)
+                syncMessageReceivedStatus(ackSystem)
+                Log.d(SEND_LOG_TAG, "ACK settled ${bittelPackage.stardustOpCode} from ${bittelPackage.getDestAsString()}")
+            }
+        }
+        ackSystem = AckSystem(bittelPackage, notify)
         ackSystem.delayTS = DELAY_TS_LR
         ackSystem.start()
         addAwaitingAck(ackSystem)
         Timber.tag(LOG_TAG).d("ACK tracking started for opCode: ${bittelPackage.stardustOpCode}")
-    }
-
-    /**
-     * Creates the callback handler for ACK success/failure.
-     */
-    private fun createAckCallback(): AckSystem.AckSystemNotify =
-        object : AckSystem.AckSystemNotify {
-            override fun onFailure() {
-                removeFirstAckFromQueue("ACK timeout")
-            }
-
-            override fun onSuccess() {
-                val ackSystem = removeFirstAwaitingAck()
-                if (ackSystem != null) {
-                    syncMessageReceivedStatus(ackSystem)
-                    Timber.tag(LOG_TAG).d("ACK received and processed")
-                } else {
-                    Timber.tag(LOG_TAG).w("ACK received but no pending ACK in queue")
-                }
-            }
-        }
-
-    /**
-     * Safely removes the first ACK from the queue, logging any issues.
-     */
-    private fun removeFirstAckFromQueue(reason: String) {
-        if (removeFirstAwaitingAck() != null) {
-            Timber.tag(LOG_TAG).d("ACK removed from queue - reason: $reason")
-        } else {
-            Timber.tag(LOG_TAG).w("Attempted to remove ACK but queue is empty - reason: $reason")
-        }
     }
 
     fun syncMessageReceivedStatus(message: AckSystem) {
@@ -1662,15 +1810,24 @@ internal class ClientConnection(): BittelProtocol {
         }
     }
 
-    fun handleAckReceived () {
-        firstAwaitingAck()?.notifySuccess()
-    }
-
-    private fun resetTimer(bittelPackage: StardustPackage) {
-        this.bittelPackage = bittelPackage
-        handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
-        handler.postDelayed(runnable, StardustPackage.DELAY_TS)
+    /**
+     * An ACK arrived in [ackPackage]. It settles the message sent TO whoever sent this ACK, which is
+     * the only thing that identifies it: the ACK carries no message id, and with several messages
+     * awaiting confirmation at once the oldest pending one is usually not the one being answered.
+     * Settling that one instead marked the wrong row received and left the real one to time out.
+     *
+     * An ACK that matches nothing we are waiting on is logged and otherwise ignored — better to
+     * leave a message unconfirmed than to confirm one that was never acknowledged.
+     */
+    fun handleAckReceived(ackPackage: StardustPackage) {
+        val acker = ackPackage.getSourceAsString()
+        val ackSystem = awaitingAckFor(acker)
+        if (ackSystem == null) {
+            Log.w(SEND_LOG_TAG, "ACK from $acker matches no message awaiting one — ignored")
+            return
+        }
+        Log.d(SEND_LOG_TAG, "ACK from $acker settles ${ackSystem.stardustPackage.stardustOpCode}")
+        ackSystem.notifySuccess()
     }
 
     private fun resetBondTimer() {
@@ -1726,19 +1883,6 @@ internal class ClientConnection(): BittelProtocol {
             pingHandler.removeCallbacksAndMessages(null)
         }catch (e : Exception) {
             e.printStackTrace()
-        }
-    }
-
-    private fun clearTimer(){
-        try {
-            // Remove only the in-flight package (tracked by resetTimer), by identity — never the
-            // blind head, which on an unrelated inbound notification could be a queued-unsent packet.
-            removeMessage(bittelPackage)
-            handler.removeCallbacks(runnable)
-            handler.removeCallbacksAndMessages(null)
-        }catch (e : Exception) {
-            e.printStackTrace()
-
         }
     }
 

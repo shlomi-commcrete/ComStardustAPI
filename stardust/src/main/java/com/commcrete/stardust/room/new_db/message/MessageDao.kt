@@ -258,6 +258,34 @@ interface MessageDao {
     ): Int
 
     /**
+     * Records that an outgoing message never reached its destination: state FAILED plus the
+     * reason merged into extra_data. Returns the number of rows written (0 = refused).
+     *
+     * Guarded like [markFileTransferFailed]: a row the peer has already SEEN or RECEIVED, or one
+     * that was archived or cancelled, has settled, and a failure declared for it afterwards does
+     * not undo that. This matters most for an ACK timeout, which can land seconds after the
+     * recipient's own confirmation already did.
+     *
+     * `epoch_time_ms` is deliberately NOT moved, unlike [markFileTransferFailed]. The row stands
+     * for the moment the user sent the message, and it must keep its place in the conversation —
+     * a failure is news ABOUT that message, not a new event in the thread.
+     *
+     * `COALESCE(:extraData, extra_data)` leaves the blob alone when the caller could not read the
+     * row's extra data back: losing the reason is better than losing the fact of the failure.
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 3
+        WHERE id = :messageId
+          AND state NOT IN (1, 2, 5, 6)
+    """)
+    suspend fun markSendFailed(
+        messageId: Long,
+        extraData: MessageExtraData?,
+    ): Int
+
+    /**
      * Settles an INCOMING attachment row that arrived: state RECEIVED, with the path and
      * summary of the file that landed merged into its extra_data. Returns the number of
      * rows written (0 = refused).

@@ -47,8 +47,17 @@ object SOSUtils {
 
         sosMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+
+        // Saved first so the packet can carry its row id, which a send failure reports back
+        // through StardustAPICallbacks.onMessageSendFailed. Wrapped: losing the row must not
+        // cost the report.
+        try {
+            sosMessage.idNumber = saveSOSMessage(sosType, stardustAPIPackage, location)
+        } catch (e: Exception) {
+            Timber.tag(LOG_TAG).e(e, "SOS report could not be saved; sending it anyway")
+        }
+
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
-        saveSOSMessage(sosType, stardustAPIPackage, location)
     }
 
     fun ackSOS(stardustAPIPackage: StardustAPIPackage) {
@@ -95,11 +104,16 @@ object SOSUtils {
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
             data = data)
 
-        // Saved BEFORE the packet goes out: the row is the record that this user raised an
-        // SOS, and a save that runs after the send can fail with the alert already on air.
+        // Saved BEFORE the packet goes out, so the row is the record that this user raised an
+        // SOS whatever happens to the send. Wrapped because the save must not be able to take
+        // the alert down with it: a database failure costs the record, never the transmission.
         // The packet itself is addressed to the local radio, which routes it on — the row is
         // filed against the destination it will actually reach, see [buildSosMessagePackage].
-        buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
+        try {
+            buildSosMessagePackage(src)?.let { sosMessage.idNumber = saveSOSMessage(null, it, location) }
+        } catch (e: Exception) {
+            Timber.tag(LOG_TAG).e(e, "SOS could not be saved; sending it anyway")
+        }
 
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
