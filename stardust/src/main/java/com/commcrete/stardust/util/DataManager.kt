@@ -51,6 +51,7 @@ import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
 import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,9 @@ object DataManager : StardustAPI, PttInterface {
 
     /** Body of the chat row written when the user asks a contact for its location. */
     const val LOCATION_REQUEST_TEXT = "Location Request"
+
+    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    private const val LOG_TAG = "DataManager"
 
     private var clientConnection : ClientConnection?  = null
     private var bittelusbManager : BittelUsbManager2?  = null
@@ -177,16 +181,29 @@ object DataManager : StardustAPI, PttInterface {
             val messageNum = 1
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
 
-            val id = getAppRepo().saveMessage(
-                message = MessageEntity(
-                    chatId = chatId,
-                    senderID = stardustAPIPackage.senderId,
-                    receiverID = stardustAPIPackage.receiverId,
-                    state = MessageState.SENT,
-                    extraData = MessageExtraData.Text(text = text)
-                ),
-                groupId = stardustAPIPackage.groupId
-            )
+            // Saved before the packages go out, because each of them carries this row's id and
+            // the ACK uses it to mark the row received. Wrapped so it cannot stop the send: an
+            // exception here would kill this coroutine and no part of the message would leave.
+            // Failing costs the row and the ack linkage, never the message.
+            val id = try {
+                getAppRepo().saveMessage(
+                    message = MessageEntity(
+                        chatId = chatId,
+                        senderID = stardustAPIPackage.senderId,
+                        receiverID = stardustAPIPackage.receiverId,
+                        state = MessageState.SENT,
+                        extraData = MessageExtraData.Text(text = text)
+                    ),
+                    groupId = stardustAPIPackage.groupId
+                )
+            } catch (e: CancellationException) {
+                // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+                // database error. Swallowing it would send the message after the caller gave up.
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Message could not be saved; sending it anyway", e)
+                null
+            }
             for (split in splitData) {
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     source = stardustAPIPackage.senderId,
@@ -344,12 +361,21 @@ object DataManager : StardustAPI, PttInterface {
         stardustPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         Scopes.getDefaultCoroutine().launch {
             // Recorded as a plain outgoing text so the request shows up in the chat the
-            // same way the location that answers it does.
-            getAppRepo().saveMessage(
-                pkg = stardustAPIPackage,
-                extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
-                state = MessageState.SENT,
-            )
+            // same way the location that answers it does. Wrapped because it runs first: an
+            // exception here would kill this coroutine and the request would never be sent.
+            try {
+                getAppRepo().saveMessage(
+                    pkg = stardustAPIPackage,
+                    extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
+                    state = MessageState.SENT,
+                )
+            } catch (e: CancellationException) {
+                // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+                // database error. Swallowing it would send the request after the caller gave up.
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Location request could not be saved; sending it anyway", e)
+            }
             sendDataToBle(stardustPackage)
         }
     }

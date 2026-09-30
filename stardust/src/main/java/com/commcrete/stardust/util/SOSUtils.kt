@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 
 import android.location.Location
+import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -15,6 +16,7 @@ import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 object SOSUtils {
@@ -99,7 +101,20 @@ object SOSUtils {
         // SOS, and a save that runs after the send can fail with the alert already on air.
         // The packet itself is addressed to the local radio, which routes it on — the row is
         // filed against the destination it will actually reach, see [buildSosMessagePackage].
-        buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
+        //
+        // Wrapped because it runs first: an exception here would return before the packet was
+        // ever queued, so a database failure would silently cost the alert itself. Losing the
+        // record is bad; not sending the SOS is worse.
+        try {
+            buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
+        } catch (e: CancellationException) {
+            // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+            // database error. Swallowing it with the catch below would keep the body running past
+            // the point it was cancelled and report a failure that never happened.
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "SOS could not be saved; sending it anyway", e)
+        }
 
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
@@ -117,7 +132,7 @@ object SOSUtils {
     private suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
         val destination = resolvePrimarySosDestination()
         if (destination == null) {
-            Timber.tag(LOG_TAG).w("SOS sent but not saved: no SOS destination in the configuration")
+            Log.w(LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")
             return null
         }
 

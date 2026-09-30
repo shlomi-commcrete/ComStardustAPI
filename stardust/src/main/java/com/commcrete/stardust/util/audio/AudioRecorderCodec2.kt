@@ -22,6 +22,7 @@ import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import com.ustadmobile.codec2.Codec2Decoder
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -40,6 +41,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     BleMediaConnector() {
 
     companion object {
+        /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+        private const val LOG_TAG = "AudioRecorderCodec2"
         const val TAG_PTT_DEBUG = "tag_ptt_debug"
         const val RECORDER_SAMPLE_RATE = 8000
         const val RECORDER_CHANNELS: Int = AudioFormat.CHANNEL_IN_MONO
@@ -525,24 +528,35 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     private fun saveOrRemovePttFile(chatId: String, receiverId: String, path: String) {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
-            if(!DataManager.getSavePTTFilesRequired()) {
-                File(path).takeIf { it.exists() }?.delete()
-                return@launch
-            } else {
-                DataManager.getAppRepo().saveMessage(
-                    MessageEntity(
-                        chatId = chatId,
-                        senderID = appId,
-                        receiverID = receiverId,
-                        state = MessageState.SENT,
-                        epochTimeMs = RecorderUtils.ts,
-                        extraData = MessageExtraData.PTT(
-                            path = path,
-                            encoderType = EncoderType.CODEC2
+            // Wrapped because this is a bare launch: an exception escaping here has nothing above
+            // it to catch it. The recording has already been transmitted by this point, so a
+            // failure costs the row and nothing else.
+            try {
+                if(!DataManager.getSavePTTFilesRequired()) {
+                    File(path).takeIf { it.exists() }?.delete()
+                    return@launch
+                } else {
+                    DataManager.getAppRepo().saveMessage(
+                        MessageEntity(
+                            chatId = chatId,
+                            senderID = appId,
+                            receiverID = receiverId,
+                            state = MessageState.SENT,
+                            epochTimeMs = RecorderUtils.ts,
+                            extraData = MessageExtraData.PTT(
+                                path = path,
+                                encoderType = EncoderType.CODEC2
+                            )
                         )
                     )
-                )
-                RecorderUtils.ts = 0
+                    RecorderUtils.ts = 0
+                }
+            } catch (e: CancellationException) {
+                // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+                // database error, and this scope is cancelled on teardown.
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "PTT recording could not be saved: $path", e)
             }
         }
     }

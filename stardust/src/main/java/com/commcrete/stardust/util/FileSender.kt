@@ -3,6 +3,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.enums.FunctionalityType
@@ -17,6 +18,7 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +34,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 class FileSender(val data: FileUtils.FileTransferData.Send) {
+
+    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    private val LOG_TAG = "FileSender"
+
 
     // Simple vars suffice — these are private and never observed externally
     private var sendingPercentage = 0
@@ -345,8 +351,13 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                     )
                 ))
             messageId != null
+        } catch (e: CancellationException) {
+            // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+            // database error. Reporting it as a failed save would tell the caller the transfer
+            // could not start, when in fact it was called off.
+            throw e
         } catch (e: Exception) {
-            Timber.e(e, "Error persisting MessageEntity for ${data.file.name}")
+            Log.e(LOG_TAG, "Error persisting MessageEntity for ${data.file.name}", e)
             false
         }
     }

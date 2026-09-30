@@ -1340,13 +1340,20 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     fun sendMessage(bittelPackage: StardustPackage, randomID : String = "") {
         // TODO: check if FunctionalityType is valid by licence here ??
-        if(isAckAwaiting() && isNeedAck(bittelPackage.stardustOpCode)) {
-            Scopes.getDefaultCoroutine().launch {
-                delay(100)
-                sendMessage(bittelPackage, randomID)
-            }
-            return
-        }
+        // DISABLED: waiting for an outstanding ACK before sending anything else.
+        //
+        // An ACK confirms one message; it is not a lock on the link. This gate held EVERY
+        // ack-needing package behind whichever one was still unconfirmed, re-checking every 100 ms,
+        // so a message to B waited on a message to A — up to AckSystem.MAX_RETRY_COUNTER ×
+        // DELAY_TS_LR (3 × 5 s) when the first one was never answered at all.
+        //
+        // if(isAckAwaiting() && isNeedAck(bittelPackage.stardustOpCode)) {
+        //     Scopes.getDefaultCoroutine().launch {
+        //         delay(100)
+        //         sendMessage(bittelPackage, randomID)
+        //     }
+        //     return
+        // }
         bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
 //        bittelPackage.StardustControlByte.bittelServer = if(SharedPreferencesUtil.getIsStardustServerBitEnabled(DataManager.context))
 //            StardustControlByte.StardustServer.SERVER else StardustControlByte.StardustServer.NOT_SERVER

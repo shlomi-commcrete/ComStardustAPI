@@ -14,6 +14,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.util.DataManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -23,6 +24,9 @@ import java.util.Date
 
 @SuppressLint("StaticFieldLeak")
 object LocationUtils  {
+
+    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    private const val LOG_TAG = "LocationUtils"
 
     var location : Location? = null
     private val locationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -102,7 +106,7 @@ object LocationUtils  {
             try {
                 clientConnection.sendMessage(dataPackage)
             } catch (e: Exception) {
-                Timber.tag("LocationUtils").e(e, "Failed to send missing location")
+                Log.e(LOG_TAG, "Failed to send missing location", e)
             }
         }
     }
@@ -127,20 +131,33 @@ object LocationUtils  {
                 stardustOpCode = opCode ?: StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION,
                 data = CoordinatesUtil().packLocation(location)
             )
-            val id = saveLocationMessage(
-                chatId = chatId,
-
-                StardustAPIPackage(
+            // Saved before the send because [dataPackage.idNumber] below is this row's id, which
+            // the ACK uses to mark it received. Wrapped so it cannot stop the send: an exception
+            // here would kill this coroutine and the location would never go out. Failing costs
+            // the row and the ack linkage, never the location.
+            val id = try {
+                saveLocationMessage(
                     chatId = chatId,
-                    senderId = mPackage.getSourceAsString(),
-                    receiverId = mPackage.getDestAsString(),
-                    groupId = mPackage.groupId,
-                    isLast = true
-                ),
-                LocationPackage(location, Date()),
-                MessageState.SENT,
-                isDemandAck
-            )
+
+                    StardustAPIPackage(
+                        chatId = chatId,
+                        senderId = mPackage.getSourceAsString(),
+                        receiverId = mPackage.getDestAsString(),
+                        groupId = mPackage.groupId,
+                        isLast = true
+                    ),
+                    LocationPackage(location, Date()),
+                    MessageState.SENT,
+                    isDemandAck
+                )
+            } catch (e: CancellationException) {
+                // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
+                // database error. Swallowing it would send the location after the caller gave up.
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Location could not be saved; sending it anyway", e)
+                null
+            }
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             dataPackage.isDemandAck = isDemandAck
             dataPackage.idNumber = id
@@ -151,7 +168,7 @@ object LocationUtils  {
             try {
                 clientConnection.sendMessage(dataPackage, randomID)
             } catch (e: Exception) {
-                Timber.tag("LocationUtils").e(e, "Failed to send location message to BLE")
+                Log.e(LOG_TAG, "Failed to send location message to BLE", e)
             }
 
         }
