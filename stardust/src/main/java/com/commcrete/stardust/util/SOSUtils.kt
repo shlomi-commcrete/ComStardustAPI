@@ -16,6 +16,7 @@ import com.commcrete.stardust.room.new_db.message.SosType
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
@@ -54,10 +55,14 @@ object SOSUtils {
     }
 
     fun ackSOS(stardustAPIPackage: StardustAPIPackage) {
+        val carrierRD = stardustAPIPackage.carrier?.deliveryType ?: return
         val sosMessage = StardustPackageUtils.getStardustPackage(
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
+            .apply {
+                stardustControlByte.stardustDeliveryType = carrierRD
+            }
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
 
@@ -96,21 +101,9 @@ object SOSUtils {
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
             data = data)
-
-        // Saved BEFORE the packet goes out: the row is the record that this user raised an
-        // SOS, and a save that runs after the send can fail with the alert already on air.
-        // The packet itself is addressed to the local radio, which routes it on — the row is
-        // filed against the destination it will actually reach, see [buildSosMessagePackage].
-        //
-        // Wrapped because it runs first: an exception here would return before the packet was
-        // ever queued, so a database failure would silently cost the alert itself. Losing the
-        // record is bad; not sending the SOS is worse.
         try {
             buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
         } catch (e: CancellationException) {
-            // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
-            // database error. Swallowing it with the catch below would keep the body running past
-            // the point it was cancelled and report a failure that never happened.
             throw e
         } catch (e: Exception) {
             Log.e(LOG_TAG, "SOS could not be saved; sending it anyway", e)
@@ -136,9 +129,6 @@ object SOSUtils {
             return null
         }
 
-        // A group destination must be declared as one: MessagesRepository only resolves the
-        // group chat when groupId is set, and would otherwise open a private chat named
-        // after the group id — where no ack from a member would ever find the row again.
         val groupId = destination.takeIf { GroupsUtils.isLocalGroupId(it) }
 
         return StardustAPIPackage(
