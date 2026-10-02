@@ -14,6 +14,7 @@ import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.stardust.model.config.FilePacketAirtime
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
@@ -44,7 +45,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private var isComplete = false
     private val mutablePackagesMap: MutableMap<Float, StardustFilePackage> = mutableMapOf()
     private var current = 0f
-    private var sendInterval: Long = 900
+    private var sendInterval: Long = DEFAULT_SEND_INTERVAL_MS
     private var packagesSent = 0
     private var onFileStatusChange: OnFileStatusChange? = null
     private val handler: Handler = Handler(Looper.getMainLooper())
@@ -265,7 +266,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         dataPackagesSent = 0
         sparePackagesSent = 0
         isComplete = false
-        sendInterval = 900
+        sendInterval = DEFAULT_SEND_INTERVAL_MS
 
         // stopSending() stays the immediate "it stopped now" signal, raised before the
         // write like it always was.
@@ -567,7 +568,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 Timber.tag("FileUpload").w("no radio to send on — dropped package (total dropped: $packagesDropped)")
                 return
             }
-            sendInterval = if (radio.type == CarrierType.ST) 300L else 900L
+            // Paced at exactly the airtime the estimate quotes, re-read per package so a
+            // preset change mid-transfer takes effect on the next one.
+            sendInterval = packetAirtimeMs(radio)
             val fileStartMessage = StardustPackageUtils.getStardustPackage(
                 source = data.stardustAPIPackage.senderId,
                 destination = data.stardustAPIPackage.receiverId,
@@ -608,7 +611,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         packagesSent = 0
         dataPackagesSent = 0
         sparePackagesSent = 0
-        sendInterval = 900
+        sendInterval = DEFAULT_SEND_INTERVAL_MS
 
         // Reed-Solomon lets the receiver rebuild the file from any `spare` missing
         // packages, so losing up to that many is a complete transfer, not a failure.
@@ -707,8 +710,14 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
         private const val FILE_CHUNK_SIZE = 60
 
-        private const val SECONDS_PER_PACKAGE_ST = 0.3
-        private const val SECONDS_PER_PACKAGE_DEFAULT = 1.3
+        /** Interval before any package has resolved its radio: HR at unknown bandwidth. */
+        private val DEFAULT_SEND_INTERVAL_MS = FilePacketAirtime.defaultMs(CarrierType.HR)
+
+        /**
+         * The start package goes out ahead of the [calculateNumOfPackages] count, which is
+         * the wire `totalPackages` and so must not include it.
+         */
+        private const val START_PACKAGES = 1
 
         fun calculateNumOfPackages(files: List<File>, spare: Int): Int {
             return files.sumOf { ceil(it.length().toDouble() / FILE_CHUNK_SIZE).toInt() } + spare
@@ -725,21 +734,31 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
          */
         @JvmStatic
         @JvmOverloads
-        fun secondsPerPackage(functionalityType: FunctionalityType, carrier: Carrier? = null): Double =
-            if (getRadioToSend(carrier, functionalityType)?.type == CarrierType.ST) {
-                SECONDS_PER_PACKAGE_ST
-            } else {
-                SECONDS_PER_PACKAGE_DEFAULT
-            }
+        fun secondsPerPackage(functionalityType: FunctionalityType, carrier: Carrier? = null): Double {
+            val ms = getRadioToSend(carrier, functionalityType)?.let(::packetAirtimeMs)
+                ?: DEFAULT_SEND_INTERVAL_MS
+            return ms / 1000.0
+        }
 
-        /** The estimate as a number, for callers that need to compute with it rather than show it. */
+        /**
+         * Airtime of one file package on [radio], at the bandwidth the device last reported for
+         * it. Both the send pacing and the estimate use this, so the two cannot drift apart.
+         */
+        internal fun packetAirtimeMs(radio: Carrier): Long =
+            FilePacketAirtime.ms(radio.type, ConfigurationUtils.bandwidthFor(radio))
+
+        /**
+         * The estimate as a number, for callers that need to compute with it rather than show it.
+         * Counts the start package on top of [numOfPackages].
+         */
         @JvmStatic
         @JvmOverloads
         fun estimateSendSeconds(
             numOfPackages: Int,
             functionalityType: FunctionalityType,
             carrier: Carrier? = null,
-        ): Double = numOfPackages.coerceAtLeast(0) * secondsPerPackage(functionalityType, carrier)
+        ): Double = (numOfPackages.coerceAtLeast(0) + START_PACKAGES) *
+            secondsPerPackage(functionalityType, carrier)
 
         @JvmStatic
         @JvmOverloads

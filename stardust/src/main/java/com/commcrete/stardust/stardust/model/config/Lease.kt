@@ -27,9 +27,6 @@ object LeaseCalculator {
     private const val TX_BASE_MHZ = 1195.5
     private const val MAX_LEASES = 3 // SB_MAX_LEASES
 
-    /** Carriers occupied per bandwidth code (index 0-7); 0 = unsupported. */
-    private val BW_CARRIERS = intArrayOf(1, 0, 2, 3, 4, 5, 8, 0)
-
     fun calculatePresetLeases(preset: Preset): List<Lease> {
         val out = ArrayList<Lease>()
         for (xcvr in preset.xcvrList) {
@@ -37,11 +34,9 @@ object LeaseCalculator {
 
             // Slot 3 (ST) and any non-RD entry carry no lease of their own.
             if (xcvr.rdIndex < 1 || xcvr.rdIndex > 3) continue
-            if (xcvr.bandwidth < 0 || xcvr.bandwidth > 7) continue
-            val nCarriers = BW_CARRIERS[xcvr.bandwidth]
-            if (nCarriers == 0) continue
+            val bandwidth = xcvr.bandwidthOption?.takeIf { it.supportsLeases } ?: continue
 
-            for (lease in xcvrLeases(xcvr.txFrequency, xcvr.rxFrequency, xcvr.carrier.index, nCarriers)) {
+            for (lease in xcvrLeases(xcvr.txFrequency, xcvr.rxFrequency, xcvr.carrier.index, bandwidth.carriers)) {
                 if (out.size >= MAX_LEASES) break
                 if (out.none { it.tx == lease.tx && it.rx == lease.rx }) out.add(lease)
             }

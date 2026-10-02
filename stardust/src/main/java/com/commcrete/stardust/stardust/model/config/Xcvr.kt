@@ -15,6 +15,9 @@ data class Xcvr(
     /** Bandwidth code 0-7 (Ver_24.0.7+); -1 = not reported by legacy firmware. */
     var bandwidth: Int = -1
 ) {
+    /** [bandwidth] as a [Bandwidth]; null when legacy firmware did not report one. */
+    val bandwidthOption: Bandwidth? get() = Bandwidth.fromCode(bandwidth)
+
     fun getOptions(): Set<FunctionalityType> {
         return FunctionalityType.entries.filter { type -> (options and type.bitwise) == type.bitwise }.toSet()
     }

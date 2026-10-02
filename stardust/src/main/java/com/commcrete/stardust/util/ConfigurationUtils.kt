@@ -6,6 +6,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
+import com.commcrete.stardust.stardust.model.config.Bandwidth
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.config.FirmwareVersion
 import com.commcrete.stardust.stardust.model.config.Preset
@@ -48,6 +49,13 @@ object ConfigurationUtils {
 
         selectedPreset = config.presets.getOrNull(preset.value)
     }
+
+    /**
+     * Bandwidth [carrier] is on in the current preset, read live from the last configuration the
+     * device reported. Null before the first configuration and on legacy firmware.
+     */
+    fun bandwidthFor(carrier: Carrier): Bandwidth? =
+        selectedPreset?.xcvrList?.getOrNull(carrier.index)?.bandwidthOption
 
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
         stardustAppEventPackage.carrier = selectedPreset?.xcvrList?.getOrNull(stardustAppEventPackage.xcvr)?.carrier

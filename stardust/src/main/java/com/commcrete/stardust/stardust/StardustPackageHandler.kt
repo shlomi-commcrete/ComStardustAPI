@@ -245,7 +245,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE              -> handleAddGroupsResponse()
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE           -> handleDeleteGroupsResponse()
             StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT            -> handleRealSOS(mPackage)
-            StardustPackageUtils.StardustOpCode.SOS_ACK                          -> handleSOSAck(mPackage)
+            StardustPackageUtils.StardustOpCode.SOS_ACK,
+            StardustPackageUtils.StardustOpCode.SEND_SOS_INTERRUPT               -> handleSOSAck(mPackage)
             StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT                -> handleAppEvent(mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
             StardustPackageUtils.StardustOpCode.SOS_DESTINATION_UPDATED           -> getConfiguration()
