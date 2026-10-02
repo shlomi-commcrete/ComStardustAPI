@@ -14,7 +14,7 @@ import com.commcrete.stardust.audio.v2.domain.SequenceNumber
  *
  * The encoder model is stateless per 500 ms window (all continuity lives in the DECODER), so isolation
  * is trivial — the only shared thing is the PyTorch module, and the native `forward()` is serialized by
- * `CodecRegistry.withCodec("wavtokenizer")` (applied by the caller, [RecordingSession]).
+ * `CodecRegistry.withEncode("wavtokenizer")` (applied by the caller, [RecordingSession]).
  *
  * [encode] accumulates 24 kHz PCM into 12000-sample windows, runs [com.commcrete.stardust.ai.codec.WavTokenizerEncoder.encode]
  * (which pads/trims + returns tokens, never throws — falls back to zero tokens), packs them, and emits

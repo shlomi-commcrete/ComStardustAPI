@@ -19,6 +19,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Application layer — the send entry point (R2 single capture, R3 hand-off).
@@ -54,6 +56,8 @@ class PttSendCoordinator(
     private val maxConcurrentRecordings: Int,
     private val maxTimeout: MaxPttTimeoutNotifier,
     private val scope: CoroutineScope,
+    /** Where each recording's mirror self-decode runs — see [RecordingSession]. */
+    private val decodeContext: CoroutineContext = EmptyCoroutineContext,
 ) {
     private val restartMutex = Mutex()
     private val idSeq = AtomicLong(0L)
@@ -115,6 +119,7 @@ class PttSendCoordinator(
                 captureStopGraceMs = captureStopGraceMs,
                 maxTimeout = maxTimeout,
                 scope = scope,
+                decodeContext = decodeContext,
             )
         } catch (t: Throwable) {
             outbound.seal(TerminalReason.ERROR)

@@ -72,6 +72,9 @@ class Codec2PlaybackSink : PlaybackSink {
         track?.let { applyGain(it, gain) }
     }
 
+    override val underrunCount: Int
+        get() = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: -1
+
     override fun close() {
         runCatching { track?.stop() }
         runCatching { track?.release() }

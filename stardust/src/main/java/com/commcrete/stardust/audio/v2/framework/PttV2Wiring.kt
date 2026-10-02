@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.framework
 
 import android.content.Context
+import android.util.Log
 import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.audio.v2.adapter.RecorderUtilsBridge
 import com.commcrete.stardust.audio.v2.adapter.StardustPackageRouter
@@ -17,15 +18,21 @@ import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.audio.v2.application.receive.PttReceiveCoordinator
+import com.commcrete.stardust.audio.v2.application.receive.ReceiveFrameTiming
 import com.commcrete.stardust.audio.v2.application.receive.StreamRegistry
 import com.commcrete.stardust.audio.v2.application.send.PttSendCoordinator
 import com.commcrete.stardust.audio.v2.application.send.TransmitSequencer
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.util.Locale
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Framework ring — the composition root that wires the CODEC2 v2 path end-to-end. Call [init] once at
@@ -59,6 +66,7 @@ object PttV2Wiring {
     private var sendCoordinator: PttSendCoordinator? = null
     private var streamRegistry: StreamRegistry? = null
     private var receiveStore: PttReceiveStore? = null
+    private var decodeDispatcher: ExecutorCoroutineDispatcher? = null
 
     /**
      * Double-checked locking, and [initialized] is set only on success: the flag used to be set before
@@ -106,6 +114,9 @@ object PttV2Wiring {
             // which is why a torn-down pipeline has to tell it to stop.
             runCatching { receiveStore?.shutdown() }
             scopes.forEach { runCatching { it.cancel() } }
+            // After the scopes: a decode already inside the native call finishes on its thread, and
+            // nothing new can be handed to it.
+            runCatching { decodeDispatcher?.close() }
             routing.clear()
             // This instance is process-wide and refcounted; a session killed before its own release ran
             // would otherwise leave the CPU pinned awake for good.
@@ -116,6 +127,7 @@ object PttV2Wiring {
             sendCoordinator = null
             streamRegistry = null
             receiveStore = null
+            decodeDispatcher = null
             initialized = false
         }
     }
@@ -146,6 +158,13 @@ object PttV2Wiring {
         val receiveScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val bridgeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         scopes = listOf(txScope, sendScope, receiveScope, bridgeScope)
+        // Every decode — receive streams and the send-side mirror — runs here, and encode never does
+        // (it stays on sendScope's IO pool), so a model forward pass on one side cannot occupy the
+        // thread the other side is waiting for. Two threads so a CODEC2 stream is not stuck behind an
+        // AI forward pass; AI decodes still take turns on the codec's decode lock.
+        val decodeDispatcher = Executors.newFixedThreadPool(DECODE_THREADS) { r ->
+            Thread(r, "$DECODE_THREAD_NAME-${decodeThreadSeq.incrementAndGet()}").apply { isDaemon = true }
+        }.asCoroutineDispatcher().also { this.decodeDispatcher = it }
 
         val sequencer = TransmitSequencer(
             transport = BleSendTransport(routing),
@@ -203,6 +222,7 @@ object PttV2Wiring {
             maxConcurrentRecordings = MAX_CONCURRENT_RECORDINGS,
             maxTimeout = maxTimeoutNotifier,
             scope = sendScope,
+            decodeContext = decodeDispatcher,
         )
 
         val receiveStore = PttReceiveStore(context).also { this.receiveStore = it }
@@ -210,6 +230,8 @@ object PttV2Wiring {
             scope = receiveScope,
             onDecoded = { key, pcm -> receiveStore.onDecodedPcm(key, pcm) },
             onEvicted = { key -> receiveStore.onEnd(key) },
+            decodeContext = decodeDispatcher,
+            onTiming = ::logReceiveTiming,
         )
         val receiveCoordinator = PttReceiveCoordinator(registry)
 
@@ -227,6 +249,25 @@ object PttV2Wiring {
         this.sendCoordinator = sendCoordinator
         this.streamRegistry = registry
     }
+
+    /** One line per received frame; filter logcat on [RX_TIMING_TAG]. See [ReceiveFrameTiming] for how to read it. */
+    private fun logReceiveTiming(t: ReceiveFrameTiming) {
+        Log.d(
+            RX_TIMING_TAG,
+            String.format(
+                Locale.US,
+                "%s %s #%d%s gap=%.0f queued=%.0f lockWait=%.0f decode=%.0f write=%.0f audio=%.0f ahead=%.0f underruns=%d",
+                t.key.value, t.codecId.value, t.index, if (t.isTerminal) " LAST" else "",
+                t.sinceLastArrivalMs, t.queuedMs, t.decodeLockWaitMs, t.decodeMs, t.writeMs, t.audioMs,
+                t.bufferedAheadMs, t.underruns,
+            ),
+        )
+    }
+
+    private const val RX_TIMING_TAG = "PttRxTiming"
+    private const val DECODE_THREAD_NAME = "stardust-ptt-decode"
+    private const val DECODE_THREADS = 2
+    private val decodeThreadSeq = AtomicInteger(0)
 
     private const val HEAD_TIMEOUT_MS = 60_000L
 

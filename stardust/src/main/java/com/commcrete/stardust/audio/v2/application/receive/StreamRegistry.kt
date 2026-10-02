@@ -6,6 +6,8 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.StreamKey
 import kotlinx.coroutines.CoroutineScope
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Application layer — the R6 mechanism: a map of live [ReceiveStream]s keyed by [StreamKey], plus the
@@ -26,6 +28,9 @@ class StreamRegistry(
     private val onEvicted: (StreamKey) -> Unit = {},
     private val idleTimeoutMs: Long = DEFAULT_IDLE_TIMEOUT_MS,
     private val maxSinks: Int = DEFAULT_MAX_SINKS,
+    /** Where every stream's decode runs — see [ReceiveStream]. Empty inherits [scope]'s dispatcher. */
+    private val decodeContext: CoroutineContext = EmptyCoroutineContext,
+    private val onTiming: (ReceiveFrameTiming) -> Unit = {},
 ) {
     private val streams = ConcurrentHashMap<StreamKey, ReceiveStream>()
     private val volume = ConcurrentHashMap<StreamKey, Gain>()
@@ -49,6 +54,8 @@ class StreamRegistry(
                 onDecoded = onDecoded,
                 idleTimeoutMs = idleTimeoutMs,
                 scope = scope,
+                decodeContext = decodeContext,
+                onTiming = onTiming,
             ).also { built = it }
         }
         if (built === stream) stream.start() // start only the instance we just created

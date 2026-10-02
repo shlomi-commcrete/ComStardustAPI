@@ -22,5 +22,8 @@ interface PlaybackSink : AutoCloseable {
     /** Apply volume/mute live (thread-safe; e.g. `AudioTrack.setVolume`). `Gain.MUTE` silences without pausing decode. */
     fun setGain(gain: Gain)
 
+    /** How many times playout ran dry since [open] (`AudioTrack.getUnderrunCount`); -1 when unknown. Diagnostics only. */
+    val underrunCount: Int get() = -1
+
     override fun close()
 }

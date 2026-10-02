@@ -11,8 +11,9 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
  * recording/stream gets its OWN session instance, recording N+1 physically cannot mutate recording
  * N's state (R3), and two receive streams cannot bleed continuity into each other (R5).
  *
- * Both interfaces are invoked ONLY inside `CodecRegistry.withCodec(codecId) { … }` so calls into a
- * shared native runtime are serialized per codec (AI-send never blocks CODEC2-receive).
+ * [EncoderSession] is invoked ONLY inside `CodecRegistry.withEncode(codecId) { … }` and
+ * [DecoderSession] ONLY inside `CodecRegistry.withDecode(codecId) { … }`, so calls into a shared
+ * native module are serialized per codec and per direction (an AI encode never blocks an AI decode).
  */
 
 /** Encoder for one recording. [drain] flushes the tail at key-up; its final frame is [EncodedFrame.isTerminal]. */

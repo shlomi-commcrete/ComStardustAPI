@@ -13,8 +13,8 @@ import com.commcrete.stardust.audio.v2.domain.PcmChunk
  * session holds THIS stream's [WavTokenizerDecoder.InternalState] plus its previous tokens/samples,
  * and brackets each decode with restore→decode→snapshot — exactly the legacy
  * `PttReceiveManager.handleTokenizerChunk` dance, but the per-stream state lives in the session
- * instead of a map entry. The caller ([ReceiveStream]) already holds `CodecRegistry.withCodec(...)`,
- * so these mutations of the shared decoder are serialized against every other AI encode/decode.
+ * instead of a map entry. The caller ([ReceiveStream]) already holds `CodecRegistry.withDecode(...)`,
+ * so these mutations of the shared decoder are serialized against every other AI decode.
  *
  * A fresh instance per burst (the registry evicts on terminal frame / idle), so continuity is a clean
  * slate at stream start and every subsequent chunk is a continuation.

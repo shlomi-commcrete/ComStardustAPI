@@ -27,6 +27,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Application layer — one key-down..key-up recording (R3 isolation + R4 producer side).
@@ -35,13 +37,14 @@ import java.util.concurrent.atomic.AtomicBoolean
  * session with different instances, so it physically cannot mutate this recording's continuity /
  * resampler / biquad state. There is no shared singleton and no global `reset()`.
  *
- * The pipeline runs: capture → [PttAudioProcessorV2.process] → `CodecRegistry.withCodec { encode }`
+ * The pipeline runs: capture → [PttAudioProcessorV2.process] → `CodecRegistry.withEncode { encode }`
  * → [OutboundBuffer.offer]. The [outbound] buffer is drained by the [TransmitSequencer], never here.
  *
  * Local mirror: when [mirror] is active, every frame handed to [outbound] is ALSO self-decoded — by
  * this session's own [DecoderSession], on its own [mirrorJob] — so the saved file holds what the
  * receiver reconstructs rather than the encoder's input. The decode runs off the capture/encode path
- * (it is a second model forward pass for AI) and is skipped entirely for a no-op mirror.
+ * (it is a second model forward pass for AI), on [decodeContext] — the same decode thread the receive
+ * path uses, never the encode one — and is skipped entirely for a no-op mirror.
  *
  * Terminal guarantee: [outbound] is sealed in `finally` under [NonCancellable], so a terminal marker
  * is emitted on EVERY exit — normal key-up (LAST), error (ERROR), timeout (TIMEOUT), or cancel
@@ -74,6 +77,8 @@ class RecordingSession(
     private val captureStopGraceMs: Long,
     private val maxTimeout: MaxPttTimeoutNotifier,
     private val scope: CoroutineScope,
+    /** Where the mirror's self-decode runs. Empty inherits [scope]'s dispatcher. */
+    private val decodeContext: CoroutineContext = EmptyCoroutineContext,
 ) {
     val ticket: TransmitTicket get() = outbound.ticket
 
@@ -108,7 +113,7 @@ class RecordingSession(
     /** Launch the capture→encode pipeline. Idempotent. */
     fun start() {
         if (job != null) return
-        if (mirroring) mirrorJob = scope.launch { runMirrorDecode() }
+        if (mirroring) mirrorJob = scope.launch(decodeContext) { runMirrorDecode() }
         job = scope.launch {
             var frameCount = 0
             var reason = TerminalReason.LAST
@@ -120,7 +125,7 @@ class RecordingSession(
                 store.onRecordingStarted(id, codec.codecId, peer)
                 capture.start(id).collect { raw ->
                     val processed = dsp.process(raw)
-                    val frames = CodecRegistry.withCodec(codec.codecId) { encoder.encode(processed) }
+                    val frames = CodecRegistry.withEncode(codec.codecId) { encoder.encode(processed) }
                     frames.forEach { dispatchFrame(it); frameCount++ }
                 }
                 captureEnded.complete(Unit) // the device is genuinely released → stop deadline stands down
@@ -131,10 +136,10 @@ class RecordingSession(
                 // Flow completed (key-up / watchdog stop / EOF): flush resampler tail, then encoder tail.
                 val dspTail = dsp.flush()
                 if (dspTail.samples.isNotEmpty()) {
-                    CodecRegistry.withCodec(codec.codecId) { encoder.encode(dspTail) }
+                    CodecRegistry.withEncode(codec.codecId) { encoder.encode(dspTail) }
                         .forEach { dispatchFrame(it); frameCount++ }
                 }
-                CodecRegistry.withCodec(codec.codecId) { encoder.drain() }
+                CodecRegistry.withEncode(codec.codecId) { encoder.drain() }
                     .forEach { dispatchFrame(it); frameCount++ }
             } catch (e: CancellationException) {
                 reason = TerminalReason.CANCELLED
@@ -270,8 +275,8 @@ class RecordingSession(
      * Decodes the very bytes that went on the wire, through this codec's own [DecoderSession] — the
      * same class the receiver runs — so the saved WAV is the received audio, not the encoder input.
      * The session owns this decoder outright (R3/R5 isolation): it carries this recording's decode
-     * continuity and nothing else's. Decode runs under `CodecRegistry.withCodec`, which is what keeps
-     * these mutations of a shared native runtime serialized against the encode above.
+     * continuity and nothing else's. Decode runs under `CodecRegistry.withDecode`, which is what keeps
+     * these mutations of the shared decoder serialized against every receive-stream decode.
      *
      * Per-frame [runCatching]: one bad frame must not abandon the rest of the recording's mirror.
      */
@@ -280,7 +285,7 @@ class RecordingSession(
         try {
             for (frame in mirrorFrames) {
                 runCatching {
-                    val pcm = CodecRegistry.withCodec(codec.codecId) { decoder.decode(frame) }
+                    val pcm = CodecRegistry.withDecode(codec.codecId) { decoder.decode(frame) }
                     if (pcm.samples.isNotEmpty()) mirror.accept(pcm)
                 }
             }
