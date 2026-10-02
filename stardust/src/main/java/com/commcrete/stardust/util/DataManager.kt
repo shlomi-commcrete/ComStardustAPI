@@ -23,6 +23,9 @@ import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.ble.CompanionDeviceHelper
 import com.commcrete.stardust.ble.PairingRepository
 import androidx.lifecycle.asFlow
+import com.commcrete.stardust.transport.PairingFailure
+import com.commcrete.stardust.transport.PairingState
+import com.commcrete.stardust.transport.PairingTracker
 import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.location.LocationUtils
@@ -58,6 +61,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.StateFlow
 import timber.log.Timber
 import java.io.File
 import java.io.RandomAccessFile
@@ -646,21 +650,33 @@ object DataManager : StardustAPI, PttInterface {
      * that isn't bonded, and that's the branch.
      */
     @SuppressLint("MissingPermission")
-    override fun connect(address: String) {
+    override fun connect(address: String): StateFlow<PairingState> {
         checkInitialized()
+        PairingTracker.begin(address)
+        // Every connect path is gated on login anyway; refuse here so adopt doesn't persist a
+        // device and so the host gets a reason instead of an endless Connecting.
+        if (!RegisteredUserUtils.isUserLoggedIn()) {
+            PairingTracker.failed(address, PairingFailure.NotLoggedIn)
+            return PairingTracker.state
+        }
         com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()
         // Scanning while connecting only competes with the GATT connect for the radio.
         com.commcrete.stardust.transport.DeviceDiscovery.stop()
         this.bleScanner = null
 
-        if (PairingRepository.adopt(address)) return
+        if (PairingRepository.adopt(address)) {
+            // Already bonded: no system dialog will come, the handshake continues on connectionState().
+            PairingTracker.paired(address)
+            return PairingTracker.state
+        }
 
         val result = com.commcrete.stardust.transport.DeviceDiscovery.scanResultFor(address)
         val device = result?.device
-            ?: android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address)
+            ?: runCatching { android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address) }.getOrNull()
             ?: run {
-                Timber.w("connect($address) failed: no such device")
-                return
+                Log.w(LOG_TAG, "connect($address) failed: no such device")
+                PairingTracker.failed(address, PairingFailure.NotReachable)
+                return PairingTracker.state
             }
         // Same per-session reset the adopt path does: a user-driven pair is a new session, and a
         // stale SUCCESS/CANCELED left in the singleton otherwise blocks the init handshake when
@@ -669,6 +685,14 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().resetForNewSession()
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
         getClientConnection().bondToBleDevice(device, result?.scanRecord?.deviceName)
+        return PairingTracker.state
+    }
+
+    override fun pairingState(): StateFlow<PairingState> = PairingTracker.state
+
+    override fun cancelPairing(): Boolean {
+        checkInitialized()
+        return getClientConnection().cancelPairing()
     }
 
     @Deprecated(

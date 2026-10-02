@@ -12,6 +12,7 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.transport.ConnectionState
 import com.commcrete.stardust.transport.DiscoveredDevice
+import com.commcrete.stardust.transport.PairingState
 import com.commcrete.stardust.transport.ScanState
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceiver
@@ -166,10 +167,25 @@ interface StardustAPI {
     /**
      * Connects to a discovered radio by [DiscoveredDevice.address] and runs the init handshake —
      * bonding first when the radio isn't bonded yet, adopting the existing bond when it is. One
-     * entry point for both, replacing [connectToDevice] and [adoptDevice]; progress is reported on
-     * [connectionState].
+     * entry point for both, replacing [connectToDevice] and [adoptDevice].
+     *
+     * Returns [pairingState]: drive the pairing dialog from it until [PairingState.Paired] or
+     * [PairingState.Failed], then follow [connectionState] for the handshake.
      */
-    fun connect(address: String)
+    fun connect(address: String): StateFlow<PairingState>
+
+    /**
+     * Progress of the most recent pairing attempt (from [connect] or a companion-device association).
+     * A `StateFlow`: a new collector immediately gets the current value.
+     */
+    fun pairingState(): StateFlow<PairingState>
+
+    /**
+     * Cancels a pairing that is still Connecting / AwaitingConfirmation; the stream returns to
+     * [PairingState.Idle]. Returns false when nothing was in flight — once Paired, use
+     * [disconnectFromDevice] instead.
+     */
+    fun cancelPairing(): Boolean
 
     @Deprecated(
         "Collect scanForDevices() instead: it reports failures and already-bonded radios on the " +

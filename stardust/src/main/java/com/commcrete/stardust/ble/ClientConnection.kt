@@ -26,6 +26,9 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLoca
 import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.transport.PairingFailure
+import com.commcrete.stardust.transport.PairingState
+import com.commcrete.stardust.transport.PairingTracker
 import com.commcrete.stardust.transport.TransportId
 import com.commcrete.stardust.transport.toBlocker
 import com.commcrete.stardust.stardust.model.config.PortType
@@ -58,6 +61,8 @@ internal class ClientConnection(): BittelProtocol {
         const val MAX_WRITE_RETRIES = 3
         const val RETRY_DELAY_MS = 500L
         const val WRITE_ERROR_CODE = 2147483647
+        /** Hidden `BluetoothDevice.EXTRA_REASON` on ACTION_BOND_STATE_CHANGED; unofficial, best effort. */
+        private const val EXTRA_UNBOND_REASON = "android.bluetooth.device.extra.REASON"
 
         // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
         // so one lost callback can't wedge all subsequent writes.
@@ -167,7 +172,13 @@ internal class ClientConnection(): BittelProtocol {
     var bittelPackage : StardustPackage? = null
 
     private val connectionTimeout : Long = 20000
-    private val bondTimeout : Long = 5000
+    // Pairing watchdog, re-armed per phase (see bondRunnable). REACH: from start until the OS
+    // reports BONDING. BONDING: until the system dialog is up (the stack's own LE connect timeout
+    // usually ends a dead attempt first, with reason REMOTE_DEVICE_DOWN). CONFIRM: while the user
+    // has the dialog — longer than the OS dialog's own timeout so its broadcast wins.
+    private val bondReachTimeout : Long = 20_000
+    private val bondBondingTimeout : Long = 30_000
+    private val bondConfirmTimeout : Long = 60_000
     private val pingTimeout : Long = 10000
 
     private var bluetoothGattCallback: BluetoothGattCallback? = null
@@ -204,8 +215,15 @@ internal class ClientConnection(): BittelProtocol {
     var lastPlayedTS : Long = 0
 
     private val bondRunnable : Runnable = kotlinx.coroutines.Runnable {
-
-        // TODO: show fail
+        val address = PairingTracker.activeAddress ?: return@Runnable
+        val reason = if (PairingTracker.state.value is PairingState.AwaitingConfirmation) {
+            PairingFailure.Timeout
+        } else {
+            PairingFailure.NotReachable
+        }
+        Log.w(LOG_TAG, "pairing $address timed out: $reason")
+        PairingTracker.failed(address, reason)
+        abortBondAttempt(address, cancelOsBond = true)
     }
     private val bondHandler : Handler = Handler(Looper.getMainLooper())
 
@@ -264,6 +282,11 @@ internal class ClientConnection(): BittelProtocol {
     // before [mDevice] is assigned, and — combined with the receiver's address filter — stops
     // us from reacting to bond changes on unrelated Bluetooth devices (e.g. the user's headset).
     private var pendingBondAddress: String? = null
+
+    // Fallback bond trigger (see bondToBleDevice) — held so it can be closed; Android allows only a
+    // handful of GATT clients per process.
+    private var bondGatt: BluetoothGatt? = null
+    private var bondReceiverRegistered = false
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
@@ -999,58 +1022,127 @@ internal class ClientConnection(): BittelProtocol {
         disconnectFromBLEDevice(disconnectByForce = true)
     }
 
+    /**
+     * Pairs with [device] and connects once bonded. Progress is published on [PairingTracker]:
+     * Connecting → AwaitingConfirmation (system dialog up) → Paired, or Failed with a reason.
+     */
     @SuppressLint("MissingPermission")
     fun bondToBleDevice(device: BluetoothDevice, deviceName : String?) {
         this.deviceName = deviceName
+        val address = device.address
+        // No-op when DataManager.connect already began this attempt; starts it for the
+        // companion-device path, which calls in here directly.
+        if (!PairingTracker.isActive(address)) PairingTracker.begin(address)
         if (!RegisteredUserUtils.isUserLoggedIn()) {
-            Timber.tag(LOG_TAG).d("Skipping bond to ${device.address}: no user logged in")
+            Log.d(LOG_TAG, "Skipping bond to $address: no user logged in")
+            PairingTracker.failed(address, PairingFailure.NotLoggedIn)
             return
         }
         bleConnectBlockReason()?.let { reason ->
-            Timber.tag(LOG_TAG).e("Cannot bond ${device.address}: $reason")
+            Log.e(LOG_TAG, "Cannot bond $address: $reason")
             // Unified stream first (what hosts should collect), then the deprecated callback.
             ConnectionManager.reportBlocked(reason.toBlocker())
+            PairingTracker.failed(address, PairingFailure.Blocked(reason.toBlocker()))
             @Suppress("DEPRECATION")
-            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
+            DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: address)
             return
         }
-        Scopes.getDefaultCoroutine().launch {
-            val connectedDevice = device.name?.let { getBleConnectedDevice(device.address) }
-            if(connectedDevice != null) {
-                Scopes.getMainCoroutine().launch {
-                    BleManager.isPaired.value = true
-                    connectDevice(device)
-                }
+        Scopes.getMainCoroutine().launch {
+            // A previous attempt that never finished must not leak its client or its timer.
+            removeBondTimer()
+            closeBondGatt()
+
+            if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                PairingTracker.paired(address)
+                BleManager.isPaired.value = true
+                connectDevice(device)
                 return@launch
             }
 
-            Scopes.getMainCoroutine().launch {
-                resetBondTimer()
-                try {
-                    pendingBondAddress = device.address
-                    registerBondStateReceiver()
-                    Timber.tag(LOG_TAG).d("bondToBleDevice")
-                    device.connectGatt(context, false, object : BluetoothGattCallback() {})
-                } catch (e: Exception) {
-                    Timber.tag(LOG_TAG).e(e, "Failed to start bond flow")
+            try {
+                pendingBondAddress = address
+                registerBondStateReceiver()
+                resetBondTimer(bondReachTimeout)
+                // createBond() makes the phone start pairing right away, so the system dialog comes
+                // up as soon as the radio answers. It needs the stack to know the device is LE
+                // (true for anything seen in a scan); otherwise it may page over BR/EDR and fail,
+                // so fall back to opening an LE link and letting the radio request security.
+                val started = device.type == BluetoothDevice.DEVICE_TYPE_LE && device.createBond()
+                Log.d(LOG_TAG, "bondToBleDevice $address createBond=$started type=${device.type}")
+                if (!started) {
+                    bondGatt = device.connectGatt(context, false,
+                        object : BluetoothGattCallback() {}, BluetoothDevice.TRANSPORT_LE)
                 }
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Failed to start bond flow", e)
+                PairingTracker.failed(address, PairingFailure.Unknown)
+                abortBondAttempt(address, cancelOsBond = false)
             }
         }
     }
 
-    private fun registerBondStateReceiver() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.applicationContext.registerReceiver(
-                broadcastReceiver,
-                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
-                RECEIVER_EXPORTED
-            )
-        } else {
-            context.applicationContext.registerReceiver(
-                broadcastReceiver,
-                IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
-            )
+    /**
+     * Host-initiated cancel of an attempt still in Connecting / AwaitingConfirmation. Returns false
+     * when no pairing is in flight (e.g. already Paired — disconnect instead).
+     */
+    fun cancelPairing(): Boolean {
+        val address = PairingTracker.activeAddress ?: return false
+        if (!PairingTracker.cancel()) return false
+        Log.d(LOG_TAG, "pairing $address canceled by host")
+        abortBondAttempt(address, cancelOsBond = true)
+        return true
+    }
+
+    /**
+     * Cleans up after a pairing attempt that won't complete, and moves the handshake off SEARCHING
+     * so connectionState() reads Disconnected instead of searching forever. Leaves the init state
+     * alone while a link (e.g. USB) is up, since that session owns it.
+     */
+    @SuppressLint("MissingPermission")
+    private fun abortBondAttempt(address: String, cancelOsBond: Boolean) {
+        removeBondTimer()
+        closeBondGatt()
+        if (pendingBondAddress.equals(address, ignoreCase = true)) pendingBondAddress = null
+        if (cancelOsBond) {
+            runCatching {
+                val device = BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address)
+                if (device?.bondState == BluetoothDevice.BOND_BONDING) {
+                    // Hidden API; best effort. The resulting BONDING->NONE is ignored by the
+                    // receiver because the attempt is no longer active.
+                    device.javaClass.getMethod("cancelBondProcess").invoke(device)
+                }
+            }.onFailure { Log.w(LOG_TAG, "cancelBondProcess failed for $address", it) }
         }
+        // Only undo our own SEARCHING: e.g. BLUETOOTH_OFF set by the adapter observer must survive,
+        // so the host sees Blocked rather than Disconnected.
+        if (!BleManager.isBleConnected && !isUSBConnected &&
+            StardustInitConnectionHandler.isSearchingToConnect()) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        }
+    }
+
+    private fun closeBondGatt() {
+        bondGatt?.let {
+            runCatching { it.disconnect() }
+            runCatching { it.close() }
+        }
+        bondGatt = null
+    }
+
+    private fun registerBondStateReceiver() {
+        // Registering the same receiver again would deliver every broadcast twice.
+        if (bondReceiverRegistered) return
+        val filter = IntentFilter().apply {
+            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            // Sent right before the system pairing dialog / notification is shown.
+            addAction(BluetoothDevice.ACTION_PAIRING_REQUEST)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.applicationContext.registerReceiver(broadcastReceiver, filter, RECEIVER_EXPORTED)
+        } else {
+            context.applicationContext.registerReceiver(broadcastReceiver, filter)
+        }
+        bondReceiverRegistered = true
     }
 
     @SuppressLint("MissingPermission")
@@ -1076,6 +1168,15 @@ internal class ClientConnection(): BittelProtocol {
         override fun onReceive(context: Context, intent: Intent) {
             with(intent) {
                 Timber.tag(LOG_TAG).d(" broadcastReceiver onReceive")
+                if (action == BluetoothDevice.ACTION_PAIRING_REQUEST) {
+                    val address = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)?.address
+                    if (address != null && PairingTracker.isActive(address)) {
+                        Log.d(LOG_TAG, "pairing request for $address — system dialog showing")
+                        PairingTracker.awaitingConfirmation(address)
+                        resetBondTimer(bondConfirmTimeout)
+                    }
+                    return
+                }
                 if (action == BluetoothDevice.ACTION_BOND_STATE_CHANGED ) {
                     val device = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
                     val previousBondState = getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, -1)
@@ -1087,11 +1188,14 @@ internal class ClientConnection(): BittelProtocol {
                     // Only act on OUR device. ACTION_BOND_STATE_CHANGED is a system-wide broadcast,
                     // so without this filter a bond change on ANY device (e.g. the user pairing a
                     // headset) would fall into the else-branch below and unbond/disconnect us.
-                    val target = mDevice?.address ?: pendingBondAddress
+                    // Either address counts: while connected to radio A and pairing radio B, mDevice
+                    // is A, and B's bond events must still get through.
                     val eventAddress = device?.address
-                    if (target == null || eventAddress == null ||
-                        !eventAddress.equals(target, ignoreCase = true)) {
-                        Timber.tag(LOG_TAG).d("Ignoring bond change for $eventAddress (target=$target)")
+                    val isTarget = eventAddress != null && (
+                        eventAddress.equals(mDevice?.address, ignoreCase = true) ||
+                            eventAddress.equals(pendingBondAddress, ignoreCase = true))
+                    if (!isTarget) {
+                        Timber.tag(LOG_TAG).d("Ignoring bond change for $eventAddress (mDevice=${mDevice?.address} pending=$pendingBondAddress)")
                         return
                     }
 
@@ -1099,18 +1203,29 @@ internal class ClientConnection(): BittelProtocol {
                         //device?.address?.let { SharedPreferencesUtil.setBittelDevice(context, it) }
                         //device?.name?.let { SharedPreferencesUtil.setBittelDeviceName(context, it) }
                         pendingBondAddress = null
+                        removeBondTimer()
                         device?.let {
+                            PairingTracker.paired(it.address)
                             Scopes.getDefaultCoroutine().launch {
                                 Scopes.getMainCoroutine().launch {
                                     BleManager.isPaired.value = true
                                 }
                                 connectDevice(device)
-                                removeBondTimer()
+                                // After connectDevice: the new client holds the link, so closing the
+                                // fallback trigger client doesn't drop it.
+                                Scopes.getMainCoroutine().launch { closeBondGatt() }
                             }
                         }
                     } else if(bondState == BluetoothDevice.BOND_BONDING && previousBondState == BluetoothDevice.BOND_NONE) {
+                        if (PairingTracker.isActive(eventAddress)) resetBondTimer(bondBondingTimeout)
                         disconnectFromBLEDevice(withStateUpdate = false)
                     } else{
+                        if (eventAddress != null && PairingTracker.isActive(eventAddress)) {
+                            val reason = getIntExtra(EXTRA_UNBOND_REASON, -1).toPairingFailure()
+                            Log.w(LOG_TAG, "pairing $eventAddress failed: $bondTransition reason=$reason")
+                            PairingTracker.failed(eventAddress, reason)
+                            abortBondAttempt(eventAddress, cancelOsBond = false)
+                        }
                         // Bond removed (e.g. BONDED->NONE) or the attempt failed for our device.
                         // Reconcile app pairing with the OS instead of forcing another unbond.
                         pendingBondAddress = null
@@ -1119,6 +1234,15 @@ internal class ClientConnection(): BittelProtocol {
                     }
                 }
             }
+        }
+
+        /** Maps the hidden unbond reason (BluetoothDevice.UNBOND_REASON_*) onto what the host shows. */
+        private fun Int.toPairingFailure(): PairingFailure = when (this) {
+            1 -> PairingFailure.AuthFailed          // AUTH_FAILED (wrong PIN)
+            2, 3, 7, 8 -> PairingFailure.Rejected   // AUTH_REJECTED, AUTH_CANCELED, REPEATED_ATTEMPTS, REMOTE_AUTH_CANCELED
+            4 -> PairingFailure.NotReachable        // REMOTE_DEVICE_DOWN
+            6 -> PairingFailure.Timeout             // AUTH_TIMEOUT
+            else -> PairingFailure.Unknown
         }
 
         private fun Int.toBondStateDescription() = when(this) {
@@ -1680,10 +1804,10 @@ internal class ClientConnection(): BittelProtocol {
         handler.postDelayed(runnable, StardustPackage.DELAY_TS)
     }
 
-    private fun resetBondTimer() {
+    private fun resetBondTimer(timeoutMs: Long) {
         bondHandler.removeCallbacks(bondRunnable)
         bondHandler.removeCallbacksAndMessages(null)
-        bondHandler.postDelayed(bondRunnable, bondTimeout)
+        bondHandler.postDelayed(bondRunnable, timeoutMs)
     }
 
     fun removeBondTimer() {
