@@ -14,6 +14,7 @@ import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.config.SnifferMode
+import com.commcrete.stardust.transport.PairedDeviceTracker
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -192,30 +193,88 @@ object SharedPreferencesUtil {
         getPrefs().edit { putString(KEY_USER_ID, userId) }
     }
 
+    // ── Paired radio identity ────────────────────────────────────────────────
+    // Two copies: the bittel_device / bittel_device_name preferences (primary) and the
+    // bittelMacAddress / bittelName fields of the saved app user (backup). Getters fall back to
+    // the backup when the primary is missing. Writes use commit() — the address is what startup
+    // reconnects from, and it is often written moments before the user leaves the app.
+
+    /**
+     * Saves the paired radio's address. When it differs from the saved one, the old radio's name
+     * is cleared so it can't label the new radio — save the new name AFTER calling this.
+     */
     fun setBittelDevice(bittelDevice : String) {
-        val isNewDeviceConnection = getBittelDevice() != bittelDevice
-        if(isNewDeviceConnection) {
-            getPrefs().edit { putString(KEY_BEETLE_DEVICE, bittelDevice) }
+        val previous = getBittelDevice()
+        val isNewDeviceConnection = previous != bittelDevice
+        if (isNewDeviceConnection && !previous.isNullOrBlank()) clearBittelDeviceName()
+        if (getPrefs().getString(KEY_BEETLE_DEVICE, null) != bittelDevice) {
+            getPrefs().edit(commit = true) { putString(KEY_BEETLE_DEVICE, bittelDevice) }
         }
-        setConnectedToUnknownDevice(isNewDeviceConnection)
+        updateAppUserBackup { it.bittelMacAddress = bittelDevice }
+        // A new radio is now saved twice — at bond time and again at service discovery. Skip the
+        // flag on that second save once, so "connected to unknown device" still reads true for
+        // the first connection, as when only the service-discovery save existed.
+        if (isNewDeviceConnection) {
+            newDeviceFlagHeldFor = bittelDevice
+            setConnectedToUnknownDevice(true)
+        } else if (newDeviceFlagHeldFor == bittelDevice) {
+            newDeviceFlagHeldFor = null
+        } else {
+            setConnectedToUnknownDevice(false)
+        }
+        PairedDeviceTracker.refresh()
     }
 
+    @Volatile
+    private var newDeviceFlagHeldFor: String? = null
+
     fun removeBittelDevice() : Boolean {
-        getPrefs().edit { remove(KEY_BEETLE_DEVICE) }
+        getPrefs().edit(commit = true) { remove(KEY_BEETLE_DEVICE) }
+        updateAppUserBackup { it.bittelMacAddress = null }
+        PairedDeviceTracker.refresh()
         return true
     }
 
+    /** Saves the paired radio's display name. Blank names are ignored so a known name is never erased. */
     fun setBittelDeviceName(bittelDeviceName : String){
-        getPrefs().edit { putString(KEY_BEETLE_DEVICE_NAME, bittelDeviceName) }
+        if (bittelDeviceName.isBlank()) return
+        if (getPrefs().getString(KEY_BEETLE_DEVICE_NAME, null) != bittelDeviceName) {
+            getPrefs().edit(commit = true) { putString(KEY_BEETLE_DEVICE_NAME, bittelDeviceName) }
+        }
+        updateAppUserBackup { it.bittelName = bittelDeviceName }
+        PairedDeviceTracker.refresh()
     }
 
+    /** The paired radio's name, from the preference or else the app-user backup; "" if unknown. */
     fun getBittelDeviceName() : String {
-        return getPrefs().getString(KEY_BEETLE_DEVICE_NAME, "") ?: ""
+        getPrefs().getString(KEY_BEETLE_DEVICE_NAME, null)?.takeIf { it.isNotBlank() }?.let { return it }
+        return RegisteredUserUtils.currentUserFlow.value?.bittelName?.takeIf { it.isNotBlank() } ?: ""
     }
 
     fun removeBittelDeviceName() : Boolean {
-        getPrefs().edit { remove(KEY_BEETLE_DEVICE_NAME) }
+        clearBittelDeviceName()
+        PairedDeviceTracker.refresh()
         return true
+    }
+
+    private fun clearBittelDeviceName() {
+        getPrefs().edit(commit = true) { remove(KEY_BEETLE_DEVICE_NAME) }
+        updateAppUserBackup { it.bittelName = null }
+    }
+
+    /**
+     * Applies [change] to the saved app user's backup fields and persists it, only when that
+     * actually changes something. Mutates the instance already in RegisteredUserUtils, so the user
+     * StateFlow doesn't re-emit for a backup write. Synchronized with [setAppUser] /
+     * [removeAppUser] so a backup write can never resurrect a user that logout just removed.
+     */
+    @Synchronized
+    private fun updateAppUserBackup(change: (RegisterUser) -> Unit) {
+        val user = RegisteredUserUtils.currentUserFlow.value ?: return
+        val before = user.bittelMacAddress to user.bittelName
+        change(user)
+        if (before == (user.bittelMacAddress to user.bittelName)) return
+        getPrefs().edit(commit = true) { putString(KEY_APP_USER, user.toJson()) }
     }
 
     fun setLicenses(licenses : String){
@@ -243,19 +302,35 @@ object SharedPreferencesUtil {
         return getPrefs().edit { putString(KEY_INITIAL_DEVICE_ID, deviceId) }
     }
 
+    /**
+     * The paired radio's address, from the preference or else the app-user backup. Falls back only
+     * when the preference is absent/blank — a legacy "empty" marker is returned as-is.
+     */
     fun getBittelDevice() : String?{
-        return getPrefs().getString(KEY_BEETLE_DEVICE, "")
+        val primary = getPrefs().getString(KEY_BEETLE_DEVICE, "")
+        if (!primary.isNullOrBlank()) return primary
+        return RegisteredUserUtils.currentUserFlow.value?.bittelMacAddress?.takeIf { it.isNotBlank() } ?: primary
     }
 
     fun setFirebaseToken(token : String){
         getPrefs().edit { putString(KEY_FIREBASE_TOKEN, token) }
     }
 
+    @Synchronized
     fun setAppUser(appUser : RegisterUser) {
+        // Callers build a fresh RegisterUser (e.g. on every init address exchange); carry the
+        // paired-radio backup over so rebuilding the user never drops it.
+        if (appUser.bittelMacAddress.isNullOrBlank()) {
+            appUser.bittelMacAddress = getBittelDevice()?.takeIf { it.isNotBlank() }
+        }
+        if (appUser.bittelName.isNullOrBlank()) {
+            appUser.bittelName = getBittelDeviceName().takeIf { it.isNotBlank() }
+        }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
     }
 
+    @Synchronized
     fun removeAppUser() : Boolean{
         RegisteredUserUtils.updateRegisteredUser(null)
         getPrefs().edit { remove(KEY_APP_USER) }

@@ -63,6 +63,9 @@ internal class ClientConnection(): BittelProtocol {
         const val WRITE_ERROR_CODE = 2147483647
         /** Hidden `BluetoothDevice.EXTRA_REASON` on ACTION_BOND_STATE_CHANGED; unofficial, best effort. */
         private const val EXTRA_UNBOND_REASON = "android.bluetooth.device.extra.REASON"
+        /** Standard GAP service / Device Name characteristic — the radio's own name. */
+        private val GAP_SERVICE_UUID: UUID = UUID.fromString("00001800-0000-1000-8000-00805f9b34fb")
+        private val DEVICE_NAME_CHAR_UUID: UUID = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb")
 
         // Safety valve: if a GATT op's completion callback never arrives, advance the queue anyway
         // so one lost callback can't wedge all subsequent writes.
@@ -292,6 +295,7 @@ internal class ClientConnection(): BittelProtocol {
 
     init {
         initBleStatus()
+        registerNameChangeReceiver()
     }
 
     private fun gettCallback () : BluetoothGattCallback{
@@ -457,6 +461,30 @@ internal class ClientConnection(): BittelProtocol {
                     completeGattOp()
                 }
 
+                // Only the Device Name read (readDeviceNameIfUnknown) issues reads. API 33+ calls the
+                // value overload, whose default would forward to the deprecated one — neither calls
+                // super, so the op completes exactly once.
+                override fun onCharacteristicRead(
+                    gatt: BluetoothGatt,
+                    characteristic: BluetoothGattCharacteristic,
+                    value: ByteArray,
+                    status: Int
+                ) {
+                    onDeviceNameRead(characteristic.uuid, value, status)
+                    completeGattOp()
+                }
+
+                @Deprecated("Deprecated in API 33")
+                override fun onCharacteristicRead(
+                    gatt: BluetoothGatt?,
+                    characteristic: BluetoothGattCharacteristic?,
+                    status: Int
+                ) {
+                    @Suppress("DEPRECATION")
+                    onDeviceNameRead(characteristic?.uuid, characteristic?.value, status)
+                    completeGattOp()
+                }
+
                 override fun onReliableWriteCompleted(gatt: BluetoothGatt?, status: Int) {
                     super.onReliableWriteCompleted(gatt, status)
                 }
@@ -499,13 +527,63 @@ internal class ClientConnection(): BittelProtocol {
             deviceLastDigit = it.takeLast(2)
             uuid = Characteristics.getWriteChar(deviceLastDigit)
         }
-        deviceName?.let { name ->
-            val resolvedName = name.ifEmpty {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) mDevice?.alias else mDevice?.name
+        mDevice?.let { persistIdentity(it, deviceName) }
+    }
+
+    /**
+     * Best name currently known for [device]: the advertised/scan name ([hint]), then the alias
+     * (Android 11+; a user label from Settings, else the name), then the cached name. Null when
+     * Android hasn't resolved any yet — the GATT Device Name read and the name-change receiver
+     * fill it in later.
+     */
+    @SuppressLint("MissingPermission")
+    private fun bestKnownName(device: BluetoothDevice, hint: String?): String? {
+        hint?.takeIf { it.isNotBlank() }?.let { return it }
+        if (BlePermissions.hasConnectPermission(context)) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                device.alias?.takeIf { it.isNotBlank() }?.let { return it }
             }
-            resolvedName?.let { SharedPreferencesUtil.setBittelDeviceName(it) }
+            device.name?.takeIf { it.isNotBlank() }?.let { return it }
         }
-        mDevice?.address?.let { SharedPreferencesUtil.setBittelDevice(it) }
+        return null
+    }
+
+    /**
+     * When no name is saved yet, asks the radio itself: the standard GAP Device Name, read over the
+     * link we already have. Queued after the CCCD write, so it never delays notifications/init.
+     */
+    @SuppressLint("MissingPermission")
+    private fun readDeviceNameIfUnknown(gatt: BluetoothGatt?) {
+        if (gatt == null || SharedPreferencesUtil.getBittelDeviceName().isNotBlank()) return
+        val characteristic = gatt.getService(GAP_SERVICE_UUID)?.getCharacteristic(DEVICE_NAME_CHAR_UUID)
+        if (characteristic == null) {
+            Log.d(LOG_TAG, "Device Name characteristic not exposed; name stays unknown for now")
+            return
+        }
+        enqueueGattOp(GattOp("read:device-name") { gatt.readCharacteristic(characteristic) })
+    }
+
+    private fun onDeviceNameRead(uuid: UUID?, value: ByteArray?, status: Int) {
+        if (uuid != DEVICE_NAME_CHAR_UUID) return
+        if (status != BluetoothGatt.GATT_SUCCESS || value == null) {
+            Log.w(LOG_TAG, "Device Name read failed, status=$status")
+            return
+        }
+        val name = String(value, Charsets.UTF_8).trim { it.isWhitespace() || it == '\u0000' }
+        if (name.isEmpty()) return
+        Log.d(LOG_TAG, "Device Name read from radio: $name")
+        if (deviceName.isNullOrBlank()) deviceName = name
+        // Fill only — a name already saved (scan name or user alias) wins.
+        if (SharedPreferencesUtil.getBittelDeviceName().isBlank()) SharedPreferencesUtil.setBittelDeviceName(name)
+    }
+
+    /**
+     * Saves [device] as the paired radio. Address first: a changed address clears the previous
+     * radio's name, and a blank name is ignored, so a known name is never lost.
+     */
+    private fun persistIdentity(device: BluetoothDevice, hint: String?) {
+        SharedPreferencesUtil.setBittelDevice(device.address)
+        bestKnownName(device, hint)?.let { SharedPreferencesUtil.setBittelDeviceName(it) }
     }
 
     /**
@@ -541,6 +619,7 @@ internal class ClientConnection(): BittelProtocol {
         setDevice()
         updateConnectionState(gatt)
         enableNotifications(gatt)
+        readDeviceNameIfUnknown(gatt)
         if(bluetoothStateObserver == null) initBleStatus()
         Log.d("StardustDataManager", "isDisconnected() ${isDisconnected() }")
         val shouldTrigger = isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()
@@ -1019,6 +1098,7 @@ internal class ClientConnection(): BittelProtocol {
 
     fun release() {
         removeBluetoothStateObserver()
+        runCatching { context.applicationContext.unregisterReceiver(nameChangeReceiver) }
         disconnectFromBLEDevice(disconnectByForce = true)
     }
 
@@ -1053,6 +1133,7 @@ internal class ClientConnection(): BittelProtocol {
             closeBondGatt()
 
             if (device.bondState == BluetoothDevice.BOND_BONDED) {
+                persistIdentity(device, deviceName)
                 PairingTracker.paired(address)
                 BleManager.isPaired.value = true
                 connectDevice(device)
@@ -1157,10 +1238,42 @@ internal class ClientConnection(): BittelProtocol {
         Scopes.getMainCoroutine().launch {
             BleManager.isPaired.value = true
         }
+        // Before connecting, so setDevice() sees it. Falls back to the saved name: after a restart
+        // the cached device name can still be null for a radio bonded before it resolved.
+        this.deviceName = connectedDevice.name?.takeIf { it.isNotBlank() }
+            ?: SharedPreferencesUtil.getBittelDeviceName().takeIf { it.isNotBlank() }
         // Direct first (fast when the radio is on and near), escalating to a patient background
         // connect only if that doesn't land — the radio may still be off/out of range.
         connectDevicePatiently(connectedDevice)
-        this.deviceName = connectedDevice.name
+    }
+
+    /**
+     * Fills in the saved radio's name when Android resolves or changes it. Registered for the life
+     * of this instance — unlike the bond receiver it must work after a restart, which is exactly
+     * when a radio bonded without a name gets one.
+     */
+    private val nameChangeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != BluetoothDevice.ACTION_NAME_CHANGED) return
+            val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
+            val saved = SharedPreferencesUtil.getBittelDevice()
+            if (!device.address.equals(saved, ignoreCase = true)) return
+            val name = intent.getStringExtra(BluetoothDevice.EXTRA_NAME)?.takeIf { it.isNotBlank() } ?: return
+            Log.d(LOG_TAG, "name resolved for saved radio ${device.address}: $name")
+            if (deviceName.isNullOrBlank()) deviceName = name
+            SharedPreferencesUtil.setBittelDeviceName(name)
+        }
+    }
+
+    private fun registerNameChangeReceiver() {
+        val filter = IntentFilter(BluetoothDevice.ACTION_NAME_CHANGED)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.applicationContext.registerReceiver(nameChangeReceiver, filter, RECEIVER_EXPORTED)
+            } else {
+                context.applicationContext.registerReceiver(nameChangeReceiver, filter)
+            }
+        }.onFailure { Log.w(LOG_TAG, "name-change receiver not registered", it) }
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {
@@ -1205,6 +1318,10 @@ internal class ClientConnection(): BittelProtocol {
                         pendingBondAddress = null
                         removeBondTimer()
                         device?.let {
+                            // Save now, not at service discovery: if the user leaves the app before
+                            // the link comes up, startup must still find this radio. The name may
+                            // not be resolved yet; it's filled in once it is.
+                            persistIdentity(it, deviceName)
                             PairingTracker.paired(it.address)
                             Scopes.getDefaultCoroutine().launch {
                                 Scopes.getMainCoroutine().launch {

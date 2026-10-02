@@ -52,6 +52,10 @@ object PairingRepository {
      * (Bluetooth off, adapter missing, or CONNECT permission not granted). Callers MUST treat
      * `null` as "unknown" — never as "none" — otherwise reconciliation would wrongly wipe the
      * saved device whenever Bluetooth happens to be off.
+     *
+     * The saved device counts regardless of its name: a radio can finish bonding before Android
+     * resolves its name, and filtering it out by name made [reconcile] treat it as unbonded and
+     * erase the saved identity on the next start.
      */
     @SuppressLint("MissingPermission")
     private fun bondedStardustDevices(): List<BluetoothDevice>? {
@@ -59,8 +63,11 @@ object PairingRepository {
         val manager = DataManager.appContext.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
         val adapter = manager?.adapter ?: return null
         if (!adapter.isEnabled) return null
+        val saved = savedAddress()
         return try {
-            adapter.bondedDevices.orEmpty().filter { isStardust(it) }
+            adapter.bondedDevices.orEmpty().filter {
+                isStardust(it) || it.address.equals(saved, ignoreCase = true)
+            }
         } catch (e: SecurityException) {
             Timber.tag(TAG).w(e, "Missing BLUETOOTH_CONNECT; cannot read bonded devices")
             null

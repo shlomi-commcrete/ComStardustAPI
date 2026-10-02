@@ -695,6 +695,11 @@ object DataManager : StardustAPI, PttInterface {
         return getClientConnection().cancelPairing()
     }
 
+    override fun pairedDevice(): StateFlow<com.commcrete.stardust.transport.PairedDevice?> {
+        checkInitialized()
+        return com.commcrete.stardust.transport.PairedDeviceTracker.state
+    }
+
     @Deprecated(
         "Use connect(address), which also covers already-bonded radios.",
         ReplaceWith("connect(device.device.address)")

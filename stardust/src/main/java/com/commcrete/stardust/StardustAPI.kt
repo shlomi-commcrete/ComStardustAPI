@@ -12,6 +12,7 @@ import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.transport.ConnectionState
 import com.commcrete.stardust.transport.DiscoveredDevice
+import com.commcrete.stardust.transport.PairedDevice
 import com.commcrete.stardust.transport.PairingState
 import com.commcrete.stardust.transport.ScanState
 import com.commcrete.stardust.util.Carrier
@@ -186,6 +187,12 @@ interface StardustAPI {
      * [disconnectFromDevice] instead.
      */
     fun cancelPairing(): Boolean
+
+    /**
+     * The radio this app is paired with (address + display name), or null when none. Emits again
+     * when the name is resolved after pairing, so show `name ?: <your fallback>` and let it update.
+     */
+    fun pairedDevice(): StateFlow<PairedDevice?>
 
     @Deprecated(
         "Collect scanForDevices() instead: it reports failures and already-bonded radios on the " +

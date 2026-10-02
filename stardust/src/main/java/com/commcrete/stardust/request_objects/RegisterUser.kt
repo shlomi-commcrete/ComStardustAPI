@@ -14,6 +14,16 @@ class RegisterUser (
 
     var deviceId: String? = _deviceId?.let { normalizeId((it)) }
         set(value) { field = value ?.let { normalizeId(it) } }
+
+    /**
+     * Backup copy of the paired radio's display name. The primary copy is the
+     * `bittel_device_name` preference; this one is read only when that comes back empty.
+     * Maintained by [com.commcrete.stardust.util.SharedPreferencesUtil] — don't set directly.
+     */
+    var bittelName: String? = null
+
+    /** Backup copy of the paired radio's MAC address (primary: the `bittel_device` preference). */
+    var bittelMacAddress: String? = null
 }
 
 
