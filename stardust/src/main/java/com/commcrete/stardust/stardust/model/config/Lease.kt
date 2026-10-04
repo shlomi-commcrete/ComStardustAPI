@@ -1,11 +1,12 @@
 package com.commcrete.stardust.stardust.model.config
 
-import java.util.Locale
+import java.math.BigDecimal
+import java.math.RoundingMode
 
 /**
- * One satellite frequency lease: a TX/RX center-frequency pair (MHz, 4 decimal places), mirroring
- * the C core's `sb_lease_t`. Kept as formatted strings so dedup and output match the reference
- * exactly.
+ * One satellite frequency lease: a TX/RX center-frequency pair (MHz, truncated to at most 5
+ * decimal places), mirroring
+ * the C core's `sb_lease_t`.
  */
 data class Lease(val tx: String, val rx: String)
 
@@ -33,8 +34,7 @@ object LeaseCalculator {
             if (out.size >= MAX_LEASES) break
 
             // Slot 3 (ST) and any non-RD entry carry no lease of their own.
-            //if (xcvr.rdIndex < 1 || xcvr.rdIndex > 3) continue
-            if(xcvr.carrier.type == CarrierType.ST) continue
+            if (xcvr.rdIndex < 1 || xcvr.rdIndex > 3) continue
             val bandwidth = xcvr.bandwidthOption?.takeIf { it.supportsLeases } ?: continue
 
             for (lease in xcvrLeases(xcvr.txFrequency, xcvr.rxFrequency, xcvr.carrier.index, bandwidth.carriers)) {
@@ -61,13 +61,15 @@ object LeaseCalculator {
         var li = first
         while (li <= last && out.size < MAX_LEASES) {
             val offsetMhz = (li * BANDWIDTH_KHZ - backKhz) / 1000.0
-            val tx = Math.round((txMhz + TX_BASE_MHZ + offsetMhz) * 10000.0) / 10000.0
-            val rx = Math.round((rxMhz + RX_BASE_MHZ + offsetMhz) * 10000.0) / 10000.0
+            val tx = txMhz + TX_BASE_MHZ + offsetMhz
+            val rx = rxMhz + RX_BASE_MHZ + offsetMhz
             out.add(Lease(tx = formatMhz(tx), rx = formatMhz(rx)))
             li++
         }
         return out
     }
 
-    private fun formatMhz(value: Double): String = String.format(Locale.US, "%.4f", value)
+    // Truncates (no rounding) to at most 5 decimal places, dropping trailing zeros.
+    private fun formatMhz(value: Double): String =
+        BigDecimal.valueOf(value).setScale(5, RoundingMode.DOWN).stripTrailingZeros().toPlainString()
 }
