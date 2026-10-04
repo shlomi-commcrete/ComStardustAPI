@@ -55,13 +55,16 @@ object SOSUtils {
     }
 
     fun ackSOS(stardustAPIPackage: StardustAPIPackage) {
-        val carrierRD = stardustAPIPackage.carrier?.deliveryType ?: return
         val sosMessage = StardustPackageUtils.getStardustPackage(
             source = stardustAPIPackage.senderId,
             destination = stardustAPIPackage.receiverId,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS_ACK)
             .apply {
-                stardustControlByte.stardustDeliveryType = carrierRD
+                // No carrier: fall back to the radio's configured SOS transceiver.
+                val deliveryType = stardustAPIPackage.carrier?.deliveryType
+                    ?: ConfigurationUtils.bittelConfiguration.value?.sosXCVR
+                        ?.let { StardustDeliveryType.entries.getOrNull(it) }
+                deliveryType?.let { stardustControlByte.stardustDeliveryType = it }
             }
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
