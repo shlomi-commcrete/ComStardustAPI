@@ -33,7 +33,8 @@ object LeaseCalculator {
             if (out.size >= MAX_LEASES) break
 
             // Slot 3 (ST) and any non-RD entry carry no lease of their own.
-            if (xcvr.rdIndex < 1 || xcvr.rdIndex > 3) continue
+            //if (xcvr.rdIndex < 1 || xcvr.rdIndex > 3) continue
+            if(xcvr.carrier.type == CarrierType.ST) continue
             val bandwidth = xcvr.bandwidthOption?.takeIf { it.supportsLeases } ?: continue
 
             for (lease in xcvrLeases(xcvr.txFrequency, xcvr.rxFrequency, xcvr.carrier.index, bandwidth.carriers)) {
