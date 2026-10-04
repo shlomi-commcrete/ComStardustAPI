@@ -553,11 +553,11 @@ object SharedPreferencesUtil {
         return value.times(1000)
     }
 
-    fun setLastUser(userId: String) {
-        getPrefs().edit { putString(KEY_LAST_USER, userId) }
+    fun setLastOpenedChat(chatId: String) {
+        getPrefs().edit { putString(KEY_LAST_USER, chatId) }
     }
 
-    fun getLastUser(): String {
+    fun getLastOpenedChat(): String {
         return getPreferencesString(KEY_LAST_USER, "") ?: ""
     }
 

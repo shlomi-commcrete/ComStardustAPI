@@ -139,7 +139,7 @@ class UARTManager() {
                     val currentCtsStatus = serialPort?.cts
                     if (currentCtsStatus != previousCtsStatus) {
                         previousCtsStatus = currentCtsStatus
-                        Timber.tag("SerialInputOutputManager").d("CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
+                        android.util.Log.d("PttButton", "CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
                         onCTSChange.onCTSChanged(currentCtsStatus == true)
                     }
                     Thread.sleep(50)

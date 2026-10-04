@@ -237,8 +237,13 @@ object DataManager : StardustAPI, PttInterface {
         return RecorderUtils.startRecording(chatId, stardustAPIPackage.receiverId, stardustAPIPackage.carrier, codeType)
     }
 
+    override fun setPttTarget(chatId: String, destination: String) {
+        this.chatId = chatId
+        this.destination = destination
+    }
+
     @SuppressLint("MissingPermission")
-    override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File) {
+    override fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?) {
         checkInitialized()
         RecorderUtils.stopRecording(chatId = chatId, receiverId = stardustAPIPackage.receiverId, carrier = stardustAPIPackage.carrier, codeType = codeType, file = file)
     }

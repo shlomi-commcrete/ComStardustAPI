@@ -66,10 +66,17 @@ class ReceiveStream(
             var previousArrivalNs = 0L
             var firstWriteNs = 0L
             var audioWrittenMs = 0.0
+            // True when the sender ended the stream (terminal frame / idle) rather than someone
+            // closing it from outside — only then is the buffered tail played out before release.
+            var endedNaturally = false
             try {
                 while (isActive) {
                     // No frame for idleTimeoutMs → treat the stream as ended and evict.
-                    val result = withTimeoutOrNull(idleTimeoutMs) { incoming.receiveCatching() } ?: break
+                    val result = withTimeoutOrNull(idleTimeoutMs) { incoming.receiveCatching() }
+                    if (result == null) {
+                        endedNaturally = true
+                        break
+                    }
                     val arrival = result.getOrNull() ?: break          // channel closed
                     val frame = arrival.frame
                     val dequeuedNs = System.nanoTime()
@@ -112,10 +119,13 @@ class ReceiveStream(
                     }
                     previousArrivalNs = arrival.arrivedNs
                     index++
-                    if (frame.isTerminal) break                        // end-of-PTT
+                    if (frame.isTerminal) {                            // end-of-PTT
+                        endedNaturally = true
+                        break
+                    }
                 }
             } finally {
-                closeInternal()
+                if (endedNaturally) closeAfterPlayout() else closeInternal()
             }
         }
     }
@@ -133,6 +143,27 @@ class ReceiveStream(
     /** Externally evict this stream (registry over-budget reclaim). */
     fun close() {
         closeInternal()
+    }
+
+    /**
+     * Natural end: let the track play out what it already holds before releasing it — closing right
+     * after the last write dropped up to ~0.5 s of every received PTT.
+     *
+     * [onClosed] runs FIRST, before the play-out: it removes this stream from the registry, so the
+     * sender's next burst gets a fresh stream instead of being fed into this one, which no longer reads
+     * [incoming]. It also ends the receive store's record for this key before that next burst starts
+     * one. A cancellation during the play-out (pipeline shutdown) still releases the track.
+     */
+    private suspend fun closeAfterPlayout() {
+        if (!closed.compareAndSet(false, true)) return
+        incoming.close()
+        runCatching { decoder.close() }
+        onClosed(key)
+        try {
+            sink.drain()
+        } finally {
+            runCatching { sink.close() }
+        }
     }
 
     private fun closeInternal() {

@@ -111,7 +111,9 @@ object BittelUsbManager2 : BittelProtocol {
 
     private fun isStardustDataDevice(device: UsbDevice): Boolean {
         val productName = device.productName?.lowercase() ?: return false
-        return productName.contains("ft231x usb uart ptt") ||
+        // Exact match, as on master: the radio's bare FTDI name. "ft231x usb uart ptt" is the
+        // J-box and belongs to isJboxAudioDevice — it must not match here.
+        return productName == "ft231x usb uart" ||
             productName.contains("stardust")
     }
 

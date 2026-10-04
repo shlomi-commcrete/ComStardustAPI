@@ -51,6 +51,8 @@ object RecorderUtils {
      */
     private val recordingInProgress = java.util.concurrent.atomic.AtomicBoolean(false)
 
+    fun isRecordingInProgress(): Boolean = recordingInProgress.get()
+
     var dirToSaveFile: File =
         File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "Stardust_ptt_files")
             .also { it.mkdirs() }

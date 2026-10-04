@@ -138,7 +138,7 @@ internal object UsbDiag {
             it.contains("ft231x usb uart ptt") || it.contains("j-box") || it.contains("jbox")
         } == true
         val data = lower?.let {
-            it.contains("ft231x usb uart ptt") || it.contains("stardust")
+            it == "ft231x usb uart" || it.contains("stardust")
         } == true
 
         log(

@@ -27,10 +27,14 @@ class Codec2PlaybackSink : PlaybackSink {
     private var track: AudioTrack? = null
     private var enhancer: LoudnessEnhancer? = null
     private val gainRef = AtomicReference(Gain.UNITY)
+    private var sampleRateHz = 0
+    /** Frames handed to the track so far (mono 16-bit: one sample per frame) — what [drain] waits for. */
+    @Volatile private var framesWritten = 0L
 
     @SuppressLint("NewApi")
     override fun open(sampleRateHz: Int) {
         if (track != null) return
+        this.sampleRateHz = sampleRateHz
         val minBuffer = AudioTrack.getMinBufferSize(sampleRateHz, CHANNEL, ENCODING)
         val bufferBytes = maxOf(minBuffer, sampleRateHz) // ~0.5 s of 16-bit mono
         val built = AudioTrack.Builder()
@@ -65,6 +69,11 @@ class Codec2PlaybackSink : PlaybackSink {
             val written = current.write(samples, offset, samples.size - offset)
             if (written <= 0) break else offset += written
         }
+        framesWritten += offset
+    }
+
+    override suspend fun drain() {
+        track?.playOutAndStop(framesWritten, sampleRateHz)
     }
 
     override fun setGain(gain: Gain) {

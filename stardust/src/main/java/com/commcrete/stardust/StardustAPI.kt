@@ -107,7 +107,13 @@ interface StardustAPI {
     // Send to the SDK
     fun sendMessage(chatId: String, stardustAPIPackage: StardustAPIPackage, text : String)
     fun startPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE): File?
-    fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File)
+    /**
+     * Where the hardware PTT button (J-box CTS) talks when pressed. Call it when a chat opens; each
+     * [startPTT] also updates it. The sender is always the registered user.
+     */
+    fun setPttTarget(chatId: String, destination: String)
+    /** [file] is whatever [startPTT] returned — null on the v2 pipeline, which still needs this call. */
+    fun stopPTT(chatId: String, stardustAPIPackage: StardustAPIPackage, codeType: RecorderUtils.CODE_TYPE, file: File?)
 
     /**
      * Set the playback level of ONE incoming PTT stream, independently of every other stream.

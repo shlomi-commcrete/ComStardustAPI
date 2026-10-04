@@ -25,5 +25,13 @@ interface PlaybackSink : AutoCloseable {
     /** How many times playout ran dry since [open] (`AudioTrack.getUnderrunCount`); -1 when unknown. Diagnostics only. */
     val underrunCount: Int get() = -1
 
+    /**
+     * End of stream: suspend until everything already [write]n has actually played, bounded by its own
+     * duration plus slack. [write] returns once PCM is in the track's buffer, not once it is heard, so
+     * closing straight after the last write drops up to a buffer's worth of the tail. Call [close]
+     * afterwards; skip this on an eviction, where an immediate stop is the point.
+     */
+    suspend fun drain() {}
+
     override fun close()
 }
