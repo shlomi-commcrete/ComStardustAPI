@@ -11,6 +11,7 @@ import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.AdminUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
@@ -435,13 +436,37 @@ object StardustInitConnectionHandler {
 
     private fun finishAdminModeUpdate() {
         AdminUtils.updateBittelAdminMode()
-        // NOTE: updateBlePort() is intentionally NOT called here. It used to fire twice — once
-        // synchronously here right after enqueuing SET_ADMIN_MODE, and again from
-        // StardustPackageHandler.handleAdminModeResponse when the ACK arrives — which risked
-        // shipping a "switch to USB / disable BLE" packet over a live BLE link if
-        // TransportRegistry.active()/isUsbEnabled() returned stale USB. The ACK-driven path is
-        // the sole authoritative source now.
         stop()
+        setPortModeOnHandshakeDone()
+    }
+
+    /**
+     * Tells the radio which port to use as soon as the handshake finishes.
+     *
+     * This can't wait for the SET_ADMIN_MODE ACK ([StardustPackageHandler.handleAdminModeResponse]):
+     * the radio does not always send it. In the 2026-10-04 capture it never arrived in either BLE
+     * session, so the port mode was only sent by the 20s PortUtils loop, 18s late in one session
+     * and never in the other. If the ACK does arrive, the radio just gets the same port twice,
+     * which is harmless.
+     *
+     * Uses the transport-specific method, never a shared interface: the BLE and USB methods do
+     * OPPOSITE things (BLE keeps the radio in BLE mode; USB switches it to USB / disables BLE).
+     */
+    private fun setPortModeOnHandshakeDone() {
+        when {
+            BleManager.isUsbEnabled() -> {
+                Log.d("ConfigDebug", "handshake done → setUsbPortModeOnRadio")
+                BittelUsbManager2.setUsbPortModeOnRadio()
+            }
+            BleManager.isBluetoothConnected() -> {
+                Log.d("ConfigDebug", "handshake done → setBlePortModeOnRadio")
+                conn.setBlePortModeOnRadio()
+            }
+            else -> Log.w("ConfigDebug",
+                "handshake done but no transport matched, port mode NOT sent — " +
+                    "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
+                    "isBluetoothEnabled=${conn.isBluetoothEnabled()}")
+        }
     }
 
     // ───────────────────────── Utilities ─────────────────────────

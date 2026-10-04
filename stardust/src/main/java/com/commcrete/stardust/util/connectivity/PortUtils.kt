@@ -143,6 +143,14 @@ object PortUtils {
                         DataManager.getClientConnection().setBlePortModeOnRadio()
                         Timber.tag("startUpdatingPort").d("BLE active → setBlePortModeOnRadio")
                     }
+                    // Must not be silent while the handshake says a radio is connected: a session
+                    // that is Ready over BLE while isBleConnected / isBluetoothEnabled() reads false
+                    // lands here and never sets the port mode (seen in the 2026-10-04 capture).
+                    // Plain disconnected ticks stay quiet.
+                    StardustInitConnectionHandler.isConnected() -> android.util.Log.w("ConfigDebug",
+                        "startUpdatingPort tick: init connected but no transport matched, port mode NOT sent — " +
+                            "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
+                            "isBluetoothEnabled=${DataManager.getClientConnection().isBluetoothEnabled()}")
                 }
                 delay(20000)
             }
