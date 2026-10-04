@@ -59,7 +59,7 @@ object LegacyConfigFormat : ConfigWireFormat {
         val carrierByte = reader.u8()
         val carrierIndex = carrierByte and 0b0000_0011           // bits 0-1
         val carrierOn = (carrierByte and 0b0000_0100) != 0       // bit 2
-        val rdIndex = ((carrierByte and 0b0001_1000) shr 3).takeUnless { it == 0 } ?: slot     // bits 3-4
+        val rdIndex = (carrierByte and 0b0001_1000) shr 3     // bits 3-4
 
         return Xcvr(
             txFrequency = txFrequency,
@@ -93,7 +93,9 @@ object V24_0_7ConfigFormat : ConfigWireFormat {
 
         val carrierByte = reader.u8()
         val carrierOn = (carrierByte and 0b0000_0100) != 0       // bit 2
-        val rdIndex = ((carrierByte and 0b0001_1000) shr 3).takeUnless { it == 0 } ?: slot              // bits 3-4
+        // bits 3-4, 1-based. Firmware leaves them 0, so fall back to the slot: slots 0-2 are RD1-3, slot 3 (ST) is not an RD.
+        val rdIndex = ((carrierByte and 0b0001_1000) shr 3).takeUnless { it == 0 }
+            ?: if (slot < 3) slot + 1 else 0
         val bandwidth = (carrierByte shr 5) and 0b0000_0111      // bits 5-7
 
         val extByte = reader.u8()
