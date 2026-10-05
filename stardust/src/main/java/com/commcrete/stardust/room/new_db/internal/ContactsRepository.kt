@@ -491,7 +491,9 @@ internal class ContactsRepository(
     ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(target) ?: return@withContext
         val trimmed = newName.trim()
-        if (trimmed.isBlank() || trimmed.equals(target.name, ignoreCase = true)) return@withContext
+        // Exact comparison: a case-only change ("alpha" → "Alpha") is a real rename. Callers that
+        // treat callsigns case-insensitively (ContactConflictEngine.renameOpFor) filter it out first.
+        if (trimmed.isBlank() || trimmed == target.name) return@withContext
         contactsDao.renameContact(contactId, trimmed)
         val chatId = chatIdForContact(target.type, contactId)
         chatId?.let { chatsDao.renameChatById(it, trimmed) }
