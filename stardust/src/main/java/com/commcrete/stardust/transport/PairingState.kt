@@ -46,7 +46,11 @@ sealed interface PairingState {
     /** The system pairing dialog (or notification) is being shown; waiting for the user. */
     data class AwaitingConfirmation(val address: String) : PairingState
 
-    /** Bonded (or was already bonded). Connection continues on `connectionState()`. */
+    /**
+     * Bonded — or, for a radio that was already bonded, its link came up. Connection continues on
+     * `connectionState()`. An already-bonded radio that doesn't answer within 20s ends in
+     * [Failed] with [PairingFailure.NotReachable] instead.
+     */
     data class Paired(val address: String) : PairingState
 
     /** Terminal for this attempt; stays until the next `connect()`. */

@@ -164,9 +164,24 @@ object ConnectionManager {
             Timber.tag(TAG).d("link lost over $transport — auto-reconnect not desired, staying down")
             return
         }
-        openReconnectGrace()
+        // Anchored to the FIRST loss of an outage, same rule as requestReconnect: the window is only
+        // cleared by reaching LinkUp/Syncing/Ready, so a genuine new drop after a recovery still
+        // gets a fresh one. Re-opening it here put the state back on Searching for another 30s
+        // every time a retry failed (captured 2026-10-05 16:10-16:12: drop 16:10:03, retry fails
+        // 16:10:10, Disconnected only at 16:10:40; next retry fails 16:11:55 → Searching again).
+        if (reconnectGraceUntilMs == 0L) openReconnectGrace()
         recompute()
         if (shouldAutoReconnect()) requestReconnect(transport, "link lost")
+    }
+
+    /**
+     * A connect attempt failed without the link ever coming up — a retry inside an outage, not a
+     * new one. Retries under the same rules as [onLinkLost] but never touches the grace window, so
+     * the state keeps the Searching → Disconnected course set by the original drop.
+     */
+    fun onConnectAttemptFailed(transport: TransportId, reason: String) {
+        if (!autoReconnectDesired) return
+        if (shouldAutoReconnect()) requestReconnect(transport, reason, withGrace = false)
     }
 
     /**

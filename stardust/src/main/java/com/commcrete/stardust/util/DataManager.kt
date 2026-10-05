@@ -670,8 +670,10 @@ object DataManager : StardustAPI, PttInterface {
         this.bleScanner = null
 
         if (PairingRepository.adopt(address)) {
-            // Already bonded: no system dialog will come, the handshake continues on connectionState().
-            PairingTracker.paired(address)
+            // Already bonded: no system dialog will come. Stay Connecting until the link is actually
+            // up — the radio may be off, and adopt's patient connect would otherwise leave the host
+            // on Paired + Searching forever. Bounded at 20s, then Failed(NotReachable).
+            getClientConnection().startConnectDeadline(address)
             return PairingTracker.state
         }
 

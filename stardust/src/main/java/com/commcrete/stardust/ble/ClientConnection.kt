@@ -182,6 +182,9 @@ internal class ClientConnection(): BittelProtocol {
     private val bondReachTimeout : Long = 20_000
     private val bondBondingTimeout : Long = 30_000
     private val bondConfirmTimeout : Long = 60_000
+    // connect() to an already-bonded radio: how long the link may take to come up (see
+    // startConnectDeadline).
+    private val connectReachTimeout : Long = 30_000
     private val pingTimeout : Long = 10000
 
     private var bluetoothGattCallback: BluetoothGattCallback? = null
@@ -250,6 +253,13 @@ internal class ClientConnection(): BittelProtocol {
     // Guards connectGatt so exactly ONE connection can be in flight/active at a time. Must be a
     // CAS, not a plain boolean check — see connectDevice() for the double-connection this prevents.
     private val connectInFlight = AtomicBoolean(false)
+
+    /**
+     * True once the current client reached STATE_CONNECTED. Distinguishes a link that dropped
+     * (→ [ConnectionManager.onLinkLost]) from a connect attempt that never landed, e.g. status 133
+     * while the radio is off — which is a failed retry inside an outage, not a new outage.
+     */
+    private val linkUp = AtomicBoolean(false)
     var deviceName : String?  = ""
     private val servicesDiscoveredHandled = AtomicBoolean(false)
     private val initStartTriggered = AtomicBoolean(false)
@@ -291,6 +301,11 @@ internal class ClientConnection(): BittelProtocol {
     // once bonded. Android allows only a handful of GATT clients per process, so it must never leak.
     private var bondGatt: BluetoothGatt? = null
     private var bondReceiverRegistered = false
+
+    // Address of a connect() to an already-bonded radio still waiting for its link. Set only on
+    // that path, so abortBondAttempt knows a GATT connect — not a bond — is what to tear down.
+    @Volatile
+    private var adoptConnectAddress: String? = null
 
     val mapHRLR : MutableMap<String, Boolean> = mutableMapOf()
 
@@ -348,6 +363,16 @@ internal class ClientConnection(): BittelProtocol {
                         directConnectPending.set(false)
                         patientConnectJob?.cancel()
                         patientConnectJob = null
+                        linkUp.set(true)
+                        // A connect() to an already-bonded radio is answered here: the radio is
+                        // reachable, the handshake continues on connectionState().
+                        gatt?.device?.address?.let { addr ->
+                            if (adoptConnectAddress.equals(addr, ignoreCase = true) && PairingTracker.isActive(addr)) {
+                                adoptConnectAddress = null
+                                removeBondTimer()
+                                PairingTracker.paired(addr)
+                            }
+                        }
 
                         if (mtuRequested.compareAndSet(false, true)) {
                             val requested = gatt?.requestMtu(200)
@@ -357,6 +382,7 @@ internal class ClientConnection(): BittelProtocol {
                         // the exchange answers instead of waiting out a fixed delay.
                         scheduleServiceDiscovery(gatt, SERVICE_DISCOVERY_MTU_TIMEOUT_MS, "MTU callback timeout")
                     } else {
+                        val wasLinkUp = linkUp.getAndSet(false)
                         resetDiscoveryState()
                         // The link is down. Release the connect gate so a later reconnect can run —
                         // a drop that doesn't route through disconnectFromBLEDevice would otherwise
@@ -366,7 +392,8 @@ internal class ClientConnection(): BittelProtocol {
                         // rather than waiting out DIRECT_CONNECT_TIMEOUT_MS — the radio is off or out
                         // of range, which is exactly what the background connect is for. Must run
                         // AFTER the gate is released, or the escalated connectGatt is refused by it.
-                        if (directConnectPending.get()) {
+                        val escalated = directConnectPending.get()
+                        if (escalated) {
                             mDevice?.let { escalateToBackgroundConnect(it, "direct connect failed (status=$status)") }
                         }
                         Scopes.getMainCoroutine().launch {
@@ -382,7 +409,16 @@ internal class ClientConnection(): BittelProtocol {
                             // after, the host would still see one Disconnected emission — the exact
                             // flash this is meant to remove. It also asks for the reconnect now,
                             // instead of waiting out the next watchdog tick.
-                            ConnectionManager.onLinkLost(TransportId.BLE)
+                            if (wasLinkUp) {
+                                ConnectionManager.onLinkLost(TransportId.BLE)
+                            } else if (!escalated) {
+                                // A connect attempt that never landed (and nothing took over from
+                                // it): retry under the normal backoff, without treating it as a
+                                // fresh outage. An escalated attempt is already being retried by
+                                // the background connect, which a reconnect would tear down.
+                                Log.d("ConfigDebug", "connect attempt failed (status=$status) — link was never up")
+                                ConnectionManager.onConnectAttemptFailed(TransportId.BLE, "connect attempt failed (status=$status)")
+                            }
                             BleManager.updateStatus()
                         }
                     }
@@ -887,6 +923,7 @@ internal class ClientConnection(): BittelProtocol {
             return false
         }
         resetDiscoveryState()
+        linkUp.set(false)
         connectStartedAtMs = SystemClock.elapsedRealtime()
         pendingGatt = device.connectGatt(context, autoConnect, getBleGattCallback(device))
         return true
@@ -1019,6 +1056,9 @@ internal class ClientConnection(): BittelProtocol {
         gattConnection = null
         hasCallback = false
         connectInFlight.set(false)
+        // close() suppresses the disconnect callback, so the flag would otherwise survive into the
+        // next attempt and make its failure look like a dropped link.
+        linkUp.set(false)
 
         // ── Shared session state: belongs to whichever transport is active ──
         if (usbOwnsSession) {
@@ -1132,6 +1172,7 @@ internal class ClientConnection(): BittelProtocol {
             // A previous attempt that never finished must not leak its client or its timer.
             removeBondTimer()
             closeBondGatt()
+            adoptConnectAddress = null
 
             if (device.bondState == BluetoothDevice.BOND_BONDED) {
                 persistIdentity(device, deviceName)
@@ -1168,6 +1209,19 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     /**
+     * Bounds a host `connect()` to an already-bonded radio, whose connect has already been started
+     * by [PairingRepository.adopt]. That connect is the patient one startup uses — right when the
+     * radio may be switched on later, wrong when a user just tapped Connect and is waiting. The
+     * attempt stays Connecting; the GATT callback publishes Paired once the link is up, and if it
+     * isn't within [connectReachTimeout] the bond watchdog fails it as NotReachable and
+     * [abortBondAttempt] tears the connect down. [cancelPairing] goes through the same teardown.
+     */
+    fun startConnectDeadline(address: String) {
+        adoptConnectAddress = address
+        resetBondTimer(connectReachTimeout)
+    }
+
+    /**
      * Host-initiated cancel of an attempt still in Connecting / AwaitingConfirmation. Returns false
      * when no pairing is in flight (e.g. already Paired — disconnect instead).
      */
@@ -1189,6 +1243,14 @@ internal class ClientConnection(): BittelProtocol {
         removeBondTimer()
         closeBondGatt()
         if (pendingBondAddress.equals(address, ignoreCase = true)) pendingBondAddress = null
+        if (adoptConnectAddress.equals(address, ignoreCase = true)) {
+            adoptConnectAddress = null
+            // The patient connect never gives up by itself (it escalates to a background connect),
+            // so stop it — and keep the watchdog from quietly retrying a radio the user was just
+            // told is unreachable. disableAutoReconnect, not suppress: startup may still connect.
+            ConnectionManager.disableAutoReconnect()
+            disconnectFromBLEDevice(disconnectByForce = true)
+        }
         if (cancelOsBond) {
             runCatching {
                 val device = BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address)
@@ -1207,6 +1269,7 @@ internal class ClientConnection(): BittelProtocol {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun closeBondGatt() {
         bondGatt?.let {
             runCatching { it.disconnect() }
