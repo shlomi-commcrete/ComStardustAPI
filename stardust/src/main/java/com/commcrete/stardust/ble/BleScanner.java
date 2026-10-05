@@ -69,7 +69,10 @@ public class BleScanner {
         }
     };
 
-    /** Adds a scan result if it's one of our radios and not already collected. */
+    /**
+     * Collects a scan result if it's one of our radios.  A radio already in the list has its entry
+     * replaced, so the RSSI the host sees is from the latest sighting rather than the first.
+     */
     @SuppressLint("MissingPermission")
     private void addIfMatch(ScanResult result) {
         if (result == null || result.getDevice() == null) return;
@@ -78,7 +81,10 @@ public class BleScanner {
         String advertisedName = result.getScanRecord() != null ? result.getScanRecord().getDeviceName() : null;
         String deviceName = result.getDevice().getName();
         if (isStartWithBittle(advertisedName) || isStartWithBittle(deviceName)) {
-            if (!isContainScanResult(result)) {
+            int index = indexOfScanResult(result);
+            if (index >= 0) {
+                scanResults.set(index, result);
+            } else {
                 scanResults.add(result);
             }
         }
@@ -124,10 +130,12 @@ public class BleScanner {
     }
 
     private void notifyResults() {
+        // Copies, not the live list: startScan() clears it, and a LiveData observer still holding
+        // the previous value would otherwise see it change underneath it.
         // Unified stream (what hosts should collect) …
-        DeviceDiscovery.INSTANCE.onScanResults(getScanResults());
+        DeviceDiscovery.INSTANCE.onScanResults(new ArrayList<>(scanResults));
         // … and the deprecated LiveData, kept until hosts have migrated.
-        scanResultsLiveData.postValue(getScanResults());
+        scanResultsLiveData.postValue(new ArrayList<>(scanResults));
     }
 
     public MutableLiveData<List<ScanResult>> getScanResultsLiveData() {
@@ -224,6 +232,11 @@ public class BleScanner {
         List<ScanFilter> scanFilters = new ArrayList<>();
         scanFilters.add(new ScanFilter.Builder().build());
 
+        // Each scan starts from nothing. Without this, the first batch re-reports every radio seen
+        // since the scanner was created, undoing DeviceDiscovery.start()'s clear and resurrecting
+        // radios that have since gone away.
+        scanResults.clear();
+
         bluetoothLeScanner = scanner;
         bluetoothLeScanner.startScan(scanFilters, scanSettingsBuilder.build(), scanCallback);
         Log.i(TAG, "scanning started");
@@ -267,12 +280,17 @@ public class BleScanner {
     }
 
     public boolean isContainScanResult(ScanResult result) {
-        for (ScanResult scanResult : scanResults) {
-            if (scanResult.getDevice().getAddress().equals(result.getDevice().getAddress())) {
-                return true;
+        return indexOfScanResult(result) >= 0;
+    }
+
+    private int indexOfScanResult(ScanResult result) {
+        String address = result.getDevice().getAddress();
+        for (int i = 0; i < scanResults.size(); i++) {
+            if (scanResults.get(i).getDevice().getAddress().equals(address)) {
+                return i;
             }
         }
-        return false;
+        return -1;
     }
 
     private boolean isStartWithBittle(String name) {
