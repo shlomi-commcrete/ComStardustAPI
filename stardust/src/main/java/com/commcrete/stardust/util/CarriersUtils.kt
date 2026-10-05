@@ -61,7 +61,6 @@ object CarriersUtils {
             val type = xcvr.carrier.type
             carriers.add(Carrier(index = i, type = type, presetActiveFunctionality = options))
         }
-        carriers.add(Carrier(3, CarrierType.ST))
 
         return carriers
     }
@@ -134,7 +133,8 @@ object CarriersUtils {
     }
 
     private fun getLocalCarriersByPreset(presetIndex: Int) : List<Carrier>? {
-        return SharedPreferencesUtil.getCarriers(presetIndex)
+        // Filter ST: lists saved before ST was dropped from the carrier list still contain it.
+        return SharedPreferencesUtil.getCarriers(presetIndex)?.filter { it.type != CarrierType.ST }
     }
 
     private fun setLocalCarriersByPreset(presetIndex: Int, carriers: List<Carrier>) {

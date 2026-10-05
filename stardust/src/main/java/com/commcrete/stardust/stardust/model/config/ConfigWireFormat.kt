@@ -27,7 +27,7 @@ interface ConfigWireFormat {
         preset.currentPreset = CurrentPreset.fromValue(presetIndex)
         for (slot in 0..3) {
             val xcvr = parseXcvr(reader, slot)
-            preset.xcvrList.add(xcvr)
+            if(xcvr.carrier.type != CarrierType.ST) preset.xcvrList.add(xcvr)
         }
         return preset
     }
