@@ -131,6 +131,16 @@ interface ContactsDao {
     @Query("SELECT * FROM devices WHERE id = :deviceId LIMIT 1")
     suspend fun getDeviceById(deviceId: String): DeviceEntity?
 
+    /**
+     * Rewrites a device's model / serial in place.
+     *
+     * Not [upsertDevice]: a REPLACE is a delete-then-insert in SQLite, and the
+     * delete cascades through `app_contact_devices` — the device would come back
+     * with its details and without the contact it belonged to.
+     */
+    @Query("UPDATE devices SET model = :model, serial = :serial WHERE id = :deviceId")
+    suspend fun updateDeviceDetails(deviceId: String, model: String?, serial: String?): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertContactDevice(contactDevice: ContactDeviceEntity)
 

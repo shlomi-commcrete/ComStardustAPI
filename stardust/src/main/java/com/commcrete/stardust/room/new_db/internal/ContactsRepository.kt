@@ -427,6 +427,18 @@ internal class ContactsRepository(
                 batchId = batchId,
             )
         }
+        // Same device, new details — a radio re-issued with a corrected model or
+        // serial. Only the details move; the id and its contact link stay put, so
+        // this is an identity-neutral change and has no audit row.
+        if (original.hasDeviceId && updated.deviceId.equals(original.deviceId, ignoreCase = true) &&
+            (updated.model != original.model || updated.serial != original.serial)
+        ) {
+            contactsDao.updateDeviceDetails(
+                deviceId = original.deviceId,
+                model = updated.model.ifBlank { null },
+                serial = updated.serial.ifBlank { null },
+            )
+        }
     }
 
     /**
