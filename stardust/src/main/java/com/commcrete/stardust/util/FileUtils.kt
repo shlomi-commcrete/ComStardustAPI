@@ -3,7 +3,6 @@ package com.commcrete.stardust.util
 
 import android.content.Context
 import android.net.Uri
-import android.webkit.MimeTypeMap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -60,46 +59,8 @@ object FileUtils {
         }
     }
 
-    fun getMimeType(file: File): String {
-        val name = file.name
-        var extension = ""
-        val dotIndex = name.lastIndexOf('.')
-        if (dotIndex != -1 && dotIndex < name.length - 1) {
-            extension = name.substring(dotIndex + 1).lowercase()
-        }
-        // Special cases
-        // Fallbacks
-        // Let Android show anything that can handle it
-        when (extension) {
-            "log" -> {
-    // Treat .log as plain text
-                return "text/plain"
-            }
-
-            "xls" -> {
-                return "application/vnd.ms-excel"
-            }
-
-            "xlsx" -> {
-                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            }
-            // Default resolution via MimeTypeMap
-            else -> {
-                var mime: String? = null
-                if (!extension.isEmpty()) {
-                    mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension)
-                }
-                if (mime == null) {
-                    // Fallbacks
-                    if (name.endsWith(".log")) {
-                        return "text/plain"
-                    }
-                    return "*/*" // Let Android show anything that can handle it
-                }
-                return mime
-            }
-        }
-    }
+    /** See [FileOpenUtils.getMimeType]; open the file with [FileOpenUtils.buildOpenFileIntent]. */
+    fun getMimeType(file: File): String = FileOpenUtils.getMimeType(file.name)
 
     fun clearFile(folderName : String = "logs", fileName : String, fileType : String = ".txt"){
         val file = File(StardustStorage.internalDir(folderName), "$fileName$fileType")

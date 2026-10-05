@@ -286,8 +286,9 @@ internal class ClientConnection(): BittelProtocol {
     // us from reacting to bond changes on unrelated Bluetooth devices (e.g. the user's headset).
     private var pendingBondAddress: String? = null
 
-    // Fallback bond trigger (see bondToBleDevice) — held so it can be closed; Android allows only a
-    // handful of GATT clients per process.
+    // LE link a pairing attempt bonds over (see bondToBleDevice). Lives from the start of the attempt
+    // until it ends: closed by abortBondAttempt on failure/cancel/timeout, and after connectDevice
+    // once bonded. Android allows only a handful of GATT clients per process, so it must never leak.
     private var bondGatt: BluetoothGatt? = null
     private var bondReceiverRegistered = false
 
@@ -1144,15 +1145,19 @@ internal class ClientConnection(): BittelProtocol {
                 pendingBondAddress = address
                 registerBondStateReceiver()
                 resetBondTimer(bondReachTimeout)
-                // createBond() makes the phone start pairing right away, so the system dialog comes
-                // up as soon as the radio answers. It needs the stack to know the device is LE
-                // (true for anything seen in a scan); otherwise it may page over BR/EDR and fail,
-                // so fall back to opening an LE link and letting the radio request security.
-                val started = device.type == BluetoothDevice.DEVICE_TYPE_LE && device.createBond()
-                Log.d(LOG_TAG, "bondToBleDevice $address createBond=$started type=${device.type}")
-                if (!started) {
-                    bondGatt = device.connectGatt(context, false,
-                        object : BluetoothGattCallback() {}, BluetoothDevice.TRANSPORT_LE)
+                // Open the LE link first and only call createBond() once it is up (bondGattCallback).
+                // A bare createBond() lets the stack pick the transport from its own device cache,
+                // which can say "Unknown" even for a radio we just scanned (device.type == LE): it
+                // then pages over BR/EDR, the BLE-only radio never answers, and the bond fails with
+                // HCI_ERR_PAGE_TIMEOUT → REMOTE_DEVICE_DOWN → NotReachable. With an LE ACL up the
+                // stack bonds over that link.
+                Log.d(LOG_TAG, "bondToBleDevice $address opening LE link type=${device.type}")
+                bondGatt = device.connectGatt(context, false,
+                    bondGattCallback(address), BluetoothDevice.TRANSPORT_LE)
+                if (bondGatt == null) {
+                    Log.w(LOG_TAG, "bondToBleDevice $address: connectGatt returned null")
+                    PairingTracker.failed(address, PairingFailure.Unknown)
+                    abortBondAttempt(address, cancelOsBond = false)
                 }
             } catch (e: Exception) {
                 Log.e(LOG_TAG, "Failed to start bond flow", e)
@@ -1208,6 +1213,62 @@ internal class ClientConnection(): BittelProtocol {
             runCatching { it.close() }
         }
         bondGatt = null
+    }
+
+    /**
+     * Drives a pairing attempt from its LE link: bond once the link is up, and release the client
+     * as soon as the link is gone. Callbacks arrive on a binder thread and are handled on main,
+     * where every other touch of [bondGatt] happens.
+     */
+    private fun bondGattCallback(address: String) = object : BluetoothGattCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+            Scopes.getMainCoroutine().launch {
+                // A client from an earlier attempt: abortBondAttempt/bondToBleDevice already let go
+                // of it, so only make sure it is closed.
+                if (gatt !== bondGatt) {
+                    runCatching { gatt.close() }
+                    return@launch
+                }
+                val device = gatt.device
+                if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
+                    if (!PairingTracker.isActive(address)) {
+                        closeBondGatt()
+                        return@launch
+                    }
+                    // BONDING: the radio asked for security itself. BONDED: the bond receiver is
+                    // already taking it from here. Either way createBond() would only be refused.
+                    if (device.bondState == BluetoothDevice.BOND_NONE) {
+                        val started = device.createBond()
+                        Log.d(LOG_TAG, "pairing $address LE link up, createBond=$started")
+                    } else {
+                        Log.d(LOG_TAG, "pairing $address LE link up, bondState=${device.bondState.toBondStateDescription()}")
+                    }
+                    return@launch
+                }
+
+                // The link failed to come up or dropped. Release the client now; a dead client
+                // still counts against the per-process limit.
+                Log.w(LOG_TAG, "pairing $address LE link down status=$status state=$newState " +
+                        "bondState=${device.bondState.toBondStateDescription()}")
+                runCatching { gatt.close() }
+                bondGatt = null
+                // While BONDING the stack reports the outcome (with the real reason) through the bond
+                // receiver, and once BONDED connectDevice owns the link. Only a link lost before
+                // bonding began is ours to report.
+                if (PairingTracker.isActive(address) && device.bondState == BluetoothDevice.BOND_NONE) {
+                    PairingTracker.failed(address, PairingFailure.NotReachable)
+                    abortBondAttempt(address, cancelOsBond = false)
+                }
+            }
+        }
+    }
+
+    private fun Int.toBondStateDescription() = when(this) {
+        BluetoothDevice.BOND_BONDED -> "BONDED"
+        BluetoothDevice.BOND_BONDING -> "BONDING"
+        BluetoothDevice.BOND_NONE -> "NOT BONDED"
+        else -> "ERROR: $this"
     }
 
     private fun registerBondStateReceiver() {
@@ -1360,13 +1421,6 @@ internal class ClientConnection(): BittelProtocol {
             4 -> PairingFailure.NotReachable        // REMOTE_DEVICE_DOWN
             6 -> PairingFailure.Timeout             // AUTH_TIMEOUT
             else -> PairingFailure.Unknown
-        }
-
-        private fun Int.toBondStateDescription() = when(this) {
-            BluetoothDevice.BOND_BONDED -> "BONDED"
-            BluetoothDevice.BOND_BONDING -> "BONDING"
-            BluetoothDevice.BOND_NONE -> "NOT BONDED"
-            else -> "ERROR: $this"
         }
     }
 
