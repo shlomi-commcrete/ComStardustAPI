@@ -63,6 +63,20 @@ internal class ClientConnection(): BittelProtocol {
         const val WRITE_ERROR_CODE = 2147483647
         /** Hidden `BluetoothDevice.EXTRA_REASON` on ACTION_BOND_STATE_CHANGED; unofficial, best effort. */
         private const val EXTRA_UNBOND_REASON = "android.bluetooth.device.extra.REASON"
+
+        // Many radios send their own Security Request the moment the LE link is up. Calling
+        // createBond() at that same instant collides with it: the bond fails, and the stack's
+        // pairing state machine stays stuck until its 30s SMP timeout, refusing every pairing
+        // meanwhile. So give the radio this long to start pairing itself before we do.
+        private const val BOND_KICK_DELAY_MS = 1_000L
+
+        // A bond that fails this soon after our createBond() never reached the radio or the user:
+        // nobody can reject a system dialog this fast, and an unreachable radio takes seconds.
+        private const val STACK_BUSY_WINDOW_MS = 500L
+
+        // The stack's SMP timeout, i.e. how long a stuck pairing blocks new ones.
+        private const val STACK_BUSY_RETRY_SECONDS = 30
+
         /** Standard GAP service / Device Name characteristic — the radio's own name. */
         private val GAP_SERVICE_UUID: UUID = UUID.fromString("00001800-0000-1000-8000-00805f9b34fb")
         private val DEVICE_NAME_CHAR_UUID: UUID = UUID.fromString("00002a00-0000-1000-8000-00805f9b34fb")
@@ -301,6 +315,15 @@ internal class ClientConnection(): BittelProtocol {
     // once bonded. Android allows only a handful of GATT clients per process, so it must never leak.
     private var bondGatt: BluetoothGatt? = null
     private var bondReceiverRegistered = false
+
+    // Deferred createBond() for the current attempt (see bondGattCallback). Its own handler, because
+    // resetBondTimer/removeBondTimer clear every message on bondHandler.
+    private val bondKickHandler = Handler(Looper.getMainLooper())
+
+    // When and for whom we last called createBond(), to recognise a stack that refused it outright
+    // (see isStackBusyFailure).
+    private var createBondAddress: String? = null
+    private var createBondAtMs = 0L
 
     // Address of a connect() to an already-bonded radio still waiting for its link. Set only on
     // that path, so abortBondAttempt knows a GATT connect — not a bond — is what to tear down.
@@ -1271,6 +1294,8 @@ internal class ClientConnection(): BittelProtocol {
 
     @SuppressLint("MissingPermission")
     private fun closeBondGatt() {
+        // A pending createBond() belongs to this client; it must not fire for a later attempt.
+        bondKickHandler.removeCallbacksAndMessages(null)
         bondGatt?.let {
             runCatching { it.disconnect() }
             runCatching { it.close() }
@@ -1299,14 +1324,12 @@ internal class ClientConnection(): BittelProtocol {
                         closeBondGatt()
                         return@launch
                     }
-                    // BONDING: the radio asked for security itself. BONDED: the bond receiver is
-                    // already taking it from here. Either way createBond() would only be refused.
-                    if (device.bondState == BluetoothDevice.BOND_NONE) {
-                        val started = device.createBond()
-                        Log.d(LOG_TAG, "pairing $address LE link up, createBond=$started")
-                    } else {
-                        Log.d(LOG_TAG, "pairing $address LE link up, bondState=${device.bondState.toBondStateDescription()}")
-                    }
+                    // Don't createBond() yet: the radio may be sending its own Security Request
+                    // right now, and colliding with it wedges the stack (see BOND_KICK_DELAY_MS).
+                    Log.d(LOG_TAG, "pairing $address LE link up, bondState=" +
+                            "${device.bondState.toBondStateDescription()}, createBond in ${BOND_KICK_DELAY_MS}ms if still needed")
+                    bondKickHandler.removeCallbacksAndMessages(null)
+                    bondKickHandler.postDelayed({ kickBond(gatt, address) }, BOND_KICK_DELAY_MS)
                     return@launch
                 }
 
@@ -1326,6 +1349,35 @@ internal class ClientConnection(): BittelProtocol {
             }
         }
     }
+
+    /**
+     * Second half of the link-up step in [bondGattCallback]: bond only if the radio hasn't started
+     * pairing by itself. BONDING means it did (the bond receiver takes it from here); BONDED means
+     * it already finished. Either way createBond() would only be refused.
+     */
+    @SuppressLint("MissingPermission")
+    private fun kickBond(gatt: BluetoothGatt, address: String) {
+        if (gatt !== bondGatt || !PairingTracker.isActive(address)) return
+        val device = gatt.device
+        if (device.bondState != BluetoothDevice.BOND_NONE) {
+            Log.d(LOG_TAG, "pairing $address started by the radio, bondState=${device.bondState.toBondStateDescription()}")
+            return
+        }
+        createBondAddress = address
+        createBondAtMs = SystemClock.elapsedRealtime()
+        val started = device.createBond()
+        Log.d(LOG_TAG, "pairing $address createBond=$started")
+    }
+
+    /**
+     * True when a bond for [address] went BONDING → NONE within [STACK_BUSY_WINDOW_MS] of our own
+     * createBond(): the stack refused to pair at all, which in practice means an earlier pairing is
+     * still stuck inside it.
+     */
+    private fun isStackBusyFailure(address: String, previousBondState: Int): Boolean =
+        previousBondState == BluetoothDevice.BOND_BONDING &&
+            createBondAddress.equals(address, ignoreCase = true) &&
+            SystemClock.elapsedRealtime() - createBondAtMs <= STACK_BUSY_WINDOW_MS
 
     private fun Int.toBondStateDescription() = when(this) {
         BluetoothDevice.BOND_BONDED -> "BONDED"
@@ -1462,8 +1514,18 @@ internal class ClientConnection(): BittelProtocol {
                         disconnectFromBLEDevice(withStateUpdate = false)
                     } else{
                         if (eventAddress != null && PairingTracker.isActive(eventAddress)) {
-                            val reason = getIntExtra(EXTRA_UNBOND_REASON, -1).toPairingFailure()
-                            Log.w(LOG_TAG, "pairing $eventAddress failed: $bondTransition reason=$reason")
+                            val rawReason = getIntExtra(EXTRA_UNBOND_REASON, -1)
+                            val reason = if (isStackBusyFailure(eventAddress, previousBondState)) {
+                                PairingFailure.BluetoothBusy(STACK_BUSY_RETRY_SECONDS)
+                            } else {
+                                rawReason.toPairingFailure()
+                            }
+                            val sinceCreateBond =
+                                if (createBondAddress.equals(eventAddress, ignoreCase = true))
+                                    "${SystemClock.elapsedRealtime() - createBondAtMs}ms after createBond"
+                                else "radio-initiated"
+                            Log.w(LOG_TAG, "pairing $eventAddress failed: $bondTransition " +
+                                    "rawReason=$rawReason ($sinceCreateBond) -> $reason")
                             PairingTracker.failed(eventAddress, reason)
                             abortBondAttempt(eventAddress, cancelOsBond = false)
                         }

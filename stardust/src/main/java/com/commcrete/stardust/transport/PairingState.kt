@@ -18,6 +18,13 @@ sealed interface PairingFailure {
     data object AuthFailed : PairingFailure
     /** Pairing started but was not confirmed in time. */
     data object Timeout : PairingFailure
+    /**
+     * The phone's Bluetooth stack refused to start pairing because an earlier pairing is still
+     * stuck inside it. The stack pairs one device at a time and releases a stuck attempt only
+     * after its own ~30s timeout, so every retry in that window — on any radio — fails instantly.
+     * Tell the user to wait about [retryAfterSeconds] before trying again.
+     */
+    data class BluetoothBusy(val retryAfterSeconds: Int) : PairingFailure
     /** No user is logged in, so the SDK refuses to connect. */
     data object NotLoggedIn : PairingFailure
     /** Something on the phone stops the attempt; same vocabulary as [ConnectionState.Blocked]. */
