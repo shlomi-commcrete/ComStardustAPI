@@ -141,6 +141,31 @@ interface ContactsDao {
     @Query("UPDATE devices SET model = :model, serial = :serial WHERE id = :deviceId")
     suspend fun updateDeviceDetails(deviceId: String, model: String?, serial: String?): Int
 
+    /**
+     * Gives [contactId] the device [device], in place — no new contact, no new chat.
+     *
+     * An existing device row is updated rather than REPLACEd, for the same reason
+     * as [updateDeviceDetails]: the REPLACE's delete would cascade through every
+     * link to it. The link itself is a REPLACE on purpose — its primary key is the
+     * device id, so a device another contact held moves here rather than being
+     * shared. Callers strip it from that contact first so the move is audited.
+     */
+    @Transaction
+    suspend fun linkDevice(device: DeviceEntity, contactId: Int) {
+        val stored = getDeviceById(device.id)
+        if (stored != null) {
+            // A blank incoming detail is "not known", not "none" — keep the stored one.
+            updateDeviceDetails(
+                device.id,
+                device.model?.takeIf { it.isNotBlank() } ?: stored.model,
+                device.serial?.takeIf { it.isNotBlank() } ?: stored.serial,
+            )
+        } else {
+            upsertDevice(device)
+        }
+        upsertContactDevice(ContactDeviceEntity(deviceId = device.id, contactId = contactId))
+    }
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertContactDevice(contactDevice: ContactDeviceEntity)
 

@@ -427,17 +427,54 @@ internal class ContactsRepository(
                 batchId = batchId,
             )
         }
-        // Same device, new details — a radio re-issued with a corrected model or
-        // serial. Only the details move; the id and its contact link stay put, so
-        // this is an identity-neutral change and has no audit row.
-        if (original.hasDeviceId && updated.deviceId.equals(original.deviceId, ignoreCase = true) &&
-            (updated.model != original.model || updated.serial != original.serial)
-        ) {
-            contactsDao.updateDeviceDetails(
-                deviceId = original.deviceId,
-                model = updated.model.ifBlank { null },
-                serial = updated.serial.ifBlank { null },
-            )
+        val sameDevice = original.hasDeviceId && updated.deviceId.equals(original.deviceId, ignoreCase = true)
+        when {
+            // Same device, new details — a radio re-issued with a corrected model
+            // or serial. Only the details move; the id and its contact link stay
+            // put, so this is an identity-neutral change and has no audit row.
+            sameDevice -> if (updated.model != original.model || updated.serial != original.serial) {
+                contactsDao.updateDeviceDetails(
+                    deviceId = original.deviceId,
+                    model = updated.model.ifBlank { null },
+                    serial = updated.serial.ifBlank { null },
+                )
+            }
+
+            // A device gained, or swapped for another: link it to THIS contact in
+            // place. An Insert would merge into the contact too, but it also opens
+            // a second private chat for it. The old link is dropped first and
+            // recorded, so a swap reads back as strip + assign.
+            updated.hasDeviceId -> {
+                if (original.hasDeviceId) {
+                    contactsDao.removeDeviceLink(original.deviceId)
+                    identityLog.recordStrip(
+                        idKind = IdentityKind.DEVICE_ID,
+                        idValue = original.deviceId,
+                        fromContactId = contactId,
+                        fromName = original.name,
+                        fromChatId = chatIdForContact(original.type, contactId),
+                        source = source,
+                        batchId = batchId,
+                    )
+                }
+                val deviceId = normalizeIdOrNull(updated.deviceId) ?: return@withContext
+                contactsDao.linkDevice(
+                    DeviceEntity(
+                        id = deviceId,
+                        model = updated.model.ifBlank { null },
+                        serial = updated.serial.ifBlank { null },
+                    ),
+                    contactId,
+                )
+                identityLog.recordAssign(
+                    idKind = IdentityKind.DEVICE_ID,
+                    idValue = deviceId,
+                    toContactId = contactId,
+                    toName = updated.name.ifBlank { original.name },
+                    source = source,
+                    batchId = batchId,
+                )
+            }
         }
     }
 
@@ -480,8 +517,14 @@ internal class ContactsRepository(
         target: ContactDraft,
         source: String = IdentityLogSource.UNKNOWN,
         batchId: Long? = null,
+        /**
+         * [target]'s contact as resolved BEFORE the batch it belongs to ran. See
+         * `AppRepository.applyContactOperations` — resolving it here, afterwards,
+         * finds whoever holds the target's id now.
+         */
+        resolvedContactId: Int? = null,
     ) = withContext(Dispatchers.IO) {
-        val contactId = resolveContactId(target) ?: return@withContext
+        val contactId = resolvedContactId ?: resolveContactId(target) ?: return@withContext
         val chatId = chatIdForContact(target.type, contactId)
         val name = contactsDao.getContactById(contactId)?.name ?: target.name
         val effectiveType = target.effectiveType() ?: target.type
@@ -514,6 +557,11 @@ internal class ContactsRepository(
      */
     suspend fun contactIdForDraft(draft: ContactDraft): Int? = withContext(Dispatchers.IO) {
         resolveContactId(draft)
+    }
+
+    /** The chat of an already-resolved contact. */
+    suspend fun chatIdForContactId(type: ContactType, contactId: Int): String? = withContext(Dispatchers.IO) {
+        chatIdForContact(type, contactId)
     }
 
     private suspend fun chatIdForContact(type: ContactType, contactId: Int): String? = when (type) {

@@ -162,6 +162,29 @@ internal class IdentityLogRecorder(
         if (rows.isNotEmpty()) dao.log(rows)
     }
 
+    /** An identity mapping explicitly given to an existing [toContactId]. */
+    suspend fun recordAssign(
+        idKind: IdentityKind,
+        idValue: String?,
+        toContactId: Int,
+        toName: String?,
+        source: String = IdentityLogSource.UNKNOWN,
+        batchId: Long? = null,
+    ) = safely("recordAssign") {
+        val normalized = normalizeIdOrNull(idValue) ?: return@safely
+        dao.log(
+            ContactIdentityLogEntity(
+                kind = IdentityChangeKind.ASSIGNED,
+                idKind = idKind,
+                idValue = normalized,
+                toContactId = toContactId,
+                toName = toName,
+                source = source,
+                batchId = batchId,
+            )
+        )
+    }
+
     /** An identity mapping explicitly removed from [fromContactId]. */
     suspend fun recordStrip(
         idKind: IdentityKind,

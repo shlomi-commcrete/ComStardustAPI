@@ -254,21 +254,36 @@ class AppRepository(
         val source = IdentityLogSource.CONFLICT_RESOLUTION
         val batchId = identityLog.nextBatchId()
 
+        // Every delete target is resolved BEFORE anything is written. A target
+        // is a draft and resolves by its ids — and a delete is scheduled exactly
+        // when those ids have been moved to another contact earlier in this
+        // batch. Resolved afterwards, a device contact emptied by a Move finds
+        // the contact that just received its device, and deletes that instead.
+        val deleteTargets = deletes.map { d ->
+            val contactId = contacts.contactIdForDraft(d.target)
+            val chatId = contactId?.let { contacts.chatIdForContactId(d.target.type, it) }
+            Triple(d, contactId, chatId)
+        }
+
         for (u in updates) contacts.updateExistingContact(u.original, u.updated, source, batchId)
         for (r in renames) contacts.renameContactAndChat(r.target, r.newName, source, batchId)
 
         val toInsert = inserts.mapNotNull { it.contact.toFullContactData() }
         if (toInsert.isNotEmpty()) contacts.insertContactsWithChats(toInsert, source, batchId)
 
-        for (d in deletes) {
+        for ((d, fromContactId, sourceChatId) in deleteTargets) {
+            // Gone already, or never there: nothing of THIS contact to delete.
+            if (fromContactId == null) continue
+            // The insert this delete pairs with MERGED into the target: addContact
+            // matches an existing contact by the ids it brings, and those are the
+            // ids the target held. The target's row is now the incoming contact,
+            // so deleting it would delete what was just saved.
+            val reparentToContactId = d.reparentTo?.let { contacts.contactIdForDraft(it) }
+            if (reparentToContactId == fromContactId) continue
             val reparentToChatId = d.reparentTo?.let { contacts.chatIdForContactDraft(it) }
             if (reparentToChatId != null) {
-                val sourceChatId = contacts.chatIdForContactDraft(d.target)
                 if (sourceChatId != null && sourceChatId != reparentToChatId) {
-                    // Resolved before the move: the source contact is deleted
-                    // immediately afterwards and stops being resolvable.
-                    val fromContactId = contacts.contactIdForDraft(d.target)
-                    val toContactId = d.reparentTo?.let { contacts.contactIdForDraft(it) }
+                    val toContactId = reparentToContactId
                     val moved = messagesDao.reassignChat(sourceChatId, reparentToChatId)
                     identityLog.recordReparent(
                         fromChatId = sourceChatId,
@@ -283,7 +298,7 @@ class AppRepository(
                     )
                 }
             }
-            contacts.deleteContact(d.target, source, batchId)
+            contacts.deleteContact(d.target, source, batchId, resolvedContactId = fromContactId)
         }
 
         if (ops.any { it.touchesGroup() }) GroupsUtils.sendDeleteAllGroups()
