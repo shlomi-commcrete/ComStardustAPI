@@ -5,7 +5,8 @@ import com.commcrete.stardust.util.Carrier
 
 data class StardustAppEventPackage(
     var eventType: StardustAppEventType? = null,
-    var xcvr: Int = 0,
+    /** Transceiver position in the preset; null when the event did not carry one. */
+    var xcvr: Int? = null,
     var carrier: Carrier? = null,
     var preset: Int? = null,
     var armDelete: Int = 0,
@@ -24,7 +25,7 @@ data class StardustAppEventPackage(
         ArmDelete (6),
         Delete (7),
         PartialEraseFinished (8),
-        RxFinish (9);
+        TxEnd (9);
 
         companion object {
             fun fromByte(value: Byte): StardustAppEventType? {

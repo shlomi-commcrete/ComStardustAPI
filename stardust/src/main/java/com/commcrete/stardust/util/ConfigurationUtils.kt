@@ -58,7 +58,7 @@ object ConfigurationUtils {
         selectedPreset?.xcvrList?.getOrNull(carrier.index)?.bandwidthOption
 
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
-        stardustAppEventPackage.carrier = selectedPreset?.xcvrList?.getOrNull(stardustAppEventPackage.xcvr)?.carrier
+        stardustAppEventPackage.carrier = stardustAppEventPackage.xcvr?.let { selectedPreset?.xcvrList?.getOrNull(it) }?.carrier
     }
 
     private fun getLastPresets () : List<Preset>?{

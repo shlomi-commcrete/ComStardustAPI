@@ -6,6 +6,7 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.bittell.util.text_utils.getCharValue
+import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.FunctionalityType
@@ -44,6 +45,7 @@ import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SOSUtils
+import com.commcrete.stardust.util.TxEndGate
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,6 +71,32 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     private val handler : Handler = Handler(Looper.getMainLooper())
     private var savedPackage : StardustPackage? = null
 
+    /**
+     * Its own scope, not [handlerScope]: [cleanupOnDisconnect] cancels handlerScope's children,
+     * which would kill the assembler's consumer before it could settle the texts still open.
+     */
+    private val textAssembler = IncomingTextAssembler(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        sink = object : IncomingTextAssembler.Sink {
+            override suspend fun open(pkg: StardustAPIPackage, text: String): Long? =
+                DataManager.getAppRepo().saveMessage(pkg, MessageExtraData.Text(text), MessageState.RECEIVING)
+
+            override suspend fun append(messageId: Long, text: String) {
+                DataManager.getAppRepo().updateIncomingTextInFlight(messageId, text)
+            }
+
+            override suspend fun complete(messageId: Long?, pkg: StardustAPIPackage, text: String) {
+                if (messageId != null) {
+                    DataManager.getAppRepo().markIncomingTextReceived(messageId, text)
+                } else {
+                    DataManager.getAppRepo().saveMessage(pkg, MessageExtraData.Text(text), MessageState.RECEIVED)
+                }
+                PlayerUtils.playNotificationSound()
+                DataManager.getCallbacks()?.receiveMessage(pkg.copy(isLast = true), text)
+            }
+        },
+    )
+
     private fun resetTimer() {
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
@@ -90,7 +118,14 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         fileReceivers.values.forEach { it.failOnDisconnect() }
     }
 
+    /**
+     * Ends every multi-part text still being received, as RECEIVED with the parts that
+     * arrived: with the session gone no further part can join them. Safe to call more than once.
+     */
+    internal fun settleInFlightTexts() = textAssembler.settleAll()
+
     internal fun cleanupOnDisconnect() {
+        settleInFlightTexts()
         handlerScope.coroutineContext.cancelChildren()
         synchronized(packageProcessingLock) {
             savedPackage = null
@@ -268,11 +303,22 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private fun handleAppEvent(mPackage: StardustPackage) {
         val eventPackage = StardustAppEventParser().parseAppEvent(mPackage)
+        // Plain Log, not Timber: the TX/RX event timing has to be visible in logcat without the
+        // host planting a tree (`adb logcat -s AppEvent`).
+        Log.d("AppEvent", "type=${eventPackage.eventType} xcvr=${eventPackage.xcvr} sender=${eventPackage.senderID}")
 
         eventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
-                RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, RxFinish -> {
+                RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, TxEnd -> {
                     ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)
+                    // A multi-package send waiting on this transmission can move on now.
+                    // xcvr is the transceiver's position in the preset — the same index the
+                    // senders' Carrier carries (CarriersUtils.getCarriersByPreset).
+                    // TxEnd and TXFinish both end a transmission (TXFinish when the queue is now
+                    // empty — the usual case, since senders hand over one package at a time).
+                    if (sdPackage.eventType == TxEnd || sdPackage.eventType == TXFinish) {
+                        TxEndGate.onTxEnd(sdPackage.xcvr, sdPackage.eventType.toString())
+                    }
                 }
                 PresetChange -> {
                     sdPackage.getCurrentPreset()?.let {
@@ -747,23 +793,28 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
             handleSOS(mPackage)
         } else {
-            handlerScope.launch {
-                if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
+            if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
+                handlerScope.launch {
                     handleAck(
                         source = mPackage.getSourceAsString(),
                         destination = mPackage.getDestAsString(),
                         deliveryType = mPackage.stardustControlByte.stardustDeliveryType
                     )
                 }
-                val text = getCharValue(mPackage.getDataAsString())
-                try {
-                    DataManager.getAppRepo().saveMessage(pkg, MessageExtraData.Text(text), MessageState.RECEIVED)
-                    PlayerUtils.playNotificationSound()
-                    DataManager.getCallbacks()?.receiveMessage(pkg, text)
-                } catch (e: Exception) {
-                    Timber.tag("StardustPackageHandler").e(e, "Failed to save text message")
-                }
             }
+            // Queued here, on the receive thread, rather than from a coroutine: the parts of a
+            // long text must reach the assembler in the order they arrived.
+            textAssembler.onPart(
+                key = IncomingTextAssembler.Key(
+                    senderId = mPackage.senderId,
+                    chatId = mPackage.chatId,
+                    groupId = mPackage.groupId,
+                    deliveryType = mPackage.stardustControlByte.stardustDeliveryType.value,
+                ),
+                pkg = pkg,
+                text = getCharValue(mPackage.getDataAsString()),
+                isLast = pkg.isLast,
+            )
         }
     }
 

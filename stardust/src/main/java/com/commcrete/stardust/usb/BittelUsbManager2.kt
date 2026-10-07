@@ -510,6 +510,11 @@ object BittelUsbManager2 : BittelProtocol {
         val sent = manager.send(bittelPackage.getStardustPackageToSend())
         if (sent) {
             UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
+            // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
+            android.util.Log.d(
+                "AppEvent",
+                "USB write ${bittelPackage.stardustOpCode} part=${bittelPackage.stardustControlByte.stardustPartType}"
+            )
         } else {
             UsbDiag.warn(
                 "sendDataToUart",

@@ -439,6 +439,25 @@ internal class MessagesRepository(
     }
 
     /**
+     * Writes the text assembled so far onto an incoming multi-part text's in-flight row.
+     * Returns false if the row had already settled — see [MessageDao.updateInFlightExtraData].
+     */
+    suspend fun updateIncomingTextInFlight(messageId: Long, text: String): Boolean =
+        withContext(Dispatchers.IO) {
+            messagesDao.updateInFlightExtraData(messageId, MessageExtraData.Text(text)) > 0
+        }
+
+    /**
+     * Settles an incoming multi-part text's in-flight row as RECEIVED with its whole [text].
+     * `epoch_time_ms` stays where the first part put it. Returns false if the row had already
+     * settled — see [MessageDao.markIncomingTransferReceived].
+     */
+    suspend fun markIncomingTextReceived(messageId: Long, text: String): Boolean =
+        withContext(Dispatchers.IO) {
+            messagesDao.markIncomingTransferReceived(messageId, MessageExtraData.Text(text)) > 0
+        }
+
+    /**
      * Settles an incoming transfer's in-flight row as RECEIVED, merging the [path] the
      * file landed at and its [fileSummary] into the row's extra_data. Returns false if
      * the write was refused because the row had already settled — see

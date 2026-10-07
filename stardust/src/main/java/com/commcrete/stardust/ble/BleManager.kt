@@ -133,6 +133,7 @@ object BleManager {
                 // unexpected drop never reaches disconnectFromDevice(), so this is the
                 // only place a battery-dies / out-of-range / unplug loss is settled.
                 DataManager.failInFlightFileTransfers()
+                DataManager.settleInFlightIncomingTexts()
                 ConfigurationUtils.reset()
                 CarriersUtils.reset()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)

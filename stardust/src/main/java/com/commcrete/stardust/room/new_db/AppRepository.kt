@@ -585,6 +585,20 @@ class AppRepository(
     ): Boolean = messages.markFileTransferFailed(messageId, failure)
 
     /**
+     * Writes the text assembled so far onto an incoming multi-part text's RECEIVING row.
+     * Returns false when the row had already settled and the write was refused.
+     */
+    suspend fun updateIncomingTextInFlight(messageId: Long, text: String): Boolean =
+        messages.updateIncomingTextInFlight(messageId, text)
+
+    /**
+     * Settles an incoming multi-part text's RECEIVING row as RECEIVED with its whole [text].
+     * Returns false when the row had already settled and the write was refused.
+     */
+    suspend fun markIncomingTextReceived(messageId: Long, text: String): Boolean =
+        messages.markIncomingTextReceived(messageId, text)
+
+    /**
      * Settles an incoming transfer's in-flight row as RECEIVED, filling in the [path] the
      * file landed at and its [fileSummary]. Returns false when the row had already
      * settled and the write was refused.

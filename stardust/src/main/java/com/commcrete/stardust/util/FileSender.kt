@@ -112,14 +112,51 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      */
     private val localRowSettled = AtomicBoolean(false)
 
+    /**
+     * The [TxEndGate] ticket of the package last handed to the radio, or null when there is
+     * none to wait on (nothing sent yet for this step, the package was dropped, or the send is
+     * over). Whichever of its TxEnd and the interval timer claims it sends the next package.
+     */
+    @Volatile private var pendingTicket: TxEndGate.Ticket? = null
+
+    /** The interval ran out. */
     private val runnable: Runnable = Runnable {
         // Cancelled between this runnable being posted and it running: send nothing and,
         // by not rescheduling, end the chain here.
         if (cancelled.get()) return@Runnable
-        mutablePackagesMap[current]?.let { sendPackage(it) }
+        // TxEnd already claimed this step and has posted the next send itself.
+        val ticket = pendingTicket
+        if (ticket != null && !ticket.claimByTimeout()) return@Runnable
+        sendNextPackage()
+    }
+
+    private fun sendNextPackage() {
+        mutablePackagesMap[current]?.let { sendPackage(it) } ?: run { pendingTicket = null }
         current += 1f
         resetSendTimer()
         updateStep(mutablePackagesMap.size)
+    }
+
+    /**
+     * Ticket for the package just queued: if its TxEnd beats the interval, cancel the timer
+     * FIRST and then send the next package, on the handler's thread like the timer itself.
+     */
+    private fun registerTxTicket(radio: Carrier) {
+        var ticket: TxEndGate.Ticket? = null
+        ticket = TxEndGate.register(radio, sendInterval) {
+            handler.post {
+                if (cancelled.get() || pendingTicket !== ticket) return@post
+                removeSendTimer()
+                sendNextPackage()
+            }
+        }
+        pendingTicket = ticket
+    }
+
+    /** The send is over: a TxEnd still to come must not send anything. */
+    private fun releaseTxTicket() {
+        pendingTicket?.claimByTimeout()
+        pendingTicket = null
     }
 
     /**
@@ -260,6 +297,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         val cancellation = cancellationSnapshot()
 
         removeSendTimer()
+        releaseTxTicket()
         sendingPercentage = 0
         current = 0f
         packagesSent = 0
@@ -487,6 +525,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = dataToSend)
             fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
+            registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
         }
         return true
@@ -566,6 +605,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 // whether the parity packages can still cover it.
                 packagesDropped++
                 Timber.tag("FileUpload").w("no radio to send on — dropped package (total dropped: $packagesDropped)")
+                // Nothing went out, so no TxEnd will come: the timer alone moves on.
+                pendingTicket = null
                 return
             }
             // Paced at exactly the airtime the estimate quotes, re-read per package so a
@@ -585,6 +626,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             if (stardustFilePackage.current in parityIndices) sparePackagesSent++
             else dataPackagesSent++
             Timber.tag("FileUpload").d("send: $packagesSent")
+            registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
         }
     }
@@ -606,6 +648,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun finishSending() {
         sendingPercentage = 0
         removeSendTimer()
+        releaseTxTicket()
         current = 0f
         val dropped = packagesDropped
         packagesSent = 0
@@ -647,6 +690,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun failTransfer(failure: FileReceiver.FileFailure) {
         if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
         removeSendTimer()
+        releaseTxTicket()
         Timber.tag("FileUpload").w("send failed: ${data.file.name} reason=$failure msgId=$messageId")
 
         val id = messageId

@@ -55,12 +55,14 @@ import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.StateFlow
 import timber.log.Timber
 import java.io.File
@@ -182,7 +184,6 @@ object DataManager : StardustAPI, PttInterface {
                 getAsciiValue(text) ))
             val splitData = splitMessage(data)
 
-            val messageNum = 1
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
 
             // Saved before the packages go out, because each of them carries this row's id and
@@ -208,7 +209,9 @@ object DataManager : StardustAPI, PttInterface {
                 Log.e(LOG_TAG, "Message could not be saved; sending it anyway", e)
                 null
             }
-            for (split in splitData) {
+            for ((index, split) in splitData.withIndex()) {
+                // 1-based: only the final part carries LAST and, when asked for, DEMAND_ACK.
+                val messageNum = index + 1
                 val mPackage = StardustPackageUtils.getStardustPackage(
                     source = stardustAPIPackage.senderId,
                     destination = stardustAPIPackage.receiverId,
@@ -220,8 +223,18 @@ object DataManager : StardustAPI, PttInterface {
                 mPackage.messageNumber = splitData.size
                 mPackage.idNumber = id
                 mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
+                // Registered before the send, so a fast TxEnd cannot arrive ahead of its
+                // ticket. The last part registers too: its TxEnd must be consumed here and not
+                // release another sender's package early.
+                val interval = TextPartPacing.sendIntervalMs(radio)
+                val transmitted = CompletableDeferred<Unit>()
+                val ticket = TxEndGate.register(radio, interval) { transmitted.complete(Unit) }
                 sendDataToBle(mPackage)
-                delay(if(radio.type == CarrierType.HR) 800 else 4000)
+                if (messageNum < splitData.size) {
+                    // Next part on TxEnd or when the interval runs out, whichever is first.
+                    // Claiming on timeout makes a TxEnd that lands just after it a no-op.
+                    if (withTimeoutOrNull(interval) { transmitted.await() } == null) ticket.claimByTimeout()
+                }
             }
         }
     }
@@ -344,6 +357,17 @@ object DataManager : StardustAPI, PttInterface {
     internal fun failInFlightFileTransfers() {
         failInFlightFileSends()
         bittelPackageHandler?.failInFlightFileReceivers()
+    }
+
+    /**
+     * Ends every multi-part text still being received when the radio went away, as RECEIVED
+     * with the parts that arrived — no further part can join it on a new session. Also drops
+     * the TxEnd tickets of the lost session.
+     */
+    internal fun settleInFlightIncomingTexts() {
+        bittelPackageHandler?.settleInFlightTexts()
+        // No TxEnd will answer anything still queued; senders fall back to their timers.
+        TxEndGate.clear()
     }
 
     private fun failInFlightFileSends() {
@@ -804,6 +828,7 @@ object DataManager : StardustAPI, PttInterface {
         failInFlightFileSends()
         // cleanupOnDisconnect() fails the in-flight receives before disposing them.
         bittelPackageHandler?.cleanupOnDisconnect()
+        TxEndGate.clear()
     }
 
     fun getPortUtils(): PortUtils {

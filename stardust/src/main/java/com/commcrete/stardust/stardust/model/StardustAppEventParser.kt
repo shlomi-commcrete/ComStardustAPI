@@ -47,7 +47,7 @@ class StardustAppEventParser : StardustParser() {
             StardustAppEventPackage.StardustAppEventType.TXStart,
             StardustAppEventPackage.StardustAppEventType.TXFinish,
             StardustAppEventPackage.StardustAppEventType.TXBufferFull,
-            StardustAppEventPackage.StardustAppEventType.RxFinish -> parseXcvr(eventParts.eventDataBytes, deviceEventPackage)
+            StardustAppEventPackage.StardustAppEventType.TxEnd -> parseXcvr(eventParts.eventDataBytes, deviceEventPackage)
 
             StardustAppEventPackage.StardustAppEventType.PresetChange -> parsePreset(eventParts.eventDataBytes, deviceEventPackage)
 
@@ -114,7 +114,8 @@ class StardustAppEventParser : StardustParser() {
     }
 
     private fun parseXcvr (byteArray: ByteArray, deviceEventPackage: StardustAppEventPackage){
-        deviceEventPackage.xcvr = byteArrayToInt(byteArray.reversedArray())
+        // A missing data byte must stay unknown, not read as transceiver 0.
+        deviceEventPackage.xcvr = byteArray.takeIf { it.isNotEmpty() }?.let { byteArrayToInt(it.reversedArray()) }
     }
 
     private fun parsePreset (byteArray: ByteArray, deviceEventPackage: StardustAppEventPackage){

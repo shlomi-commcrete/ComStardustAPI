@@ -1938,6 +1938,11 @@ internal class ClientConnection(): BittelProtocol {
             Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
             return false
         }
+        // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
+        android.util.Log.d(
+            "AppEvent",
+            "BLE write ${bittelPackage.stardustOpCode} part=${bittelPackage.stardustControlByte.stardustPartType} attempt=${count + 1}"
+        )
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when (val writeResult = gatt.writeCharacteristic(
                 bluetoothGattCharacteristic,

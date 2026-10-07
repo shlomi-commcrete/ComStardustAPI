@@ -302,6 +302,18 @@ interface MessageDao {
         extraData: MessageExtraData?,
     ): Int
 
+    /**
+     * Replaces the extra_data of a row still in flight — used by a multi-part text as each
+     * further part is appended. Guarded on RECEIVING so a part that arrives after the row was
+     * settled (by the sweep, or by a disconnect) cannot reopen it. Returns the number of rows
+     * written (0 = refused).
+     */
+    @Query("UPDATE messages SET extra_data = :extraData WHERE id = :messageId AND state = 4")
+    suspend fun updateInFlightExtraData(
+        messageId: Long,
+        extraData: MessageExtraData,
+    ): Int
+
     // ── Interrupted transfers (startup sweep) ────────────────────────────
 
     /**
