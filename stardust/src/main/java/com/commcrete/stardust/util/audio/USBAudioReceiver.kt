@@ -161,7 +161,9 @@ object ButtonListener {
             // Nowhere to send: no target set and no group chat. The stop beep tells the user the
             // press did nothing.
             Log.w(TAG, "press ignored — no PTT target and no group chat to fall back to")
-            runCatching { SoundPlayer.play(DataManager.appContext, R.raw.ptt_finished_beep) }
+            runCatching {
+                SoundPlayer.play(DataManager.appContext, R.raw.ptt_finished_beep, channel = SoundChannel.SYSTEM)
+            }
             publishPlayPtt(false)
             return
         }

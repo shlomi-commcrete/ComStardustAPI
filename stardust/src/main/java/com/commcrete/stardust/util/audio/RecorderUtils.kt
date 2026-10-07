@@ -251,7 +251,13 @@ object RecorderUtils {
         runCatching { DataManager.getCallbacks()?.pttMaxTimeoutReached() }
             .onFailure { Timber.tag(LOG_TAG).w(it, "pttMaxTimeoutReached threw") }
         // Dispatches to the main thread itself and self-releases, so it is safe from here.
-        runCatching { SoundPlayer.play(DataManager.appContext, com.commcrete.stardust.R.raw.ptt_finished_beep) }
+        runCatching {
+            SoundPlayer.play(
+                DataManager.appContext,
+                com.commcrete.stardust.R.raw.ptt_finished_beep,
+                channel = SoundChannel.SYSTEM,
+            )
+        }
         runCatching { pttInterface?.maxPTTTimeoutReached() }
             .onFailure { Timber.tag(LOG_TAG).w(it, "maxPTTTimeoutReached threw") }
     }

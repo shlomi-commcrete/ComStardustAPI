@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.PttAudioProcessor
+import com.commcrete.stardust.util.audio.SoundChannel
 import com.commcrete.stardust.util.audio.SoundPlayer
 
 /**
@@ -615,7 +616,11 @@ object PttSendManager {
                 "(${session.numPacketsSent} packets × ${AI_PACKET_DURATION_MS}ms > ${maxMs}ms)"
         )
         DataManager.getCallbacks()?.pttMaxTimeoutReached()
-        SoundPlayer.play(session.context, com.commcrete.stardust.R.raw.ptt_finished_beep)
+        SoundPlayer.play(
+            session.context,
+            com.commcrete.stardust.R.raw.ptt_finished_beep,
+            channel = SoundChannel.SYSTEM,
+        )
         onTimeout.invoke()
         viewModel?.maxPTTTimeoutReached()
     }

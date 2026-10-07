@@ -8,6 +8,7 @@ import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.R
+import com.commcrete.stardust.util.audio.SoundChannel
 import com.commcrete.stardust.util.audio.SoundPlayer
 import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
 import kotlinx.coroutines.Dispatchers
@@ -81,7 +82,9 @@ class MicCaptureSource(
         //
         // Skipped when the key-up already landed — a tap released inside the beep should not delay its
         // own teardown by playing one.
-        if (!stopRequested) SoundPlayer.playAndAwait(context, R.raw.ptt_started_beep)
+        if (!stopRequested) {
+            SoundPlayer.playAndAwait(context, R.raw.ptt_started_beep, channel = SoundChannel.SYSTEM)
+        }
 
         val plan = AudioCaptureConfig.buildCapturePlan(
             context = context,

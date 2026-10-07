@@ -1,6 +1,9 @@
 package com.commcrete.stardust.util.audio
 
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -62,7 +65,10 @@ object SoundPlayer {
      *                 context is preferred (see the class doc). Prefer
      *                 an application context to avoid leaking activities.
      * @param resId    raw resource id, e.g. `R.raw.ptt_finished_beep`.
-     * @param volume   linear volume in [0, 1]. Defaults to full (1f).
+     * @param volume   linear volume in [0, 1], relative to [channel]'s
+     *                 phone volume. Defaults to full (1f).
+     * @param channel  which phone volume slider the sound follows. PTT
+     *                 tones always pass [SoundChannel.SYSTEM].
      * @param onDone   optional callback invoked on the main thread when
      *                 playback finishes or fails.
      */
@@ -70,11 +76,12 @@ object SoundPlayer {
         context: Context,
         @RawRes resId: Int,
         volume: Float = 1f,
+        channel: SoundChannel = SoundChannel.MEDIA,
         onDone: (() -> Unit)? = null,
     ) {
         val appCtx = context.applicationContext
         mainHandler.post {
-            playOnMain(appCtx, resId, volume, onDone)
+            playOnMain(appCtx, resId, volume, channel, onDone)
         }
     }
 
@@ -91,10 +98,11 @@ object SoundPlayer {
         context: Context,
         @RawRes resId: Int,
         volume: Float = 1f,
+        channel: SoundChannel = SoundChannel.MEDIA,
         timeoutMs: Long = AWAIT_TIMEOUT_MS,
     ) {
         val finished = CompletableDeferred<Unit>()
-        play(context, resId, volume) { finished.complete(Unit) }
+        play(context, resId, volume, channel) { finished.complete(Unit) }
         if (withTimeoutOrNull(timeoutMs) { finished.await() } == null) {
             Log.w(TAG, "res=$resId did not finish within ${timeoutMs}ms — continuing")
         }
@@ -104,9 +112,11 @@ object SoundPlayer {
         context: Context,
         @RawRes resId: Int,
         volume: Float,
+        channel: SoundChannel,
         onDone: (() -> Unit)?,
     ) {
-        val mp = createPlayer(context, resId) ?: run {
+        val attributes = channel.audioAttributes()
+        val mp = createPlayer(context, resId, attributes) ?: run {
             onDone?.invoke()
             return
         }
@@ -114,14 +124,22 @@ object SoundPlayer {
         val clampedVol = volume.coerceIn(0f, 1f)
         mp.setVolume(clampedVol, clampedVol)
 
+        // Briefly duck whatever else is playing so the tone is not lost under it. Denied focus (e.g.
+        // during a call) does not stop the tone — it only means nothing is ducked.
+        val focus = requestFocus(context, attributes)
+        val finish = {
+            focus?.let { abandonFocus(context, it) }
+            onDone?.invoke()
+        }
+
         mp.setOnCompletionListener { player ->
             runCatching { player.release() }
-            onDone?.invoke()
+            finish()
         }
         mp.setOnErrorListener { player, what, extra ->
             Log.w(TAG, "playback error what=$what extra=$extra res=$resId")
             runCatching { player.release() }
-            onDone?.invoke()
+            finish()
             true
         }
 
@@ -129,8 +147,28 @@ object SoundPlayer {
             .onFailure {
                 Log.w(TAG, "mp.start() failed for res=$resId", it)
                 runCatching { mp.release() }
-                onDone?.invoke()
+                finish()
             }
+    }
+
+    private fun requestFocus(context: Context, attributes: AudioAttributes): AudioFocusRequest? {
+        val audioManager = context.getSystemService(AudioManager::class.java) ?: return null
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+            .setAudioAttributes(attributes)
+            .build()
+        val result = runCatching { audioManager.requestAudioFocus(request) }
+            .onFailure { Log.w(TAG, "requestAudioFocus threw", it) }
+            .getOrNull()
+        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.d(TAG, "audio focus not granted (result=$result) — playing without ducking")
+            return null
+        }
+        return request
+    }
+
+    private fun abandonFocus(context: Context, request: AudioFocusRequest) {
+        runCatching { context.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(request) }
+            .onFailure { Log.w(TAG, "abandonAudioFocusRequest threw", it) }
     }
 
     /**
@@ -141,21 +179,36 @@ object SoundPlayer {
      * may be uninitialized (its accessor throws) or simply be the same context. A create returning null
      * is not an error worth failing on — it is the normal "this context cannot see that resource".
      */
-    private fun createPlayer(fallback: Context, @RawRes resId: Int): MediaPlayer? {
+    private fun createPlayer(fallback: Context, @RawRes resId: Int, attributes: AudioAttributes): MediaPlayer? {
         val plugin = runCatching { DataManager.pluginContext }.getOrNull()
         if (plugin != null && plugin !== fallback) {
-            create(plugin, resId)?.let { return it }
+            create(plugin, resId, attributes)?.let { return it }
             Log.w(TAG, "res=$resId not playable from the plugin context — trying the caller's")
         }
-        return create(fallback, resId) ?: run {
-            Log.w(TAG, "MediaPlayer.create returned null for res=$resId — nothing will play")
+        return create(fallback, resId, attributes) ?: run {
+            Log.w(TAG, "could not prepare res=$resId — nothing will play")
             null
         }
     }
 
-    private fun create(context: Context, @RawRes resId: Int): MediaPlayer? =
-        runCatching { MediaPlayer.create(context, resId) }
-            .onFailure { Log.w(TAG, "MediaPlayer.create threw for res=$resId on $context", it) }
-            .getOrNull()
+    /**
+     * Built by hand instead of [MediaPlayer.create], which prepares the player before attributes can be
+     * set — and attributes set after prepare are ignored, leaving every sound on the media stream.
+     */
+    private fun create(context: Context, @RawRes resId: Int, attributes: AudioAttributes): MediaPlayer? {
+        val mp = MediaPlayer()
+        return runCatching {
+            mp.setAudioAttributes(attributes)
+            // Null when the resource is stored compressed in the APK; raw mp3s are not.
+            val afd = context.resources.openRawResourceFd(resId)
+                ?: error("openRawResourceFd returned null")
+            afd.use { mp.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
+            mp.prepare()
+            mp
+        }.onFailure {
+            Log.w(TAG, "MediaPlayer setup failed for res=$resId on $context", it)
+            runCatching { mp.release() }
+        }.getOrNull()
+    }
 }
 
