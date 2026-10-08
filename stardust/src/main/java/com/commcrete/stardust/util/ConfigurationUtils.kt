@@ -28,6 +28,14 @@ object ConfigurationUtils {
     var currentConfig : StardustConfigurationPackage? = null
     private var _currentPreset = MutableLiveData<CurrentPreset?> (null)
     var currentPreset: LiveData<CurrentPreset?> = _currentPreset
+
+    // Synchronous mirror of [currentPreset], for the same reason as [firmwareVersion]: the LiveData
+    // is posted, so [setDefaults] reading it straight after [setCurrentPresetLocal] saw the previous
+    // preset — null on first connect — and published an empty carrier list that stayed empty until
+    // something (a send calling getCarriers) happened to rebuild it.
+    @Volatile
+    var currentPresetNow: CurrentPreset? = null
+        private set
     var selectedPreset : Preset? = null
     var presetsList : List<Preset> = listOf()
 
@@ -42,6 +50,7 @@ object ConfigurationUtils {
     }
 
     fun setCurrentPresetLocal(preset : CurrentPreset) {
+        currentPresetNow = preset
         _currentPreset.postValue(preset)
         val config = currentConfig ?: return
 
@@ -81,9 +90,7 @@ object ConfigurationUtils {
             } else {
                 CarriersUtils.setPresetsWithoutChange()
             }
-            _currentPreset.value.let {
-                CarriersUtils.updateCurrentPresetList(it)
-            }
+            CarriersUtils.updateCurrentPresetList(currentPresetNow)
         }
     }
 
@@ -123,6 +130,7 @@ object ConfigurationUtils {
         licensedFunctionalities = mapOf()
         selectedPreset = null
         firmwareVersion = null
+        currentPresetNow = null
         Scopes.getMainCoroutine().launch {
             _currentPreset.value = null
             bittelVersion.value = ""

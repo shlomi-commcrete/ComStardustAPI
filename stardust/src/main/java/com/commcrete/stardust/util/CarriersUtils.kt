@@ -66,7 +66,8 @@ object CarriersUtils {
     }
 
     fun setLocalCarrierList () : List<Carrier>?{
-        val mutableList = getLocalCarriersByPreset(ConfigurationUtils.currentPreset.value?.value ?: 0)
+        // The synchronous mirror, not the posted LiveData — see ConfigurationUtils.currentPresetNow.
+        val mutableList = getLocalCarriersByPreset(ConfigurationUtils.currentPresetNow?.value ?: 0)
         Scopes.getMainCoroutine().launch {
             mutableList?.let { carrierList.value = it }
         }
