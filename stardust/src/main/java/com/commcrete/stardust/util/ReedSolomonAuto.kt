@@ -200,6 +200,30 @@ class ReedSolomon(
         return out
     }
 
+    /**
+     * Whether [decode] can rebuild every data packet with the packets at [missingIndices]
+     * absent. Exact, not a count: each block can stand to lose at most its own parity, so
+     * `missing <= Ptotal` overall is not enough once [planBlocks] has split the codeword —
+     * losing more than one block's parity inside that block is fatal however much spare the
+     * other blocks have.
+     */
+    fun canRecover(missingIndices: Set<Int>): Boolean {
+        var start = 0
+        for (block in blocks) {
+            val end = start + block.n
+            if (missingIndices.count { it in start until end } > block.p) return false
+            start = end
+        }
+        return true
+    }
+
+    /**
+     * The smallest parity any block carries: how many packets may be lost from the END of the
+     * codeword — where a cut-short send loses them — whichever block that tail falls in, and it
+     * still decodes. Zero with no parity.
+     */
+    fun minBlockParity(): Int = blocks.minOfOrNull { it.p } ?: 0
+
     // ---- encode full dataPackets (length Ktotal) into codeword (Ktotal+Ptotal) sequentially ----
     fun encode(dataPackets: List<Packet>): List<ByteArray> {
         require(dataPackets.size == Ktotal) { "encode expects exactly K=$Ktotal data packets" }

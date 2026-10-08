@@ -599,6 +599,46 @@ class AppRepository(
         messages.markIncomingTextReceived(messageId, text)
 
     /**
+     * Settles an incoming multi-part text that ended without its LAST part — gap timeout
+     * ([FileReceiver.FileFailure.MISSING]) or disconnect ([FileReceiver.FileFailure.DISCONNECTED])
+     * — as FAILED for [failure], keeping the parts that arrived. Returns false when the row had
+     * already settled and the write was refused.
+     */
+    suspend fun markIncomingTextFailed(
+        messageId: Long,
+        text: String,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = messages.markIncomingTextFailed(messageId, text, failure)
+
+    /**
+     * Records an outgoing send's progress — [extraData] carrying its updated
+     * [com.commcrete.stardust.room.new_db.message.SendProgress] — on its SENDING row. Returns
+     * false when the row had already settled and the write was refused.
+     */
+    suspend fun updateSendProgress(messageId: Long, extraData: MessageExtraData): Boolean =
+        messages.updateSendProgress(messageId, extraData)
+
+    /**
+     * Settles a SENDING row as [state] (SENT or FAILED), merging [extraData] when given.
+     * Returns false when the row had already settled — an ACK or a cancel got there first.
+     */
+    suspend fun settleOutgoing(
+        messageId: Long,
+        state: MessageState,
+        extraData: MessageExtraData? = null,
+    ): Boolean = messages.settleOutgoing(messageId, state, extraData)
+
+    /**
+     * Settles a send that stopped before its own end by the progress recorded on its row: SENT
+     * if every package the peer needs had gone out, FAILED for [failure] otherwise. Returns the
+     * state written, or null when the row had already settled.
+     */
+    suspend fun settleInterruptedSend(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): MessageState? = messages.settleInterruptedSend(messageId, failure)
+
+    /**
      * Settles an incoming transfer's in-flight row as RECEIVED, filling in the [path] the
      * file landed at and its [fileSummary]. Returns false when the row had already
      * settled and the write was refused.

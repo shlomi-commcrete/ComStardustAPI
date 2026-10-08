@@ -17,6 +17,7 @@ import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.SosAck
+import com.commcrete.stardust.room.new_db.message.settlementForInterruptedSend
 import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -458,6 +459,60 @@ internal class MessagesRepository(
         }
 
     /**
+     * Settles an incoming multi-part text that ended without its LAST part as FAILED for
+     * [failure], keeping the parts that did arrive as its [text]. Returns false if the row had
+     * already settled — see [MessageDao.markIncomingTransferFailed].
+     */
+    suspend fun markIncomingTextFailed(
+        messageId: Long,
+        text: String,
+        failure: FileReceiver.FileFailure,
+    ): Boolean = withContext(Dispatchers.IO) {
+        messagesDao.markIncomingTransferFailed(messageId, MessageExtraData.Text(text, failure = failure)) > 0
+    }
+
+    /**
+     * Writes [extraData] — carrying the send's current [SendProgress] — onto a SENDING row.
+     * Returns false if the row had already settled — see [MessageDao.updateSendProgress].
+     */
+    suspend fun updateSendProgress(messageId: Long, extraData: MessageExtraData): Boolean =
+        withContext(Dispatchers.IO) {
+            messagesDao.updateSendProgress(messageId, extraData) > 0
+        }
+
+    /**
+     * Settles a SENDING row as [state], merging [extraData] when given. Returns false if the
+     * row had already settled — see [MessageDao.settleOutgoing].
+     */
+    suspend fun settleOutgoing(
+        messageId: Long,
+        state: MessageState,
+        extraData: MessageExtraData? = null,
+    ): Boolean = withContext(Dispatchers.IO) {
+        messagesDao.settleOutgoing(messageId, state, extraData) > 0
+    }
+
+    /**
+     * Settles a send that stopped before its own end — a disconnect, a dead send loop — by the
+     * progress recorded on its row: SENT if every package the peer needs had gone out, FAILED
+     * for [failure] otherwise. The same rule the startup sweep applies
+     * ([settlementForInterruptedSend]).
+     *
+     * Returns the state written, or null when nothing was written: the row is gone, or had
+     * already settled (an ACK, a cancel) and keeps what it has.
+     */
+    suspend fun settleInterruptedSend(
+        messageId: Long,
+        failure: FileReceiver.FileFailure,
+    ): MessageState? = withContext(Dispatchers.IO) {
+        val row = messagesDao.getMessageById(messageId) ?: return@withContext null
+        if (row.state != MessageState.SENDING) return@withContext null
+        val settlement = settlementForInterruptedSend(row.extraData, failure)
+        val written = messagesDao.settleOutgoing(messageId, settlement.state, settlement.extraData)
+        if (written > 0) settlement.state else null
+    }
+
+    /**
      * Settles an incoming transfer's in-flight row as RECEIVED, merging the [path] the
      * file landed at and its [fileSummary] into the row's extra_data. Returns false if
      * the write was refused because the row had already settled — see
@@ -538,7 +593,7 @@ internal class MessagesRepository(
     // ─────────────────────────────────────────────────────────────────────
 
     /**
-     * Settles every row still marked RECEIVING from before [cutoffMs], and returns how many
+     * Settles every row still marked RECEIVING or SENDING from before [cutoffMs], and returns how many
      * were settled.
      *
      * An in-flight row is finalized by the receiver that created it — a PTT stream's actor, a
@@ -564,9 +619,13 @@ internal class MessagesRepository(
 
         var settled = 0
         rows.forEach { row ->
-            val settlement = settlementForStaleInFlight(row.extraData, ::hasPlayableAudio)
+            // The row's own state is the guard: it was read in flight a moment ago, and if
+            // anything has settled it since, that outcome stands. Never null — the query
+            // selects on state — so the skip is unreachable rather than a silent drop.
+            val fromState = row.state ?: return@forEach
+            val settlement = settlementForStaleInFlight(fromState, row.extraData, ::hasPlayableAudio)
             val written = runCatching {
-                messagesDao.settleStaleInFlight(row.id, settlement.state, settlement.extraData)
+                messagesDao.settleStaleInFlight(row.id, fromState, settlement.state, settlement.extraData)
             }
                 .onFailure { Timber.w(it, "Stale sweep: could not settle message ${row.id}") }
                 .getOrDefault(0)

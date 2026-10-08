@@ -11,6 +11,7 @@ import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.SendProgress
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
@@ -26,6 +27,8 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
@@ -59,8 +62,37 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      */
     @Volatile private var messageId: Long? = null
 
-    /** Packages that had no radio to go out on. Compared against the parity budget in [finishSending]. */
+    /** Packages that had no radio to go out on. Logged at [finishSending]; never confirmed. */
     private var packagesDropped = 0
+
+    /**
+     * The attachment as it was saved, kept so each progress write can re-send it with only its
+     * [SendProgress] changed. Null until [saveLocalMessages] has written the row.
+     */
+    @Volatile private var savedAttachment: MessageExtraData.Attachment? = null
+
+    /** Packages in the codeword, as announced in the start package. Set in [sendFile]. */
+    private var totalPackages = 0
+
+    /** The encoder, kept for its exact recoverability rule. Null when the send carries no parity. */
+    @Volatile private var reedSolomon: ReedSolomon? = null
+
+    /**
+     * Which package the [pendingTicket] belongs to — [START_PACKAGE_INDEX] for the start package,
+     * its codeword index otherwise — or null when there is no ticket (nothing sent for this step,
+     * or the package was dropped). Read when the ticket is claimed, which is the moment the
+     * package counts as sent: see [confirmPendingPackage].
+     */
+    @Volatile private var pendingPackageIndex: Int? = null
+
+    /** Whether the start package went out. Without it the receiver never learns of the transfer. */
+    private val startConfirmed = AtomicBoolean(false)
+
+    /** Codeword indices of the packages that went out — see [SendProgress] for what counts. */
+    private val confirmedIndices: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+
+    /** Serializes the progress writes so a later count can never be overwritten by an earlier one. */
+    private val progressWrites = Mutex()
 
     /**
      * Positions in [mutablePackagesMap] that carry Reed-Solomon parity rather than file
@@ -128,14 +160,97 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         // TxEnd already claimed this step and has posted the next send itself.
         val ticket = pendingTicket
         if (ticket != null && !ticket.claimByTimeout()) return@Runnable
+        // An interval only stands in for TxEnd while the link is up. Found down here without a
+        // disconnect event having reached failOnDisconnect yet: settle the send the same way
+        // now, rather than count the package and hand the next one to a dead link.
+        if (!DataManager.isLinkUp()) {
+            failOnDisconnect()
+            return@Runnable
+        }
+        // The interval ran out with the link still up, so the package it was pacing counts as
+        // sent. No ticket means it was dropped, and confirmPendingPackage finds nothing to count.
+        confirmPendingPackage()
         sendNextPackage()
     }
 
     private fun sendNextPackage() {
-        mutablePackagesMap[current]?.let { sendPackage(it) } ?: run { pendingTicket = null }
+        // Every package has been queued and the last one's TxEnd (or interval) has now come:
+        // that, not the moment the last package was queued, is when the send is over. Finishing
+        // at queue time would settle the row before the last package had gone out.
+        if (current.toInt() >= mutablePackagesMap.size && mutablePackagesMap.isNotEmpty()) {
+            finishSending()
+            return
+        }
+        mutablePackagesMap[current]?.let { sendPackage(it) } ?: run {
+            pendingTicket = null
+            pendingPackageIndex = null
+        }
         current += 1f
         resetSendTimer()
         updateStep(mutablePackagesMap.size)
+    }
+
+    /**
+     * Counts the package [pendingTicket] was registered for as sent, and records it on the row.
+     * Called by whichever of its TxEnd and its interval timer claimed the ticket — never after a
+     * lost link, which removes the timer and claims the outcome first.
+     */
+    private fun confirmPendingPackage() {
+        // Settled already (a disconnect decided it from what had gone out by then): a TxEnd or
+        // a timer that was already queued must not move the count past that decision.
+        if (terminalOutcomeClaimed.get()) return
+        val index = pendingPackageIndex ?: return
+        pendingPackageIndex = null
+        if (index == START_PACKAGE_INDEX) startConfirmed.set(true) else confirmedIndices.add(index)
+        recordProgress()
+    }
+
+    /**
+     * Whether the receiver can end up with the whole file from what has really gone out: the start
+     * package, and few enough of the rest missing that [ReedSolomon] can rebuild them — exactly,
+     * block by block. With no parity, every package.
+     */
+    private fun isDelivered(): Boolean {
+        if (!startConfirmed.get() || totalPackages == 0) return false
+        val missing = (0 until totalPackages).filterNotTo(HashSet()) { it in confirmedIndices }
+        return reedSolomon?.canRecover(missing) ?: missing.isEmpty()
+    }
+
+    /**
+     * The progress written to the row, for the startup sweep to settle a send this process died
+     * in. A count cannot be exact the way [isDelivered] is — losses concentrated in one block can
+     * defeat a total that looks sufficient — so [SendProgress.partsNeeded] is chosen to err
+     * towards FAILED: a cut-short send loses its TAIL, and a tail up to the smallest block's
+     * parity always decodes; and once any package was dropped mid-send, every package is needed.
+     */
+    private fun currentProgress(): SendProgress {
+        val tolerated = if (packagesDropped > 0) 0 else reedSolomon?.minBlockParity() ?: 0
+        return SendProgress(
+            partsSent = confirmedIndices.size + if (startConfirmed.get()) 1 else 0,
+            partsNeeded = 1 + totalPackages - tolerated,
+        )
+    }
+
+    /**
+     * Writes [currentProgress] onto the SENDING row. Serialized by [progressWrites], and the count
+     * is read inside the lock, so writes land in order and the last one carries the latest count.
+     * A lost write only makes a later sweep count fewer packages — it errs towards FAILED.
+     */
+    private fun recordProgress() {
+        val id = messageId ?: return
+        val attachment = savedAttachment ?: return
+        CoroutineScope(Dispatchers.IO).launch {
+            progressWrites.withLock {
+                try {
+                    DataManager.getAppRepo()
+                        .updateSendProgress(id, attachment.copy(sendProgress = currentProgress()))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(LOG_TAG, "Could not record send progress", e)
+                }
+            }
+        }
     }
 
     /**
@@ -148,6 +263,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             handler.post {
                 if (cancelled.get() || pendingTicket !== ticket) return@post
                 removeSendTimer()
+                // The radio reported this package transmitted.
+                confirmPendingPackage()
                 sendNextPackage()
             }
         }
@@ -170,6 +287,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         this.onFileStatusChange = onFileStatusChange
         val fileList = listOf(data.file)
         val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
+        totalPackages = numOfPackages
 
         // Refused up front rather than left to the start package's `require`, which used to
         // throw seconds into the preparation and surface as a generic ERROR on a row the
@@ -197,6 +315,15 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             // therefore asks first, and the first one also carries the cancel onto the
             // row that saveLocalMessages() has only just created.
             if (abortedByCancel()) return@async saved
+
+            // No radio connected: nothing is queued — a package left in the queue would go out
+            // on the next link — and the row, already written, is failed DISCONNECTED so the
+            // attempt shows with its reason. Checked after the row exists so there is one.
+            if (!DataManager.isLinkUp()) {
+                Log.w(LOG_TAG, "file not sent: no radio connected")
+                failTransfer(FileReceiver.FileFailure.DISCONNECTED)
+                return@async saved
+            }
 
             val started = try {
                 var packages = createPackages(fileList)
@@ -375,7 +502,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun updateStep(numOfPackages: Int) {
         sendingPercentage = ((current.toDouble() / numOfPackages) * 100).toInt()
         onFileStatusChange?.updateStep(data, sendingPercentage)
-        if (sendingPercentage >= 100) { finishSending() }
+        // 100% means every package is queued, not that the send is over: it finishes once the
+        // last package's TxEnd or interval comes — see sendNextPackage.
     }
 
     private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
@@ -404,24 +532,33 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
         val localFile = if (copyOk) destFile else data.file
         val subtype = data.fileType.toAttachmentType()
+        val attachment = MessageExtraData.Attachment(
+            title = data.file.name,
+            // Fall back to the original path if the local copy
+            // failed; UI can still try to open it directly.
+            path = localFile.absolutePath,
+            subtype = subtype,
+            // Parse the contact CSV once here so the conversation UI
+            // renders from the summary without re-reading the file.
+            fileSummary = FileUtils.buildFileSummary(localFile, subtype),
+        )
         return try {
+            // SENDING until the send settles it — by finishing, by a disconnect deciding from
+            // what had gone out, or by the startup sweep reading the progress written below.
+            // The parity plan is not known yet (it is built after this row exists), so the
+            // first progress assumes every package is needed; the first package to go out
+            // rewrites it with the real figure.
             messageId = DataManager.getAppRepo().saveMessage(
                 MessageEntity(
                     chatId = data.chatId,
                     senderID = data.stardustAPIPackage.senderId,
                     receiverID = data.stardustAPIPackage.receiverId,
-                    state = MessageState.SENT,
-                    extraData = MessageExtraData.Attachment(
-                        title = data.file.name,
-                        // Fall back to the original path if the local copy
-                        // failed; UI can still try to open it directly.
-                        path = localFile.absolutePath,
-                        subtype = subtype,
-                        // Parse the contact CSV once here so the conversation UI
-                        // renders from the summary without re-reading the file.
-                        fileSummary = FileUtils.buildFileSummary(localFile, subtype),
-                    )
+                    state = MessageState.SENDING,
+                    extraData = attachment.copy(
+                        sendProgress = SendProgress(partsSent = 0, partsNeeded = 1 + totalPackages),
+                    ),
                 ))
+            savedAttachment = attachment
             messageId != null
         } catch (e: CancellationException) {
             // Rethrown, never logged: cancellation is this coroutine being told to stop, not a
@@ -558,6 +695,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = dataToSend)
             fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
+            pendingPackageIndex = START_PACKAGE_INDEX
             registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
         }
@@ -569,6 +707,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         spare: Int
     ): Pair<Map<Float, StardustFilePackage>, Int> {
         val reed = ReedSolomon(totalDataPackets = packages.size, totalParityPackets = spare)
+        // Kept: its block plan is what decides whether a cut-short send still decodes.
+        reedSolomon = reed
         // Which of the encoded packages carry parity — asked of the encoder, since with
         // more than one block they are not the tail. Used to tell a cancel that landed
         // before any parity went out from one that landed while it was going out.
@@ -638,8 +778,11 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 // whether the parity packages can still cover it.
                 packagesDropped++
                 Timber.tag("FileUpload").w("no radio to send on — dropped package (total dropped: $packagesDropped)")
-                // Nothing went out, so no TxEnd will come: the timer alone moves on.
+                // Nothing went out, so no TxEnd will come: the timer alone moves on, and
+                // there is no package for it to count.
                 pendingTicket = null
+                pendingPackageIndex = null
+                recordProgress() // the drop changes what the sweep may assume is needed
                 return
             }
             // Paced at exactly the airtime the estimate quotes, re-read per package so a
@@ -659,6 +802,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             if (stardustFilePackage.current in parityIndices) sparePackagesSent++
             else dataPackagesSent++
             Timber.tag("FileUpload").d("send: $packagesSent")
+            pendingPackageIndex = stardustFilePackage.current
             registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
         }
@@ -689,28 +833,72 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         sparePackagesSent = 0
         sendInterval = DEFAULT_SEND_INTERVAL_MS
 
-        // Reed-Solomon lets the receiver rebuild the file from any `spare` missing
-        // packages, so losing up to that many is a complete transfer, not a failure.
-        // Beyond it the file cannot be reassembled — the channel swallowed more than
-        // the parity budget covers.
-        if (dropped > data.stardustAPIPackage.spare) {
+        // Reed-Solomon lets the receiver rebuild the file from missing packages, up to each
+        // block's parity, so losing that many is a complete transfer, not a failure. Beyond
+        // it the file cannot be reassembled — the channel swallowed more than the parity
+        // budget covers. Decided from what really went out (isDelivered), which counts
+        // dropped packages as missing — the same rule a disconnect is settled by.
+        if (!isDelivered()) {
             Timber.tag("FileUpload").w("send incomplete: $dropped package(s) never went out (parity budget ${data.stardustAPIPackage.spare})")
             failTransfer(FileReceiver.FileFailure.MISSING)
             return
         }
 
-        if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
-        isComplete = true
-        // Reuse existing handler — do NOT create a new Handler instance here
-        handler.postDelayed({ isComplete = false }, 3000)
-        onFileStatusChange?.finishSending(data)
+        completeTransfer()
     }
 
     /**
-     * The radio went away mid-send: the packages still queued will never reach the air
-     * and no progress tick will ever complete this transfer, so settle its row now.
+     * The send delivered its file: settles the row SENT, then tells the host. Runs at most once
+     * per sender — the first terminal outcome wins.
+     *
+     * The host is told after the write, never beside it — the same order as [failTransfer], so
+     * a host that answers [OnFileStatusChange.finishSending] by re-reading the conversation finds
+     * the row already SENT. The callback is still raised on [handler]'s (main) thread, as it
+     * always was.
      */
-    fun failOnDisconnect() = failTransfer(FileReceiver.FileFailure.DISCONNECTED)
+    private fun completeTransfer() {
+        if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
+        removeSendTimer()
+        releaseTxTicket()
+        isComplete = true
+        // Reuse existing handler — do NOT create a new Handler instance here
+        handler.postDelayed({ isComplete = false }, 3000)
+
+        val id = messageId
+        CoroutineScope(Dispatchers.IO).launch {
+            if (id != null) {
+                try {
+                    // Guarded on SENDING: a peer's ACK that already marked the row keeps it.
+                    DataManager.getAppRepo().settleOutgoing(id, MessageState.SENT)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Left SENDING; the startup sweep settles it from the recorded progress.
+                    Log.e(LOG_TAG, "Could not record the finished send", e)
+                }
+            }
+            handler.post { onFileStatusChange?.finishSending(data) }
+        }
+    }
+
+    /**
+     * The radio went away mid-send. Settled from what had really gone out by then: if the start
+     * package and enough of the rest for the receiver to rebuild the file had — the tail still
+     * queued was parity it can do without — the file was delivered and the send is FINISHED;
+     * otherwise it failed [FileReceiver.FileFailure.DISCONNECTED]. A package still waiting for
+     * its TxEnd when the link dropped is not counted (see [SendProgress]).
+     */
+    fun failOnDisconnect() {
+        // Before anything is read: a timer or TxEnd already queued must not count another
+        // package while this decides.
+        removeSendTimer()
+        if (isDelivered()) {
+            Timber.tag("FileUpload").w("link lost after the file was delivered — settling as sent")
+            completeTransfer()
+        } else {
+            failTransfer(FileReceiver.FileFailure.DISCONNECTED)
+        }
+    }
 
     /**
      * Records the failure on the local message row (state FAILED + the reason merged
@@ -786,6 +974,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     companion object {
 
         private const val FILE_CHUNK_SIZE = 60
+
+        /** [pendingPackageIndex] for the start package, which has no codeword index. */
+        private const val START_PACKAGE_INDEX = -1
 
         /** Interval before any package has resolved its radio: HR at unknown bandwidth. */
         private val DEFAULT_SEND_INTERVAL_MS = FilePacketAirtime.defaultMs(CarrierType.HR)

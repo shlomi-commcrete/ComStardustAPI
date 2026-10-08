@@ -179,6 +179,30 @@ internal class ClientConnection(): BittelProtocol {
         }
     }
 
+    /**
+     * Drops every package still waiting to go out, the resend timer, and every ACK wait — for a
+     * lost link, BLE or USB (the queue is shared; [sendMessage] routes to either).
+     *
+     * Without this a package queued before the drop stayed at the head of [mutableMessageList]
+     * and went out on the NEXT link — the first [addMessageToQueue] after reconnecting sends the
+     * head, not the package just added — long after the operator saw the send fail. The resend
+     * timer would do the same on its own, and each ACK wait kept retrying against nothing.
+     *
+     * Callers settle the messages these packages belonged to first; this only empties the pipe.
+     * Not called while another transport still carries the session.
+     */
+    fun clearPendingSends() {
+        val acks = synchronized(queueLock) {
+            mutableMessageList.clear()
+            mutableAckAwaitingList.toList().also { mutableAckAwaitingList.clear() }
+        }
+        acks.forEach { it.cancel() }
+        handler.removeCallbacks(runnable)
+        handler.removeCallbacksAndMessages(null)
+        bittelPackage = null
+        if (acks.isNotEmpty()) Log.d(LOG_TAG, "link lost — dropped ${acks.size} ACK wait(s) and the send queue")
+    }
+
     private fun addAwaitingAck(ack: AckSystem) = synchronized(queueLock) { mutableAckAwaitingList.add(ack) }
     private fun isAckAwaiting(): Boolean = synchronized(queueLock) { mutableAckAwaitingList.isNotEmpty() }
     private fun removeFirstAwaitingAck(): AckSystem? = synchronized(queueLock) { if (mutableAckAwaitingList.isNotEmpty()) mutableAckAwaitingList.removeAt(0) else null }

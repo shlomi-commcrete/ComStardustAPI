@@ -18,6 +18,18 @@ sealed class MessageExtraData {
     @SerialName("Text")
     data class Text(
         val text: String,
+        /**
+         * How far an outgoing multi-part text has got — see [SendProgress]. Set only while the
+         * row is, or was, [MessageState.SENDING]; `null` for a single-package text and for every
+         * incoming one. Omitted entirely when `null`, like [Attachment.failure].
+         */
+        val sendProgress: SendProgress? = null,
+        /**
+         * Why a multi-part text did not get through whole, or `null` when it did — the same
+         * reasons, and the same rule, as [Attachment.failure]: the row's
+         * [MessageState.FAILED] carries the fact, this carries the cause. Omitted when `null`.
+         */
+        val failure: FileReceiver.FileFailure? = null,
     ) : MessageExtraData()
 
     @Serializable
@@ -60,6 +72,11 @@ sealed class MessageExtraData {
          * Omitted entirely when `null`, like [failure].
          */
         val cancellation: FileTransferCancellation? = null,
+        /**
+         * How far an outgoing transfer has got — see [SendProgress]. Set only while the row is,
+         * or was, [MessageState.SENDING]; `null` on every incoming row. Omitted when `null`.
+         */
+        val sendProgress: SendProgress? = null,
     ) : MessageExtraData()
 
     @Serializable

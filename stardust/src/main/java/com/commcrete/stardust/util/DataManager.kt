@@ -37,6 +37,7 @@ import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.SendProgress
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -59,6 +60,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -184,7 +187,28 @@ object DataManager : StardustAPI, PttInterface {
                 getAsciiValue(text) ))
             val splitData = splitMessage(data)
 
+            // No radio connected: nothing can go out, so nothing is queued — the queue is cleared
+            // on disconnect and a package left in it would go out on the NEXT link, long after the
+            // operator gave up. The attempt is still recorded, as FAILED DISCONNECTED, so it is
+            // not lost silently. Checked before the RD lookup, which comes back empty without a
+            // link and used to end this send with no row at all.
+            if (!isLinkUp()) {
+                Log.w(LOG_TAG, "text not sent: no radio connected")
+                saveRefusedText(chatId, stardustAPIPackage, text)
+                return@launch
+            }
+
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
+
+            // A text in more than one package occupies the air for several intervals, so it is
+            // saved SENDING, with how many of its parts have gone out recorded on the row as
+            // they go — see SendProgress. One package is either away or not, as it always was:
+            // saved SENT, with nothing to record.
+            val isMultiPart = splitData.size > 1
+            val unsent = MessageExtraData.Text(
+                text = text,
+                sendProgress = if (isMultiPart) SendProgress(partsSent = 0, partsNeeded = splitData.size) else null,
+            )
 
             // Saved before the packages go out, because each of them carries this row's id and
             // the ACK uses it to mark the row received. Wrapped so it cannot stop the send: an
@@ -196,8 +220,8 @@ object DataManager : StardustAPI, PttInterface {
                         chatId = chatId,
                         senderID = stardustAPIPackage.senderId,
                         receiverID = stardustAPIPackage.receiverId,
-                        state = MessageState.SENT,
-                        extraData = MessageExtraData.Text(text = text)
+                        state = if (isMultiPart) MessageState.SENDING else MessageState.SENT,
+                        extraData = unsent,
                     ),
                     groupId = stardustAPIPackage.groupId
                 )
@@ -209,33 +233,190 @@ object DataManager : StardustAPI, PttInterface {
                 Log.e(LOG_TAG, "Message could not be saved; sending it anyway", e)
                 null
             }
-            for ((index, split) in splitData.withIndex()) {
-                // 1-based: only the final part carries LAST and, when asked for, DEMAND_ACK.
-                val messageNum = index + 1
-                val mPackage = StardustPackageUtils.getStardustPackage(
-                    source = stardustAPIPackage.senderId,
-                    destination = stardustAPIPackage.receiverId,
-                    stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
-                    data = split)
-                mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
-                mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
-                mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
-                mPackage.messageNumber = splitData.size
-                mPackage.idNumber = id
-                mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
-                // Registered before the send, so a fast TxEnd cannot arrive ahead of its
-                // ticket. The last part registers too: its TxEnd must be consumed here and not
-                // release another sender's package early.
-                val interval = TextPartPacing.sendIntervalMs(radio)
-                val transmitted = CompletableDeferred<Unit>()
-                val ticket = TxEndGate.register(radio, interval) { transmitted.complete(Unit) }
-                sendDataToBle(mPackage)
-                if (messageNum < splitData.size) {
-                    // Next part on TxEnd or when the interval runs out, whichever is first.
-                    // Claiming on timeout makes a TxEnd that lands just after it a no-op.
-                    if (withTimeoutOrNull(interval) { transmitted.await() } == null) ticket.claimByTimeout()
+
+            // Registered so a lost link can stop it — see stopInFlightOutgoingTexts. Only a
+            // multi-part send has parts left to stop.
+            val sendJob = coroutineContext[Job]
+            if (isMultiPart && sendJob != null) outgoingTextSends.add(sendJob)
+            var partsSent = 0
+            // Raised when the link is found gone between parts without a disconnect event having
+            // stopped this send first — the event and this check race, and either may see it.
+            var linkLost = false
+            try {
+                for ((index, split) in splitData.withIndex()) {
+                    // A part is not handed to a dead link. The first part was covered by the
+                    // check at the top; a single-package text has no later part to check.
+                    if (isMultiPart && !isLinkUp()) {
+                        linkLost = true
+                        break
+                    }
+                    // 1-based: only the final part carries LAST and, when asked for, DEMAND_ACK.
+                    val messageNum = index + 1
+                    val mPackage = StardustPackageUtils.getStardustPackage(
+                        source = stardustAPIPackage.senderId,
+                        destination = stardustAPIPackage.receiverId,
+                        stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_MESSAGE,
+                        data = split)
+                    mPackage.stardustControlByte.stardustAcknowledgeType = getIsAck(messageNum, splitData.size, isAck = stardustAPIPackage.requireAck)
+                    mPackage.stardustControlByte.stardustPartType = getIsPartType(messageNum, splitData.size)
+                    mPackage.isDemandAck = if(messageNum == splitData.size) stardustAPIPackage.requireAck else false
+                    mPackage.messageNumber = splitData.size
+                    mPackage.idNumber = id
+                    mPackage.stardustControlByte.stardustDeliveryType = radio.deliveryType
+                    // Registered before the send, so a fast TxEnd cannot arrive ahead of its
+                    // ticket. The last part registers too: its TxEnd must be consumed here and not
+                    // release another sender's package early.
+                    val interval = TextPartPacing.sendIntervalMs(radio)
+                    val transmitted = CompletableDeferred<Unit>()
+                    val ticket = TxEndGate.register(radio, interval) { transmitted.complete(Unit) }
+                    sendDataToBle(mPackage)
+                    // The next part goes on TxEnd or when the interval runs out, whichever is
+                    // first. The LAST part waits the same way, because its TxEnd is what says the
+                    // message is out. Claiming on timeout makes a TxEnd that lands just after it a
+                    // no-op. A single-package text does not wait: there is no next part and no
+                    // row to settle.
+                    if (isMultiPart) {
+                        val txEnded = withTimeoutOrNull(interval) { transmitted.await() } != null
+                        if (!txEnded) {
+                            ticket.claimByTimeout()
+                            // An interval only stands in for TxEnd while the link is up: one that
+                            // ran out on a dead link says nothing about the part.
+                            if (!isLinkUp()) {
+                                linkLost = true
+                                break
+                            }
+                        }
+                        // Reaching this line is what makes the part count as sent: its TxEnd came,
+                        // or its interval ran out with the link still up. A lost link cancels this
+                        // coroutine (stopInFlightOutgoingTexts), which throws out of the wait above
+                        // before the part can be counted — see SendProgress.
+                        partsSent++
+                        if (id != null) {
+                            // NonCancellable: a part that went out must be on the row even if the
+                            // link drops while this is being written, or the settlement below
+                            // would count one part short.
+                            withContext(NonCancellable) {
+                                recordSendProgress(id, unsent.copy(sendProgress = SendProgress(partsSent, splitData.size)))
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                // The link was lost — stopInFlightOutgoingTexts is the only thing that cancels a
+                // send. The row is settled by what had really gone out by then — SENT if every
+                // part had, FAILED DISCONNECTED if not — rather than left SENDING. NonCancellable
+                // because this coroutine is already cancelled and a plain suspend call would throw
+                // before writing.
+                if (isMultiPart && id != null) {
+                    withContext(NonCancellable) { settleInterruptedText(id, FileReceiver.FileFailure.DISCONNECTED) }
+                }
+                throw e
+            } catch (e: Exception) {
+                Log.e(LOG_TAG, "Multi-part text send stopped before its last part", e)
+                if (isMultiPart && id != null) settleInterruptedText(id, FileReceiver.FileFailure.ERROR)
+                return@launch
+            } finally {
+                sendJob?.let { outgoingTextSends.remove(it) }
+            }
+            if (linkLost) {
+                Log.w(LOG_TAG, "link gone mid-send — stopping outgoing text")
+                if (id != null) settleInterruptedText(id, FileReceiver.FileFailure.DISCONNECTED)
+                return@launch
+            }
+            // Ran to its own end: every part was counted above, so this is SENT without
+            // re-reading the row — a progress write that failed must not turn a delivered
+            // message into a failure.
+            if (isMultiPart && id != null) {
+                try {
+                    getAppRepo().settleOutgoing(id, MessageState.SENT)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Left SENDING with every part recorded but the last write lost; the startup
+                    // sweep settles it by its progress. Logged because until then it reads as
+                    // still sending.
+                    Log.e(LOG_TAG, "Outgoing text could not be settled as SENT", e)
                 }
             }
+        }
+    }
+
+    /**
+     * Multi-part text sends still going out, so a lost link can stop them. A [Job] rather than
+     * a flag because stopping is cancellation: it throws out of the part's TxEnd wait, which is
+     * what keeps a part cut short by the disconnect from being counted as sent.
+     */
+    private val outgoingTextSends: MutableSet<Job> = ConcurrentHashMap.newKeySet()
+
+    /**
+     * Stops every multi-part text still going out when the radio went away. Without this the
+     * send loop walked on through its timers into a dead link and then reported the text SENT.
+     * Each one settles its own row by the progress it recorded — see `sendMessage`.
+     */
+    internal fun stopInFlightOutgoingTexts() {
+        if (outgoingTextSends.isEmpty()) return
+        Log.w(LOG_TAG, "link lost — stopping ${outgoingTextSends.size} outgoing text(s) in flight")
+        outgoingTextSends.forEach { it.cancel() }
+    }
+
+    /**
+     * Writes how many parts of an outgoing text have gone out. Never throws: a lost progress
+     * write only means an early settlement counts fewer parts, which errs towards FAILED.
+     */
+    private suspend fun recordSendProgress(messageId: Long, extraData: MessageExtraData) {
+        try {
+            getAppRepo().updateSendProgress(messageId, extraData)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "Outgoing text progress could not be recorded", e)
+        }
+    }
+
+    /**
+     * Whether a radio link is up to carry a package — BLE or USB. The transport flags, not the
+     * handshake state: a package queued during the handshake is the handshake's own, and this
+     * gates only the operator's messages.
+     */
+    internal fun isLinkUp(): Boolean = BleManager.isBluetoothConnected() || BleManager.isUSBConnected
+
+    /**
+     * Records a text that was not sent because no radio was connected: a FAILED row with
+     * [FileReceiver.FileFailure.DISCONNECTED], so the attempt shows in the conversation with its
+     * reason and can be sent again. Never throws; a row that cannot be written is logged.
+     */
+    private suspend fun saveRefusedText(chatId: String, stardustAPIPackage: StardustAPIPackage, text: String) {
+        try {
+            getAppRepo().saveMessage(
+                message = MessageEntity(
+                    chatId = chatId,
+                    senderID = stardustAPIPackage.senderId,
+                    receiverID = stardustAPIPackage.receiverId,
+                    state = MessageState.FAILED,
+                    extraData = MessageExtraData.Text(text = text, failure = FileReceiver.FileFailure.DISCONNECTED),
+                ),
+                groupId = stardustAPIPackage.groupId,
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "Refused text could not be recorded", e)
+        }
+    }
+
+    /**
+     * Settles an outgoing text that stopped before its own end by the progress on its row, as
+     * FAILED for [failure] when not every part had gone out. Never throws: a row that cannot be
+     * written is settled the same way by the startup sweep.
+     */
+    private suspend fun settleInterruptedText(messageId: Long, failure: FileReceiver.FileFailure) {
+        try {
+            val settled = getAppRepo().settleInterruptedSend(messageId, failure)
+            Log.d(LOG_TAG, "interrupted outgoing text settled as ${settled ?: "unchanged (already settled)"}")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(LOG_TAG, "Interrupted outgoing text could not be settled", e)
         }
     }
 
@@ -351,8 +532,10 @@ object DataManager : StardustAPI, PttInterface {
     /**
      * Settles every file/image transfer that was still in flight when the radio went
      * away, in both directions: nothing further will ever be sent, received or reported
-     * for them, so each is recorded as [FileReceiver.FileFailure.DISCONNECTED] rather
-     * than left hanging.
+     * for them, so each is settled now rather than left hanging — by what had really
+     * got through. A send whose needed packages had all gone out, or a receive holding
+     * enough packages to rebuild the file, completes; the rest are recorded as
+     * [FileReceiver.FileFailure.DISCONNECTED].
      */
     internal fun failInFlightFileTransfers() {
         failInFlightFileSends()
@@ -360,9 +543,9 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     /**
-     * Ends every multi-part text still being received when the radio went away, as RECEIVED
-     * with the parts that arrived — no further part can join it on a new session. Also drops
-     * the TxEnd tickets of the lost session.
+     * Ends every multi-part text still being received when the radio went away, as FAILED
+     * with the parts that arrived — no further part, LAST included, can join it on a new
+     * session. Also drops the TxEnd tickets of the lost session.
      */
     internal fun settleInFlightIncomingTexts() {
         bittelPackageHandler?.settleInFlightTexts()
@@ -824,8 +1007,16 @@ object DataManager : StardustAPI, PttInterface {
         getClientConnection().removeBittelBond()
     }
 
+    /**
+     * Settles everything in flight on an intentional disconnect, then empties the send path.
+     * The unexpected-drop path in BleManager does the same set of steps — keep the two in step.
+     * Settled first, cleared second: the settlements decide from what had already gone out, and
+     * clearing the queue is what guarantees nothing more does.
+     */
     private fun cleanupPackageHandlerOnDisconnect() {
         failInFlightFileSends()
+        stopInFlightOutgoingTexts()
+        getClientConnection().clearPendingSends()
         // cleanupOnDisconnect() fails the in-flight receives before disposing them.
         bittelPackageHandler?.cleanupOnDisconnect()
         TxEndGate.clear()

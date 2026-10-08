@@ -94,6 +94,26 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveMessage(pkg.copy(isLast = true), text)
             }
+
+            override suspend fun abandon(
+                messageId: Long?,
+                pkg: StardustAPIPackage,
+                text: String,
+                failure: FileReceiver.FileFailure,
+            ) {
+                if (messageId != null) {
+                    DataManager.getAppRepo().markIncomingTextFailed(messageId, text, failure)
+                } else {
+                    DataManager.getAppRepo().saveMessage(
+                        pkg, MessageExtraData.Text(text, failure = failure), MessageState.FAILED,
+                    )
+                }
+                // Still announced, as it was when this path settled RECEIVED: part of a message
+                // did arrive, and the host learns it is incomplete from the row's FAILED state.
+                // Dropping the callback would make an inbound message silent.
+                PlayerUtils.playNotificationSound()
+                DataManager.getCallbacks()?.receiveMessage(pkg.copy(isLast = true), text)
+            }
         },
     )
 
@@ -119,8 +139,9 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     /**
-     * Ends every multi-part text still being received, as RECEIVED with the parts that
-     * arrived: with the session gone no further part can join them. Safe to call more than once.
+     * Ends every multi-part text still being received, as FAILED with the parts that
+     * arrived: with the session gone no further part — LAST included — can join them. Safe to
+     * call more than once.
      */
     internal fun settleInFlightTexts() = textAssembler.settleAll()
 

@@ -42,6 +42,15 @@ class AckSystem (val stardustPackage: StardustPackage, private val ackSystemNoti
         ackSystemNotify?.onSuccess()
     }
 
+    /**
+     * Stops waiting without reporting either outcome — the link this ACK would have come back
+     * over is gone. Neither callback fires: the message row keeps the state it had, and no retry
+     * timer is left to run against a dead link.
+     */
+    fun cancel () {
+        clearTimer()
+    }
+
     private fun resetTimer() {
         ackTimeoutHandler.removeCallbacks(ackTimeoutRunnable)
         ackTimeoutHandler.removeCallbacksAndMessages(null)

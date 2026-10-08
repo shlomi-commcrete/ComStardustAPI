@@ -132,8 +132,12 @@ object BleManager {
                 // whether or not the disconnect was intentional. Record it now — an
                 // unexpected drop never reaches disconnectFromDevice(), so this is the
                 // only place a battery-dies / out-of-range / unplug loss is settled.
+                // Same steps as DataManager.cleanupPackageHandlerOnDisconnect — keep in step.
                 DataManager.failInFlightFileTransfers()
+                DataManager.stopInFlightOutgoingTexts()
                 DataManager.settleInFlightIncomingTexts()
+                // Nothing queued for the lost link may go out on the next one.
+                DataManager.getClientConnection().clearPendingSends()
                 ConfigurationUtils.reset()
                 CarriersUtils.reset()
                 StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)

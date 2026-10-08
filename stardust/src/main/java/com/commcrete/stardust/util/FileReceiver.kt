@@ -37,7 +37,8 @@ class FileReceiver(
 
     private val receivingInterval : Long = 1800
     private val handler : Handler = Handler(Looper.getMainLooper())
-    private val runnable : Runnable = Runnable { checkData() }
+    /** No package for a while: settle from what arrived — see [checkData]. */
+    private val runnable : Runnable = Runnable { checkData(FileFailure.MISSING) }
 
     @Volatile private var isDisposed = false
 
@@ -195,7 +196,7 @@ class FileReceiver(
                 lastReportedProgress = newProgress
                 // Handle completion
                 if (newProgress >= 100) {
-                    checkData()
+                    checkData(FileFailure.MISSING)
                     removeReceiveTimer()
                 } else {
                     DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = newProgress)
@@ -204,19 +205,55 @@ class FileReceiver(
         }
     }
 
-    private fun checkData() {
+    /**
+     * Settles the transfer from the packages that arrived: the one rule for every way a receive
+     * ends — all packages in, the gap timeout, and a lost link. It completes when the file can be
+     * rebuilt, and fails with [failure] when it cannot.
+     *
+     * "Can be rebuilt" is [ReedSolomon]'s exact, per-block rule over every package that has not
+     * arrived — including a tail that never came. This used to require the last package to have
+     * arrived, so a transfer whose missing tail was only parity it could do without was failed
+     * MISSING on the timeout and DISCONNECTED on a lost link, while one that had the last package
+     * but too many holes went on to a decode that could only throw and fail ERROR.
+     */
+    private fun checkData(failure: FileFailure) {
         if (isDisposed) return
-        // Check if we have all main packages or reached the last package
-        val isComplete = hasMainPackages() ||
-                         (dataList.isNotEmpty() && firstPackage.total == dataList.last().current + 1)
-
-        if (isComplete) {
+        // All the data packages and no gap: written straight, no decode — as it always was.
+        if (hasMainPackages()) {
             saveFile()
             notifyTransferComplete()
+            return
         }
-        else {
-            updateFailure(FileFailure.MISSING)
+        val missing = missingIndices()
+        if (isRecoverable(missing)) {
+            // The decode is told about every absent package, the never-arrived tail included;
+            // checkMissingPackages only sees gaps below the highest index received.
+            lostPackagesIndex.clear()
+            lostPackagesIndex.addAll(missing)
+            saveFile()
+            notifyTransferComplete()
+        } else {
+            updateFailure(failure)
         }
+    }
+
+    /** Codeword indices of every package that has not arrived. */
+    private fun missingIndices(): Set<Int> {
+        val present = dataList.mapTo(HashSet()) { it.current }
+        return (0 until firstPackage.total).filterNotTo(HashSet()) { it in present }
+    }
+
+    /**
+     * Whether the file can be assembled without the packages at [missing]. With no parity every
+     * package is needed. Must agree with the sender's own rule (`FileSender.isDelivered`), which
+     * builds the same [ReedSolomon] plan from the same data/parity split.
+     */
+    private fun isRecoverable(missing: Set<Int>): Boolean {
+        if (dataList.isEmpty()) return false
+        val spare = firstPackage.spare
+        if (spare == 0) return missing.isEmpty()
+        return ReedSolomon(totalDataPackets = firstPackage.total - spare, totalParityPackets = spare)
+            .canRecover(missing)
     }
 
     private fun notifyTransferComplete() {
@@ -274,9 +311,22 @@ class FileReceiver(
     /**
      * The radio went away mid-transfer: no further package, completion or failure will
      * ever be reported for this receiver, so settle its row now instead of leaving the
-     * transfer to vanish silently.
+     * transfer to vanish silently — from what arrived, by the same rule as the timeout
+     * ([checkData]). A transfer already holding enough packages to rebuild the file is
+     * assembled and RECEIVED; only one that cannot be is DISCONNECTED.
+     *
+     * Synchronous on purpose: the caller disposes this receiver straight after, and
+     * dispose() clears the packages this needs.
      */
-    fun failOnDisconnect() = updateFailure(FileFailure.DISCONNECTED)
+    fun failOnDisconnect() {
+        if (isDisposed) {
+            // Already sealed by a settled outcome; updateFailure keeps that outcome.
+            updateFailure(FileFailure.DISCONNECTED)
+            return
+        }
+        handler.removeCallbacks(runnable)
+        checkData(FileFailure.DISCONNECTED)
+    }
 
     private fun saveFile () {
         removeReceiveTimer()
@@ -485,13 +535,17 @@ class FileReceiver(
     }
 
     /**
-     * Why a file/image transfer did not deliver its file. Covers BOTH directions — a
-     * send failure carries the same reasons (see
+     * Why a file/image transfer did not deliver its file — or a multi-part text did not get
+     * through whole. Covers BOTH directions — a send failure carries the same reasons (see
      * [FileSender.OnFileStatusChange.failedSending]) — and is persisted on the message
      * row as
-     * [com.commcrete.stardust.room.new_db.message.MessageExtraData.Attachment.failure].
+     * [com.commcrete.stardust.room.new_db.message.MessageExtraData.Attachment.failure] or
+     * [com.commcrete.stardust.room.new_db.message.MessageExtraData.Text.failure].
      * A user-cancelled send is NOT one of these; see
      * [com.commcrete.stardust.room.new_db.message.FileTransferCancellation].
+     *
+     * Named for files because files had it first; a text uses the same reasons rather than a
+     * parallel enum, so a consumer words a failed transfer one way whatever it carried.
      *
      * Persisted BY NAME: members may be added, never renamed or reordered, or an
      * already-written row stops parsing back.
@@ -504,23 +558,28 @@ class FileReceiver(
         /**
          * The transfer ran its course but packages never made it.
          *
-         * Receiving: more packages were lost than the parity tail could repair.
+         * Receiving: more packages were lost than the parity tail could repair — or, for a
+         * text, its LAST part never arrived before the gap timeout.
          * Sending: packages had no radio to go out on, beyond what parity covers.
          */
         MISSING,
-        /** Something went wrong on this side — disk write, unreadable source, no radio to send on. */
+        /** Something went wrong on this side — disk write, unreadable source, no radio to send on, a send loop that died. */
         ERROR,
-        /** The radio went away mid-transfer; nothing was wrong with the transfer itself. */
+        /**
+         * The radio was not connected: it went away mid-transfer, or was already gone when the
+         * send was asked for — nothing was wrong with the transfer itself. Set only when what
+         * had got through by then was not enough; one that had completed is settled as sent or
+         * received instead.
+         */
         DISCONNECTED,
 
         /**
-         * The app stopped while the transfer was still arriving, so no outcome was ever
+         * The app stopped while the transfer was still in flight, so no outcome was ever
          * reported for it. Recorded by the startup sweep, which is the only thing that can
-         * tell this apart from a transfer still in flight — the receiver that would have
-         * settled it died with the process.
-         *
-         * Receive-only: an interrupted SEND is already covered, because the send row settles
-         * from the sender's own side.
+         * tell this apart from a transfer still in flight — the sender or receiver that would
+         * have settled it died with the process. Both directions: a send the process died in
+         * is settled from the progress it recorded, and this is its reason when that was not
+         * enough.
          */
         INTERRUPTED,
 

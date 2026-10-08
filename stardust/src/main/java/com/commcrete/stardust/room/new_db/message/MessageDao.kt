@@ -317,36 +317,66 @@ interface MessageDao {
     // ── Interrupted transfers (startup sweep) ────────────────────────────
 
     /**
-     * Rows still marked RECEIVING that no live transfer can account for, because they were
-     * stamped before [cutoffMs] — which the sweep sets to before this process built the
-     * repository. Only the process that created an in-flight row can finalize it (the
-     * finalizer is a receiver held in memory), so one that predates this process is
-     * orphaned by definition, not slow.
+     * Rows still marked RECEIVING or SENDING that no live transfer can account for, because
+     * they were stamped before [cutoffMs] — which the sweep sets to before this process built
+     * the repository. Only the process that created an in-flight row can finalize it (the
+     * finalizer is a receiver or a send loop held in memory), so one that predates this
+     * process is orphaned by definition, not slow.
      *
-     * Returns whole rows because the sweep has to look at each one's extra_data to decide
-     * what it became; there are normally none, and one or two after a crash.
+     * Returns whole rows because the sweep has to look at each one's state and extra_data to
+     * decide what it became; there are normally none, and one or two after a crash.
+     *
+     * The two ids (4 RECEIVING, 7 SENDING) must match [MessageState]; Room cannot bind an
+     * enum constant into a query literal.
      */
-    @Query("SELECT * FROM messages WHERE state = 4 AND epoch_time_ms < :cutoffMs")
+    @Query("SELECT * FROM messages WHERE state IN (4, 7) AND epoch_time_ms < :cutoffMs")
     suspend fun getStaleInFlight(cutoffMs: Long): List<MessageEntity>
 
     /**
-     * Settles one swept row. Guarded on RECEIVING — narrower than the guard the transfer
-     * paths use — because the sweep acts on a row it read a moment earlier and must lose to
-     * anything that has touched it since. `epoch_time_ms` is never moved: the message keeps
-     * the place in the conversation it has had all along.
+     * Settles one swept row. Guarded on the in-flight state the sweep read it in
+     * ([fromState]) — narrower than the guard the transfer paths use — because the sweep acts
+     * on a row it read a moment earlier and must lose to anything that has touched it since.
+     * `epoch_time_ms` is never moved: the message keeps the place in the conversation it has
+     * had all along.
      */
     @Query("""
         UPDATE messages
         SET extra_data = COALESCE(:extraData, extra_data),
             state = :state
         WHERE id = :messageId
-          AND state = 4
+          AND state = :fromState
     """)
     suspend fun settleStaleInFlight(
         messageId: Int,
+        fromState: MessageState,
         state: MessageState,
         extraData: MessageExtraData?,
     ): Int
+
+    /**
+     * Records how far an outgoing send has got — its extra_data carrying the new
+     * [SendProgress]. Guarded on SENDING (id 7, see [MessageState.SENDING]) so a progress write
+     * that lands after the row settled, or after an ACK marked it, cannot reopen it. Returns the
+     * number of rows written (0 = refused).
+     */
+    @Query("UPDATE messages SET extra_data = :extraData WHERE id = :messageId AND state = 7")
+    suspend fun updateSendProgress(messageId: Long, extraData: MessageExtraData): Int
+
+    /**
+     * Settles an outgoing SENDING row as [state] (SENT or FAILED), merging [extraData] when given.
+     * Guarded on SENDING so it never overwrites what an ACK already wrote — the last part carries
+     * DEMAND_ACK, and the peer's ACK can land before the last part's TxEnd does — nor a cancel.
+     * `epoch_time_ms` is not moved: the message keeps its place. Returns the number of rows
+     * written (0 = the row had already settled).
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = :state
+        WHERE id = :messageId
+          AND state = 7
+    """)
+    suspend fun settleOutgoing(messageId: Long, state: MessageState, extraData: MessageExtraData?): Int
 
     /**
      * Drops an in-flight row outright. Guarded on RECEIVING so it can only ever remove a
