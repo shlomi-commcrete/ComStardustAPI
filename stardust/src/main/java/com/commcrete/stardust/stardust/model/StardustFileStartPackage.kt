@@ -13,6 +13,7 @@ data class StardustFileStartPackage(
 ) {
     fun toArrayInt(): Array<Int> {
         require(type in 0..255) { "Type must fit in 1 byte (0–255)" }
+        // Must agree with FileSender.MAX_TOTAL_PACKAGES, which refuses a larger send up front.
         require(total in 0..65535) { "Total must fit in 2 bytes (0–65535)" }
         require(spare in 0..65535) { "Spare must fit in 2 bytes (0–65535)" }
         require(spareData in 0..255) { "SpareData must fit in 1 byte (0–255)" }

@@ -523,6 +523,18 @@ class FileReceiver(
          * from the sender's own side.
          */
         INTERRUPTED,
+
+        /**
+         * The payload needs more packages than the wire can number —
+         * [FileSender.MAX_TOTAL_PACKAGES]. Send-only, and raised before anything happens:
+         * no `startSending`, no local row, nothing on air.
+         *
+         * **Never persisted, and must stay that way.** `MessageExtraData.failure` is decoded
+         * by kotlinx.serialization, which throws on an enum value it does not know — a build
+         * older than this value reading a row that carried it would lose the whole extra
+         * data. The send is refused before [FileSender] writes a row, so there is none.
+         */
+        TOO_LARGE,
     }
 
     companion object {

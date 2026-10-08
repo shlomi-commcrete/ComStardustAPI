@@ -6,6 +6,7 @@ data class StardustFilePackage (
     val isLast : Boolean = false
 ){
     fun toArrayInt(): Array<Int> {
+        // Must agree with FileSender.MAX_TOTAL_PACKAGES, which refuses a larger send up front.
         require(current in 0..65535) { "Current must fit in 2 bytes (0-65535)" }
 
         // Split `current` into two bytes

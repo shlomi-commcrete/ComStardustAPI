@@ -20,6 +20,7 @@ import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
 import com.commcrete.stardust.util.FileUtils.decompressTextFile
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -169,6 +170,18 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         this.onFileStatusChange = onFileStatusChange
         val fileList = listOf(data.file)
         val numOfPackages = calculateNumOfPackages(fileList, data.stardustAPIPackage.spare)
+
+        // Refused up front rather than left to the start package's `require`, which used to
+        // throw seconds into the preparation and surface as a generic ERROR on a row the
+        // host had already been showing as sending. No row is written, so TOO_LARGE is
+        // never persisted — see its KDoc. Checked on the actual spare, not the resilience
+        // setting: this is what would go on the wire.
+        if (numOfPackages > MAX_TOTAL_PACKAGES) {
+            Log.w(LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
+            failTransfer(FileReceiver.FileFailure.TOO_LARGE)
+            return CompletableDeferred(false)
+        }
+
         this.onFileStatusChange?.startSending(data)
         return CoroutineScope(Dispatchers.IO).async {
             // Persist the row FIRST: everything below can fail, and a failure needs a
@@ -204,6 +217,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                     getRandomMisses(data.stardustAPIPackage.spare, numOfPackages)
                     mutablePackagesMap.clear()
                     mutablePackagesMap.putAll(packages)
+                    announcePreparationOver()
                     resetSendTimer()
                 }
                 startSent
@@ -337,6 +351,25 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         }
 
         recordCancellation(cancellation)
+    }
+
+    /**
+     * `updateStep(0)` the moment the start package is queued — the documented end of the
+     * preparation phase. Between `startSending` and the first `updateStep` the host knows
+     * only that the send is being built (saving, packetizing, parity); without this the
+     * first step came one whole package interval after the start package had already gone
+     * out, so a host showing "preparing" kept showing it while the transfer was on air.
+     *
+     * Posted to [handler] so it arrives on the same (main) thread as every later step,
+     * and ahead of the first package's timer, which [resetSendTimer] posts with a delay.
+     * Re-checks [cancelled] and [terminalOutcomeClaimed] there: a cancel or a failure
+     * (a disconnect, say) landing in between must not be followed by a step.
+     */
+    private fun announcePreparationOver() {
+        handler.post {
+            if (cancelled.get() || terminalOutcomeClaimed.get()) return@post
+            onFileStatusChange?.updateStep(data, 0)
+        }
     }
 
     private fun updateStep(numOfPackages: Int) {
@@ -832,6 +865,56 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         fun calculateAddedPackages (numOfPackages: Int) : Int{
             val factor = SharedPreferencesUtil.getResilience()
             return packageNumToAdd(numOfPackages, factor.value)
+        }
+
+        /**
+         * The most packages one transfer can have, data and parity together. The wire numbers
+         * them in two bytes — `StardustFileStartPackage.total` and `StardustFilePackage.current`
+         * — and the `require`s there must agree with this value.
+         */
+        const val MAX_TOTAL_PACKAGES = 65_535
+
+        /**
+         * Whether a payload of [payloadBytes] can be sent at the current resilience setting —
+         * its data packages plus the parity [calculateAddedPackages] would add. For a host to
+         * check before offering Send; [sendFile] refuses anything over the limit regardless.
+         */
+        @JvmStatic
+        fun fitsOnWire(payloadBytes: Long): Boolean =
+            fitsOnWire(payloadBytes, SharedPreferencesUtil.getResilience().value)
+
+        /**
+         * The largest payload, in bytes, that [fitsOnWire] at the current resilience setting —
+         * the figure to show the operator. Not a constant: higher resilience adds more parity,
+         * so it shrinks the room left for data. About 3.56 MB at every setting today.
+         */
+        @JvmStatic
+        fun maxPayloadBytes(): Long =
+            maxPayloadBytes(SharedPreferencesUtil.getResilience().value)
+
+        internal fun fitsOnWire(payloadBytes: Long, factor: Int): Boolean {
+            if (payloadBytes <= 0) return true
+            val dataPackages = ceil(payloadBytes.toDouble() / FILE_CHUNK_SIZE).toLong()
+            // Checked before the Int conversion below: a multi-gigabyte payload's package
+            // count does not fit in an Int.
+            if (dataPackages > MAX_TOTAL_PACKAGES) return false
+            val n = dataPackages.toInt()
+            return n + packageNumToAdd(n, factor) <= MAX_TOTAL_PACKAGES
+        }
+
+        /**
+         * Binary search over the data-package count. Valid because data plus parity only ever
+         * grows with the data: parity is ceil(n * (10 + factor / sqrt(n)) / 100), and both of
+         * its terms grow with n.
+         */
+        internal fun maxPayloadBytes(factor: Int): Long {
+            var low = 1
+            var high = MAX_TOTAL_PACKAGES
+            while (low < high) {
+                val mid = (low + high + 1) ushr 1
+                if (mid + packageNumToAdd(mid, factor) <= MAX_TOTAL_PACKAGES) low = mid else high = mid - 1
+            }
+            return low.toLong() * FILE_CHUNK_SIZE
         }
 
         private fun packageNumToAdd(packageNum: Int, factor: Int): Int {
