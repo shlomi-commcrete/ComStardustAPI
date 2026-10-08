@@ -118,13 +118,15 @@ interface StardustAPI {
     /**
      * Set the playback level of ONE incoming PTT stream, independently of every other stream.
      *
-     * [streamId] identifies the stream and comes from the receive callbacks — it is
-     * `stardustAPIPackage.groupId ?: stardustAPIPackage.senderId` as delivered by
-     * [StardustAPICallbacks.startedReceivingPTT] / [StardustAPICallbacks.receivePTT]. Note a group PTT is
-     * one stream per GROUP, not per talker.
+     * [streamId] identifies the stream and is built from the receive callbacks' package, as delivered by
+     * [StardustAPICallbacks.startedReceivingPTT] / [StardustAPICallbacks.receivePTT]:
+     * `"${groupId}_${senderId}"` when `groupId` is non-null, otherwise `senderId`. A group PTT is one
+     * stream per TALKER in that group, so each talker's level is independent.
      *
-     * [level] is clamped to `0f..1f` (`0f` silence, `1f` unity); values above 1 give no extra boost. Any
-     * level greater than 0 also un-mutes the stream.
+     * [level] is a linear amplitude: `0f` silence, `1f` unity. Above `1f` it is a boost, applied with a
+     * LoudnessEnhancer as `2000·log10(level)` mB on top of the stream's own processing — `2f` is about
+     * +6 dB. The SDK sets no ceiling: how loud is the host's decision. Any level greater than 0 also
+     * un-mutes the stream.
      *
      * Applies immediately to a live stream and is remembered for a stream that has not started yet, so it
      * is safe to call before the first packet arrives. The value persists after the stream ends, so the

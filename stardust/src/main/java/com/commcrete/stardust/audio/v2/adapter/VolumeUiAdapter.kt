@@ -10,7 +10,7 @@ import com.commcrete.stardust.audio.v2.domain.StreamKey
  */
 class VolumeUiAdapter(private val receive: PttReceiveCoordinator) {
 
-    /** [level] in 0f..1f. */
+    /** [level] linear: 0f silence, 1f unity, above 1f a boost — see [Gain]. */
     fun setVolume(streamId: String, level: Float) =
         receive.setVolume(StreamKey(streamId), Gain(level))
 

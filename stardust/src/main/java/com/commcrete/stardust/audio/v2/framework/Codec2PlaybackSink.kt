@@ -19,13 +19,18 @@ import java.util.concurrent.atomic.AtomicReference
  * Volume is applied via `AudioTrack.setVolume` off the decode path — muting one stream never blocks
  * another. Gain set before [open] is remembered and applied at track creation.
  *
+ * A gain above unity is a boost: `setVolume` cannot amplify, so the track stays at 1 and the excess is
+ * added to the [LoudnessEnhancer]'s fixed [LOUDNESS_PCT] base as `2000·log10(gain)` mB. The host
+ * decides how much — the SDK only honours it.
+ *
  * TODO(sco): BLE-SCO routing / setCommunicationDevice is intentionally NOT done here — it is a single
  * process-global route (open decision #5) that a future owner should manage once, not per sink.
  */
 class Codec2PlaybackSink : PlaybackSink {
 
     private var track: AudioTrack? = null
-    private var enhancer: LoudnessEnhancer? = null
+    /** Volatile: built on the receive path in [open], retuned from the UI thread in [setGain]. */
+    @Volatile private var enhancer: LoudnessEnhancer? = null
     private val gainRef = AtomicReference(Gain.UNITY)
     private var sampleRateHz = 0
     /** Frames handed to the track so far (mono 16-bit: one sample per frame) — what [drain] waits for. */
@@ -94,13 +99,16 @@ class Codec2PlaybackSink : PlaybackSink {
 
     private fun applyGain(t: AudioTrack, g: Gain) {
         runCatching { t.setVolume(g.value.coerceIn(0f, 1f)) }
+        enhancer?.let { fx ->
+            runCatching { fx.setTargetGain(BASE_GAIN_MB + g.boostMb()) }
+                .onFailure { Log.w(TAG, "LoudnessEnhancer gain not applied", it) }
+        }
     }
 
     private fun attachEnhancer(t: AudioTrack) {
         runCatching {
             enhancer = LoudnessEnhancer(t.audioSessionId).apply {
-                val gainMb = Math.round(Math.log10(LOUDNESS_PCT) * 2000).toInt()
-                setTargetGain(gainMb)
+                setTargetGain(BASE_GAIN_MB)
                 enabled = true
             }
         }.onFailure { Log.w(TAG, "LoudnessEnhancer unavailable", it) }
@@ -111,5 +119,8 @@ class Codec2PlaybackSink : PlaybackSink {
         const val CHANNEL = AudioFormat.CHANNEL_OUT_MONO
         const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
         const val LOUDNESS_PCT = 5.4
+
+        /** The fixed lift every Codec2 stream gets; a boost ([Gain] > 1) is added on top. */
+        val BASE_GAIN_MB = Math.round(Math.log10(LOUDNESS_PCT) * 2000).toInt()
     }
 }

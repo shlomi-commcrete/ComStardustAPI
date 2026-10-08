@@ -1,5 +1,8 @@
 package com.commcrete.stardust.audio.v2.domain
 
+import kotlin.math.log10
+import kotlin.math.roundToInt
+
 /**
  * Domain layer — the audio payload entities that flow through both passes.
  * Pure Kotlin: plain arrays + primitives, no Android buffers, no codec specifics.
@@ -35,12 +38,16 @@ class EncodedFrame(
 )
 
 /**
- * Per-stream playback gain (R6). `0f` == muted; `1f` == unity. Values > 1 are the sink adapter's
- * concern (e.g. CODEC2's LoudnessEnhancer boost). Held in an AtomicReference at the sink so a
- * volume/mute change applies live, off the decode path.
+ * Per-stream playback gain (R6), linear amplitude. `0f` == muted; `1f` == unity. Values > 1 are a
+ * boost the sinks honour through a LoudnessEnhancer ([boostMb]); at or below 1 it is plain
+ * `AudioTrack.setVolume`. Held in an AtomicReference at the sink so a volume/mute change applies
+ * live, off the decode path.
  */
 data class Gain(val value: Float) {
     val muted: Boolean get() = value <= 0f
+
+    /** The part above unity in millibels (`2000·log10`), for a LoudnessEnhancer; 0 at or below 1. */
+    fun boostMb(): Int = if (value > 1f) (2000.0 * log10(value.toDouble())).roundToInt() else 0
 
     companion object {
         val UNITY = Gain(1f)

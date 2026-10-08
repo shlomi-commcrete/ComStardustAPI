@@ -34,7 +34,7 @@ class StardustPackageRouter(
         val data = pkg.data ?: return
 
         val payload = ByteArray(data.size) { data[it].toByte() }
-        val streamKey = StreamKey(pkg.getSourceAsString())
+        val streamKey = StreamKey(streamIdOf(pkg.groupId, pkg.senderId))
         val isTerminal =
             pkg.stardustControlByte.stardustPartType == StardustControlByte.StardustPartType.LAST
 
@@ -48,5 +48,21 @@ class StardustPackageRouter(
         val encoderType = if (codec.codecId == CodecId.CODEC2) EncoderType.CODEC2 else EncoderType.AI
         store.onPacket(pkg, streamKey, encoderType)
         receive.onFrame(opcode, streamKey, frame)
+    }
+
+    internal companion object {
+        /**
+         * One stream per talker: `groupId_senderId` for a group PTT, `senderId` for a direct one —
+         * built from the package's RESOLVED ids, the same two the host receives on
+         * `StardustAPIPackage` in startedReceivingPTT / receivePTT. This format is the contract
+         * documented on [com.commcrete.stardust.StardustAPI.setPttVolume]; the host builds it
+         * itself from those two fields, so the two must agree.
+         *
+         * It was the raw packet source, which for a group PTT addressed to the group is the talker
+         * alone — the host's `groupId`-based id never matched it, and its volume calls reached no
+         * stream.
+         */
+        fun streamIdOf(groupId: String?, senderId: String): String =
+            if (groupId != null) "${groupId}_$senderId" else senderId
     }
 }
