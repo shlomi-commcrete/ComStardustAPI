@@ -525,7 +525,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 StardustFileParser().parseFile(bittelPackage = mPackage)?.let { fileData ->
                     // ConcurrentHashMap.get() throws NPE on null key, so guard against missing
                     // active transfer (data packet arrived before/after a file-start packet).
-                    val activeKey = activeTransferByTransport[transportKey] ?: return@let
+                    // Dropped, but not silently: a file that never shows up is easier to trace
+                    // with this in the log. The index only — no sender or file name.
+                    val activeKey = activeTransferByTransport[transportKey] ?: run {
+                        Log.d("FileReceiver", "file package ${fileData.current} with no transfer open; dropped")
+                        return@let
+                    }
                     fileReceivers[activeKey]?.addDataPackage(fileData)
                 }
             }
