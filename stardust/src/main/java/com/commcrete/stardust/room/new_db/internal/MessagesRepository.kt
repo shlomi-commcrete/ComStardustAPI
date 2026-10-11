@@ -531,7 +531,9 @@ internal class MessagesRepository(
             as? MessageExtraData.Attachment
         messagesDao.markIncomingTransferReceived(
             messageId = messageId,
-            extraData = attachment?.copy(path = path, fileSummary = fileSummary),
+            // failure cleared: late packages can complete a transfer already settled FAILED, and a
+            // received row still carrying the reason would read as both.
+            extraData = attachment?.copy(path = path, fileSummary = fileSummary, failure = null),
         ) > 0
     }
 

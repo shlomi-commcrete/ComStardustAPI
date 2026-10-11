@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.io.FileOutputStream
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class FileReceiver(
     val firstPackage: StardustFileStartPackage,
@@ -60,12 +60,17 @@ class FileReceiver(
     /** Set on [lane]; read there, and by [start]'s row insert. */
     @Volatile private var isDisposed = false
 
+    private enum class Outcome { NONE, FAILED, RECEIVED }
+
     /**
-     * Claimed by whichever terminal outcome persists its row first, so exactly one —
-     * the saved file OR a failure — reaches the message DB. A transfer that arrived
-     * beats a failure declared for it afterwards.
+     * What this transfer has settled as. A failure is claimed once, and only from NONE. RECEIVED
+     * can follow a failure — packages that arrive in the [LATE_WINDOW_MS] after it may still make
+     * the file buildable — and is final: nothing overwrites a file that arrived.
      */
-    private val terminalOutcomePersisted = AtomicBoolean(false)
+    private val outcome = AtomicReference(Outcome.NONE)
+
+    /** Closes the late window — see [enterLateWindow]. On [lane]. */
+    private var lateWindow: Job? = null
 
     /**
      * The in-flight row this transfer is filling in, once [start] has written it. Null until then,
@@ -112,7 +117,7 @@ class FileReceiver(
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
         CoroutineScope(Dispatchers.IO).launch {
             rowMutex.withLock {
-                if (terminalOutcomePersisted.get() || isDisposed) return@launch
+                if (outcome.get() != Outcome.NONE || isDisposed) return@launch
                 try {
                     val id = DataManager.getAppRepo().saveMessage(
                         message = MessageEntity(
@@ -155,8 +160,36 @@ class FileReceiver(
             // transfer early on a count that includes it.
             if (!receivedIndices.add(index)) return@launch
             dataList.add(filePackage)
+            if (outcome.get() == Outcome.FAILED) {
+                // In the late window: no progress (the row says failed, and a bar moving under it
+                // would say otherwise), no gap timer. Settles RECEIVED the moment the file can be
+                // built; while it cannot, the failure stands and checkData's failure is a no-op.
+                checkMissingPackages()
+                checkData(FileFailure.MISSING)
+                return@launch
+            }
             updateProgress()
             resetReceiveTimer()
+        }
+    }
+
+    /**
+     * On [lane], after a failure that late packages could still undo — the gap timeout, or the
+     * link going away unexpectedly (the sender keeps transmitting, and what reaches the radio
+     * after a reconnect lands here). The receiver stays registered for [LATE_WINDOW_MS], taking
+     * packages in; then it is sealed and emptied like any finished transfer.
+     */
+    private fun enterLateWindow() {
+        gapTimer?.cancel()
+        gapTimer = null
+        lateWindow?.cancel()
+        lateWindow = lane.launch {
+            delay(LATE_WINDOW_MS)
+            if (isDisposed) return@launch
+            Log.d("FileReceiver", "late window closed: id=${data.id}")
+            removeReceiveTimer()
+            dataList.clear()
+            receivedIndices.clear()
         }
     }
 
@@ -177,6 +210,10 @@ class FileReceiver(
         isDisposed = true
         gapTimer?.cancel()
         gapTimer = null
+        // Also when called from the window's own job: cancelling takes effect at its next
+        // suspension, and there is none after this.
+        lateWindow?.cancel()
+        lateWindow = null
         try {
             onLastPackageReceived.invoke(this)
         } catch (e: Exception) {
@@ -201,7 +238,7 @@ class FileReceiver(
      */
     fun dispose() {
         lane.launch {
-            val settled = terminalOutcomePersisted.get()
+            val settled = outcome.get() != Outcome.NONE
             isDisposed = true
             gapTimer?.cancel()
             gapTimer = null
@@ -338,22 +375,28 @@ class FileReceiver(
      *
      * Not guarded on [isDisposed]: the disconnect path fails and then disposes every
      * receiver, and a guard here would drop the very write that disconnect is for.
-     * [terminalOutcomePersisted] is what keeps it to one outcome per transfer.
+     * [outcome] is what keeps it to one failure per transfer.
+     *
+     * On [lane]. A failure that missing packages caused — [FileFailure.MISSING],
+     * [FileFailure.DISCONNECTED] — opens the late window ([enterLateWindow]): packages that
+     * still arrive can turn it into RECEIVED. Any other failure seals the receiver now.
      */
     private fun updateFailure(failure: FileFailure) {
-        if (!terminalOutcomePersisted.compareAndSet(false, true)) return
-        Log.w("FileReceiver", "transfer failed: id=${data.id} name=${data.fileName} reason=$failure")
-        // Seal the receiver before anything asynchronous: the write and the callback
-        // below hop threads, and a package landing in that gap would otherwise still be
-        // able to run the completion path and contradict the failure just declared.
-        removeReceiveTimer()
+        if (!outcome.compareAndSet(Outcome.NONE, Outcome.FAILED)) return
+        Log.w("FileReceiver", "transfer failed: id=${data.id} reason=$failure")
+        val lateCanUndo = failure == FileFailure.MISSING || failure == FileFailure.DISCONNECTED
+        if (lateCanUndo && !isDisposed) enterLateWindow() else removeReceiveTimer()
+        val snapshot = data
         CoroutineScope(Dispatchers.IO).launch {
             saveFailureToMessages(failure)
             // Notified after the row exists, never beside it: a host that answers this
-            // by re-reading the conversation must find the failed message there.
+            // by re-reading the conversation must find the failed message there. Not at all
+            // if late packages already completed the file — the host has heard of it arriving,
+            // and the row refused this failure.
+            if (outcome.get() == Outcome.RECEIVED) return@launch
             withContext(Dispatchers.Main) {
                 try {
-                    DataManager.getCallbacks()?.receiveFailure(data = data, failure = failure)
+                    DataManager.getCallbacks()?.receiveFailure(data = snapshot, failure = failure)
                 } catch (e: Exception) {
                     Log.e("FileReceiver", "Error notifying failure", e)
                 }
@@ -450,8 +493,10 @@ class FileReceiver(
                 }
             }
         } catch (e: Exception) {
-            Log.e("FileReceiver", "Error saving file: ${data.fileName}", e)
-            updateFailure(FileFailure.ERROR)
+            Log.e("FileReceiver", "Error saving file: id=${data.id}", e)
+            // A late attempt that cannot write the file leaves the earlier failure standing,
+            // and ends the window: the next package would only fail the same way.
+            if (outcome.get() == Outcome.FAILED) removeReceiveTimer() else updateFailure(FileFailure.ERROR)
         }
     }
 
@@ -542,7 +587,9 @@ class FileReceiver(
             }
             val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
             try {
-                DataManager.getAppRepo().saveMessage(
+                // Kept: late packages may still complete this transfer, and its arrival must
+                // settle this row rather than add a second one beside it.
+                messageId = DataManager.getAppRepo().saveMessage(
                     message = MessageEntity(
                         chatId = data.chatId,
                         senderID = data.senderId,
@@ -567,13 +614,19 @@ class FileReceiver(
      * landed at and its summary, and becomes RECEIVED in place — same row, same position in the
      * conversation, so the bubble the user watched arrive is the one they can now open. Falls
      * back to inserting a finished row when there is no in-flight row to fill in.
+     *
+     * Also from the late window, over a failure already recorded: the same row goes from FAILED
+     * to RECEIVED, its failure reason cleared (the DAO refuses only a row already received,
+     * seen, archived or cancelled).
      */
     private fun saveToMessages (file: File) {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
-        // Claim the terminal outcome so a failure reported afterwards — a late
-        // watchdog tick, a disconnect landing on the completing transfer — cannot add
-        // a second, contradicting row for the file that did arrive.
-        if (!terminalOutcomePersisted.compareAndSet(false, true)) return
+        // Claim the outcome so a failure reported afterwards — a late watchdog tick, a
+        // disconnect landing on the completing transfer — cannot contradict the file that did
+        // arrive. Over a failure is allowed; over an arrival is not.
+        if (!outcome.compareAndSet(Outcome.NONE, Outcome.RECEIVED) &&
+            !outcome.compareAndSet(Outcome.FAILED, Outcome.RECEIVED)
+        ) return
         CoroutineScope(Dispatchers.IO).launch {
             val mFileName = trimUntilUnderscore(file.name)
             val subtype = data.fileType.toAttachmentType()
@@ -679,6 +732,14 @@ class FileReceiver(
     }
 
     companion object {
+        /**
+         * How long a failed receive keeps taking packages — see [enterLateWindow]. Long enough to
+         * outlast a BLE reconnect (one took 42s on the XCover6 Pro after a status-61 drop) with the
+         * sender still transmitting; bounded so a transfer that is really over stops holding its
+         * packages in memory. A choice, not a radio constant.
+         */
+        const val LATE_WINDOW_MS = 120_000L
+
         /**
          * Whether a start describes a file that can be built: at least one package, at least one
          * of them data (parity alone rebuilds nothing), and no more than the wire can number. The
