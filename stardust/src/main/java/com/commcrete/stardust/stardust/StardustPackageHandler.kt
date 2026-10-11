@@ -24,6 +24,9 @@ import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.update.StardustUpdateProcess
 import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.stardust.model.PacketIdBatches
+import com.commcrete.stardust.util.CarriersUtils
+import com.commcrete.stardust.util.TextPartPacing
 import com.commcrete.stardust.security.EraseUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.listener
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
@@ -149,6 +152,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     internal fun cleanupOnDisconnect() {
         settleInFlightTexts()
+        // No batch outlives the session: the next packet of anything looks its ids up afresh.
+        PacketIdBatches.shared.clear()
         handlerScope.coroutineContext.cancelChildren()
         synchronized(packageProcessingLock) {
             savedPackage = null
@@ -804,6 +809,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handlePTTAI(mPackage: StardustPackage) {
+        mPackage.adoptBatchIds(PacketIdBatches.Kind.PTT, PTT_TRANSMISSION_GAP_MS)
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
             PttV2Wiring.init(DataManager.appContext)
             PttV2Wiring.router.onPackage(mPackage, StardustPackageUtils.StardustOpCode.SEND_PTT_AI.codeID)
@@ -813,6 +819,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handlePTT(mPackage: StardustPackage) {
+        // One lookup per transmission, shared by its audio packets — see PTT_TRANSMISSION_GAP_MS.
+        mPackage.adoptBatchIds(PacketIdBatches.Kind.PTT, PTT_TRANSMISSION_GAP_MS)
         // v2 receive path (flag-guarded). Semantic codec is CODEC2 here even for SPEECH SEND_MESSAGE.
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
             PttV2Wiring.init(DataManager.appContext)
@@ -823,8 +831,16 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun handleText(mPackage: StardustPackage) {
+        val isSos = mPackage.data?.startsWith(arrayOf(83,79,83)) == true
+        // The parts of one long text resolve sender / chat once and share it — the same window
+        // the assembler uses to decide that two parts belong to one message. An SOS is a single
+        // packet and keeps its own lookup.
+        if (!isSos) {
+            val carrier = CarriersUtils.getCarrierByControl(mPackage.stardustControlByte.stardustDeliveryType)
+            mPackage.adoptBatchIds(PacketIdBatches.Kind.TEXT, TextPartPacing.continuationWindowMs(carrier))
+        }
         val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
-        if(mPackage.data?.startsWith(arrayOf(83,79,83)) == true) {
+        if(isSos) {
             handleSOS(mPackage)
         } else {
             if(mPackage.stardustControlByte.stardustAcknowledgeType == StardustControlByte.StardustAcknowledgeType.DEMAND_ACK) {
@@ -849,6 +865,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 text = getCharValue(mPackage.getDataAsString()),
                 isLast = pkg.isLast,
             )
+            // LAST ends the message, so the next text from this sender looks up afresh.
+            if (pkg.isLast) {
+                PacketIdBatches.shared.end(
+                    mPackage.getSourceAsString(), mPackage.getDestAsString(), PacketIdBatches.Kind.TEXT,
+                )
+            }
         }
     }
 
@@ -901,5 +923,16 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     fun Array<Int>.matchesSignatureAt(pos: Int, sig: List<Int>): Boolean {
         if (this.size < pos + sig.size) return false
         return sig.indices.all { i -> this[pos + i] == sig[i] }
+    }
+
+    private companion object {
+        /**
+         * Silence after which the next audio packet from the same sender is a NEW transmission,
+         * for sharing the sender / chat lookup ([PacketIdBatches]). A transmission's packets arrive
+         * well inside it; a new press after letting go takes longer. Incoming PTT has no per-
+         * transmission end event to use instead (RX success/fail fire per packet). A choice, not a
+         * radio constant.
+         */
+        const val PTT_TRANSMISSION_GAP_MS = 2_000L
     }
 }

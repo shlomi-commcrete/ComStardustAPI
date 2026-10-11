@@ -31,22 +31,37 @@ data class StardustPackage(
     var messageNumber : Int = 1
     var idNumber: Long? = null
 
-    val senderId: String
+    /** Who sent this packet and which chat it belongs to, as the database resolves them. */
+    data class ResolvedIds(val senderId: String, val groupId: String?, val chatId: String)
 
-    val groupId: String?
+    /**
+     * Resolved on first read, not in the constructor. The constructor used to do it — two
+     * blocking database round trips — for every packet built, outgoing ones included, and those
+     * are built on the main thread (every file-send package, the 10 s ping, preset and location
+     * buttons) while nothing on the send side ever reads these. Only received packets do.
+     *
+     * Packets of one batch — the parts of one long text, the audio of one PTT transmission —
+     * resolve once and share it: see [adoptBatchIds]. A race between two first reads costs one
+     * extra lookup, never a wrong answer.
+     */
+    @Volatile private var resolvedIds: ResolvedIds? = null
 
-    val chatId: String
+    private fun ids(): ResolvedIds =
+        resolvedIds ?: resolveIds(getSourceAsString(), getDestAsString()).also { resolvedIds = it }
 
-    init {
-        val ids = GroupsUtils.resolveGroupAndContactSync(
-            sourceId = getSourceAsString(),
-            destinationId = getDestAsString()
-        )
-        senderId = ids.senderId
-        groupId = ids.groupId
-        chatId = runBlocking(Dispatchers.IO) {
-            DataManager.getAppRepo().getChatIdForReceivedPackage(senderId, groupId)
-        }
+    val senderId: String get() = ids().senderId
+
+    val groupId: String? get() = ids().groupId
+
+    val chatId: String get() = ids().chatId
+
+    /**
+     * Takes this packet's ids from the batch it belongs to — resolved by its first packet and
+     * shared by the rest of the same message or transmission — instead of looking them up again.
+     * See [PacketIdBatches]. Call before anything reads the ids.
+     */
+    internal fun adoptBatchIds(kind: PacketIdBatches.Kind, idleMs: Long) {
+        resolvedIds = PacketIdBatches.shared.idsFor(getSourceAsString(), getDestAsString(), kind, idleMs)
     }
 
 
@@ -54,6 +69,18 @@ data class StardustPackage(
         const val MAX_RETRY_COUNTER = 0
         const val DELAY_TS = 15L
         private const val DEFAULT_PADDED_DATA_SIZE = 4
+
+        /**
+         * The lookup the constructor used to make — group vs contact, then the chat — blocking,
+         * so it must not be reached from the main thread. Received packets are handled off it.
+         */
+        internal fun resolveIds(sourceId: String, destinationId: String): ResolvedIds {
+            val ids = GroupsUtils.resolveGroupAndContactSync(sourceId = sourceId, destinationId = destinationId)
+            val chatId = runBlocking(Dispatchers.IO) {
+                DataManager.getAppRepo().getChatIdForReceivedPackage(ids.senderId, ids.groupId)
+            }
+            return ResolvedIds(senderId = ids.senderId, groupId = ids.groupId, chatId = chatId)
+        }
 
         fun isDifferentLengthCheck(
             StardustControlByte: StardustControlByte,
@@ -285,8 +312,10 @@ data class StardustPackage(
             appendLine("OpCode : $stardustOpCode")
             appendLine("Destination : $destination")
             appendLine("Source : $source")
-            appendLine("SenderId : $senderId")
-            appendLine("GroupId : ${groupId ?: "-"}")
+            // Only if already resolved: printing a packet must not start a database lookup, and an
+            // outgoing packet logged on the main thread would block on it.
+            appendLine("SenderId : ${resolvedIds?.senderId ?: "-"}")
+            appendLine("GroupId : ${resolvedIds?.groupId ?: "-"}")
             appendLine(
                 "Control : pkg=${stardustControlByte.stardustPackageType}, " +
                     "delivery=${stardustControlByte.stardustDeliveryType}, " +
