@@ -198,7 +198,14 @@ object DataManager : StardustAPI, PttInterface {
                 return@launch
             }
 
-            val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: return@launch
+            // Linked, but no RD to carry a text (none configured for it, or the chosen one gone).
+            // Recorded like the no-link case, as ERROR — it used to end the send with no row and
+            // no log, the message simply vanishing.
+            val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: run {
+                Log.w(LOG_TAG, "text not sent: no RD to send it on")
+                saveRefusedText(chatId, stardustAPIPackage, text, FileReceiver.FileFailure.ERROR)
+                return@launch
+            }
 
             // A text in more than one package occupies the air for several intervals, so it is
             // saved SENDING, with how many of its parts have gone out recorded on the row as
@@ -381,11 +388,17 @@ object DataManager : StardustAPI, PttInterface {
     internal fun isLinkUp(): Boolean = BleManager.isBluetoothConnected() || BleManager.isUSBConnected
 
     /**
-     * Records a text that was not sent because no radio was connected: a FAILED row with
-     * [FileReceiver.FileFailure.DISCONNECTED], so the attempt shows in the conversation with its
-     * reason and can be sent again. Never throws; a row that cannot be written is logged.
+     * Records a text that was not sent: a FAILED row with [failure] —
+     * [FileReceiver.FileFailure.DISCONNECTED] when no radio was connected, ERROR when one was but
+     * offered no RD to send it on — so the attempt shows in the conversation with its reason and
+     * can be sent again. Never throws; a row that cannot be written is logged.
      */
-    private suspend fun saveRefusedText(chatId: String, stardustAPIPackage: StardustAPIPackage, text: String) {
+    private suspend fun saveRefusedText(
+        chatId: String,
+        stardustAPIPackage: StardustAPIPackage,
+        text: String,
+        failure: FileReceiver.FileFailure = FileReceiver.FileFailure.DISCONNECTED,
+    ) {
         try {
             getAppRepo().saveMessage(
                 message = MessageEntity(
@@ -393,7 +406,7 @@ object DataManager : StardustAPI, PttInterface {
                     senderID = stardustAPIPackage.senderId,
                     receiverID = stardustAPIPackage.receiverId,
                     state = MessageState.FAILED,
-                    extraData = MessageExtraData.Text(text = text, failure = FileReceiver.FileFailure.DISCONNECTED),
+                    extraData = MessageExtraData.Text(text = text, failure = failure),
                 ),
                 groupId = stardustAPIPackage.groupId,
             )
