@@ -1,7 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
@@ -14,6 +12,11 @@ import com.commcrete.stardust.util.FileUtils.trimUntilUnderscore
 import com.commcrete.stardust.util.audio.PlayerUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,18 +31,33 @@ class FileReceiver(
     val stardustPackage: StardustPackage,
     val onLastPackageReceived: (receiver: FileReceiver) -> Unit) {
 
-    val dataList: MutableList<StardustFilePackage> = mutableListOf()
-    var lastReportedProgress: Int = 0
-    val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
+    /**
+     * This transfer's own lane: one thread at a time, in the order things were asked for. Every
+     * package, the gap timer, the settle — decode, decompress, disk write — and [dispose] run here,
+     * so the package state below needs no lock, and none of it runs on the main thread. The settle
+     * used to run on main, and a large image's decode there could freeze ATAK past the ANR limit.
+     *
+     * FIFO is what [failOnDisconnect] followed by [dispose] relies on: the settle it queues runs
+     * before the dispose queued after it, with the packages still there.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val lane = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
+    // Package state: touched on [lane] only.
+    private val dataList: MutableList<StardustFilePackage> = mutableListOf()
+    private val receivedIndices: MutableSet<Int> = HashSet()
+    private var lastReportedProgress: Int = 0
+    private val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
     /** Written by [start] on an IO thread, read by the progress callbacks on the main one. */
     @Volatile var data: FileUtils.FileTransferData.Receive
 
     private val receivingInterval : Long = 1800
-    private val handler : Handler = Handler(Looper.getMainLooper())
-    /** No package for a while: settle from what arrived — see [checkData]. */
-    private val runnable : Runnable = Runnable { checkData(FileFailure.MISSING) }
 
+    /** No package for a while: settle from what arrived — see [checkData]. On [lane]. */
+    private var gapTimer: Job? = null
+
+    /** Set on [lane]; read there, and by [start]'s row insert. */
     @Volatile private var isDisposed = false
 
     /**
@@ -122,34 +140,47 @@ class FileReceiver(
         }
     }
 
+    /** From the package handler's thread; the package is taken in on [lane]. */
     fun addDataPackage(filePackage: StardustFilePackage) {
-        if (isDisposed) return
-        dataList.add(filePackage)
-        updateProgress()
-        resetReceiveTimer()
+        lane.launch {
+            if (isDisposed) return@launch
+            val index = filePackage.current
+            // Outside the codeword the start announced: not a package of this transfer. Counting
+            // it would push progress to 100% with real packages still missing.
+            if (index !in 0 until firstPackage.total) {
+                Log.w("FileReceiver", "package $index outside 0..${firstPackage.total - 1}; dropped")
+                return@launch
+            }
+            // A repeat (the radio delivers some twice) adds nothing, and counting it would end the
+            // transfer early on a count that includes it.
+            if (!receivedIndices.add(index)) return@launch
+            dataList.add(filePackage)
+            updateProgress()
+            resetReceiveTimer()
+        }
     }
 
-    fun resetReceiveTimer() {
+    /** On [lane]. */
+    private fun resetReceiveTimer() {
         if (isDisposed) return
-        handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
-        val timesDelay = calculateDelay()
-        handler.postDelayed(
-            runnable,
-            receivingInterval * timesDelay
-        )
+        gapTimer?.cancel()
+        val wait = receivingInterval * calculateDelay()
+        gapTimer = lane.launch {
+            delay(wait)
+            checkData(FileFailure.MISSING)
+        }
     }
 
-    fun removeReceiveTimer() {
+    /** On [lane]. Seals the receiver: late packages and queued work find [isDisposed] and stop. */
+    private fun removeReceiveTimer() {
         if (isDisposed) return
-        isDisposed = true  // Seal receiver: prevents re-entry from late packets or in-flight coroutines
+        isDisposed = true
+        gapTimer?.cancel()
+        gapTimer = null
         try {
             onLastPackageReceived.invoke(this)
         } catch (e: Exception) {
             Log.e("FileReceiver", "Error invoking callback", e)
-        } finally {
-            handler.removeCallbacks(runnable)
-            handler.removeCallbacksAndMessages(null)
         }
     }
 
@@ -163,44 +194,55 @@ class FileReceiver(
      * would put a second, permanently-arriving bubble above the retry that supersedes it.
      * The delete is guarded on the row still being in flight, so it cannot touch a
      * transfer that settled in the meantime.
+     *
+     * Queued on [lane] behind anything already asked of this receiver — a [failOnDisconnect]
+     * just before it settles first, from the packages, and only then are they dropped. A
+     * transfer that settled is not abandoned, so its row is left alone.
      */
     fun dispose() {
-        isDisposed = true
-        handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
-        dataList.clear()
-        CoroutineScope(Dispatchers.IO).launch {
-            rowMutex.withLock {
-                // Read under the lock: the insert may still have been in flight when isDisposed was
-                // set above, in which case it has already given up and there is nothing to remove.
-                val id = messageId ?: return@launch
-                messageId = null
-                try {
-                    DataManager.getAppRepo().deleteInFlightMessage(id)
-                } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error removing abandoned transfer row $id", e)
+        lane.launch {
+            val settled = terminalOutcomePersisted.get()
+            isDisposed = true
+            gapTimer?.cancel()
+            gapTimer = null
+            dataList.clear()
+            receivedIndices.clear()
+            if (!settled) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    rowMutex.withLock {
+                        // Read under the lock: the insert may still have been in flight when
+                        // isDisposed was set above, in which case it has already given up and
+                        // there is nothing to remove.
+                        val id = messageId ?: return@launch
+                        messageId = null
+                        try {
+                            DataManager.getAppRepo().deleteInFlightMessage(id)
+                        } catch (e: Exception) {
+                            Log.e("FileReceiver", "Error removing abandoned transfer row $id", e)
+                        }
+                    }
                 }
             }
+            // Last thing on the lane: nothing more is asked of a disposed receiver. The row
+            // writes above run on their own scope, so they finish regardless.
+            lane.cancel()
         }
     }
 
-    fun updateProgress() {
+    /** On [lane]. Progress goes to the host on main; reaching 100% settles here. */
+    private fun updateProgress() {
         if (isDisposed) return
         checkMissingPackages()
-        Scopes.getMainCoroutine().launch {
-            if (isDisposed) return@launch
-            val newProgress = ((dataList.size.toDouble() / firstPackage.total) * 100).toInt()
-
-            // Only update if progress has actually changed
-            if (newProgress != lastReportedProgress) {
-                lastReportedProgress = newProgress
-                // Handle completion
-                if (newProgress >= 100) {
-                    checkData(FileFailure.MISSING)
-                    removeReceiveTimer()
-                } else {
-                    DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = newProgress)
-                }
+        val newProgress = ((dataList.size.toDouble() / firstPackage.total) * 100).toInt()
+        if (newProgress == lastReportedProgress) return
+        lastReportedProgress = newProgress
+        if (newProgress >= 100) {
+            checkData(FileFailure.MISSING)
+            removeReceiveTimer()
+        } else {
+            val snapshot = data
+            Scopes.getMainCoroutine().launch {
+                DataManager.getCallbacks()?.receiveFileStatus(data = snapshot, percentage = newProgress)
             }
         }
     }
@@ -215,6 +257,8 @@ class FileReceiver(
      * arrived, so a transfer whose missing tail was only parity it could do without was failed
      * MISSING on the timeout and DISCONNECTED on a lost link, while one that had the last package
      * but too many holes went on to a decode that could only throw and fail ERROR.
+     *
+     * On [lane]: the decode and the disk write are the heaviest work a transfer does.
      */
     private fun checkData(failure: FileFailure) {
         if (isDisposed) return
@@ -256,18 +300,27 @@ class FileReceiver(
             .canRecover(missing)
     }
 
+    /**
+     * On [lane]. The host hears it on main; the receiver is sealed and emptied here.
+     *
+     * Note: [saveFile] seals the receiver before this runs, so the 100% is not sent after a save —
+     * the host learns of the file from receiveFile / receiveImage instead. Kept as it was; sending
+     * it now would be a new callback the host has never had.
+     */
     private fun notifyTransferComplete() {
-        if (isDisposed) return
-        Scopes.getMainCoroutine().launch {
-            try {
-                DataManager.getCallbacks()?.receiveFileStatus(data = data, percentage = 100)
-            } catch (e: Exception) {
-                Log.e("FileReceiver", "Error notifying completion", e)
-            } finally {
-                removeReceiveTimer()
-                dataList.clear()
+        if (!isDisposed) {
+            val snapshot = data
+            Scopes.getMainCoroutine().launch {
+                try {
+                    DataManager.getCallbacks()?.receiveFileStatus(data = snapshot, percentage = 100)
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error notifying completion", e)
+                }
             }
         }
+        removeReceiveTimer()
+        dataList.clear()
+        receivedIndices.clear()
     }
 
     private fun calculateDelay(): Int {
@@ -315,17 +368,34 @@ class FileReceiver(
      * ([checkData]). A transfer already holding enough packages to rebuild the file is
      * assembled and RECEIVED; only one that cannot be is DISCONNECTED.
      *
-     * Synchronous on purpose: the caller disposes this receiver straight after, and
-     * dispose() clears the packages this needs.
+     * Queued on [lane], not run on the caller's thread: the settle can decode and write a whole
+     * file. The caller disposes this receiver straight after, which is safe only because the
+     * lane is FIFO — this settle runs first, with the packages dispose() then clears.
      */
     fun failOnDisconnect() {
-        if (isDisposed) {
-            // Already sealed by a settled outcome; updateFailure keeps that outcome.
-            updateFailure(FileFailure.DISCONNECTED)
-            return
+        lane.launch {
+            if (isDisposed) {
+                // Already sealed by a settled outcome; updateFailure keeps that outcome.
+                updateFailure(FileFailure.DISCONNECTED)
+                return@launch
+            }
+            gapTimer?.cancel()
+            checkData(FileFailure.DISCONNECTED)
         }
-        handler.removeCallbacks(runnable)
-        checkData(FileFailure.DISCONNECTED)
+    }
+
+    /**
+     * The start announced a transfer no file can be built from — see [isValidStart]. Recorded as
+     * a failed file so the operator sees that one was on its way, instead of it vanishing; its
+     * packages find the receiver sealed and are dropped.
+     */
+    fun failInvalidStart() {
+        Log.w(
+            "FileReceiver",
+            "invalid file start: total=${firstPackage.total} spare=${firstPackage.spare} " +
+                "spareData=${firstPackage.spareData}",
+        )
+        lane.launch { updateFailure(FileFailure.ERROR) }
     }
 
     private fun saveFile () {
@@ -362,10 +432,22 @@ class FileReceiver(
             }
             Log.d("FileReceiver", "File saved successfully: ${targetFile.absolutePath}")
             saveToMessages(targetFile)
-            PlayerUtils.playNotificationSound()
-            when (data.fileType) {
-                FileUtils.FileType.File, FileUtils.FileType.Contact -> DataManager.getCallbacks()?.receiveFile(data = data, file = targetFile)
-                FileUtils.FileType.Image -> DataManager.getCallbacks()?.receiveImage(data = data, file = targetFile)
+            // The file is built on [lane]; the host has always heard of it on main.
+            val snapshot = data
+            Scopes.getMainCoroutine().launch {
+                try {
+                    PlayerUtils.playNotificationSound()
+                    when (snapshot.fileType) {
+                        FileUtils.FileType.File, FileUtils.FileType.Contact ->
+                            DataManager.getCallbacks()?.receiveFile(data = snapshot, file = targetFile)
+                        FileUtils.FileType.Image ->
+                            DataManager.getCallbacks()?.receiveImage(data = snapshot, file = targetFile)
+                    }
+                } catch (e: Exception) {
+                    // saveToMessages has claimed the outcome and is settling the row RECEIVED; a
+                    // host that threw here still finds the file in the conversation.
+                    Log.e("FileReceiver", "Error notifying received file", e)
+                }
             }
         } catch (e: Exception) {
             Log.e("FileReceiver", "Error saving file: ${data.fileName}", e)
@@ -597,6 +679,17 @@ class FileReceiver(
     }
 
     companion object {
+        /**
+         * Whether a start describes a file that can be built: at least one package, at least one
+         * of them data (parity alone rebuilds nothing), and no more than the wire can number. The
+         * header comes off the air: a corrupt one made [ReedSolomon] throw (`spare > total`) on the
+         * main thread and took ATAK down with it.
+         */
+        fun isValidStart(start: StardustFileStartPackage): Boolean =
+            start.total in 1..FileSender.MAX_TOTAL_PACKAGES &&
+                start.spare in 0 until start.total &&
+                start.spareData >= 0
+
         fun getUniqueKey(filePackage: StardustPackage): String {
             return "${filePackage.getSourceAsString()}_${filePackage.getDestAsString()}_${filePackage.stardustControlByte.stardustDeliveryType}".hashCode().toString()
         }

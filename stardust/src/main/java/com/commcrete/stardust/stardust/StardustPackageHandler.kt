@@ -502,6 +502,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 fileReceivers.remove(previousKey)?.dispose()
             }
             fileReceivers[transferKey] = receiver
+            // A start no file can be built from still replaces the previous transfer (the sender
+            // did start over) but is recorded as failed at once; its packages are dropped.
+            if (!FileReceiver.isValidStart(startData)) {
+                receiver.failInvalidStart()
+                return
+            }
             // After the replaced transfer has been disposed, so the row this writes is never the
             // one that dispose goes on to delete. Writes the in-flight row the conversation shows
             // while the packages arrive.
