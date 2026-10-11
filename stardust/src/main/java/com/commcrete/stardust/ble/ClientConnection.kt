@@ -1696,9 +1696,17 @@ internal class ClientConnection(): BittelProtocol {
      * no-op (link already down, handshake state already DISCONNECTED), which would otherwise leave
      * the host showing whatever it was shown last — the reason an unpair during a reconnect kept
      * reading as "searching".
+     *
+     * Leaves the handshake state alone while USB carries the session, for the same reason
+     * [disconnectFromBLEDevice] does: the state is shared, and DISCONNECTED under an active USB link
+     * derives to LinkUp(USB). Nothing re-runs the handshake on a USB link that stays plugged in, so
+     * the session sat on LinkUp until the cable was pulled (captured 2026-10-11 13:36:17 and
+     * 13:40:34: Ready(USB) -> LinkUp(USB) on unpair while the radio was still answering over USB).
      */
     private fun publishUnpairedState() {
-        StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        if (!BleManager.isUSBConnected) {
+            StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.DISCONNECTED)
+        }
         ConnectionManager.refresh()
     }
 
