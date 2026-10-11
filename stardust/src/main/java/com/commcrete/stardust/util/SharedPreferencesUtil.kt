@@ -326,6 +326,10 @@ object SharedPreferencesUtil {
         if (appUser.bittelName.isNullOrBlank()) {
             appUser.bittelName = getBittelDeviceName().takeIf { it.isNotBlank() }
         }
+        // Same reason: the init address exchange rebuilds the user from ids alone.
+        if (appUser.iconKey == null) {
+            appUser.iconKey = getAppUser()?.iconKey
+        }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
     }

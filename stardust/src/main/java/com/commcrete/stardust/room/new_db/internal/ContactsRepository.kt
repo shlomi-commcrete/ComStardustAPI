@@ -119,6 +119,9 @@ internal class ContactsRepository(
                         chats.createGroupChat(data.contact, contactId, allMemberIds)
                     }
                 }
+                // addContacts rewrote an existing contact's row, icon included, but creating the
+                // chat leaves an existing chat untouched — so its icon copy is synced here.
+                syncChatImage(data.contact.type, contactId, data.contact.image)
 
                 recordInsert(data, contactId, priorOwners, priorHoldings, source, batchId)
             }
@@ -374,8 +377,9 @@ internal class ContactsRepository(
 
     /**
      * Applies an in-place change to an existing contact resolved from
-     * [original]'s identity: renames it and/or strips an identity that has
-     * moved to another contact. Leaves the contact otherwise intact.
+     * [original]'s identity: renames it, changes its icon, and/or strips an
+     * identity that has moved to another contact. Leaves the contact otherwise
+     * intact.
      *
      * Each strip is recorded in `contact_identity_log`: the mapping is deleted
      * outright here, so this is the only moment the losing side of a swap is
@@ -388,6 +392,12 @@ internal class ContactsRepository(
         batchId: Long? = null,
     ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(original) ?: return@withContext
+        // A draft holds "no icon" as "" (ContactDraft.fromFullContactData); the column holds null.
+        if (updated.iconKey != original.iconKey) {
+            val image = updated.iconKey.ifBlank { null }
+            contactsDao.setContactImage(contactId, image)
+            syncChatImage(original.type, contactId, image)
+        }
         if (updated.name.isNotBlank() && updated.name != original.name) {
             contactsDao.renameContact(contactId, updated.name)
             // Contact-only rename — this path deliberately leaves the chat name
@@ -564,6 +574,15 @@ internal class ContactsRepository(
     /** The chat of an already-resolved contact. */
     suspend fun chatIdForContactId(type: ContactType, contactId: Int): String? = withContext(Dispatchers.IO) {
         chatIdForContact(type, contactId)
+    }
+
+    /**
+     * A chat keeps its own copy of its contact's icon (`chats.image`, copied at creation), and the
+     * chat list draws that copy. Every write of `contacts.image` calls this, or the list keeps
+     * showing the old icon. No chat yet is fine: it copies the icon when it is created.
+     */
+    private suspend fun syncChatImage(type: ContactType, contactId: Int, image: String?) {
+        chatIdForContact(type, contactId)?.let { chatsDao.setChatImage(it, image) }
     }
 
     private suspend fun chatIdForContact(type: ContactType, contactId: Int): String? = when (type) {

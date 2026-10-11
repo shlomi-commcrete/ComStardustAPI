@@ -48,6 +48,13 @@ interface ChatDao {
     suspend fun deleteChatById(chatId: String): Int
 
     /** Renames a chat in place (used when a contact's callsign changes). */
+    /**
+     * The chat's copy of its contact's icon key — what the chat list draws. Must follow
+     * `contacts.image` (see ContactsRepository.syncChatImage).
+     */
+    @Query("UPDATE chats SET image = :image WHERE id = :chatId")
+    suspend fun setChatImage(chatId: String, image: String?): Int
+
     @Query("UPDATE chats SET name = :name WHERE id = :chatId")
     suspend fun renameChatById(chatId: String, name: String): Int
 

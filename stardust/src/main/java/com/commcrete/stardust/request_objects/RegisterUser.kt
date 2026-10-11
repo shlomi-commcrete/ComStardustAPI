@@ -24,6 +24,14 @@ class RegisterUser (
 
     /** Backup copy of the paired radio's MAC address (primary: the `bittel_device` preference). */
     var bittelMacAddress: String? = null
+
+    /**
+     * The operator's own contact icon — the same preset key a contact stores in
+     * `ContactEntity.image`. Null means "not chosen", and also "not set on this instance":
+     * [com.commcrete.stardust.util.SharedPreferencesUtil.setAppUser] carries the saved key over
+     * onto a freshly built user that leaves it null, so rebuilding the user never drops it.
+     */
+    var iconKey: String? = null
 }
 
 

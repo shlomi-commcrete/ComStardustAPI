@@ -87,6 +87,14 @@ object ContactConflictEngine {
                 ops += ContactOperation.RenameExisting(callsignOwner, ownerName)
             }
             ops += rename
+            // A rename carries only the name; an icon changed in the same edit rides along as an
+            // in-place update, or the shortcut would drop it.
+            if (applied.iconKey != rename.target.iconKey) {
+                ops += ContactOperation.UpdateExisting(
+                    rename.target,
+                    rename.target.copy(iconKey = applied.iconKey),
+                )
+            }
             return ops
         }
 

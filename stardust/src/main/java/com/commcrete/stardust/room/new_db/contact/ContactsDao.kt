@@ -105,6 +105,10 @@ interface ContactsDao {
     @Query("UPDATE contacts SET name = :name WHERE id = :contactId")
     suspend fun renameContact(contactId: Int, name: String): Int
 
+    /** The contact's icon key ([ContactEntity.image]); null clears it. */
+    @Query("UPDATE contacts SET image = :image WHERE id = :contactId")
+    suspend fun setContactImage(contactId: Int, image: String?): Int
+
     /** Deletes a contact; FK cascades remove its id/device mappings and chat participants. */
     @Query("DELETE FROM contacts WHERE id = :contactId")
     suspend fun deleteContactById(contactId: Int): Int
