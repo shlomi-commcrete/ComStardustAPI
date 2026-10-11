@@ -146,6 +146,19 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private val localRowSettled = AtomicBoolean(false)
 
     /**
+     * A failure claimed while [saveLocalMessages] was still writing the row — a disconnect
+     * landing in the preparation, typically. There was no row to fail yet, and the row that
+     * was about to appear would otherwise sit at SENDING. Same handshake as a cancel: the
+     * failer writes this and then reads [localRowSettled]; the send coroutine raises
+     * [localRowSettled] and then reads this — so one of the two always records it, and
+     * [failureRecorded] keeps it to one.
+     */
+    @Volatile private var failureWithoutRow: FileReceiver.FileFailure? = null
+
+    /** Claimed by whichever of [failTransfer] and the send coroutine writes the failure. */
+    private val failureRecorded = AtomicBoolean(false)
+
+    /**
      * The [TxEndGate] ticket of the package last handed to the radio, or null when there is
      * none to wait on (nothing sent yet for this step, the package was dropped, or the send is
      * over). Whichever of its TxEnd and the interval timer claims it sends the next package.
@@ -315,6 +328,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             // therefore asks first, and the first one also carries the cancel onto the
             // row that saveLocalMessages() has only just created.
             if (abortedByCancel()) return@async saved
+            // Failed while the row was being written: record it on the row now, and send nothing.
+            if (recordDeferredFailure()) return@async saved
 
             // No radio connected: nothing is queued — a package left in the queue would go out
             // on the next link — and the row, already written, is failed DISCONNECTED so the
@@ -327,14 +342,21 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
             val started = try {
                 var packages = createPackages(fileList)
-                if (abortedByCancel()) return@async saved
+                if (preparationStopped()) return@async saved
+                // Nothing to send. Left to run, the timer walked past an empty map forever and
+                // the send never finished; failed here, the row says so.
+                if (packages.isEmpty()) {
+                    Log.w(LOG_TAG, "file not sent: it is empty")
+                    failTransfer(FileReceiver.FileFailure.ERROR)
+                    return@async saved
+                }
 
                 val startSent = if (data.stardustAPIPackage.spare > 0) {
                     // Reed-Solomon over every package of the file: seconds of work for an
                     // image, and the likeliest place for a cancel to land.
                     val dataWithSpare = createSparePackages(packages, data.stardustAPIPackage.spare)
                     packages = dataWithSpare.first
-                    if (abortedByCancel()) return@async saved
+                    if (preparationStopped()) return@async saved
                     createStartPackage(totalPackages = numOfPackages, spareData = dataWithSpare.second)
                 } else {
                     createStartPackage(totalPackages = numOfPackages, spareData = 0)
@@ -376,6 +398,24 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun abortedByCancel(): Boolean {
         if (!cancelled.get()) return false
         recordCancellation(cancellationSnapshot())
+        return true
+    }
+
+    /**
+     * Whether the preparation must stop here: cancelled ([abortedByCancel] records it), or
+     * already settled some other way — a disconnect that failed the send mid-preparation. A
+     * settled send queues nothing: the start package going out after the host was told the send
+     * failed is a file arriving that its sender shows as failed.
+     */
+    private fun preparationStopped(): Boolean = abortedByCancel() || terminalOutcomeClaimed.get()
+
+    /**
+     * The send coroutine's half of the [failureWithoutRow] handshake, once the row exists (or
+     * could not be written). True if there was a failure to record — the send is over.
+     */
+    private fun recordDeferredFailure(): Boolean {
+        val failure = failureWithoutRow ?: return false
+        recordFailure(failure)
         return true
     }
 
@@ -813,13 +853,17 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         // posting again would restart the send the user just stopped.
         if (cancelled.get()) return
         handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
         handler.postDelayed(runnable, sendInterval)
     }
 
+    /**
+     * The timer only. Not removeCallbacksAndMessages(null), which this used to call: that also
+     * wiped every other post on [handler] — the host's finishSending among them, so a cancel or a
+     * disconnect landing just after a send completed left the host showing it as still sending.
+     * The TxEnd posts guard themselves (cancelled, pendingTicket identity).
+     */
     private fun removeSendTimer() {
         handler.removeCallbacks(runnable)
-        handler.removeCallbacksAndMessages(null)
     }
 
     private fun finishSending() {
@@ -912,8 +956,22 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
         removeSendTimer()
         releaseTxTicket()
-        Timber.tag("FileUpload").w("send failed: ${data.file.name} reason=$failure msgId=$messageId")
+        Timber.tag("FileUpload").w("send failed: reason=$failure msgId=$messageId")
 
+        // Written before localRowSettled is read — the other half is in sendFile.
+        failureWithoutRow = failure
+        if (messageId == null && !localRowSettled.get()) {
+            // The row is still being written; the send coroutine records this on it as soon as
+            // it exists, and tells the host then.
+            Timber.tag("FileUpload").d("failure landed before the local row existed — the send coroutine will record it")
+            return
+        }
+        recordFailure(failure)
+    }
+
+    /** Writes [failure] onto the row and tells the host — once, whoever gets here first. */
+    private fun recordFailure(failure: FileReceiver.FileFailure) {
+        if (!failureRecorded.compareAndSet(false, true)) return
         val id = messageId
         if (id == null) {
             Timber.w("Send failed ($failure) with no local message row to record it on")

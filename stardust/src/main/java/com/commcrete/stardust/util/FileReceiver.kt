@@ -299,18 +299,11 @@ class FileReceiver(
      */
     private fun checkData(failure: FileFailure) {
         if (isDisposed) return
-        // All the data packages and no gap: written straight, no decode — as it always was.
-        if (hasMainPackages()) {
-            saveFile()
-            notifyTransferComplete()
-            return
-        }
+        // No "all the data is here" shortcut: it took the first total - spare indices to be the
+        // data, which they are not once parity is interleaved (over 255 packages) — writeDataToFile
+        // knows the layout and skips the decode itself when every data package is present.
         val missing = missingIndices()
         if (isRecoverable(missing)) {
-            // The decode is told about every absent package, the never-arrived tail included;
-            // checkMissingPackages only sees gaps below the highest index received.
-            lostPackagesIndex.clear()
-            lostPackagesIndex.addAll(missing)
             saveFile()
             notifyTransferComplete()
         } else {
@@ -500,38 +493,17 @@ class FileReceiver(
         }
     }
 
+    /**
+     * Writes the file's bytes: the data packages in order, the sender's padding cut off the last.
+     *
+     * With parity, the data is not "every package received": the parity is written nowhere, and
+     * where it sits comes from [ReedSolomon.parityIndices] — interleaved per block once the
+     * codeword passes 255 packages, never simply the tail. This used to write every package it
+     * had whenever none was missing, parity and padding included, after the file's own bytes.
+     */
     private fun writeDataToFile(outputStream: FileOutputStream) {
-        val sortedList = dataList.sortedBy { it.current }
-        if(firstPackage.spare == 0 || lostPackagesIndex.isEmpty()) {
-            for (packageData in sortedList) {
-                outputStream.write(packageData.data)
-            }
-        } else {
-            val total = firstPackage.total
-            val parityPackets = firstPackage.spare
-            val receivedWithNulls: List<Packet?> = (0 until total).map { index ->
-                if (lostPackagesIndex.contains(index)) {
-                    null
-                } else {
-                    // Find the packet with current == index
-                    sortedList.find { it.current == index }?.data
-                }
-            }
-            val reedSolomonAuto = ReedSolomon (totalDataPackets = total - parityPackets , totalParityPackets = parityPackets)
-            val decodedReed = reedSolomonAuto.decode(receivedPackets = receivedWithNulls,
-                missingIndices = lostPackagesIndex.toIntArray() ).toMutableList()
-
-            firstPackage.let {
-                val spare = it.spareData
-                val lastIndex = decodedReed.lastIndex
-                decodedReed[lastIndex] = decodedReed[lastIndex].copyOfRange(0, decodedReed[lastIndex].size - spare)
-            }
-
-            for (packageData in decodedReed) {
-//                    Log.d("decoded" , "decoded 2: ${packageData.toHexString()}")
-                outputStream.write(packageData)
-            }
-        }
+        assembleFileBytes(firstPackage, dataList.associate { it.current to it.data })
+            .forEach { outputStream.write(it) }
     }
 
     private fun checkMissingPackages() {
@@ -549,13 +521,6 @@ class FileReceiver(
         if (lostPackagesIndex.isNotEmpty()) {
             Log.d("FileReceiver", "Missing packages: $lostPackagesIndex")
         }
-    }
-
-    private fun hasMainPackages(): Boolean {
-        val mainCount = firstPackage.total
-        val spare = firstPackage.spare
-        // Check if any missing package index is in the main range
-        return ((mainCount - spare) == dataList.size) && lostPackagesIndex.isEmpty()
     }
 
     /** ".jpg" for an image, otherwise the sender-supplied ending. */
@@ -739,6 +704,34 @@ class FileReceiver(
          * packages in memory. A choice, not a radio constant.
          */
         const val LATE_WINDOW_MS = 120_000L
+
+        /**
+         * The file's bytes from the packages [received] by codeword index — see [writeDataToFile].
+         * The caller has checked the file can be built ([isRecoverable]).
+         */
+        internal fun assembleFileBytes(
+            start: StardustFileStartPackage,
+            received: Map<Int, ByteArray>,
+        ): List<ByteArray> {
+            if (start.spare == 0) {
+                // No parity, no padding: every package is data, and none may be missing.
+                return (0 until start.total).map { received.getValue(it) }
+            }
+            val total = start.total
+            val rs = ReedSolomon(totalDataPackets = total - start.spare, totalParityPackets = start.spare)
+            val parity = rs.parityIndices()
+            val dataIndices = (0 until total).filter { it !in parity }
+            val packets: MutableList<Packet> = if (dataIndices.all { it in received }) {
+                // Every data package arrived: no decode.
+                dataIndices.mapTo(mutableListOf()) { received.getValue(it) }
+            } else {
+                rs.decode(receivedPackets = (0 until total).map { received[it] }).toMutableList()
+            }
+            // FileSender.createSparePackages padded the last data package to a full chunk.
+            val last = packets.lastIndex
+            packets[last] = packets[last].copyOfRange(0, packets[last].size - start.spareData)
+            return packets
+        }
 
         /**
          * Whether a start describes a file that can be built: at least one package, at least one
