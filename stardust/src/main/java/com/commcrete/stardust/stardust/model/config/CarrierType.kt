@@ -33,6 +33,8 @@ enum class CarrierType(val type: Int, val typeName: String) {
             FunctionalityType.TEXT,
             FunctionalityType.LOCATION,
             FunctionalityType.REPORTS,
+            FunctionalityType.FILE,
+            FunctionalityType.IMAGE,
             FunctionalityType.ACK,
             FunctionalityType.SOS
         )
