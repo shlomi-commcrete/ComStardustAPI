@@ -33,6 +33,9 @@ object RecorderUtils {
     var ts : Long = 0
     private val LOG_TAG = "AudioRecordTest"
 
+    /** One tag for the whole outgoing-PTT path (here, the v2 bridge, the mic); ids only, never payload. */
+    internal const val PTT_TRACE = "PttTrace"
+
     private var pttInterface : PttInterface? = null
     private var audioRecorderCodec2 : AudioRecorderCodec2? = AudioRecorderCodec2()
     private var aiRecorder : AudioRecorderAI? = null
@@ -116,9 +119,11 @@ object RecorderUtils {
 
         if (!recordingInProgress.compareAndSet(false, true)) {
             Log.w("AudioRecorder", "startRecording ignored: a recording session is already in progress")
+            Log.d(PTT_TRACE, "start ${recording.id} rejected: guard held, mic owner=$currentRecordingId")
             notifyPttRecordingError(PttRecordingError.ALREADY_RECORDING, recording.id)
             return null
         }
+        Log.d(PTT_TRACE, "start ${recording.id} accepted, previous owner=$currentRecordingId")
         currentRecordingId = recording.id
 
         try {
@@ -284,9 +289,15 @@ object RecorderUtils {
         error: PttRecordingError? = null,
         terminal: Boolean = false,
     ) {
-        val info = id?.let { recordings[it] } ?: return
+        val info = id?.let { recordings[it] } ?: run {
+            Log.d(PTT_TRACE, "event $state dropped: recording $id unknown or already terminal")
+            return
+        }
         synchronized(info) {
-            if (!info.emitted.add(state)) return
+            if (!info.emitted.add(state)) {
+                Log.d(PTT_TRACE, "event $state dropped: already sent for ${info.id}")
+                return
+            }
             if (terminal) {
                 recordings.remove(info.id)
                 // Only on terminal: STOPPED must NOT clear it, because on the legacy pipelines the
@@ -302,6 +313,7 @@ object RecorderUtils {
             codeType = info.codeType,
             error = error,
         )
+        Log.d(PTT_TRACE, "event $state for ${info.id}${error?.let { " ($it)" }.orEmpty()}")
         runCatching { DataManager.getCallbacks()?.onPttRecordingStateChanged(event) }
             .onFailure { Timber.tag(LOG_TAG).w(it, "onPttRecordingStateChanged threw for $event") }
     }
@@ -468,6 +480,7 @@ object RecorderUtils {
         file: File?
     ) {
         Log.d("AudioRecorder", "Stop recording")
+        Log.d(PTT_TRACE, "stop requested, mic owner=$currentRecordingId guard=${recordingInProgress.get()}")
 
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
             // init() is idempotent — guards against a stop arriving before any start ever wired the
@@ -484,6 +497,7 @@ object RecorderUtils {
             delay(300)
             canRecord.value = true
             recordingInProgress.set(false)
+            Log.d(PTT_TRACE, "guard cleared, mic owner=$currentRecordingId")
         }
     }
 

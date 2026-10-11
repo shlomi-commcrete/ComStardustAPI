@@ -4,10 +4,12 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
+import android.util.Log
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.R
+import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.audio.SoundChannel
 import com.commcrete.stardust.util.audio.SoundPlayer
 import com.commcrete.stardust.util.audio.filters.configs.AudioCaptureConfig
@@ -72,8 +74,12 @@ class MicCaptureSource(
     @Volatile private var activeRecord: AudioRecord? = null
     private val recordLock = Any()
 
+    /** For [stop]'s trace line only. */
+    @Volatile private var traceId: Long? = null
+
     @SuppressLint("MissingPermission")
     override fun start(id: RecordingId): Flow<PcmChunk> = flow {
+        traceId = id.value
         // "You may speak", before the microphone exists. Playing it here rather than at key-down is what
         // makes the ordering a guarantee instead of a race: [SoundPlayer.playAndAwait] suspends until the
         // beep has finished, so it cannot be captured, encoded, transmitted, or written into the local
@@ -109,13 +115,16 @@ class MicCaptureSource(
         // A stop() that landed while the mic was opening must not be overwritten back to `true` here —
         // that is the race that leaves the microphone live after a key-up the user already made.
         running = capturing && !stopRequested
+        Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} opened: capturing=$capturing running=$running")
         if (capturing) onCaptureStarted() else onCaptureFailed()
 
         val read = ShortArray(frameSamples)
         val framer = PcmFramer(frameSamples)
+        var lastRead = 0
         try {
             while (running) {
                 val n = recorder.read(read, 0, read.size)
+                lastRead = n
                 // A negative return is an error code (ERROR_DEAD_OBJECT when the device goes away,
                 // ERROR_INVALID_OPERATION on a stopped record), and it is returned immediately and
                 // forever after — treating it as "no data yet" would spin this loop on a CPU for the
@@ -137,6 +146,7 @@ class MicCaptureSource(
             // [PcmFramer.drain] is single-shot, so this cannot re-send audio already emitted above.
             framer.drain()?.let { emit(PcmChunk(it, rate, id)) }
         } finally {
+            Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} loop ended: running=$running lastRead=$lastRead")
             running = false
             synchronized(recordLock) {
                 activeRecord = null
@@ -149,6 +159,7 @@ class MicCaptureSource(
             runCatching { AudioCaptureConfig.clearInputRoute(context) }
             // The mic is only now genuinely released — that is the host's "recording stopped". Skipped
             // when it never opened, since that recording was already reported as failed.
+            Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} released")
             if (capturing) onCaptureStopped()
         }
     }.flowOn(Dispatchers.IO)
@@ -161,6 +172,7 @@ class MicCaptureSource(
      * here from touching a released one.
      */
     override suspend fun stop() {
+        Log.d(RecorderUtils.PTT_TRACE, "mic v2 $traceId stop(): record=${activeRecord != null} running=$running")
         stopRequested = true
         running = false
         synchronized(recordLock) {
