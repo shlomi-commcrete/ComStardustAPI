@@ -44,6 +44,7 @@ import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.PacketAirtime
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
@@ -967,6 +968,9 @@ object DataManager : StardustAPI, PttInterface {
         checkInitialized()
         return CarriersUtils.setLocalCarrierList()?.filter { it.deliveryType != StardustDeliveryType.RD4 }
     }
+
+    override fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long =
+        PacketAirtime.timeoutFor(functionality).ms(carrier.type, ConfigurationUtils.bandwidthFor(carrier))
 
     override fun getChatId(): String {
         return this.chatId ?: ""

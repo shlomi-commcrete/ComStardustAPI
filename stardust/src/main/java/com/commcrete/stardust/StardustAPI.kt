@@ -10,6 +10,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.transport.ConnectionState
 import com.commcrete.stardust.transport.DiscoveredDevice
 import com.commcrete.stardust.transport.PairedDevice
@@ -218,6 +219,13 @@ interface StardustAPI {
     fun logout()
     fun setCallback(stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (): List<Carrier>?
+
+    /**
+     * How long [carrier] may stay silent while transmitting [functionality] before a TX indicator
+     * should give up: the measured airtime of a 200-byte package at the carrier's last reported
+     * bandwidth (the same for every [functionality] today).
+     */
+    fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long
     fun sendRealSOS(location: Location)
     fun AckSOS(stardustAPIPackage: StardustAPIPackage)
     fun setSecurityKey(key: String, name : String)
