@@ -69,10 +69,61 @@ object SOSUtils {
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
     }
 
+    @Deprecated(
+        "Fails silently. Use setSosDestination, which says why a change was not queued.",
+        ReplaceWith("setSosDestination(destinationId)"),
+    )
     fun updateSosDestinations(destinationId: String) {
-        val (src, dst) = requireLocalSrcDst() ?: return
+        setSosDestination(destinationId)
+    }
 
-        val sosXCVR = ConfigurationUtils.bittelConfiguration.value?.sosXCVR ?: return
+    /**
+     * What [setSosDestination] did. Every case but [Queued] means nothing was sent and the radio
+     * keeps its previous destination.
+     */
+    sealed interface SosDestinationUpdate {
+        /**
+         * The change is on the send queue, followed by a configuration read-back. Not a
+         * confirmation from the radio: the new destination is applied once
+         * [ConfigurationUtils.bittelConfiguration] reports it.
+         */
+        object Queued : SosDestinationUpdate
+
+        /**
+         * No registered user, or the user has no device id yet — there is no local address to
+         * send from. Recoverable: register, or pair the radio so it reports its id.
+         */
+        object NoLocalIdentity : SosDestinationUpdate
+
+        /**
+         * The radio's configuration has not been read, or does not name an SOS transceiver.
+         * Recoverable once the configuration arrives — typically after the link comes up.
+         */
+        object NoSosTransceiver : SosDestinationUpdate
+
+        /**
+         * [destinationId] is not 1–8 hex digits, so it cannot be an address on the wire. Not
+         * recoverable by retrying: the id itself is wrong.
+         */
+        object InvalidDestinationId : SosDestinationUpdate
+    }
+
+    /**
+     * Asks the radio to send SOS alerts to [destinationId] (a user or group id, hex).
+     *
+     * Synchronous and non-blocking: it only enqueues, on the caller's thread, and is safe to call
+     * twice — the second request replaces the first on the radio. Throws nothing; every failure is
+     * a [SosDestinationUpdate] case.
+     */
+    fun setSosDestination(destinationId: String): SosDestinationUpdate {
+        // Checked before parsing: hexStringToByteArray left-pads to 8 digits and never terminates
+        // on a longer id, and throws on a non-hex one.
+        if (!SOS_DESTINATION_ID.matches(destinationId)) {
+            return SosDestinationUpdate.InvalidDestinationId
+        }
+        val (src, dst) = requireLocalSrcDst() ?: return SosDestinationUpdate.NoLocalIdentity
+        val sosXCVR = ConfigurationUtils.bittelConfiguration.value?.sosXCVR
+            ?: return SosDestinationUpdate.NoSosTransceiver
 
         val sosMessage = StardustPackageUtils.getStardustPackage(
             data = buildUpdateSosDestinationPayload(sosXCVR, destinationId),
@@ -81,7 +132,11 @@ object SOSUtils {
             stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_SOS_DESTINATION)
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
         DataManager.getClientConnection().saveConfiguration()
+        return SosDestinationUpdate.Queued
     }
+
+    /** A wire address: up to 4 bytes, so 1–8 hex digits. Must agree with hexStringToByteArray. */
+    private val SOS_DESTINATION_ID = Regex("^[0-9A-Fa-f]{1,8}$")
 
     private fun buildUpdateSosDestinationPayload(sosXCVR: Int, id: String): Array<Int> {
         val parsedDestination = StardustPackageUtils.hexStringToByteArray(id)

@@ -709,6 +709,8 @@ object StardustPackageUtils {
         return byteArray.map { it.toInt() }.toTypedArray()
     }
 
+    // Takes 1–8 hex digits only: a longer string never leaves the padding loop, and a non-hex one
+    // throws. SOSUtils.setSosDestination validates against this before calling; the two must agree.
     fun hexStringToByteArray(hexString: String): Array<Int> {
         var hex = hexString
         while (hex.length != 8){
