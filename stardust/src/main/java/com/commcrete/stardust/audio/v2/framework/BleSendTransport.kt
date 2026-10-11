@@ -1,11 +1,13 @@
 package com.commcrete.stardust.audio.v2.framework
 
+import android.util.Log
 import com.commcrete.stardust.audio.v2.application.codec.CodecRegistry
 import com.commcrete.stardust.audio.v2.application.port.SendTransport
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
+import com.commcrete.stardust.util.AppEvents
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import kotlin.random.Random
@@ -25,10 +27,31 @@ import kotlin.random.Random
  */
 class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
 
+    /** Plain var: the transmit gate is this class's only caller, one frame at a time. */
+    private var lastLoggedRadio: Pair<Long, Int>? = null
+
     override suspend fun send(frame: EncodedFrame) {
-        val owner = frame.owner ?: return
-        val route = routing.get(owner) ?: return
-        val radio = CarriersUtils.getRadioToSend(route.carrier, functionalityType = FunctionalityType.PTT) ?: return
+        val owner = frame.owner ?: run {
+            Log.w(AppEvents.TX_RX_TRACE, "ptt frame DROPPED: no owner")
+            return
+        }
+        val route = routing.get(owner) ?: run {
+            Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: route released")
+            return
+        }
+        val radio = CarriersUtils.getRadioToSend(route.carrier, functionalityType = FunctionalityType.PTT) ?: run {
+            Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: no PTT radio for carrier ${route.carrier?.index}")
+            return
+        }
+        // Once per recording, and again if Auto resolves to a different radio mid-recording.
+        val resolved = owner.value to radio.index
+        if (resolved != lastLoggedRadio) {
+            lastLoggedRadio = resolved
+            Log.d(
+                AppEvents.TX_RX_TRACE,
+                "ptt v2 ${owner.value} sends on carrier ${radio.index} (${radio.deliveryType}), requested ${route.carrier?.index ?: "auto"}",
+            )
+        }
 
         // Resolve the wire opcode from the frame's codec (CODEC2 → SEND_PTT 0x15, WavTokenizer → SEND_PTT_AI 0x3A).
         val opcode = CodecRegistry.byCodecId(frame.codecId).sendOpcode

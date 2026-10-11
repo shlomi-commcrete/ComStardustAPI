@@ -2,6 +2,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import timber.log.Timber
 
@@ -19,8 +20,17 @@ object AppEvents {
     private var snrGeneration = 0
     private var pendingSnrExpiry: StardustAppEventPackage.RSSIPackage? = null
 
+    /** Radio TX/RX events from arrival to the host callback; same tag the plugin uses. */
+    internal const val TX_RX_TRACE = "TxRxTrace"
+
     fun updateAppEvents (bittelAppEventPackage: StardustAppEventPackage) {
-        DataManager.getCallbacks()?.onAppEvent(bittelAppEventPackage)
+        val callbacks = DataManager.getCallbacks()
+        if (callbacks == null) {
+            Log.w(TX_RX_TRACE, "sdk event ${bittelAppEventPackage.eventType} xcvr=${bittelAppEventPackage.xcvr} DROPPED: no host callbacks")
+            return
+        }
+        Log.d(TX_RX_TRACE, "sdk event ${bittelAppEventPackage.eventType} xcvr=${bittelAppEventPackage.xcvr} -> host")
+        callbacks.onAppEvent(bittelAppEventPackage)
     }
 
     /**

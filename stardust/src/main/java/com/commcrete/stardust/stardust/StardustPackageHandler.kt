@@ -187,9 +187,15 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             )
         }
 
+        val isRadioEvent = mPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT
+        if (isRadioEvent) {
+            Log.d(AppEvents.TX_RX_TRACE, "sdk raw event in id=$randomID data=[${mPackage.data?.take(2)?.joinToString(",")}]")
+        }
+
         synchronized(packageProcessingLock) {
             if (isDuplicate(mPackage)) {
                 Log.w("ConfigDebug", "handleStardustPackage -> isDuplicate == true for $randomID (opCode=${mPackage.stardustOpCode})")
+                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: duplicate")
                 if (isSosOpCode(mPackage.stardustOpCode)) {
                     Log.w(SOS_LOG_TAG,"INBOUND DROPPED as duplicate: op=${mPackage.stardustOpCode} id=$randomID")
                 }
@@ -214,6 +220,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 if (isSosOpCode(mPackage.stardustOpCode)) {
                     Log.w(SOS_LOG_TAG,"INBOUND DROPPED as SNIFFED: op=${mPackage.stardustOpCode} id=$randomID")
                 }
+                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: sniffed")
                 return@launch
             }
 
@@ -221,6 +228,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 if (isSosOpCode(mPackage.stardustOpCode)) {
                     Log.w(SOS_LOG_TAG,"INBOUND CONSUMED by init handler: op=${mPackage.stardustOpCode} id=$randomID")
                 }
+                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: consumed by init handler")
                 Log.w("ConfigDebug", "handleStardustPackage -> StardustInitConnectionHandler.onIncoming for $randomID" )
                 synchronized(packageProcessingLock) { resetTimer() }
                 return@launch
@@ -334,11 +342,17 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         // Plain Log, not Timber: the TX/RX event timing has to be visible in logcat without the
         // host planting a tree (`adb logcat -s AppEvent`).
         Log.d("AppEvent", "type=${eventPackage.eventType} xcvr=${eventPackage.xcvr} sender=${eventPackage.senderID}")
+        Log.d(AppEvents.TX_RX_TRACE, "sdk parsed ${eventPackage.eventType} xcvr=${eventPackage.xcvr}")
+        if (eventPackage.eventType == null) {
+            Log.w(AppEvents.TX_RX_TRACE, "sdk event type unknown/unparsed, data=[${mPackage.data?.take(2)?.joinToString(",")}]")
+        }
 
         eventPackage.let { sdPackage ->
             when (sdPackage.eventType) {
                 RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, TxEnd -> {
                     ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)
+                    // Null here means the host will ignore it: xcvr is not in the selected preset.
+                    Log.d(AppEvents.TX_RX_TRACE, "sdk ${sdPackage.eventType} xcvr=${sdPackage.xcvr} -> carrier ${sdPackage.carrier?.index}")
                     // A multi-package send waiting on this transmission can move on now.
                     // xcvr is the transceiver's position in the preset — the same index the
                     // senders' Carrier carries (CarriersUtils.getCarriersByPreset).
