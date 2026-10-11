@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
 import android.util.Log
+import com.commcrete.stardust.ble.BleDiag
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.enums.LicenseType
@@ -294,6 +295,10 @@ object StardustInitConnectionHandler {
     private fun failAndStop(reason: String) {
         Timber.tag("InitHandler").w("Init flow failed: $reason")
         Log.d("ConfigDebug","Init flow FAILED at state=$state reason=$reason")
+        if (BleManager.isBleConnected) {
+            BleDiag.verdict("init gave up at $state ($reason) on a live BLE link — the state becomes " +
+                "Error(Canceled), which auto-reconnect never retries; the session stays dead until the user acts.")
+        }
         onInitFailed(reason)
         cancel()
     }

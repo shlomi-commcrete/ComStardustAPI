@@ -63,6 +63,7 @@ public class BleScanner {
         @Override
         public void onScanFailed(int errorCode) {
             super.onScanFailed(errorCode);
+            BleDiag.INSTANCE.scanFailed(errorCode);
             ScanFailure failure = mapScanFailure(errorCode);
             Log.e(TAG, "scan failed, code " + errorCode + " -> " + failure);
             reportFailure(failure);
@@ -80,7 +81,9 @@ public class BleScanner {
         // name. Either identifying as one of our radios is enough.
         String advertisedName = result.getScanRecord() != null ? result.getScanRecord().getDeviceName() : null;
         String deviceName = result.getDevice().getName();
-        if (isStartWithBittle(advertisedName) || isStartWithBittle(deviceName)) {
+        boolean matched = isStartWithBittle(advertisedName) || isStartWithBittle(deviceName);
+        BleDiag.INSTANCE.scanSeen(result, matched);
+        if (matched) {
             int index = indexOfScanResult(result);
             if (index >= 0) {
                 scanResults.set(index, result);
@@ -237,6 +240,7 @@ public class BleScanner {
         // radios that have since gone away.
         scanResults.clear();
 
+        BleDiag.INSTANCE.scanStart(bluetoothLeScanner != null);
         bluetoothLeScanner = scanner;
         bluetoothLeScanner.startScan(scanFilters, scanSettingsBuilder.build(), scanCallback);
         Log.i(TAG, "scanning started");
@@ -261,6 +265,7 @@ public class BleScanner {
     @SuppressLint("MissingPermission")
     public boolean stopScan() {
         scanTimeoutHandler.removeCallbacksAndMessages(null);
+        BleDiag.INSTANCE.scanStop(bluetoothLeScanner != null);
         if (bluetoothLeScanner != null) {
             try {
                 bluetoothLeScanner.stopScan(scanCallback);

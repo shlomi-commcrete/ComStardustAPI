@@ -2,6 +2,7 @@ package com.commcrete.stardust.transport
 
 import android.bluetooth.BluetoothAdapter
 import android.os.SystemClock
+import com.commcrete.stardust.ble.BleDiag
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.PairingRepository
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
@@ -147,6 +148,7 @@ object ConnectionManager {
 
     /** Called from the init-handler state setter whenever the handshake state changes. */
     fun onInitStateChanged(state: State) {
+        BleDiag.onInitState(state)
         lastInitState = state
         recompute()
     }
@@ -160,6 +162,7 @@ object ConnectionManager {
      * wanted (manual disconnect, unpair, USB takeover), because those clear [autoReconnectDesired].
      */
     fun onLinkLost(transport: TransportId) {
+        BleDiag.log("linkLost", "$transport ${autoReconnectBlockers()}")
         if (!autoReconnectDesired) {
             Timber.tag(TAG).d("link lost over $transport — auto-reconnect not desired, staying down")
             return
@@ -180,6 +183,11 @@ object ConnectionManager {
      * the state keeps the Searching → Disconnected course set by the original drop.
      */
     fun onConnectAttemptFailed(transport: TransportId, reason: String) {
+        BleDiag.log("attemptFailed", "$transport ($reason) ${autoReconnectBlockers()}")
+        if (autoReconnectDesired && !shouldAutoReconnect()) {
+            BleDiag.verdict("a failed $transport connect attempt is NOT retried (${autoReconnectBlockers()}) — " +
+                "only a still-registered background connect can recover it now.")
+        }
         if (!autoReconnectDesired) return
         if (shouldAutoReconnect()) requestReconnect(transport, reason, withGrace = false)
     }
@@ -202,6 +210,7 @@ object ConnectionManager {
     @Synchronized
     fun onKeepaliveLost(transport: TransportId, reason: String) {
         Timber.tag(TAG).w("keepalive lost over $transport — $reason")
+        BleDiag.log("keepaliveLost", "$transport ($reason) ${autoReconnectBlockers()}")
         // Each transport tears itself down and arms its own recovery (USB re-probes a device that
         // is still attached; BLE has none and is retried just below).
         try {
@@ -223,6 +232,7 @@ object ConnectionManager {
         val previous = _connectionState.value
         val next = derive(active, lastInitState, inReconnectGrace())
         _connectionState.value = next
+        if (next != previous) BleDiag.log("state", "$previous -> $next (transport=$active init=$lastInitState)")
 
         // Reaching a connected state means any pending reconnect is moot and backoff can reset.
         if (next is ConnectionState.LinkUp || next is ConnectionState.Syncing || next is ConnectionState.Ready) {
@@ -245,6 +255,7 @@ object ConnectionManager {
         // disconnect, when the init state is already DISCONNECTED but BleManager.isBleConnected
         // hasn't propagated to false yet.
         if (!isBleEstablished(previous) && isBleEstablished(next)) {
+            BleDiag.log("autoReconnect", "ARMED on edge into $next")
             autoReconnectDesired = true
             startReconnectWatchdog()
         }
@@ -329,10 +340,12 @@ object ConnectionManager {
         // USB calls disableAutoReconnect() as part of the takeover.
         if (transport == TransportId.BLE && autoConnectSuppressed) {
             Timber.tag(TAG).d("BLE reconnect suppressed by an intentional disconnect ($reason)")
+            BleDiag.log("requestReconnect", "REFUSED suppressed-by-unpair ($reason)")
             return
         }
         if (reconnectJob?.isActive == true) {
             Timber.tag(TAG).d("reconnect already in progress; ignoring request ($reason)")
+            BleDiag.log("requestReconnect", "REFUSED job-active ($reason)")
             return
         }
         // See RECONNECT_ATTEMPT_WINDOW_MS: the job guard above expires almost immediately, so this
@@ -342,6 +355,7 @@ object ConnectionManager {
         val now = SystemClock.elapsedRealtime()
         if (now < attemptInFlightUntilMs) {
             Timber.tag(TAG).d("reconnect still in flight for ${attemptInFlightUntilMs - now}ms; ignoring request ($reason)")
+            BleDiag.log("requestReconnect", "REFUSED window-open ${attemptInFlightUntilMs - now}ms left ($reason)")
             return
         }
         attemptInFlightUntilMs = now + RECONNECT_ATTEMPT_WINDOW_MS
@@ -364,6 +378,7 @@ object ConnectionManager {
         }
         val delayMs = backoffDelay()
         Timber.tag(TAG).d("scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
+        BleDiag.log("requestReconnect", "ACCEPTED $transport in ${delayMs}ms attempt=${attempt.get() + 1} ($reason)")
 
         reconnectJob = Scopes.getDefaultCoroutine().launch {
             if (delayMs > 0) delay(delayMs)
@@ -410,6 +425,7 @@ object ConnectionManager {
                 // repairs the published BleManager.isPaired for the host UI. No-ops when the bond
                 // set is unreadable, so it can never wipe a valid pairing.
                 PairingRepository.reconcile()
+                BleDiag.log("watchdog60s", "tick state=${_connectionState.value} ${autoReconnectBlockers()}")
                 if (shouldAutoReconnect()) {
                     requestReconnect(TransportId.BLE, "auto-reconnect watchdog")
                 }
@@ -447,6 +463,20 @@ object ConnectionManager {
             // that in-flight attempt.
             derive(TransportRegistry.active()?.id, lastInitState, inGrace = false) is ConnectionState.Disconnected
 
+    /** BleDiag only: every [shouldAutoReconnect] term, so a refusal names its reason. */
+    private fun autoReconnectBlockers(): String {
+        val derived = derive(TransportRegistry.active()?.id, lastInitState, inGrace = false)
+        val blockers = buildList {
+            if (!autoReconnectDesired) add("notDesired")
+            if (!RegisteredUserUtils.isUserLoggedIn()) add("loggedOut")
+            if (PairingRepository.currentPairedAddress() == null) add("notPaired")
+            if (BleManager.isUSBConnected) add("usbUp")
+            if (!isBluetoothOn()) add("btOff")
+            if (derived !is ConnectionState.Disconnected) add("derived=$derived")
+        }
+        return "autoReconnect=${if (blockers.isEmpty()) "YES" else "NO$blockers"} init=$lastInitState"
+    }
+
     /**
      * False when the adapter is off or absent. Pauses auto-reconnect while Bluetooth is disabled —
      * there's no point retrying until it's back on. Re-enabling BT is handled by the adapter-state
@@ -478,6 +508,7 @@ object ConnectionManager {
 
     @Synchronized
     fun disableAutoReconnect() {
+        BleDiag.log("autoReconnect", "DISABLED by ${Throwable().stackTrace.drop(1).take(3).joinToString(" <- ") { "${it.fileName}:${it.lineNumber}" }}")
         autoReconnectDesired = false
         watchdogJob?.cancel()
         watchdogJob = null

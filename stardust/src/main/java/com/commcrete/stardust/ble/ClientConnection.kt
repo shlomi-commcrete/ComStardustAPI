@@ -230,6 +230,8 @@ internal class ClientConnection(): BittelProtocol {
 
     private val connectionHandler : Handler = Handler(Looper.getMainLooper())
     private val connectionRunnable : Runnable = kotlinx.coroutines.Runnable {
+        BleDiag.log("connWatchdog20s", "fired: init=${BleDiag.initState} isConnected=${StardustInitConnectionHandler.isConnected()} " +
+            "connectInFlight=${connectInFlight.get()} linkUp=${linkUp.get()} attemptAgeMs=${SystemClock.elapsedRealtime() - connectStartedAtMs}")
         if(!StardustInitConnectionHandler.isConnected()) {
             ConnectionManager.requestReconnect(TransportId.BLE, "BLE connection watchdog")
         }
@@ -390,6 +392,15 @@ internal class ClientConnection(): BittelProtocol {
 
                     Log.d("StardustDataManager", " onConnectionStateChange")
                     Log.d("ConfigDebug", "onConnectionStateChange status=$status newState=$newState hasCallback=$hasCallback mDevice=${mDevice?.address}")
+                    val isCurrentClient = gatt != null && (gatt === pendingGatt || gatt === gattConnection)
+                    BleDiag.log("gattState", "${BleDiag.id(gatt)} status=$status newState=$newState current=$isCurrentClient " +
+                        "pending=${BleDiag.id(pendingGatt)} established=${BleDiag.id(gattConnection)} linkUp=${linkUp.get()} " +
+                        "directPending=${directConnectPending.get()} hasCallback=$hasCallback init=${BleDiag.initState}")
+                    if (!isCurrentClient) {
+                        BleDiag.verdict("GATT event from ${BleDiag.id(gatt)}, which is neither the pending nor the " +
+                            "established client — an orphaned client is still alive and its events are being " +
+                            "applied to the current connection's state.")
+                    }
                     Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
                     if(status == 0 && newState == 2){
                         // If the user disconnected (or logged out) while this reconnect's connectGatt
@@ -707,6 +718,11 @@ internal class ClientConnection(): BittelProtocol {
         if(bluetoothStateObserver == null) initBleStatus()
         Log.d("StardustDataManager", "isDisconnected() ${isDisconnected() }")
         val shouldTrigger = isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()
+        BleDiag.log("services", "discovered on ${BleDiag.id(gatt)} init=${BleDiag.initState} willStartInit=$shouldTrigger")
+        if (!shouldTrigger) {
+            BleDiag.verdict("services discovered but init will NOT start: handshake state is ${BleDiag.initState} " +
+                "(left over from the previous link), so this link is never synced.")
+        }
         Log.d("ConfigDebug", "handleServicesDiscovered done — willTriggerInit=$shouldTrigger isDisconnected=${isDisconnected()} isSearching=${StardustInitConnectionHandler.isSearchingToConnect()}")
         if(shouldTrigger) triggerInitSequence(gatt)
     }
@@ -714,7 +730,11 @@ internal class ClientConnection(): BittelProtocol {
     /** Updates BLE connection state and RSSI polling when the device is paired. */
     private fun updateConnectionState(gatt: BluetoothGatt?) {
         Log.d("StardustDataManager", "BleManager.isPaired.value ${BleManager.isPaired.value}")
-        if (BleManager.isPaired.value != true) return
+        if (BleManager.isPaired.value != true) {
+            BleDiag.verdict("services discovered on ${BleDiag.id(gatt)} but isPaired=${BleManager.isPaired.value} — " +
+                "the link is up yet never marked connected, so the SDK keeps reporting no transport.")
+            return
+        }
         Scopes.getMainCoroutine().launch {
             Timber.tag(LOG_TAG).d("gattConnection")
             gattConnection = gatt
@@ -967,12 +987,21 @@ internal class ClientConnection(): BittelProtocol {
         // reply arriving twice with the second dropped by the duplicate filter.
         if (!connectInFlight.compareAndSet(false, true)) {
             Log.w("ConfigDebug", "connectDevice SKIPPED for ${device.address} — a connectGatt is already in flight/active")
+            BleDiag.log("connect", "SKIPPED autoConnect=$autoConnect — gate held by ${BleDiag.id(pendingGatt)} " +
+                "for ${SystemClock.elapsedRealtime() - connectStartedAtMs}ms")
             return false
+        }
+        BleDiag.rememberRadio(device.address)
+        val previous = pendingGatt
+        if (previous != null && previous !== gattConnection) {
+            BleDiag.verdict("connectDevice overwrites pending client ${BleDiag.id(previous)} without closing it — " +
+                "it stays registered (and, if it was a background connect, keeps re-attaching to the radio).")
         }
         resetDiscoveryState()
         linkUp.set(false)
         connectStartedAtMs = SystemClock.elapsedRealtime()
         pendingGatt = device.connectGatt(context, autoConnect, getBleGattCallback(device))
+        BleDiag.log("connect", "connectGatt issued ${BleDiag.id(pendingGatt)} autoConnect=$autoConnect init=${BleDiag.initState}")
         return true
     }
 
@@ -1033,6 +1062,7 @@ internal class ClientConnection(): BittelProtocol {
         patientConnectJob = null
 
         Log.d("ConfigDebug", "escalating ${device.address} to background connect — $reason")
+        BleDiag.log("escalate", "direct ${BleDiag.id(pendingGatt)} -> background connect ($reason)")
         closePendingGatt()
         connectInFlight.set(false)
         hasCallback = false
@@ -1066,6 +1096,8 @@ internal class ClientConnection(): BittelProtocol {
 
         // Whether USB currently owns the shared session state.
         val usbOwnsSession = BleManager.isUSBConnected
+        BleDiag.log("disconnect", "force=$disconnectByForce stateUpdate=$withStateUpdate usbOwns=$usbOwnsSession " +
+            "closing established=${BleDiag.id(gattConnection)} pending=${BleDiag.id(pendingGatt)} init=${BleDiag.initState}")
 
         // Mark the link down NOW, synchronously, before anything below publishes state.
         //
@@ -1159,6 +1191,13 @@ internal class ClientConnection(): BittelProtocol {
      * [com.commcrete.stardust.util.DataManager.bondOnStartup] before every reconnect entry.
      */
     fun resetForNewSession() {
+        val pending = pendingGatt
+        BleDiag.log("resetSession", "pending=${BleDiag.id(pending)} established=${BleDiag.id(gattConnection)} " +
+            "connectInFlight=${connectInFlight.get()} linkUp=${linkUp.get()}")
+        if (pending != null && pending !== gattConnection) {
+            BleDiag.verdict("resetForNewSession releases the connect gate while ${BleDiag.id(pending)} is still " +
+                "open — the next connect will orphan it.")
+        }
         resetDiscoveryState()
         hasCallback = false
         connectInFlight.set(false)
@@ -1626,13 +1665,17 @@ internal class ClientConnection(): BittelProtocol {
             return UnpairResult.NOT_PAIRED
         }
 
+        BleDiag.rememberRadio(deviceToUnbond.address)
+        BleDiag.osLinkToRadio("unpair-before")
         val unbondStarted = requestUnbond(deviceToUnbond)
         // android.util.Log, not Timber: this library never plants a tree, so Timber output is
         // invisible in the host and this result could not be seen in a capture.
         Log.d("ConfigDebug",
             "removeBittelBond ${deviceToUnbond.address}: osUnbondStarted=$unbondStarted force=$forceClearLocal")
+        BleDiag.log("unpair", "osUnbondStarted=$unbondStarted force=$forceClearLocal")
         disconnectFromBLEDevice(true)
         publishUnpairedState()
+        BleDiag.watchOsLinkAfterUnpair()
 
         return if (unbondStarted || forceClearLocal) {
             clearLocalPairing()
@@ -2236,8 +2279,16 @@ internal class ClientConnection(): BittelProtocol {
         // should always win.
         if (isConnectAttemptOutstanding()) {
             Log.d("ConfigDebug", "reconnectToDevice SKIPPED — a connect attempt is still outstanding")
+            BleDiag.log("reconnect", "SKIPPED — attempt ${BleDiag.id(pendingGatt)} outstanding for " +
+                "${SystemClock.elapsedRealtime() - connectStartedAtMs}ms linkUp=${linkUp.get()} init=${BleDiag.initState}")
+            if (linkUp.get()) {
+                BleDiag.verdict("reconnect refused because the LIVE link counts as an outstanding attempt " +
+                    "(init=${BleDiag.initState}) — a link whose handshake stalls is never replaced for up to " +
+                    "${CONNECT_ATTEMPT_STALE_MS}ms.")
+            }
             return
         }
+        BleDiag.log("reconnect", "start: 2000ms delay then direct->background; init=${BleDiag.initState}")
         disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
@@ -2249,6 +2300,7 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     fun reconnectToDeviceFast() {
+        BleDiag.log("reconnectFast", "host-requested: direct connect only, no background fallback; init=${BleDiag.initState}")
         disconnectFromBLEDevice(disconnectByForce = true, withStateUpdate = false)
         reconnectJob?.cancel()
         reconnectJob = Scopes.getDefaultCoroutine().launch {
