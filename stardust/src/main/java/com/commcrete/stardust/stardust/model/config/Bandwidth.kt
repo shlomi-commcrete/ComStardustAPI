@@ -4,7 +4,7 @@ package com.commcrete.stardust.stardust.model.config
  * Transceiver bandwidth, as reported in bits 5-7 of the carrier byte (Ver_24.0.7+). Mirrors the C
  * core's `bandwidth_t`: [khz] is `BW_KHZ[]`, [carriers] is `BW_CARRIERS[]` from `lease_calculate.c`.
  *
- * Wire facts only. Timing measured on top of a bandwidth lives in [FilePacketAirtime].
+ * Wire facts only. Timing measured on top of a bandwidth lives in [PacketAirtime].
  */
 enum class Bandwidth(val code: Int, val khz: Double, val carriers: Int) {
     BW_7_81(0, 7.81, 1),

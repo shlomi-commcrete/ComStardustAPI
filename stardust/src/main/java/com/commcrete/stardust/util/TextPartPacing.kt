@@ -2,13 +2,13 @@ package com.commcrete.stardust.util
 
 import com.commcrete.stardust.stardust.model.config.Bandwidth
 import com.commcrete.stardust.stardust.model.config.CarrierType
-import com.commcrete.stardust.stardust.model.config.TextPacketAirtime
+import com.commcrete.stardust.stardust.model.config.PacketAirtime
 
 /**
  * Timing of the parts of a long text, per carrier. The sender waits up to [sendIntervalMs] after
  * each part (less when the radio reports TxEnd sooner, see [TxEndGate]); the receiver
  * settles a message that has not seen its LAST part after [continuationWindowMs] without a
- * further part. Both derive from [TextPacketAirtime], so the receiver's patience can never fall
+ * further part. Both derive from [PacketAirtime.TEXT], so the receiver's patience can never fall
  * below the sender's spacing.
  */
 internal object TextPartPacing {
@@ -18,7 +18,7 @@ internal object TextPartPacing {
 
     /** An unknown carrier type (no carrier list yet) is treated as the slowest, LR. */
     fun sendIntervalMs(type: CarrierType?, bandwidth: Bandwidth?): Long =
-        TextPacketAirtime.ms(type ?: CarrierType.LR, bandwidth)
+        PacketAirtime.TEXT.ms(type ?: CarrierType.LR, bandwidth)
 
     /** Interval on [carrier], at the bandwidth the device last reported for it. */
     fun sendIntervalMs(carrier: Carrier?): Long =

@@ -16,7 +16,7 @@ import com.commcrete.stardust.room.new_db.message.SendProgress
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
-import com.commcrete.stardust.stardust.model.config.FilePacketAirtime
+import com.commcrete.stardust.stardust.model.config.PacketAirtime
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.util.CarriersUtils.getRadioToSend
 import com.commcrete.stardust.util.FileUtils.FileType
@@ -1050,7 +1050,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         private const val START_PACKAGE_INDEX = -1
 
         /** Interval before any package has resolved its radio: HR at unknown bandwidth. */
-        private val DEFAULT_SEND_INTERVAL_MS = FilePacketAirtime.defaultMs(CarrierType.HR)
+        private val DEFAULT_SEND_INTERVAL_MS = PacketAirtime.FILE.defaultMs(CarrierType.HR)
 
         /** Least time between two progress writes — see recordProgress. A choice, not a radio fact. */
         private const val PROGRESS_WRITE_MIN_MS = 2_000L
@@ -1087,7 +1087,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
          * it. Both the send pacing and the estimate use this, so the two cannot drift apart.
          */
         internal fun packetAirtimeMs(radio: Carrier): Long =
-            FilePacketAirtime.ms(radio.type, ConfigurationUtils.bandwidthFor(radio))
+            PacketAirtime.FILE.ms(radio.type, ConfigurationUtils.bandwidthFor(radio))
 
         /**
          * The estimate as a number, for callers that need to compute with it rather than show it.
