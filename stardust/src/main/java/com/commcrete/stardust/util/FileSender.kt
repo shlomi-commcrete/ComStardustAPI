@@ -3,6 +3,7 @@ package com.commcrete.stardust.util
 
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
@@ -93,6 +94,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
     /** Serializes the progress writes so a later count can never be overwritten by an earlier one. */
     private val progressWrites = Mutex()
+
+    /** When [recordProgress] last wrote, on the elapsed-realtime clock. On [handler]'s thread. */
+    @Volatile private var lastProgressWriteMs = 0L
 
     /**
      * Positions in [mutablePackagesMap] that carry Reed-Solomon parity rather than file
@@ -252,6 +256,15 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
     private fun recordProgress() {
         val id = messageId ?: return
         val attachment = savedAttachment ?: return
+        // At most one write per PROGRESS_WRITE_MIN_MS: a package goes out every 140 ms at the
+        // fastest preset, and each write is a database round trip for a figure only the startup
+        // sweep reads. A skipped write only leaves the sweep an older, lower count — it errs
+        // towards FAILED, as a lost write already did. The count that makes the send deliverable
+        // is always written, so a process that dies after it is settled SENT.
+        val now = SystemClock.elapsedRealtime()
+        val progress = currentProgress()
+        if (!progress.isComplete && now - lastProgressWriteMs < PROGRESS_WRITE_MIN_MS) return
+        lastProgressWriteMs = now
         CoroutineScope(Dispatchers.IO).launch {
             progressWrites.withLock {
                 try {
@@ -1038,6 +1051,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
 
         /** Interval before any package has resolved its radio: HR at unknown bandwidth. */
         private val DEFAULT_SEND_INTERVAL_MS = FilePacketAirtime.defaultMs(CarrierType.HR)
+
+        /** Least time between two progress writes — see recordProgress. A choice, not a radio fact. */
+        private const val PROGRESS_WRITE_MIN_MS = 2_000L
 
         /**
          * The start package goes out ahead of the [calculateNumOfPackages] count, which is
