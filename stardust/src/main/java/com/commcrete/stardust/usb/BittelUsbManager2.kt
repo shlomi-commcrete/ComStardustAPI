@@ -25,7 +25,9 @@ import com.commcrete.stardust.util.audio.ButtonListener
 import com.hoho.android.usbserial.util.SerialInputOutputManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -495,6 +497,18 @@ object BittelUsbManager2 : BittelProtocol {
         }
     }
 
+    /**
+     * Where USB writes run: one at a time, in the order they were handed over. The write blocks —
+     * up to its 3 s timeout when the link stalls — and its callers include the main thread (the
+     * file-send timer, the BLE-era ping, preset and location buttons all reach here through
+     * ClientConnection.sendMessage), so it no longer runs on the caller's thread.
+     *
+     * Using a serial coroutine lane (IO, parallelism 1). Considered a dedicated Executor thread:
+     * same ordering, but FileReceiver's lane is already this mechanism.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val usbWriteLane = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
+
     fun sendDataToUart (bittelPackage: StardustPackage) {
         // A null uartManager here while isUSBConnected==true is the "sends go nowhere" failure:
         // the flags say USB is up but no port is open.
@@ -507,7 +521,15 @@ object BittelUsbManager2 : BittelProtocol {
             )
             return
         }
-        val sent = manager.send(bittelPackage.getStardustPackageToSend())
+        // Built here, on the caller's thread: the bytes are the packet as it was handed over
+        // (checksum, encryption), whatever happens to the object before the write runs.
+        val bytes = bittelPackage.getStardustPackageToSend()
+        usbWriteLane.launch { writeToUart(manager, bittelPackage, bytes) }
+    }
+
+    /** On [usbWriteLane]. A port closed since the hand-over refuses the write and is logged. */
+    private fun writeToUart(manager: UARTManager, bittelPackage: StardustPackage, bytes: ByteArray) {
+        val sent = manager.send(bytes)
         if (sent) {
             UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
             // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
