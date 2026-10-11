@@ -556,8 +556,9 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     /**
-     * Ends every multi-part text still being received when the radio went away, as FAILED
-     * with the parts that arrived — no further part, LAST included, can join it on a new
+     * Ends every multi-part text still being received when the radio went away, as RECEIVED
+     * with the parts that arrived and the reason it is incomplete — no further part, LAST
+     * included, can join it on a new
      * session. Also drops the TxEnd tickets of the lost session.
      */
     internal fun settleInFlightIncomingTexts() {

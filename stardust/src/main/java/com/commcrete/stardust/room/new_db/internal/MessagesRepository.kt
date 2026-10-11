@@ -459,16 +459,18 @@ internal class MessagesRepository(
         }
 
     /**
-     * Settles an incoming multi-part text that ended without its LAST part as FAILED for
-     * [failure], keeping the parts that did arrive as its [text]. Returns false if the row had
-     * already settled — see [MessageDao.markIncomingTransferFailed].
+     * Settles an incoming multi-part text that ended without its LAST part: RECEIVED, with the
+     * parts that did arrive as its [text] and [failure] saying why it is incomplete. RECEIVED,
+     * not FAILED: part of a message arrived and is news — it counts as unread like any received
+     * message, and the reason is what tells the reader it stops short. Returns false if the row
+     * had already settled — see [MessageDao.markIncomingTransferReceived].
      */
-    suspend fun markIncomingTextFailed(
+    suspend fun markIncomingTextIncomplete(
         messageId: Long,
         text: String,
         failure: FileReceiver.FileFailure,
     ): Boolean = withContext(Dispatchers.IO) {
-        messagesDao.markIncomingTransferFailed(messageId, MessageExtraData.Text(text, failure = failure)) > 0
+        messagesDao.markIncomingTransferReceived(messageId, MessageExtraData.Text(text, failure = failure)) > 0
     }
 
     /**

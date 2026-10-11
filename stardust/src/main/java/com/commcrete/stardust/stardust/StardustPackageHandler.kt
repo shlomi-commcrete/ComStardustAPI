@@ -101,16 +101,17 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 text: String,
                 failure: FileReceiver.FileFailure,
             ) {
+                // RECEIVED with the reason, not FAILED: part of a message did arrive, so it is
+                // unread news like any other; the reason is what says it stops short.
                 if (messageId != null) {
-                    DataManager.getAppRepo().markIncomingTextFailed(messageId, text, failure)
+                    DataManager.getAppRepo().markIncomingTextIncomplete(messageId, text, failure)
                 } else {
                     DataManager.getAppRepo().saveMessage(
-                        pkg, MessageExtraData.Text(text, failure = failure), MessageState.FAILED,
+                        pkg, MessageExtraData.Text(text, failure = failure), MessageState.RECEIVED,
                     )
                 }
-                // Still announced, as it was when this path settled RECEIVED: part of a message
-                // did arrive, and the host learns it is incomplete from the row's FAILED state.
-                // Dropping the callback would make an inbound message silent.
+                // Announced like any received message: the host learns it is incomplete from the
+                // failure on the row. Dropping the callback would make an inbound message silent.
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveMessage(pkg.copy(isLast = true), text)
             }
@@ -139,8 +140,9 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     /**
-     * Ends every multi-part text still being received, as FAILED with the parts that
-     * arrived: with the session gone no further part — LAST included — can join them. Safe to
+     * Ends every multi-part text still being received, as RECEIVED with the parts that
+     * arrived and the reason it is incomplete: with the session gone no further part — LAST
+     * included — can join them. Safe to
      * call more than once.
      */
     internal fun settleInFlightTexts() = textAssembler.settleAll()

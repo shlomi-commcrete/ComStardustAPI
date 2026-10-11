@@ -72,13 +72,15 @@ class StaleInFlightSettlementTest {
 
     /**
      * A text is whole only once LAST arrived, and a row that saw LAST was settled by the live
-     * assembler. One still RECEIVING never saw it. Fails against the old rule, which said RECEIVED.
+     * assembler. One still RECEIVING never saw it: it is kept RECEIVED — part of it did arrive,
+     * and it counts as unread — with INTERRUPTED saying why it is incomplete. The reason is what
+     * tells it apart from a whole text; a plain RECEIVED (the rule before reasons) did not.
      */
     @Test
-    fun `a multi-part text that never saw LAST fails with the parts that arrived`() {
+    fun `a multi-part text that never saw LAST is kept incomplete, with the parts that arrived`() {
         val settlement = settlementForStaleInFlight(MessageState.RECEIVING, MessageExtraData.Text("hello wor"), withoutAudio)
 
-        assertEquals(MessageState.FAILED, settlement.state)
+        assertEquals(MessageState.RECEIVED, settlement.state)
         val extra = settlement.extraData as MessageExtraData.Text
         assertEquals("the row keeps every part that arrived", "hello wor", extra.text)
         assertEquals(FileReceiver.FileFailure.INTERRUPTED, extra.failure)

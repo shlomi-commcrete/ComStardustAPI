@@ -601,14 +601,15 @@ class AppRepository(
     /**
      * Settles an incoming multi-part text that ended without its LAST part — gap timeout
      * ([FileReceiver.FileFailure.MISSING]) or disconnect ([FileReceiver.FileFailure.DISCONNECTED])
-     * — as FAILED for [failure], keeping the parts that arrived. Returns false when the row had
+     * — as RECEIVED with [failure] saying why it is incomplete, keeping the parts that arrived:
+     * part of a message did arrive, and it counts as unread. Returns false when the row had
      * already settled and the write was refused.
      */
-    suspend fun markIncomingTextFailed(
+    suspend fun markIncomingTextIncomplete(
         messageId: Long,
         text: String,
         failure: FileReceiver.FileFailure,
-    ): Boolean = messages.markIncomingTextFailed(messageId, text, failure)
+    ): Boolean = messages.markIncomingTextIncomplete(messageId, text, failure)
 
     /**
      * Records an outgoing send's progress — [extraData] carrying its updated

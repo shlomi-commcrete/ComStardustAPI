@@ -63,9 +63,10 @@ internal class IncomingTextAssembler(
         suspend fun complete(messageId: Long?, pkg: StardustAPIPackage, text: String)
 
         /**
-         * The message ended without its LAST part: settle row [messageId] FAILED for [failure]
-         * with the [text] that arrived, or — when there is no row (the insert failed) — save it
-         * FAILED. [failure] is MISSING for the gap timeout, DISCONNECTED for a lost link.
+         * The message ended without its LAST part: settle row [messageId] RECEIVED with [failure]
+         * and the [text] that arrived, or — when there is no row (the insert failed) — save it
+         * so. RECEIVED, not FAILED: part of a message arrived, and it counts as unread.
+         * [failure] is MISSING for the gap timeout, DISCONNECTED for a lost link.
          */
         suspend fun abandon(
             messageId: Long?,

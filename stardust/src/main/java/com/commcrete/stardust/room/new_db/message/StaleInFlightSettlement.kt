@@ -28,8 +28,8 @@ internal data class StaleInFlightSettlement(
  *    going wrong, and the path cleared because nothing was ever written to it.
  *  - a multi-part text is written through part by part, so the row already holds every part that
  *    arrived — but a text is only whole once its LAST part has arrived, and a live assembly that
- *    saw LAST settles the row itself. One still RECEIVING never saw it: FAILED
- *    [FileReceiver.FileFailure.INTERRUPTED], text untouched, so the parts that did arrive stay
+ *    saw LAST settles the row itself. One still RECEIVING never saw it: RECEIVED
+ *    with [FileReceiver.FileFailure.INTERRUPTED] (it counts as unread), text untouched, so the parts that did arrive stay
  *    readable. This is the same rule the live assembler applies when its gap timeout or a
  *    disconnect ends a text early — see `IncomingTextAssembler` — with that path's own reason.
  *  - anything else has no business being RECEIVING; settle the state and touch nothing else rather
@@ -61,8 +61,10 @@ internal fun settlementForStaleInFlight(
         extraData.copy(path = "", failure = FileReceiver.FileFailure.INTERRUPTED),
     )
 
+    // An incoming text the process died receiving: RECEIVED with the reason, as the live path
+    // settles one whose LAST never came — part of a message arrived, and it counts as unread.
     is MessageExtraData.Text -> StaleInFlightSettlement(
-        MessageState.FAILED,
+        MessageState.RECEIVED,
         extraData.copy(failure = FileReceiver.FileFailure.INTERRUPTED),
     )
 
