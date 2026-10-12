@@ -79,6 +79,8 @@ class RecordingSession(
     private val scope: CoroutineScope,
     /** Where the mirror's self-decode runs. Empty inherits [scope]'s dispatcher. */
     private val decodeContext: CoroutineContext = EmptyCoroutineContext,
+    /** Why the pipeline failed, for logging; the recording still seals as ERROR. */
+    private val onPipelineError: (Throwable) -> Unit = {},
 ) {
     val ticket: TransmitTicket get() = outbound.ticket
 
@@ -144,8 +146,9 @@ class RecordingSession(
             } catch (e: CancellationException) {
                 reason = TerminalReason.CANCELLED
                 throw e
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
                 reason = TerminalReason.ERROR
+                runCatching { onPipelineError(t) }
             } finally {
                 watchdog.cancel()
                 withContext(NonCancellable) {

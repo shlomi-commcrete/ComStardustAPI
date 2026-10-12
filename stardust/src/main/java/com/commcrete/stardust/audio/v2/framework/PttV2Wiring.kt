@@ -223,6 +223,9 @@ object PttV2Wiring {
             maxTimeout = maxTimeoutNotifier,
             scope = sendScope,
             decodeContext = decodeDispatcher,
+            onPipelineError = { id, t ->
+                Log.w(RecorderUtils.PTT_TRACE, "recording v2 ${id.value} pipeline failed: ${t.javaClass.simpleName}", t)
+            },
         )
 
         val receiveStore = PttReceiveStore(context).also { this.receiveStore = it }

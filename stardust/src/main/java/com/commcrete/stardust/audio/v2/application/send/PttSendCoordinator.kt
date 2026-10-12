@@ -58,6 +58,8 @@ class PttSendCoordinator(
     private val scope: CoroutineScope,
     /** Where each recording's mirror self-decode runs — see [RecordingSession]. */
     private val decodeContext: CoroutineContext = EmptyCoroutineContext,
+    /** A recording's pipeline failure, for logging — see [RecordingSession]. */
+    private val onPipelineError: (RecordingId, Throwable) -> Unit = { _, _ -> },
 ) {
     private val restartMutex = Mutex()
     private val idSeq = AtomicLong(0L)
@@ -120,6 +122,7 @@ class PttSendCoordinator(
                 maxTimeout = maxTimeout,
                 scope = scope,
                 decodeContext = decodeContext,
+                onPipelineError = { onPipelineError(id, it) },
             )
         } catch (t: Throwable) {
             outbound.seal(TerminalReason.ERROR)
