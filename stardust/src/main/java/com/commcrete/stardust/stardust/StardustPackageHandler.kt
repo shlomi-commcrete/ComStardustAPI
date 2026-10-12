@@ -50,6 +50,7 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SOSUtils
 import com.commcrete.stardust.util.TxEndGate
 import com.commcrete.stardust.util.audio.PlayerUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
@@ -62,6 +63,8 @@ import timber.log.Timber
 
 /** Temporary diagnostic tag for the incoming-SOS investigation: `adb logcat -s SOSDebug`. */
 private const val SOS_LOG_TAG = "SOSDebug"
+
+private const val TAG = "StardustPackageHandler"
 
 internal class StardustPackageHandler(private var clientConnection: ClientConnection? = null) {
 
@@ -816,9 +819,35 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private fun handleLocationRequested(mPackage: StardustPackage, randomID: String) {
 
+        Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
+        // Mapped here, before responding: respondToRequestedLocation swaps this package's source
+        // and destination in place. Stamped now so the request sorts ahead of the location that
+        // answers it, whichever row reaches the database first.
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage)
+        val receivedAt = System.currentTimeMillis()
+        if (pkg != null) {
+            handlerScope.launch {
+                // Recorded as a plain incoming text, mirroring the "Location Request" row the
+                // sender saves in DataManager.requestLocation. Failing costs the row, never the answer.
+                try {
+                    DataManager.getAppRepo().saveMessage(
+                        pkg = pkg,
+                        extraData = MessageExtraData.Text(text = DataManager.LOCATION_REQUEST_TEXT),
+                        state = MessageState.RECEIVED,
+                        epochTimeMs = receivedAt,
+                    )
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Location request could not be saved; answering it anyway", e)
+                }
+            }
+        }
+
+        // Checked after the save, not before: an unlicensed device still records that it was
+        // asked, it only does not answer.
         if(ConfigurationUtils.licensedFunctionalities[FunctionalityType.LOCATION] != LimitationType.ENABLED) return
 
-        Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         DataManager.getClientConnection().let {
             LocationUtils.respondToRequestedLocation(
                 mPackage = mPackage,
