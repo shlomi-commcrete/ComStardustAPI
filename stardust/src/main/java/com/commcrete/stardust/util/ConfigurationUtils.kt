@@ -66,8 +66,16 @@ object ConfigurationUtils {
     fun bandwidthFor(carrier: Carrier): Bandwidth? =
         selectedPreset?.xcvrList?.getOrNull(carrier.index)?.bandwidthOption
 
+    /**
+     * xcvr is the transceiver's position in the preset, which is the index the send side's carriers
+     * use (CarriersUtils.getCarriersByPreset). Xcvr.carrier holds the hardware carrier number from
+     * the config byte instead, and the two differ (xcvr 1 was carrier 2), so it must not be used here.
+     */
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
-        stardustAppEventPackage.carrier = stardustAppEventPackage.xcvr?.let { selectedPreset?.xcvrList?.getOrNull(it) }?.carrier
+        stardustAppEventPackage.carrier = stardustAppEventPackage.xcvr?.let { xcvr ->
+            CarriersUtils.carrierList.value?.find { it.index == xcvr }
+                ?: selectedPreset?.let(CarriersUtils::getCarriersByPreset)?.find { it.index == xcvr }
+        }
     }
 
     private fun getLastPresets () : List<Preset>?{
