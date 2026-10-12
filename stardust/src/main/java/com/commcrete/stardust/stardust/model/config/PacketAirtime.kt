@@ -79,11 +79,11 @@ enum class PacketAirtime(
     ),
 
     /**
-     * TX indicator timeout: measured airtime of a 200-byte data package, the largest frame, so the
-     * timeout never ends a package still on air. Same bandwidth mapping and derived rows as [TEXT].
+     * TX and RX indicator timeout: measured airtime of a 200-byte data package, the largest frame, so
+     * the timeout never ends a package still on air. Same bandwidth mapping and derived rows as [TEXT].
      * Unknown bandwidth takes the slowest row; ST is unmeasured and keeps the old text interval.
      */
-    TX_TIMEOUT(
+    CHANNEL_TIMEOUT(
         hrDefaultMs = 1833L,
         lrDefaultMs = 12300L,
         stMs = 4000L,
@@ -121,6 +121,6 @@ enum class PacketAirtime(
     companion object {
         /** One table for every message type today; a per-type timeout becomes a branch here. */
         @Suppress("UNUSED_PARAMETER")
-        fun timeoutFor(functionality: FunctionalityType): PacketAirtime = TX_TIMEOUT
+        fun timeoutFor(functionality: FunctionalityType): PacketAirtime = CHANNEL_TIMEOUT
     }
 }

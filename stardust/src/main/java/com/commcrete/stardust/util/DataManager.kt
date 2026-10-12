@@ -973,7 +973,7 @@ object DataManager : StardustAPI, PttInterface {
     override fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean =
         CodecAvailability.isAvailable(codeType)
 
-    override fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long =
+    override fun getChannelTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long =
         PacketAirtime.timeoutFor(functionality).ms(carrier.type, ConfigurationUtils.bandwidthForF(carrier.index))
 
     override fun getChatId(): String {

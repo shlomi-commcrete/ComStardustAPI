@@ -221,12 +221,11 @@ interface StardustAPI {
     fun getCarriers (): List<Carrier>?
 
     /**
-     * How long [carrier] may stay silent while transmitting [functionality] before a TX indicator
-     * should give up: the measured airtime of a 200-byte package at the carrier's last reported
-     * bandwidth (the same for every [functionality] today). [carrier] is a radio event's, numbered
-     * by F.
+     * How long [carrier] may stay silent mid-transmission or mid-reception before a TX or RX indicator
+     * gives up: the measured airtime of a 200-byte package at the carrier's last reported bandwidth
+     * (the same for every [functionality] today). [carrier] is a radio event's, numbered by F.
      */
-    fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long
+    fun getChannelTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long
 
     /**
      * Whether [codeType] can record and play in this process. False after the plugin was reinstalled
