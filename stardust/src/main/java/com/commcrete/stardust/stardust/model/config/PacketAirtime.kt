@@ -42,6 +42,14 @@ enum class PacketAirtime(
         ),
     ),
 
+//    const SEND_TIME_MS: Array<{ BW: number; HR: number; LR: number }> = [
+//    { BW: 7.81, HR: 715.762, LR: 2800.269 },
+//    { BW: 15.63, HR: 362.655, LR: 1404.242 },
+//    { BW: 20.83, HR: 274.618, LR: 1056.183 },
+//    { BW: 41.67, HR: 142.277, LR: 532.966 },
+//    { BW: 62.5, HR: 98.192, LR: 358.672 },
+//    ];
+
     /**
      * Text parts, measured airtime of a 131-byte data package. The table's 24/25 and 50 kHz rows are
      * [Bandwidth.BW_20_83] and [Bandwidth.BW_41_67] (times scale with them). Unmeasured rows are
