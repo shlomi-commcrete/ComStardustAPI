@@ -29,6 +29,9 @@ internal object TxEndGate {
     /** How many timeouts an unanswered ticket waits for its TxEnd before it is dropped. */
     private const val STALE_FACTOR = 3
 
+    /** The `event` StardustPackageHandler passes for TXFinish: the event type's name. */
+    private const val FINISH_EVENT = "TXFinish"
+
     class Ticket internal constructor(
         /**
          * [Carrier.index] — the transceiver's position in the preset — the package went out on.
@@ -36,6 +39,8 @@ internal object TxEndGate {
          */
         internal val carrierIndex: Int,
         internal val expiresAtMs: Long,
+        /** False: only a TxEnd releases this package; a TXFinish just retires its ticket. */
+        internal val releasedByFinish: Boolean,
         private val onTxEnd: () -> Unit,
     ) {
         private val claimed = AtomicBoolean(false)
@@ -65,8 +70,13 @@ internal object TxEndGate {
      * thread that delivered the event — if its TxEnd arrives before the sender's [timeoutMs]
      * timer claims the ticket. It must cancel that timer before it sends anything.
      */
-    fun register(carrier: Carrier, timeoutMs: Long, onTxEnd: () -> Unit): Ticket {
-        val ticket = Ticket(carrier.index, clock() + timeoutMs * STALE_FACTOR, onTxEnd)
+    fun register(
+        carrier: Carrier,
+        timeoutMs: Long,
+        releasedByFinish: Boolean = true,
+        onTxEnd: () -> Unit,
+    ): Ticket {
+        val ticket = Ticket(carrier.index, clock() + timeoutMs * STALE_FACTOR, releasedByFinish, onTxEnd)
         synchronized(tickets) {
             dropStale()
             tickets.addLast(ticket)
@@ -90,6 +100,12 @@ internal object TxEndGate {
             val index = tickets.indexOfFirst { it.carrierIndex == carrierIndex }
             if (index < 0) null else tickets.removeAt(index)
         } ?: return
+        // Still consumed, so FIFO stays aligned with the radio's queue; not claimed, so the
+        // sender's timer moves on.
+        if (event == FINISH_EVENT && !ticket.releasedByFinish) {
+            log("$event on carrier $carrierIndex retired a ticket that waits for TxEnd")
+            return
+        }
         if (ticket.fireTxEnd()) log("$event on carrier $carrierIndex released the next package")
     }
 

@@ -359,6 +359,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     // TxEnd and TXFinish both end a transmission (TXFinish when the queue is now
                     // empty — the usual case, since senders hand over one package at a time).
                     if (sdPackage.eventType == TxEnd || sdPackage.eventType == TXFinish) {
+                        // The name must stay "TXFinish": TxEndGate.FINISH_EVENT matches on it.
                         TxEndGate.onTxEnd(sdPackage.xcvr, sdPackage.eventType.toString())
                     }
                 }

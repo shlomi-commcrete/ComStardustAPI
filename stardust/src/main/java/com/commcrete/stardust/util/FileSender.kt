@@ -285,7 +285,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      */
     private fun registerTxTicket(radio: Carrier) {
         var ticket: TxEndGate.Ticket? = null
-        ticket = TxEndGate.register(radio, sendInterval) {
+        // TxEnd only: a TXFinish says the radio's queue emptied, not that this package went out.
+        ticket = TxEndGate.register(radio, sendInterval, releasedByFinish = false) {
             handler.post {
                 if (cancelled.get() || pendingTicket !== ticket) return@post
                 removeSendTimer()
