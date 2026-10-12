@@ -49,6 +49,7 @@ import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliver
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.FileSender.OnFileStatusChange
+import com.commcrete.stardust.util.audio.CodecAvailability
 import com.commcrete.stardust.util.audio.PlayerUtils
 import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.audio.v2.adapter.VolumeUiAdapter
@@ -968,6 +969,9 @@ object DataManager : StardustAPI, PttInterface {
         checkInitialized()
         return CarriersUtils.setLocalCarrierList()?.filter { it.deliveryType != StardustDeliveryType.RD4 }
     }
+
+    override fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean =
+        CodecAvailability.isAvailable(codeType)
 
     override fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long =
         PacketAirtime.timeoutFor(functionality).ms(carrier.type, ConfigurationUtils.bandwidthForF(carrier.index))

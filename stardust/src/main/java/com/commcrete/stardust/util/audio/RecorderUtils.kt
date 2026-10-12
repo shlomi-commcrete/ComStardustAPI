@@ -117,6 +117,15 @@ object RecorderUtils {
         )
         recordings[recording.id] = recording
 
+        // Before the guard, so a refused press leaves it free. Otherwise the mic opens and the first
+        // encode fails ~0.6 s in, as a generic ERROR.
+        if (!CodecAvailability.isAvailable(codeType)) {
+            Log.w("AudioRecorder", "startRecording refused: $codeType codec unavailable in this process")
+            Log.d(PTT_TRACE, "start ${recording.id} rejected: codec $codeType unavailable")
+            notifyPttRecordingError(PttRecordingError.ENCODER_UNAVAILABLE, recording.id)
+            return null
+        }
+
         if (!recordingInProgress.compareAndSet(false, true)) {
             Log.w("AudioRecorder", "startRecording ignored: a recording session is already in progress")
             Log.d(PTT_TRACE, "start ${recording.id} rejected: guard held, mic owner=$currentRecordingId")

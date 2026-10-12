@@ -227,6 +227,13 @@ interface StardustAPI {
      * by F.
      */
     fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long
+
+    /**
+     * Whether [codeType] can record and play in this process. False after the plugin was reinstalled
+     * into a running ATAK and the codec's native library stayed with the old copy — until ATAK
+     * restarts. The first call may touch a lock file or load a native library: call it off the main thread.
+     */
+    fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean
     fun sendRealSOS(location: Location)
     fun AckSOS(stardustAPIPackage: StardustAPIPackage)
     fun setSecurityKey(key: String, name : String)
