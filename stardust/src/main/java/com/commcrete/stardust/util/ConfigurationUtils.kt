@@ -61,23 +61,24 @@ object ConfigurationUtils {
 
     /**
      * Bandwidth [carrier] is on in the current preset, read live from the last configuration the
-     * device reported. Null before the first configuration and on legacy firmware.
+     * device reported. Null before the first configuration and on legacy firmware. [carrier] is a
+     * send-side carrier, numbered by slot; for an event's carrier use [bandwidthForF].
      */
     fun bandwidthFor(carrier: Carrier): Bandwidth? =
         selectedPreset?.xcvrList?.getOrNull(carrier.index)?.bandwidthOption
 
     /**
-     * xcvr is the transceiver's position in the preset, which is the index the send side's carriers
-     * use (CarriersUtils.getCarriersByPreset). Xcvr.carrier holds the hardware carrier number from
-     * the config byte instead, and the two differ (xcvr 1 was carrier 2), so it must not be used here.
+     * An event's carrier is numbered by F: xcvr is the transceiver's slot, and Xcvr.carrier.index is
+     * its F (0-8), which the host's channel indicator keys on. The send side's carriers are numbered
+     * by slot instead (CarriersUtils.getCarriersByPreset) — the two differ, so never mix them.
      */
     fun setStardustCarrierFromEvent (stardustAppEventPackage: StardustAppEventPackage) {
-        stardustAppEventPackage.carrier = stardustAppEventPackage.xcvr?.let { xcvr ->
-            CarriersUtils.carrierList.value?.find { it.index == xcvr }
-                ?: selectedPreset?.let(CarriersUtils::getCarriersByPreset)?.find { it.index == xcvr }
-        }
+        stardustAppEventPackage.carrier = stardustAppEventPackage.xcvr?.let { selectedPreset?.xcvrList?.getOrNull(it) }?.carrier
     }
 
+    /** Bandwidth of the transceiver on F [fIndex] (0-8) — for an event's carrier, which is numbered by F. */
+    fun bandwidthForF(fIndex: Int): Bandwidth? =
+        selectedPreset?.xcvrList?.firstOrNull { it.carrier.index == fIndex }?.bandwidthOption
     private fun getLastPresets () : List<Preset>?{
         return SharedPreferencesUtil.getPresets()
     }
@@ -96,7 +97,7 @@ object ConfigurationUtils {
             if(isPresetsChanged(config.presets)) {
                 CarriersUtils.setPresetsAfterChange(config)
             } else {
-                CarriersUtils.setPresetsWithoutChange()
+                CarriersUtils.setPresetsWithoutChange(config)
             }
             CarriersUtils.updateCurrentPresetList(currentPresetNow)
         }

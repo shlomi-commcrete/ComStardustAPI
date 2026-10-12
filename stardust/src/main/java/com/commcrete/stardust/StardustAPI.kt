@@ -223,7 +223,8 @@ interface StardustAPI {
     /**
      * How long [carrier] may stay silent while transmitting [functionality] before a TX indicator
      * should give up: the measured airtime of a 200-byte package at the carrier's last reported
-     * bandwidth (the same for every [functionality] today).
+     * bandwidth (the same for every [functionality] today). [carrier] is a radio event's, numbered
+     * by F.
      */
     fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long
     fun sendRealSOS(location: Location)

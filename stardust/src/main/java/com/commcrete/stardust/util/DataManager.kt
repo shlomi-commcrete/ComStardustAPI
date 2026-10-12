@@ -970,7 +970,7 @@ object DataManager : StardustAPI, PttInterface {
     }
 
     override fun getTxTimeoutMs(carrier: Carrier, functionality: FunctionalityType): Long =
-        PacketAirtime.timeoutFor(functionality).ms(carrier.type, ConfigurationUtils.bandwidthFor(carrier))
+        PacketAirtime.timeoutFor(functionality).ms(carrier.type, ConfigurationUtils.bandwidthForF(carrier.index))
 
     override fun getChatId(): String {
         return this.chatId ?: ""
