@@ -705,6 +705,9 @@ class AppRepository(
     suspend fun archiveMessages(messageIds: Collection<Int>): Int =
         messages.archiveMessages(messageIds)
 
+    /** Archives every settled message in [chatId]; in-flight ones are left to settle. */
+    suspend fun archiveChatMessages(chatId: String): Int = messages.archiveChatMessages(chatId)
+
     suspend fun archiveMessagesInRange(startTimestamp: Long, endTimestamp: Long): Boolean =
         messages.archiveMessagesInRange(startTimestamp, endTimestamp)
 

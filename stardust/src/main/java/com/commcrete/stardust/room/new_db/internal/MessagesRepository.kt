@@ -728,6 +728,11 @@ internal class MessagesRepository(
         messagesDao.archiveMessage(messageId) > 0
     }
 
+    /** Hides [chatId]'s settled messages from the chat without deleting them; see the DAO query. */
+    suspend fun archiveChatMessages(chatId: String): Int = withContext(Dispatchers.IO) {
+        messagesDao.archiveChatMessages(chatId)
+    }
+
     suspend fun archiveMessages(messageIds: Collection<Int>): Int = withContext(Dispatchers.IO) {
         val ids = messageIds.distinct()
         if (ids.isEmpty()) return@withContext 0

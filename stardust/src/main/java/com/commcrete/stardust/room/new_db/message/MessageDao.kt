@@ -447,6 +447,13 @@ interface MessageDao {
     @Query("UPDATE messages SET state = 5 WHERE id IN (:messageIds) AND state != 5")
     suspend fun archiveMessages(messageIds: List<Int>): Int
 
+    /**
+     * Archives every settled message in [chatId]. In-flight rows (RECEIVING=4, SENDING=7) are skipped:
+     * their settlement would write a final state over ARCHIVED and bring them back into the chat.
+     */
+    @Query("UPDATE messages SET state = 5 WHERE chat_id = :chatId AND state NOT IN (4, 5, 7)")
+    suspend fun archiveChatMessages(chatId: String): Int
+
     @Query("UPDATE messages SET state = 5 WHERE epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp")
     suspend fun archiveAllMessages(startTimestamp: Long, endTimestamp: Long): Int
 
