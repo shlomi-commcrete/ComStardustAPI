@@ -368,6 +368,11 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                         ConfigurationUtils.setCurrentPresetLocal(it)
                         ConfigurationUtils.setDefaults()
                     }
+                    // The radio also sends this for an edit in place (RD / F changed on the current
+                    // preset), and nothing else follows: the switch above uses the cached config, so
+                    // re-read it, as UPDATE_PRESET_DATA does.
+                    Log.d("ConfigDebug", "PresetChange -> re-reading configuration")
+                    getConfiguration()
                 }
                 ArmDelete -> {
                     if(sdPackage.armDelete == ArmDelete.type) {
