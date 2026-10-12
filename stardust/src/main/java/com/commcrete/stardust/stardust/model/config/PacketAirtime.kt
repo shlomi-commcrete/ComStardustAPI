@@ -21,34 +21,30 @@ enum class PacketAirtime(
      * (`s_ms_per_pkt`), rounded to the millisecond, plus ST, which the C core does not cover.
      */
     FILE(
-        hrDefaultMs = 705L,
-        lrDefaultMs = 2800L,
+        hrDefaultMs = 706L,
+        lrDefaultMs = 4761L,
         stMs = 450L,
         hrByBandwidth = mapOf(
-            Bandwidth.BW_7_81 to 756L,
-            Bandwidth.BW_15_63 to 403L,
-            Bandwidth.BW_20_83 to 315L,
+            Bandwidth.BW_7_81 to 706L,
+            Bandwidth.BW_10_42 to 530L,
+            Bandwidth.BW_15_63 to 353L,
+            Bandwidth.BW_20_83 to 265L,
             Bandwidth.BW_31_25 to 226L,
             Bandwidth.BW_41_67 to 182L,
             Bandwidth.BW_62_5 to 138L,
+            Bandwidth.BW_125 to 69L,
         ),
         lrByBandwidth = mapOf(
-            Bandwidth.BW_7_81 to 2840L,
-            Bandwidth.BW_15_63 to 1444L,
-            Bandwidth.BW_20_83 to 1096L,
-            Bandwidth.BW_31_25 to 747L,
-            Bandwidth.BW_41_67 to 573L,
-            Bandwidth.BW_62_5 to 399L,
+            Bandwidth.BW_7_81 to 4761L,
+            Bandwidth.BW_10_42 to 3570L,
+            Bandwidth.BW_15_63 to 2379L,
+            Bandwidth.BW_20_83 to 1785L,
+            Bandwidth.BW_31_25 to 1190L,
+            Bandwidth.BW_41_67 to 892L,
+            Bandwidth.BW_62_5 to 595L,
+            Bandwidth.BW_125 to 298,
         ),
     ),
-
-//    const SEND_TIME_MS: Array<{ BW: number; HR: number; LR: number }> = [
-//    { BW: 7.81, HR: 715.762, LR: 2800.269 },
-//    { BW: 15.63, HR: 362.655, LR: 1404.242 },
-//    { BW: 20.83, HR: 274.618, LR: 1056.183 },
-//    { BW: 41.67, HR: 142.277, LR: 532.966 },
-//    { BW: 62.5, HR: 98.192, LR: 358.672 },
-//    ];
 
     /**
      * Text parts, measured airtime of a 131-byte data package. The table's 24/25 and 50 kHz rows are
@@ -58,7 +54,7 @@ enum class PacketAirtime(
      */
     TEXT(
         hrDefaultMs = 1279L,
-        lrDefaultMs = 5085L,
+        lrDefaultMs = 8531L,
         stMs = 4000L,
         hrByBandwidth = mapOf(
             Bandwidth.BW_7_81 to 1279L,
@@ -71,14 +67,14 @@ enum class PacketAirtime(
             Bandwidth.BW_125 to 80L,
         ),
         lrByBandwidth = mapOf(
-            Bandwidth.BW_7_81 to 5085L,
-            Bandwidth.BW_10_42 to 3813L,
-            Bandwidth.BW_15_63 to 2541L,
-            Bandwidth.BW_20_83 to 1906L,
-            Bandwidth.BW_31_25 to 1270L,
-            Bandwidth.BW_41_67 to 953L,
-            Bandwidth.BW_62_5 to 635L,
-            Bandwidth.BW_125 to 318L,
+            Bandwidth.BW_7_81 to 8531L,
+            Bandwidth.BW_10_42 to 6398L,
+            Bandwidth.BW_15_63 to 4263L,
+            Bandwidth.BW_20_83 to 3199L,
+            Bandwidth.BW_31_25 to 2132L,
+            Bandwidth.BW_41_67 to 1599L,
+            Bandwidth.BW_62_5 to 1066L,
+            Bandwidth.BW_125 to 533L,
         ),
     ),
 
@@ -89,7 +85,7 @@ enum class PacketAirtime(
      */
     TX_TIMEOUT(
         hrDefaultMs = 1833L,
-        lrDefaultMs = 7297L,
+        lrDefaultMs = 12300L,
         stMs = 4000L,
         hrByBandwidth = mapOf(
             Bandwidth.BW_7_81 to 1833L,
@@ -102,14 +98,14 @@ enum class PacketAirtime(
             Bandwidth.BW_125 to 114L,
         ),
         lrByBandwidth = mapOf(
-            Bandwidth.BW_7_81 to 7297L,
-            Bandwidth.BW_10_42 to 5472L,
-            Bandwidth.BW_15_63 to 3646L,
-            Bandwidth.BW_20_83 to 2736L,
-            Bandwidth.BW_31_25 to 1823L,
-            Bandwidth.BW_41_67 to 1368L,
-            Bandwidth.BW_62_5 to 912L,
-            Bandwidth.BW_125 to 456L,
+            Bandwidth.BW_7_81 to 12300L,
+            Bandwidth.BW_10_42 to 9224L,
+            Bandwidth.BW_15_63 to 6146L,
+            Bandwidth.BW_20_83 to 4612L,
+            Bandwidth.BW_31_25 to 3074L,
+            Bandwidth.BW_41_67 to 2305L,
+            Bandwidth.BW_62_5 to 1537L,
+            Bandwidth.BW_125 to 767L,
         ),
     );
 
