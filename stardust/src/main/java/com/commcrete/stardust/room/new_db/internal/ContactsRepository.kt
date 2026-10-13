@@ -4,7 +4,10 @@ import android.util.Log
 import com.commcrete.stardust.room.new_db.audit.IdentityKind
 import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
 import com.commcrete.stardust.room.new_db.chat.ChatDao
+import com.commcrete.stardust.room.new_db.chat.ChatType
 import com.commcrete.stardust.room.new_db.contact.ContactEntity
+import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
+import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
 import com.commcrete.stardust.contacts.ContactDraft
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
@@ -67,6 +70,8 @@ internal class ContactsRepository(
     private val chats: ChatsRepository,
     private val identityLog: IdentityLogRecorder,
     private val registeredAppIdProvider: () -> String?,
+    /** Archives a chat's settled messages; returns how many. Used by [switchBetweenUserAndGroup]. */
+    private val archiveChatMessages: suspend (chatId: String) -> Int,
 ) {
 
     private companion object {
@@ -108,6 +113,7 @@ internal class ContactsRepository(
 
                 // Add to contacts cache before chat creation so concurrent
                 // saveMessage callers can resolve the new contact via cache.
+                forgetDisplacedIds(data, contactId, priorOwners, priorHoldings)
                 caches.addContact(data, contactId)
 
                 when (data.contact.type) {
@@ -145,6 +151,7 @@ internal class ContactsRepository(
                 Log.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID for ${contact.contact.name}")
                 return@withContext
             }
+            forgetDisplacedIds(contact, contactId, priorOwners, priorHoldings)
             caches.addContact(contact, contactId)
 
             when (contact.contact.type) {
@@ -216,6 +223,23 @@ internal class ContactsRepository(
                 )
             }
             .groupBy({ it.first }, { it.second })
+    }
+
+    /**
+     * An insert can take ids from another contact (a merge by device) and evict ids from the
+     * contact it lands on (`UNIQUE(contact_id)` replaces its old App ID). Both still route to
+     * their old owner in the caches until forgotten. The auto-create on the message path
+     * claims only unowned ids, so it forgets nothing and stays a cache write.
+     */
+    private suspend fun forgetDisplacedIds(
+        data: FullContactData,
+        contactId: Int,
+        priorOwners: Map<String, Int>,
+        priorHoldings: Map<Int, List<IdentityLogRecorder.PriorOwnedId>>,
+    ) {
+        val taken = claimedIds(data).filter { id -> priorOwners[id]?.let { it != contactId } == true }
+        val evicted = priorHoldings[contactId].orEmpty().map { it.idValue }
+        caches.forgetIds(taken + evicted)
     }
 
     private suspend fun recordInsert(
@@ -377,9 +401,9 @@ internal class ContactsRepository(
 
     /**
      * Applies an in-place change to an existing contact resolved from
-     * [original]'s identity: renames it, changes its icon, and/or strips an
-     * identity that has moved to another contact. Leaves the contact otherwise
-     * intact.
+     * [original]'s identity: renames it (and its chat), changes its icon, sets a
+     * new App ID or device, and/or strips an identity that has moved to another
+     * contact. Leaves the contact otherwise intact.
      *
      * Each strip is recorded in `contact_identity_log`: the mapping is deleted
      * outright here, so this is the only moment the losing side of a swap is
@@ -392,21 +416,54 @@ internal class ContactsRepository(
         batchId: Long? = null,
     ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(original) ?: return@withContext
+        val newKind = updated.effectiveType()
+        val oldKind = original.effectiveType()
+        if (oldKind != null && newKind != null && (oldKind == ContactType.GROUP) != (newKind == ContactType.GROUP)) {
+            switchBetweenUserAndGroup(contactId, original, updated, newKind, source, batchId)
+            return@withContext
+        }
+        // The kind follows the ids: a USER whose App ID is removed is a DEVICE now, and a DEVICE
+        // given one is a USER. Same contact, same chat — only the column changes.
+        if (newKind != null && newKind != original.effectiveType()) {
+            contactsDao.setContactType(contactId, newKind)
+        }
         // A draft holds "no icon" as "" (ContactDraft.fromFullContactData); the column holds null.
         if (updated.iconKey != original.iconKey) {
             val image = updated.iconKey.ifBlank { null }
             contactsDao.setContactImage(contactId, image)
             syncChatImage(original.type, contactId, image)
         }
-        if (updated.name.isNotBlank() && updated.name != original.name) {
-            contactsDao.renameContact(contactId, updated.name)
-            // Contact-only rename — this path deliberately leaves the chat name
-            // alone, so no chat id is recorded on the row.
-            identityLog.recordRename(
-                contactId = contactId,
-                fromName = original.name,
-                toName = updated.name,
-                chatId = null,
+        val newName = updated.name.trim()
+        if (newName.isNotBlank() && newName != original.name) {
+            renameContactAndItsChat(contactId, original.type, original.name, newName, source, batchId)
+        }
+        val newAppId = normalizeIdOrNull(updated.appId)
+        if (newAppId != null && !newAppId.equals(original.appId, ignoreCase = true)) {
+            // A new App ID on THIS contact, set in place. An Insert would merge into the contact
+            // too, but it also opens a second private chat for it. The old id is dropped first and
+            // recorded, so a change reads back as strip + assign.
+            val isGroup = original.type == ContactType.GROUP
+            val idKind = if (isGroup) IdentityKind.GROUP_ID else IdentityKind.USER_ID
+            if (original.hasAppId) {
+                if (isGroup) contactsDao.removeGroupId(original.appId)
+                else contactsDao.removeUserId(original.appId)
+                identityLog.recordStrip(
+                    idKind = idKind,
+                    idValue = original.appId,
+                    fromContactId = contactId,
+                    fromName = original.name,
+                    fromChatId = chatIdForContact(original.type, contactId),
+                    source = source,
+                    batchId = batchId,
+                )
+            }
+            if (isGroup) contactsDao.upsertGroupId(ContactGroupIdEntity(groupId = newAppId, contactId = contactId))
+            else contactsDao.upsertUserAppId(ContactUserIdEntity(userId = newAppId, contactId = contactId))
+            identityLog.recordAssign(
+                idKind = idKind,
+                idValue = newAppId,
+                toContactId = contactId,
+                toName = newName.ifBlank { original.name },
                 source = source,
                 batchId = batchId,
             )
@@ -467,25 +524,137 @@ internal class ContactsRepository(
                         batchId = batchId,
                     )
                 }
-                val deviceId = normalizeIdOrNull(updated.deviceId) ?: return@withContext
-                contactsDao.linkDevice(
-                    DeviceEntity(
-                        id = deviceId,
-                        model = updated.model.ifBlank { null },
-                        serial = updated.serial.ifBlank { null },
-                    ),
-                    contactId,
-                )
-                identityLog.recordAssign(
-                    idKind = IdentityKind.DEVICE_ID,
-                    idValue = deviceId,
-                    toContactId = contactId,
-                    toName = updated.name.ifBlank { original.name },
-                    source = source,
-                    batchId = batchId,
-                )
+                normalizeIdOrNull(updated.deviceId)?.let { deviceId ->
+                    contactsDao.linkDevice(
+                        DeviceEntity(
+                            id = deviceId,
+                            model = updated.model.ifBlank { null },
+                            serial = updated.serial.ifBlank { null },
+                        ),
+                        contactId,
+                    )
+                    identityLog.recordAssign(
+                        idKind = IdentityKind.DEVICE_ID,
+                        idValue = deviceId,
+                        toContactId = contactId,
+                        toName = updated.name.ifBlank { original.name },
+                        source = source,
+                        batchId = batchId,
+                    )
+                }
             }
         }
+        // After the writes, so a lookup racing them cannot re-cache the old owner.
+        caches.forgetIds(listOf(original.appId, original.deviceId, updated.appId, updated.deviceId))
+    }
+
+    /**
+     * A user contact becoming a group, or a group becoming a user, on the same App ID — the
+     * import's type-change case, which the operator confirms first.
+     *
+     * In place: same contact row, same chat row. A delete and a fresh insert would lose the
+     * history outright — deleting a chat cascades to its messages, archived ones included.
+     * Instead every settled message in the chat is archived: a group's traffic must not reappear
+     * in a private chat, nor a private chat's in a group. In-flight rows are left to settle
+     * (see `MessageDao.archiveChatMessages`).
+     *
+     * Archiving comes first. These writes are not one transaction, like every other write in
+     * this layer, so a failure part-way leaves messages hidden rather than shown to the wrong
+     * audience.
+     */
+    private suspend fun switchBetweenUserAndGroup(
+        contactId: Int,
+        original: ContactDraft,
+        updated: ContactDraft,
+        newKind: ContactType,
+        source: String,
+        batchId: Long?,
+    ) {
+        val toGroup = newKind == ContactType.GROUP
+        val chatId = chatIdForContact(original.type, contactId)
+        chatId?.let { archiveChatMessages(it) }
+
+        // Every id it held goes: an App ID lives in the other kind's table now, and a group
+        // holds no device.
+        val owned = contactsDao.getOwnedIdRows(listOf(contactId))
+        owned.forEach { row ->
+            when (row.kind) {
+                IdentityKind.USER_ID.name -> contactsDao.removeUserId(row.idValue)
+                IdentityKind.GROUP_ID.name -> contactsDao.removeGroupId(row.idValue)
+                IdentityKind.DEVICE_ID.name -> contactsDao.removeDeviceLink(row.idValue)
+                else -> return@forEach
+            }
+            identityLog.recordStrip(
+                idKind = IdentityKind.entries.first { it.name == row.kind },
+                idValue = row.idValue,
+                fromContactId = contactId,
+                fromName = original.name,
+                fromChatId = chatId,
+                source = source,
+                batchId = batchId,
+            )
+        }
+
+        val name = updated.name.trim().ifBlank { original.name }
+        // Non-null: newKind came from effectiveType, which needs the App ID.
+        val appId = normalizeIdOrNull(updated.appId)
+        if (appId != null) {
+            if (toGroup) contactsDao.upsertGroupId(ContactGroupIdEntity(groupId = appId, contactId = contactId))
+            else contactsDao.upsertUserAppId(ContactUserIdEntity(userId = appId, contactId = contactId))
+            identityLog.recordAssign(
+                idKind = if (toGroup) IdentityKind.GROUP_ID else IdentityKind.USER_ID,
+                idValue = appId,
+                toContactId = contactId,
+                toName = name,
+                source = source,
+                batchId = batchId,
+            )
+        }
+        val deviceId = normalizeIdOrNull(updated.deviceId).takeIf { !toGroup }
+        if (deviceId != null) {
+            contactsDao.linkDevice(
+                DeviceEntity(id = deviceId, model = updated.model.ifBlank { null }, serial = updated.serial.ifBlank { null }),
+                contactId,
+            )
+            identityLog.recordAssign(
+                idKind = IdentityKind.DEVICE_ID,
+                idValue = deviceId,
+                toContactId = contactId,
+                toName = name,
+                source = source,
+                batchId = batchId,
+            )
+        }
+        contactsDao.setContactType(contactId, newKind)
+
+        // The chat changes kind with it, and its participants with that: a group chat has every
+        // member, a private chat its one contact — as a newly created chat of that kind would.
+        // After setContactType, so the member list no longer counts this contact as a member.
+        val members = contactsDao.getAllMemberContactIds()
+        if (chatId != null) {
+            chatsDao.setChatType(chatId, if (toGroup) ChatType.GROUP else ChatType.PRIVATE)
+            chatsDao.replaceParticipants(chatId, if (toGroup) members + contactId else listOf(contactId))
+        }
+        if (toGroup) {
+            chatsDao.removeParticipantFromOtherChats(contactId, keepChatId = chatId.orEmpty())
+        } else {
+            chats.addToExistingGroupChats(contactId, chatsDao.getAllGroupChatIds() - chatId.orEmpty())
+        }
+
+        if (name != original.name) renameContactAndItsChat(contactId, newKind, original.name, name, source, batchId)
+        val image = updated.iconKey.ifBlank { null }
+        if (updated.iconKey != original.iconKey) {
+            contactsDao.setContactImage(contactId, image)
+            syncChatImage(newKind, contactId, image)
+        }
+        if (chatId == null) {
+            // No chat to convert: create the one this kind would have had.
+            contactsDao.getContactById(contactId)?.let { contact ->
+                if (toGroup) chats.createGroupChat(contact, contactId, members)
+                else chats.createPrivateChat(contact, contactId)
+            }
+        }
+        caches.forgetIds(owned.map { it.idValue } + listOfNotNull(appId, deviceId))
     }
 
     /**
@@ -501,16 +670,31 @@ internal class ContactsRepository(
     ) = withContext(Dispatchers.IO) {
         val contactId = resolveContactId(target) ?: return@withContext
         val trimmed = newName.trim()
-        // Exact comparison: a case-only change ("alpha" → "Alpha") is a real rename. Callers that
-        // treat callsigns case-insensitively (ContactConflictEngine.renameOpFor) filter it out first.
+        // Exact comparison: a case-only change ("alpha" → "Alpha") is a real rename.
         if (trimmed.isBlank() || trimmed == target.name) return@withContext
-        contactsDao.renameContact(contactId, trimmed)
-        val chatId = chatIdForContact(target.type, contactId)
-        chatId?.let { chatsDao.renameChatById(it, trimmed) }
+        renameContactAndItsChat(contactId, target.type, target.name, trimmed, source, batchId)
+    }
+
+    /**
+     * Every callsign change goes through here, so the contact and its chat never disagree. The
+     * chat list reads the contact's name ([ChatDao] `CHAT_NAME_SQL`); `chats.name` is still kept
+     * equal because it is UNIQUE, and a stale copy blocks creating a chat under that name.
+     */
+    private suspend fun renameContactAndItsChat(
+        contactId: Int,
+        type: ContactType,
+        fromName: String,
+        toName: String,
+        source: String,
+        batchId: Long?,
+    ) {
+        contactsDao.renameContact(contactId, toName)
+        val chatId = chatIdForContact(type, contactId)
+        chatId?.let { chatsDao.renameChatById(it, toName) }
         identityLog.recordRename(
             contactId = contactId,
-            fromName = target.name,
-            toName = trimmed,
+            fromName = fromName,
+            toName = toName,
             chatId = chatId,
             source = source,
             batchId = batchId,
@@ -541,9 +725,12 @@ internal class ContactsRepository(
         val name = contactsDao.getContactById(contactId)?.name ?: target.name
         val effectiveType = target.effectiveType() ?: target.type
         val primaryId = target.appId.ifBlank { target.deviceId }
+        // Read before the delete: the cascade removes the rows, and the draft may not list every id.
+        val ownedIds = contactsDao.getOwnedIdRows(listOf(contactId)).map { it.idValue }
 
         chatId?.let { chats.deleteChat(it) }
         contactsDao.deleteContactById(contactId)
+        caches.forgetIds(ownedIds + listOf(target.appId, target.deviceId))
 
         identityLog.recordDelete(
             contactId = contactId,

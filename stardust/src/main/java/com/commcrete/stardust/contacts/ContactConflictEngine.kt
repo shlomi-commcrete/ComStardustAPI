@@ -38,7 +38,8 @@ object ContactConflictEngine {
      */
     fun renameOpFor(applied: ContactDraft, candidates: List<ContactDraft>): ContactOperation.RenameExisting? {
         val twin = candidates.firstOrNull { it.sameIdentityIgnoringName(applied) } ?: return null
-        if (applied.name.equals(twin.name, ignoreCase = true)) return null
+        // Exact: a case-only change ("alpha" → "Alpha") is a callsign change like any other.
+        if (applied.name == twin.name) return null
         return ContactOperation.RenameExisting(twin, applied.name)
     }
 
@@ -56,25 +57,38 @@ object ContactConflictEngine {
      *    messages are re-parented to the incoming contact's chat via
      *    [ContactOperation.DeleteExisting.reparentTo] so history survives.
      *
+     *  - **Edit** ([editing] given): the same owner mutations, then one
+     *    [ContactOperation.UpdateExisting] of [editing] in place — callsign,
+     *    App ID, device and icon together. Never an Insert: the contact being
+     *    edited already exists, and an Insert would open a second chat for it.
+     *
      * @param candidates every existing contact considered for the rename
-     *   shortcut. For the LoadContacts flow this is the full existing roster;
-     *   for the ContactDetailsDialog editor it must include the original being
-     *   edited so a pure name change on the same contact is treated as a rename.
+     *   shortcut. For the LoadContacts flow this is the full existing roster.
+     *   Unused in edit mode.
+     * @param editing the stored contact an editor is changing, as it was loaded.
+     *   A KEEP on a conflicting id then leaves [editing]'s own id in place
+     *   rather than clearing it.
      */
     fun resolve(
         incoming: ContactDraft,
         conflicts: ContactConflicts,
         resolution: ContactResolution,
         candidates: List<ContactDraft> = emptyList(),
+        editing: ContactDraft? = null,
     ): List<ContactOperation> {
+        val keepAppId = ConflictField.APP_ID in conflicts.fields && resolution.appId == FieldChoice.KEEP
+        val keepDeviceId = ConflictField.DEVICE_ID in conflicts.fields && resolution.deviceId == FieldChoice.KEEP
         val applied = incoming.copy(
             name = resolution.incomingName,
-            appId = if (ConflictField.APP_ID in conflicts.fields && resolution.appId == FieldChoice.KEEP) "" else incoming.appId,
-            deviceId = if (ConflictField.DEVICE_ID in conflicts.fields && resolution.deviceId == FieldChoice.KEEP) "" else incoming.deviceId,
+            appId = if (keepAppId) editing?.appId.orEmpty() else incoming.appId,
+            deviceId = if (keepDeviceId) editing?.deviceId.orEmpty() else incoming.deviceId,
+            // The typed model/serial described the device the owner keeps, not the edited one's.
+            model = if (keepDeviceId && editing != null) editing.model else incoming.model,
+            serial = if (keepDeviceId && editing != null) editing.serial else incoming.serial,
         )
 
         // Rename shortcut: same identity, callsign changed → update in place.
-        renameOpFor(applied, candidates)?.let { rename ->
+        if (editing == null) renameOpFor(applied, candidates)?.let { rename ->
             val ops = mutableListOf<ContactOperation>()
             // If the applied name was chosen via SWAP callsign, also rename the
             // third-party contact that used to hold that name.
@@ -82,7 +96,7 @@ object ContactConflictEngine {
             val callsignOwner = conflicts.callsignOwner
             if (callsignOwner != null && callsignOwner !== rename.target &&
                 ownerName != null && ownerName.isNotBlank() &&
-                !ownerName.equals(callsignOwner.name, ignoreCase = true)
+                ownerName != callsignOwner.name
             ) {
                 ops += ContactOperation.RenameExisting(callsignOwner, ownerName)
             }
@@ -137,10 +151,15 @@ object ContactConflictEngine {
                 else -> updateOps += ContactOperation.UpdateExisting(original, updated)
             }
         }
-        // Order: strip identities → insert applied (creates its chat) →
-        // delete emptied owners (message reparent needs applied's chat).
+        // Order: strip identities → insert/update applied (its chat must exist)
+        // → delete emptied owners (message reparent needs applied's chat).
         ops += updateOps
-        ops += ContactOperation.Insert(applied)
+        when {
+            editing == null -> ops += ContactOperation.Insert(applied)
+            // Adding, changing or removing an id is still this contact — including a USER whose
+            // App ID is removed, which becomes a DEVICE in place.
+            applied != editing -> ops += ContactOperation.UpdateExisting(editing, applied)
+        }
         ops += deleteOps
         return ops
     }

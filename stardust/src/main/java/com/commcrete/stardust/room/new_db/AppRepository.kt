@@ -39,9 +39,12 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flowOn
@@ -100,6 +103,7 @@ class AppRepository(
         registeredAppIdProvider = {
             RegisteredUserUtils.currentUserFlow.value?.appId?.takeIf { it.isNotEmpty() }
         },
+        archiveChatMessages = { chatId -> messagesDao.archiveChatMessages(chatId) },
     )
 
     private val messages: MessagesRepository = MessagesRepository(
@@ -126,6 +130,18 @@ class AppRepository(
         observeAllContacts().stateIn(
             RepositoryProvider.AppScopes.applicationScope, SharingStarted.Eagerly, null,
         )
+
+    init {
+        // Keeps the in-memory id lookups in line with every database change to the tables they
+        // come from — see RepositoryCaches.invalidateIdentity. For the life of the process, like
+        // cachedContacts above.
+        RepositoryProvider.AppScopes.applicationScope.launch {
+            contactsDao.observeIdentityTables()
+                // Cause only: a database error message can quote the row it failed on.
+                .catch { Log.w(TAG, "Id lookup sync stopped: ${it.javaClass.simpleName}") }
+                .collect { caches.invalidateIdentity() }
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────
     // Contacts — reads  [= UNCHANGED]
@@ -234,6 +250,15 @@ class AppRepository(
                 ContactConflictEngine.detect(incoming, candidates)
             }
         }
+
+    /**
+     * How many messages in [draft]'s chat would be archived by changing it between user and
+     * group (see [ContactOperation.UpdateExisting]) — for the confirmation that names the
+     * cost before the operator agrees to it. 0 when the contact or its chat does not exist.
+     */
+    suspend fun archivableMessageCount(draft: ContactDraft): Int = withContext(Dispatchers.IO) {
+        contacts.chatIdForContactDraft(draft)?.let { messagesDao.countArchivableChatMessages(it) } ?: 0
+    }
 
     /**
      * Applies resolver output in the order that keeps identity swaps and message
@@ -780,6 +805,8 @@ class AppRepository(
     suspend fun rewriteRelocatedMediaPaths(): Int = messages.rewriteRelocatedMediaPaths()
 
     companion object {
+        private const val TAG = "AppRepository"
+
         const val PAGE_SIZE = 30
 
         /** Default retention for `contact_identity_log`: 90 days. */

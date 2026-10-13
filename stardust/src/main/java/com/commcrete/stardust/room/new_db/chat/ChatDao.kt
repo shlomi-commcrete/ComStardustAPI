@@ -11,6 +11,22 @@ import androidx.room.ColumnInfo
 import com.commcrete.stardust.room.new_db.message.MessageType
 import kotlinx.coroutines.flow.Flow
 
+/**
+ * A chat's name is its contact's callsign, read live: the private chat's one participant, or the
+ * group chat's GROUP contact. `chats.name` is only the fallback for a chat with no such contact —
+ * it is a copy, and copies have gone stale on every path that renamed a contact but not its chat.
+ * Reading `contacts` also makes Room re-emit the observing queries when a contact is renamed.
+ */
+private const val CHAT_NAME_SQL = """
+    COALESCE(
+        (SELECT ctn.name FROM chat_participants cpn
+         JOIN contacts ctn ON ctn.id = cpn.contact_id
+         WHERE cpn.chat_id = c.id AND (c.type = 'PRIVATE' OR ctn.type = 'GROUP')
+         LIMIT 1),
+        c.name
+    )
+"""
+
 @Dao
 interface ChatDao {
 
@@ -57,6 +73,14 @@ interface ChatDao {
 
     @Query("UPDATE chats SET name = :name WHERE id = :chatId")
     suspend fun renameChatById(chatId: String, name: String): Int
+
+    /** Private ↔ group in place, when its contact's App ID changes between user and group. */
+    @Query("UPDATE chats SET type = :type WHERE id = :chatId")
+    suspend fun setChatType(chatId: String, type: ChatType): Int
+
+    /** Takes [contactId] out of every chat but [keepChatId] — a contact that became a group is nobody's member. */
+    @Query("DELETE FROM chat_participants WHERE contact_id = :contactId AND chat_id != :keepChatId")
+    suspend fun removeParticipantFromOtherChats(contactId: Int, keepChatId: String): Int
 
     // ── Chat + participants (transactional) ──────────────────────────────
 
@@ -120,7 +144,7 @@ interface ChatDao {
         SELECT
             c.id                                            AS chatId,
             c.type                                          AS chatType,
-            c.name                                          AS name,
+            $CHAT_NAME_SQL                                  AS name,
             c.image                                         AS image,
             lm.type                                         AS lastMessageType,
             lm.state                                        AS lastMessageState,
@@ -166,7 +190,7 @@ interface ChatDao {
         SELECT
             c.id                                            AS chatId,
             c.type                                          AS chatType,
-            c.name                                          AS name,
+            $CHAT_NAME_SQL                                  AS name,
             c.image                                         AS image,
             lm.type                                         AS lastMessageType,
             lm.state                                        AS lastMessageState,
@@ -307,7 +331,13 @@ interface ChatDao {
     @Query("SELECT id FROM chats")
     suspend fun getAllChatIds(): List<String>
 
-    @Query("SELECT * FROM chats WHERE id = :chatId LIMIT 1")
+    /** [ChatEntity.name] here is the derived name ([CHAT_NAME_SQL]), not the stored copy. */
+    @Query("""
+        SELECT c.id, $CHAT_NAME_SQL AS name, c.image, c.type, c.created_at_ms, c.last_updated_ms
+        FROM chats c
+        WHERE c.id = :chatId
+        LIMIT 1
+    """)
     suspend fun getChatByChatId(chatId: String): ChatEntity?
 
     @Transaction

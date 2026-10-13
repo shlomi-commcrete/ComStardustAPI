@@ -8,6 +8,14 @@ import androidx.room.ColumnInfo
 import kotlinx.coroutines.flow.Flow
 
 /**
+ * The messages a chat-wide archive takes: settled, not already archived. In-flight rows
+ * (RECEIVING=4, SENDING=7) are skipped — their settlement would write a final state over
+ * ARCHIVED and bring them back into the chat. Shared so a count of "what will be archived"
+ * and the archive itself cannot disagree.
+ */
+private const val ARCHIVABLE = "state NOT IN (4, 5, 7)"
+
+/**
  *
  * State ints: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5,
  * CANCELLED=6.
@@ -451,8 +459,12 @@ interface MessageDao {
      * Archives every settled message in [chatId]. In-flight rows (RECEIVING=4, SENDING=7) are skipped:
      * their settlement would write a final state over ARCHIVED and bring them back into the chat.
      */
-    @Query("UPDATE messages SET state = 5 WHERE chat_id = :chatId AND state NOT IN (4, 5, 7)")
+    @Query("UPDATE messages SET state = 5 WHERE chat_id = :chatId AND $ARCHIVABLE")
     suspend fun archiveChatMessages(chatId: String): Int
+
+    /** How many messages [archiveChatMessages] would archive in [chatId] now. */
+    @Query("SELECT COUNT(*) FROM messages WHERE chat_id = :chatId AND $ARCHIVABLE")
+    suspend fun countArchivableChatMessages(chatId: String): Int
 
     @Query("UPDATE messages SET state = 5 WHERE epoch_time_ms BETWEEN :startTimestamp AND :endTimestamp")
     suspend fun archiveAllMessages(startTimestamp: Long, endTimestamp: Long): Int

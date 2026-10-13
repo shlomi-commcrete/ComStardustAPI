@@ -309,7 +309,7 @@ internal class MessagesRepository(
     suspend fun getChatIdForReceivedPackage(participantId: String, groupId: String?): String {
         val normalizedParticipantId = normalizeIdOrNull(participantId) ?: return ""
         val normalizedGroupId = normalizeIdOrNull(groupId)
-        val cacheKey = buildReceivedChatCacheKey(normalizedGroupId, normalizedParticipantId)
+        val cacheKey = caches.receivedChatKey(normalizedGroupId, normalizedParticipantId)
 
         caches.getChatId(cacheKey)?.let { return it }
 
@@ -329,9 +329,6 @@ internal class MessagesRepository(
         if (chatId.isBlank()) return null
         return withContext(Dispatchers.IO) { chatsDao.getChatByChatId(chatId) }
     }
-
-    private fun buildReceivedChatCacheKey(groupId: String?, participantId: String): String =
-        groupId?.let { "group:$it" } ?: "private:$participantId"
 
     private suspend fun resolveChatIdForReceivedPackage(
         participantId: String,

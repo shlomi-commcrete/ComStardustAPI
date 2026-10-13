@@ -109,6 +109,30 @@ interface ContactsDao {
     @Query("UPDATE contacts SET image = :image WHERE id = :contactId")
     suspend fun setContactImage(contactId: Int, image: String?): Int
 
+    /**
+     * The contact's kind. Must agree with the ids it holds: the roster drops a USER row with no
+     * App ID (see mapAppContactRowsToFullContactData), so clearing one without this loses it.
+     */
+    @Query("UPDATE contacts SET type = :type WHERE id = :contactId")
+    suspend fun setContactType(contactId: Int, type: ContactType): Int
+
+    /**
+     * Emits whenever a table the in-memory id lookups are built from changes — Room re-runs a
+     * Flow query on every invalidation of a table it reads, whatever the result. The value is
+     * not the point; the emission is. Must name every table `RepositoryCaches` derives from.
+     */
+    @Query(
+        """
+        SELECT (SELECT COUNT(*) FROM contacts)
+             + (SELECT COUNT(*) FROM app_contact_user_ids)
+             + (SELECT COUNT(*) FROM app_contact_group_ids)
+             + (SELECT COUNT(*) FROM app_contact_devices)
+             + (SELECT COUNT(*) FROM chats)
+             + (SELECT COUNT(*) FROM chat_participants)
+        """
+    )
+    fun observeIdentityTables(): Flow<Long>
+
     /** Deletes a contact; FK cascades remove its id/device mappings and chat participants. */
     @Query("DELETE FROM contacts WHERE id = :contactId")
     suspend fun deleteContactById(contactId: Int): Int

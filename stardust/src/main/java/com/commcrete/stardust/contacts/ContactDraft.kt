@@ -59,10 +59,13 @@ data class ContactDraft(
         null -> null
     }
 
-    /** `true` when both drafts denote the same stored record (all identity fields equal). */
+    /**
+     * `true` when both drafts denote the same stored record (all identity fields equal). The
+     * callsign is compared exactly: a case-only difference is a rename, not a duplicate.
+     */
     fun sameIdentityAs(other: ContactDraft): Boolean =
         type == other.type &&
-            name.equals(other.name, ignoreCase = true) &&
+            name.trim() == other.name.trim() &&
             appId.equals(other.appId, ignoreCase = true) &&
             deviceId.equals(other.deviceId, ignoreCase = true)
 
