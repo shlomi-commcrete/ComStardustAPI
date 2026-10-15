@@ -41,6 +41,7 @@ object RepositoryProvider {
                     contactsDao = db.appContactsDao(),
                     messagesDao = db.appMessagesDao(),
                     identityLogDao = db.appContactIdentityLogDao(),
+                    database = db,
                 ).also { repo ->
                     appRepository = repo
                     // Run the one-time migration in the background.

@@ -50,6 +50,7 @@ class ContactEditChatNameTest {
             db.appContactsDao(),
             db.appMessagesDao(),
             db.appContactIdentityLogDao(),
+            database = db,
         )
     }
 

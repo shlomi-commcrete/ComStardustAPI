@@ -40,7 +40,10 @@ import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
 import android.util.Log
+import androidx.room.RoomDatabase
+import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
@@ -77,6 +80,11 @@ class AppRepository(
      */
     private val identityLogDao: ContactIdentityLogDao =
         AppDatabase.getDatabase().appContactIdentityLogDao(),
+    /**
+     * The database the DAOs above belong to — what a multi-step contact write runs its
+     * transaction on (see [inTransaction]). Defaulted like [identityLogDao].
+     */
+    private val database: RoomDatabase = AppDatabase.getDatabase(),
 ) {
 
     // ─────────────────────────────────────────────────────────────────────
@@ -114,7 +122,8 @@ class AppRepository(
         registeredUserIdsProvider = ::registeredUserIds,
         savePttRequired = { DataManager.getSavePTTFilesRequired() },
         insertContactWithChat = { contact ->
-            contacts.insertContactWithChat(contact, IdentityLogSource.AUTO_CREATE)
+            // An unknown sender's contact and its chat land together or not at all.
+            inTransaction { contacts.insertContactWithChat(contact, IdentityLogSource.AUTO_CREATE) }
         },
     )
 
@@ -130,6 +139,23 @@ class AppRepository(
         observeAllContacts().stateIn(
             RepositoryProvider.AppScopes.applicationScope, SharingStarted.Eagerly, null,
         )
+
+    /**
+     * Runs [block] as one database transaction. A contact save is several writes — ids, kind,
+     * chat, participants, messages archived or moved — and a refused step or a killed process
+     * part-way used to keep everything written before it: a contact with its messages archived
+     * but its kind unchanged, a device taken from one contact and given to nobody.
+     *
+     * On failure the id lookups are cleared as well: entries cached inside [block] can point
+     * at rows the rollback removed, and a rollback raises no change for the observer to see.
+     */
+    private suspend fun <T> inTransaction(block: suspend () -> T): T =
+        try {
+            database.withTransaction { block() }
+        } catch (failure: Throwable) {
+            withContext(NonCancellable) { caches.invalidateIdentity() }
+            throw failure
+        }
 
     init {
         // Keeps the in-memory id lookups in line with every database change to the tables they
@@ -198,12 +224,12 @@ class AppRepository(
     suspend fun insertContactsWithChats(
         contactsToInsert: List<FullContactData>,
         source: String = IdentityLogSource.LOGIN_IMPORT,
-    ) = contacts.insertContactsWithChats(contactsToInsert, source)
+    ) = inTransaction { contacts.insertContactsWithChats(contactsToInsert, source) }
 
     suspend fun insertContactWithChat(
         contact: FullContactData,
         source: String = IdentityLogSource.UNKNOWN,
-    ) = contacts.insertContactWithChat(contact, source)
+    ) = inTransaction { contacts.insertContactWithChat(contact, source) }
 
     // ─────────────────────────────────────────────────────────────────────
     // Contact conflicts  [= UNCHANGED]
@@ -269,8 +295,13 @@ class AppRepository(
      * [IdentityLogRecorder.nextBatchId], so the strip half and the assign half of
      * a swap can be read back as the single move they were — see
      * [identityLogBatch].
+     *
+     * All of [ops] land in one transaction, or none do — see [inTransaction]. A failure is
+     * thrown with nothing written, so a caller can report it and offer the same save again.
      */
-    suspend fun applyContactOperations(ops: List<ContactOperation>) {
+    suspend fun applyContactOperations(ops: List<ContactOperation>) = inTransaction { applyOperations(ops) }
+
+    private suspend fun applyOperations(ops: List<ContactOperation>) {
         val updates = ops.filterIsInstance<ContactOperation.UpdateExisting>()
         val renames = ops.filterIsInstance<ContactOperation.RenameExisting>()
         val inserts = ops.filterIsInstance<ContactOperation.Insert>()

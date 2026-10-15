@@ -48,6 +48,7 @@ class ContactKindSwitchTest {
             db.appContactsDao(),
             db.appMessagesDao(),
             db.appContactIdentityLogDao(),
+            database = db,
         )
     }
 

@@ -49,6 +49,7 @@ class ContactIdCacheTest {
             db.appContactsDao(),
             db.appMessagesDao(),
             db.appContactIdentityLogDao(),
+            database = db,
         )
     }
 
