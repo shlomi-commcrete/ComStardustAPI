@@ -462,6 +462,29 @@ interface MessageDao {
     @Query("UPDATE messages SET state = 5 WHERE chat_id = :chatId AND $ARCHIVABLE")
     suspend fun archiveChatMessages(chatId: String): Int
 
+    /**
+     * Moves [fromChatId]'s messages exchanged with [peerId] to [toChatId] — when that id moves
+     * to another contact, its history goes with it. Same peer test as the chat loaders
+     * (`sender_id` or `receiver_id`), so what moves is exactly what the old chat showed for it.
+     */
+    @Query("""
+        UPDATE messages SET chat_id = :toChatId
+        WHERE chat_id = :fromChatId AND (sender_id = :peerId OR receiver_id = :peerId)
+    """)
+    suspend fun moveChatMessagesOfPeer(fromChatId: String, toChatId: String, peerId: String): Int
+
+    /**
+     * Archives [chatId]'s settled messages exchanged with none of [peerIds] — a private chat's
+     * history under ids its contact no longer holds. The chat loaders never show those, so this
+     * makes "not shown" explicit rather than hiding anything that is shown now.
+     */
+    @Query("""
+        UPDATE messages SET state = 5
+        WHERE chat_id = :chatId AND $ARCHIVABLE
+          AND sender_id NOT IN (:peerIds) AND receiver_id NOT IN (:peerIds)
+    """)
+    suspend fun archiveChatMessagesNotOfPeers(chatId: String, peerIds: List<String>): Int
+
     /** How many messages [archiveChatMessages] would archive in [chatId] now. */
     @Query("SELECT COUNT(*) FROM messages WHERE chat_id = :chatId AND $ARCHIVABLE")
     suspend fun countArchivableChatMessages(chatId: String): Int

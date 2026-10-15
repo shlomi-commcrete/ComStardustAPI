@@ -299,7 +299,11 @@ class AppRepository(
      * All of [ops] land in one transaction, or none do — see [inTransaction]. A failure is
      * thrown with nothing written, so a caller can report it and offer the same save again.
      */
-    suspend fun applyContactOperations(ops: List<ContactOperation>) = inTransaction { applyOperations(ops) }
+    suspend fun applyContactOperations(ops: List<ContactOperation>) {
+        inTransaction { applyOperations(ops) }
+        // A command to the radio, so after the commit: a rollback cannot take it back.
+        if (ops.any { it.touchesGroup() }) GroupsUtils.sendDeleteAllGroups()
+    }
 
     private suspend fun applyOperations(ops: List<ContactOperation>) {
         val updates = ops.filterIsInstance<ContactOperation.UpdateExisting>()
@@ -309,6 +313,9 @@ class AppRepository(
 
         val source = IdentityLogSource.CONFLICT_RESOLUTION
         val batchId = identityLog.nextBatchId()
+        // Who holds each id this batch touches, before it runs — what the message moves and
+        // archiving below are decided against.
+        val ownersBefore = ownersOf(idsIn(ops))
 
         // Every delete target is resolved BEFORE anything is written. A target
         // is a draft and resolves by its ids — and a delete is scheduled exactly
@@ -326,6 +333,9 @@ class AppRepository(
 
         val toInsert = inserts.mapNotNull { it.contact.toFullContactData() }
         if (toInsert.isNotEmpty()) contacts.insertContactsWithChats(toInsert, source, batchId)
+
+        // Before the deletes: a contact emptied by a move still has its chat to move from.
+        val touchedChats = moveMessagesOfMovedIds(ownersBefore, source, batchId)
 
         for ((d, fromContactId, sourceChatId) in deleteTargets) {
             // Gone already, or never there: nothing of THIS contact to delete.
@@ -355,9 +365,93 @@ class AppRepository(
                 }
             }
             contacts.deleteContact(d.target, source, batchId, resolvedContactId = fromContactId)
+            reparentToChatId?.let { touchedChats += it }
         }
 
-        if (ops.any { it.touchesGroup() }) GroupsUtils.sendDeleteAllGroups()
+        archiveMessagesOfFormerIds(touchedChats)
+    }
+
+    /** Every id named anywhere in [ops], normalized. */
+    private fun idsIn(ops: List<ContactOperation>): Set<String> = ops.flatMap { op ->
+        when (op) {
+            is ContactOperation.UpdateExisting -> listOf(op.original, op.updated)
+            is ContactOperation.RenameExisting -> listOf(op.target)
+            is ContactOperation.Insert -> listOf(op.contact)
+            is ContactOperation.DeleteExisting -> listOfNotNull(op.target, op.reparentTo)
+            ContactOperation.Noop -> emptyList()
+        }
+    }.flatMap { listOf(it.appId, it.deviceId) }
+        .mapNotNull { it.trim().lowercase().takeIf(String::isNotEmpty) }
+        .toSet()
+
+    /** Which contact holds each of [ids] now; ids nobody holds are absent. */
+    private suspend fun ownersOf(ids: Set<String>): Map<String, Int> {
+        if (ids.isEmpty()) return emptyMap()
+        return contactsDao.getAllIdToContactRows()
+            .mapNotNull { row -> row.normalizedId.trim().lowercase().takeIf { it in ids }?.let { it to row.contactId } }
+            .toMap()
+    }
+
+    /** The chat of [contactId] — private, or its group chat for a GROUP. */
+    private suspend fun chatOf(contactId: Int): String? {
+        val type = contactsDao.getContactById(contactId)?.type ?: return null
+        return contacts.chatIdForContactId(type, contactId)
+    }
+
+    /**
+     * An id that moved to another contact in this batch takes its messages with it: rows in
+     * the former holder's chat exchanged with that id move to the new holder's chat.
+     *
+     * Returns every chat whose contact held an involved id before or holds one now — the
+     * chats [archiveMessagesOfFormerIds] then cleans up.
+     */
+    private suspend fun moveMessagesOfMovedIds(
+        ownersBefore: Map<String, Int>,
+        source: String,
+        batchId: Long,
+    ): MutableSet<String> {
+        val ownersAfter = ownersOf(ownersBefore.keys)
+        val touched = mutableSetOf<String>()
+        (ownersBefore.values + ownersAfter.values).toSet().forEach { contactId -> chatOf(contactId)?.let { touched += it } }
+        ownersBefore.forEach { (id, fromContactId) ->
+            val toContactId = ownersAfter[id] ?: return@forEach
+            if (toContactId == fromContactId) return@forEach
+            val fromChatId = chatOf(fromContactId) ?: return@forEach
+            val toChatId = chatOf(toContactId) ?: return@forEach
+            if (fromChatId == toChatId) return@forEach
+            val moved = messagesDao.moveChatMessagesOfPeer(fromChatId, toChatId, id)
+            if (moved > 0) {
+                identityLog.recordReparent(
+                    fromChatId = fromChatId,
+                    toChatId = toChatId,
+                    affectedRows = moved,
+                    fromContactId = fromContactId,
+                    toContactId = toContactId,
+                    fromName = contactsDao.getContactById(fromContactId)?.name,
+                    toName = contactsDao.getContactById(toContactId)?.name,
+                    source = source,
+                    batchId = batchId,
+                )
+            }
+        }
+        return touched
+    }
+
+    /**
+     * In each of [chatIds] that is a private chat, archives the messages exchanged with ids its
+     * contact no longer holds — an id removed or replaced, or the rest of a deleted contact's
+     * chat that moved in whole. The chat loaders never show those rows; archiving says so
+     * instead of leaving them as unexplained gaps. Group chats show every message and keep them.
+     */
+    private suspend fun archiveMessagesOfFormerIds(chatIds: Set<String>) {
+        chatIds.forEach { chatId ->
+            val chat = chatsDao.getChatByChatId(chatId) ?: return@forEach
+            if (chat.type != ChatType.PRIVATE) return@forEach
+            val contactId = contactsDao.getChatUserAndDeviceContactRows(chatId).firstOrNull()?.contact?.id
+                ?: return@forEach
+            val currentIds = contactsDao.getOwnedIdRows(listOf(contactId)).map { it.idValue.trim().lowercase() }
+            messagesDao.archiveChatMessagesNotOfPeers(chatId, currentIds)
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────
