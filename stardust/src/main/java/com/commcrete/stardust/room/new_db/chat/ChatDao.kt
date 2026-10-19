@@ -27,6 +27,12 @@ private const val CHAT_NAME_SQL = """
     )
 """
 
+/** One private chat of one contact — see [ChatDao.getDuplicatePrivateChats]. */
+data class ContactChatRow(
+    @ColumnInfo(name = "contactId") val contactId: Int,
+    @ColumnInfo(name = "chatId") val chatId: String,
+)
+
 @Dao
 interface ChatDao {
 
@@ -257,6 +263,27 @@ interface ChatDao {
         LIMIT 1
     """)
     suspend fun findPrivateChatIdByContactId(contactId: Int): String?
+
+    /**
+     * Every private chat of a contact that has more than one — a state only the old insert path
+     * could leave (see ContactsRepository.keepExistingChat). Ordered by contact, then by the
+     * chat's message count, most first, then oldest: the first of each contact is the one kept.
+     */
+    @Query("""
+        SELECT cp.contact_id AS contactId, c.id AS chatId
+        FROM chats c
+        JOIN chat_participants cp ON cp.chat_id = c.id
+        WHERE c.type = 'PRIVATE' AND cp.contact_id IN (
+            SELECT cp2.contact_id FROM chats c2
+            JOIN chat_participants cp2 ON cp2.chat_id = c2.id
+            WHERE c2.type = 'PRIVATE'
+            GROUP BY cp2.contact_id HAVING COUNT(*) > 1
+        )
+        ORDER BY cp.contact_id,
+            (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id) DESC,
+            c.created_at_ms ASC
+    """)
+    suspend fun getDuplicatePrivateChats(): List<ContactChatRow>
 
     @Query("""
         SELECT c.id FROM chats c

@@ -929,6 +929,40 @@ class AppRepository(
      */
     suspend fun rewriteRelocatedMediaPaths(): Int = messages.rewriteRelocatedMediaPaths()
 
+    /**
+     * Folds every contact's extra private chats into one, and returns how many chats were
+     * removed. Before ContactsRepository.keepExistingChat, an insert that merged into an
+     * existing contact gave it a second private chat: the contact showed twice in search, and
+     * its history was split between the two.
+     *
+     * Kept: the chat with the most messages, else the oldest. The others' messages move into
+     * it and they are deleted. Idempotent — with nothing to fold it is one query — so it runs
+     * on every start rather than behind a flag that a restored old database would not have.
+     */
+    suspend fun mergeDuplicatePrivateChats(): Int = messages.withSaveLock {
+        withContext(Dispatchers.IO) {
+            val rows = chatsDao.getDuplicatePrivateChats()
+            if (rows.isEmpty()) return@withContext 0
+            var removed = 0
+            inTransaction {
+                rows.groupBy { it.contactId }.forEach { (contactId, chats) ->
+                    val keep = chats.first().chatId
+                    chats.drop(1).forEach { extra ->
+                        messagesDao.reassignChat(extra.chatId, keep)
+                        chatsDao.deleteChatById(extra.chatId)
+                        caches.removeChatIdsMappedTo(extra.chatId)
+                        removed++
+                    }
+                    // The kept chat's name copy follows its contact (chats.name is UNIQUE).
+                    contactsDao.getContactById(contactId)?.let { chatsDao.renameChatById(keep, it.name) }
+                }
+            }
+            // A count, never names: a callsign must not reach a log line (§28).
+            Log.i(TAG, "Merged duplicate private chats: removed $removed")
+            removed
+        }
+    }
+
     companion object {
         private const val TAG = "AppRepository"
 

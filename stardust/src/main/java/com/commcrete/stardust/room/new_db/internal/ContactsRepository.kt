@@ -118,11 +118,13 @@ internal class ContactsRepository(
 
                 when (data.contact.type) {
                     ContactType.USER, ContactType.DEVICE -> {
-                        chats.createPrivateChat(data.contact, contactId)
+                        if (!keepExistingChat(data.contact, contactId)) chats.createPrivateChat(data.contact, contactId)
                         chats.addToExistingGroupChats(contactId, existingGroupChatIds)
                     }
                     ContactType.GROUP -> {
-                        chats.createGroupChat(data.contact, contactId, allMemberIds)
+                        if (!keepExistingChat(data.contact, contactId)) {
+                            chats.createGroupChat(data.contact, contactId, allMemberIds)
+                        }
                     }
                 }
                 // addContacts rewrote an existing contact's row, icon included, but creating the
@@ -132,6 +134,19 @@ internal class ContactsRepository(
                 recordInsert(data, contactId, priorOwners, priorHoldings, source, batchId)
             }
         }
+
+    /**
+     * An insert that matched an existing contact by an id it brings — `addContact` merges into
+     * that contact rather than adding one — keeps the contact's chat: its history is the
+     * contact's, and a second private chat for one contact shows it twice in search. The chat
+     * takes the inserted name, which `addContact` has already written to the contact row
+     * (`chats.name` is UNIQUE and kept equal to it). False when the contact has no chat yet.
+     */
+    private suspend fun keepExistingChat(contact: ContactEntity, contactId: Int): Boolean {
+        val chatId = chatIdForContact(contact.type, contactId) ?: return false
+        chatsDao.renameChatById(chatId, contact.name)
+        return true
+    }
 
     /** See `AppRepository.insertContactWithChat`. */
     suspend fun insertContactWithChat(
@@ -156,15 +171,17 @@ internal class ContactsRepository(
 
             when (contact.contact.type) {
                 ContactType.USER, ContactType.DEVICE -> {
-                    chats.createPrivateChat(contact.contact, contactId)
+                    if (!keepExistingChat(contact.contact, contactId)) chats.createPrivateChat(contact.contact, contactId)
                     chats.addToExistingGroupChats(contactId, chatsDao.getAllGroupChatIds())
                 }
                 ContactType.GROUP -> {
-                    chats.createGroupChat(
-                        contact.contact,
-                        contactId,
-                        contactsDao.getAllMemberContactIds(),
-                    )
+                    if (!keepExistingChat(contact.contact, contactId)) {
+                        chats.createGroupChat(
+                            contact.contact,
+                            contactId,
+                            contactsDao.getAllMemberContactIds(),
+                        )
+                    }
                 }
             }
 
