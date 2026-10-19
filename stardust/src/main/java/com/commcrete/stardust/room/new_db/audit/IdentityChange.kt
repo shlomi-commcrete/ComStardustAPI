@@ -53,6 +53,9 @@ object IdentityLogSource {
     /** User-resolved conflict applied via `AppRepository.applyContactOperations`. */
     const val CONFLICT_RESOLUTION = "conflict_resolution"
 
+    /** Operator deleted a contact and its chat (`AppRepository.deleteContact`). */
+    const val USER_DELETE = "user_delete"
+
     /** Bulk roster insert at login (`insertContactsWithChats`). */
     const val LOGIN_IMPORT = "login_import"
 

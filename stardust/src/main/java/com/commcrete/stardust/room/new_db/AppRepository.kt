@@ -570,6 +570,25 @@ class AppRepository(
 
     suspend fun deleteChat(chatId: String): Boolean = chats.deleteChat(chatId)
 
+    /**
+     * The operator's Delete: removes [contact] AND its chat, in one transaction — [deleteChat]
+     * alone leaves the contact behind. Returns false when [contact] no longer resolves to a
+     * stored record (already deleted).
+     *
+     * A group delete re-syncs the radio's groups after the commit, as [applyContactOperations]
+     * does for the same change.
+     */
+    suspend fun deleteContact(contact: FullContactData): Boolean {
+        val draft = ContactDraft.fromFullContactData(contact)
+        val deleted = inTransaction {
+            val contactId = contacts.contactIdForDraft(draft) ?: return@inTransaction false
+            contacts.deleteContact(draft, IdentityLogSource.USER_DELETE, resolvedContactId = contactId)
+            true
+        }
+        if (deleted && draft.type == ContactType.GROUP) GroupsUtils.sendDeleteAllGroups()
+        return deleted
+    }
+
     suspend fun chatIdForContact(contact: FullContactData): String? =
         contacts.chatIdForContactDraft(ContactDraft.fromFullContactData(contact))
 
