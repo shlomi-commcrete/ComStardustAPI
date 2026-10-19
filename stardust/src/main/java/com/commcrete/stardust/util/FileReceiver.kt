@@ -4,6 +4,7 @@ import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.room.new_db.message.MessageEntity
+import com.commcrete.stardust.room.new_db.message.FileSummary
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -569,6 +570,21 @@ class FileReceiver(
     /** The start package's original size for the row: its 0 ("unknown") is the row's null. */
     private fun originalSizeOrNull(): Long? = data.originalSize.takeIf { it > 0 }?.toLong()
 
+    /**
+     * The size of the file that landed — decompressed, what the operator opens — for the RECEIVED
+     * row. It overrides the start package's figure: that is the sender's claim, this is the file.
+     * Null when the file could not be measured, which leaves the announced size on the row.
+     */
+    private fun landedSize(summary: FileSummary): Long? {
+        val landed = summary.size.takeIf { it > 0 } ?: return null
+        val announced = originalSizeOrNull()
+        // Sizes only, never the name: worth seeing in Dev Logs when a sender's figure is off.
+        if (announced != null && announced != landed) {
+            Log.w("FileReceiver", "received size differs from announced: $landed vs $announced")
+        }
+        return landed
+    }
+
     /** ".jpg" for an image, otherwise the sender-supplied ending. */
     private fun fileExtension(): String =
         if (data.fileType == FileUtils.FileType.Image) ".jpg" else ".${data.fileEnding}"
@@ -648,11 +664,12 @@ class FileReceiver(
             // Parsed once here, for the same reason it always was: so the conversation UI
             // renders a received contact from the summary without re-reading the file.
             val summary = FileUtils.buildFileSummary(file, subtype)
+            val landedSize = landedSize(summary)
             rowMutex.withLock {
                 messageId?.let { id ->
                     try {
                         if (DataManager.getAppRepo()
-                                .markIncomingTransferReceived(id, file.absolutePath, summary)
+                                .markIncomingTransferReceived(id, file.absolutePath, summary, landedSize)
                         ) return@launch
                         Log.d("FileReceiver", "arrival not recorded on $id; row already settled")
                         return@launch
@@ -674,7 +691,7 @@ class FileReceiver(
                                 path = file.absolutePath,
                                 subtype = subtype,
                                 fileSummary = summary,
-                                originalSize = originalSizeOrNull(),
+                                originalSize = landedSize ?: originalSizeOrNull(),
                             )
                         )
                     )

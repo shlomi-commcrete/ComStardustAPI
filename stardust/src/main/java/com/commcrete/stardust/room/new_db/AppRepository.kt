@@ -814,14 +814,16 @@ class AppRepository(
 
     /**
      * Settles an incoming transfer's in-flight row as RECEIVED, filling in the [path] the
-     * file landed at and its [fileSummary]. Returns false when the row had already
-     * settled and the write was refused.
+     * file landed at and its [fileSummary]. [originalSize], when known, replaces the size
+     * the start package announced — the file on disk is the authority; null keeps the
+     * announced one. Returns false when the row had already settled and the write was refused.
      */
     suspend fun markIncomingTransferReceived(
         messageId: Long,
         path: String,
         fileSummary: FileSummary?,
-    ): Boolean = messages.markIncomingTransferReceived(messageId, path, fileSummary)
+        originalSize: Long? = null,
+    ): Boolean = messages.markIncomingTransferReceived(messageId, path, fileSummary, originalSize)
 
     /**
      * Settles an incoming transfer's in-flight row as FAILED, recording [failure] and

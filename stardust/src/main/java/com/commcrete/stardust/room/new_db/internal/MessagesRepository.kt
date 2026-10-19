@@ -525,14 +525,21 @@ internal class MessagesRepository(
         messageId: Long,
         path: String,
         fileSummary: FileSummary?,
+        originalSize: Long?,
     ): Boolean = withContext(Dispatchers.IO) {
         val attachment = messagesDao.getMessageById(messageId)?.extraData
             as? MessageExtraData.Attachment
         messagesDao.markIncomingTransferReceived(
             messageId = messageId,
             // failure cleared: late packages can complete a transfer already settled FAILED, and a
-            // received row still carrying the reason would read as both.
-            extraData = attachment?.copy(path = path, fileSummary = fileSummary, failure = null),
+            // received row still carrying the reason would read as both. originalSize replaced
+            // only when known: the file that landed is the authority over what the start announced.
+            extraData = attachment?.copy(
+                path = path,
+                fileSummary = fileSummary,
+                failure = null,
+                originalSize = originalSize ?: attachment.originalSize,
+            ),
         ) > 0
     }
 

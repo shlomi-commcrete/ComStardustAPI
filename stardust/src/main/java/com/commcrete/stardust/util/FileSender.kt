@@ -40,7 +40,16 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-class FileSender(val data: FileUtils.FileTransferData.Send) {
+class FileSender(data: FileUtils.FileTransferData.Send) {
+
+    /**
+     * The transfer as every callback reports it. Replaced once, by a copy carrying
+     * [FileUtils.FileTransferData.Send.originalSize], as soon as that is known — so
+     * `startSending` carries 0 (unknown) and every callback after it the real figure.
+     * The id never changes, so a host keying transfers by it sees one transfer.
+     */
+    @Volatile var data: FileUtils.FileTransferData.Send = data
+        private set
 
     /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
     private val LOG_TAG = "FileSender"
@@ -340,6 +349,9 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             // Persist the row FIRST: everything below can fail, and a failure needs a
             // row to be recorded on.
             val saved = saveLocalMessages()
+            // saveLocalMessages has already read the lazy size off this IO coroutine; from here
+            // on every callback tells the host how big the file is, as a receive's does.
+            data = data.copy(originalSize = originalSize)
             // Raised after messageId is written and before `cancelled` is read, which is
             // the other half of the handshake in stopSendingPackages().
             localRowSettled.set(true)

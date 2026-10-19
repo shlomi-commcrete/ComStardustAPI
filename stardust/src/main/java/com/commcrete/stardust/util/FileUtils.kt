@@ -505,7 +505,16 @@ object FileUtils {
             val file: File,
             override val fileType: FileType,
             override val numOfPackages: Int,
-            override val timestamp: Long = System.currentTimeMillis()
+            override val timestamp: Long = System.currentTimeMillis(),
+            /**
+             * The file's size in bytes before gzip — for an image its size as sent — the same
+             * figure the start package announces and [Receive.originalSize] reports on the far
+             * end. Filled in by the SDK once the send has read it, off the main thread: 0
+             * (unknown) on `startSending`, set on every callback after it. Also 0 when it could
+             * not be read or exceeds the start package's 3 bytes (16 MiB). A host constructing
+             * a send leaves it at the default. Last and defaulted so existing calls compile.
+             */
+            val originalSize: Int = 0,
         ) : FileTransferData(
             id = id,
             chatId = chatId,
