@@ -481,6 +481,17 @@ object FileUtils {
          */
         abstract fun remainingTransferTimeAsString(progress: Int): String
 
+        /**
+         * The whole transfer's airtime in seconds, start package included, on the radio it is
+         * actually on — fixed for the life of the transfer, for a host that runs its own
+         * countdown rather than re-quoting the remainder on every percentage.
+         *
+         * Counts what each side has to wait for: a send puts every package on air, parity
+         * included; a receive can build the file from the data packages alone, so the parity
+         * tail is not counted.
+         */
+        abstract fun estimatedTransferSeconds(): Double
+
         /** Packages still to go at [progress] percent. */
         protected fun remainingPackages(progress: Int): Int {
             val completedPackages = (numOfPackages * progress) / 100.0
@@ -509,6 +520,14 @@ object FileUtils {
                     fileType.relatedFunctionalityType(),
                     stardustAPIPackage.carrier,
                 )
+
+            /** [numOfPackages] is data plus parity — every package this side transmits. */
+            override fun estimatedTransferSeconds(): Double =
+                FileSender.estimateSendSeconds(
+                    numOfPackages,
+                    fileType.relatedFunctionalityType(),
+                    stardustAPIPackage.carrier,
+                )
         }
 
         data class Receive(
@@ -531,6 +550,11 @@ object FileUtils {
              * there, and treat null as "not on screen yet".
              */
             val messageId: Long? = null,
+            /**
+             * How many of [numOfPackages] are parity, from the start package. Last and
+             * defaulted so existing constructor calls keep compiling; 0 means no parity.
+             */
+            val spare: Int = 0,
         ) : FileTransferData(
             id = id,
             chatId = chatId,
@@ -546,6 +570,14 @@ object FileUtils {
             override fun remainingTransferTimeAsString(progress: Int): String =
                 calculateSendTime(
                     remainingPackages(progress),
+                    fileType.relatedFunctionalityType(),
+                    CarriersUtils.getCarrierByControl(deliveryChannel),
+                )
+
+            /** Data packages only: the file can be rebuilt before the parity tail arrives. */
+            override fun estimatedTransferSeconds(): Double =
+                FileSender.estimateSendSeconds(
+                    numOfPackages - spare,
                     fileType.relatedFunctionalityType(),
                     CarriersUtils.getCarrierByControl(deliveryChannel),
                 )

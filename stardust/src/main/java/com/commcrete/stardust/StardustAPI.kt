@@ -306,6 +306,11 @@ interface StardustAPICallbacks {
      * The row has no file path — a failed transfer writes nothing to disk. The app owns
      * the wording shown for each reason.
      *
+     * Not always final for MISSING and DISCONNECTED: if packages resume within
+     * `FileReceiver.LATE_WINDOW_MS`, the transfer either completes (receiveFile /
+     * receiveImage) or reopens — the row returns to RECEIVING and [receiveFileStatus]
+     * resumes for the same [FileTransferData.Receive.id].
+     *
      * Called on the main thread. The outgoing counterpart is
      * [com.commcrete.stardust.util.FileSender.OnFileStatusChange.failedSending].
      */

@@ -558,6 +558,20 @@ internal class MessagesRepository(
     }
 
     /**
+     * Returns a FAILED incoming transfer's row to RECEIVING, its failure reason cleared — a row
+     * arriving again must not also read as failed. Returns false if the row was not FAILED — see
+     * [MessageDao.reopenIncomingTransfer].
+     */
+    suspend fun reopenIncomingTransfer(messageId: Long): Boolean = withContext(Dispatchers.IO) {
+        val attachment = messagesDao.getMessageById(messageId)?.extraData
+            as? MessageExtraData.Attachment
+        messagesDao.reopenIncomingTransfer(
+            messageId = messageId,
+            extraData = attachment?.copy(failure = null),
+        ) > 0
+    }
+
+    /**
      * Removes an in-flight row that will never settle, because the sender restarted the
      * transfer and the retry owns the conversation now. Returns false if the row had
      * already settled, in which case it is history and stays.

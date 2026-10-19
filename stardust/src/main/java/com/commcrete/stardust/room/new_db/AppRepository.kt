@@ -834,6 +834,13 @@ class AppRepository(
     ): Boolean = messages.markIncomingTransferFailed(messageId, failure)
 
     /**
+     * Returns a FAILED incoming transfer's row to RECEIVING, for packages that resumed after the
+     * failure. Returns false when the row was not FAILED and the write was refused.
+     */
+    suspend fun reopenIncomingTransfer(messageId: Long): Boolean =
+        messages.reopenIncomingTransfer(messageId)
+
+    /**
      * Removes an in-flight row for a transfer that was abandoned because its sender
      * restarted it. Returns false when the row had already settled, in which case it is
      * history and stays.

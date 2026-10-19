@@ -311,6 +311,24 @@ interface MessageDao {
     ): Int
 
     /**
+     * Puts a FAILED incoming attachment row back to RECEIVING: packages resumed in the late
+     * window, so the transfer is arriving again. Guarded on FAILED so it can only undo the
+     * receive side's own failure, never a row that was received, seen, archived or cancelled.
+     * Returns the number of rows written (0 = refused).
+     */
+    @Query("""
+        UPDATE messages
+        SET extra_data = COALESCE(:extraData, extra_data),
+            state = 4
+        WHERE id = :messageId
+          AND state = 3
+    """)
+    suspend fun reopenIncomingTransfer(
+        messageId: Long,
+        extraData: MessageExtraData?,
+    ): Int
+
+    /**
      * Replaces the extra_data of a row still in flight — used by a multi-part text as each
      * further part is appended. Guarded on RECEIVING so a part that arrives after the row was
      * settled (by the sweep, or by a disconnect) cannot reopen it. Returns the number of rows

@@ -97,6 +97,7 @@ class FileReceiver(
             fileType = firstPackage.fileType,
             deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
             numOfPackages = firstPackage.total,
+            spare = firstPackage.spare,
         )
     }
 
@@ -161,11 +162,12 @@ class FileReceiver(
             if (!receivedIndices.add(index)) return@launch
             dataList.add(filePackage)
             if (outcome.get() == Outcome.FAILED) {
-                // In the late window: no progress (the row says failed, and a bar moving under it
-                // would say otherwise), no gap timer. Settles RECEIVED the moment the file can be
-                // built; while it cannot, the failure stands and checkData's failure is a no-op.
+                // In the late window. Settles RECEIVED the moment the file can be built; while it
+                // cannot, the sender is on air again, so the transfer reopens rather than taking
+                // packages in silently under a row that says failed.
                 checkMissingPackages()
                 checkData(FileFailure.MISSING)
+                if (outcome.get() == Outcome.FAILED) reopen()
                 return@launch
             }
             updateProgress()
@@ -191,6 +193,42 @@ class FileReceiver(
             dataList.clear()
             receivedIndices.clear()
         }
+    }
+
+    /**
+     * On [lane], from the late window: a package arrived after a MISSING or DISCONNECTED failure
+     * and the file still cannot be built. The transfer goes back to arriving — outcome NONE, the
+     * row RECEIVING, progress and the gap timer running — so the host sees it resume and a later
+     * stall fails it again through the ordinary path, opening a fresh late window.
+     */
+    private fun reopen() {
+        if (!outcome.compareAndSet(Outcome.FAILED, Outcome.NONE)) return
+        Log.d("FileReceiver", "transfer resumed: id=${data.id}")
+        lateWindow?.cancel()
+        lateWindow = null
+        CoroutineScope(Dispatchers.IO).launch {
+            rowMutex.withLock {
+                // Failed again, or arrived, before this ran: that outcome owns the row now.
+                if (outcome.get() != Outcome.NONE) return@launch
+                // Null only when neither the in-flight insert nor the failure's fallback insert
+                // succeeded — there is no row to reopen, and the settle paths insert one.
+                val id = messageId ?: return@launch
+                try {
+                    if (!DataManager.getAppRepo().reopenIncomingTransfer(id)) {
+                        // The failure write had not landed yet and now never will (it checks
+                        // the outcome), so the row is still RECEIVING.
+                        Log.d("FileReceiver", "row $id not reopened; it was not failed")
+                    }
+                } catch (e: Exception) {
+                    Log.e("FileReceiver", "Error reopening in-flight row $id", e)
+                }
+            }
+        }
+        // Forces a report even when the percentage has not moved since the failure: the host
+        // last heard "failed", and only a progress callback tells it the transfer is live again.
+        lastReportedProgress = -1
+        updateProgress()
+        resetReceiveTimer()
     }
 
     /** On [lane]. */
@@ -384,10 +422,13 @@ class FileReceiver(
             saveFailureToMessages(failure)
             // Notified after the row exists, never beside it: a host that answers this
             // by re-reading the conversation must find the failed message there. Not at all
-            // if late packages already completed the file — the host has heard of it arriving,
-            // and the row refused this failure.
-            if (outcome.get() == Outcome.RECEIVED) return@launch
+            // if late packages already completed the file or reopened the transfer — the host
+            // has heard of it arriving, and the row refused this failure.
+            if (outcome.get() != Outcome.FAILED) return@launch
             withContext(Dispatchers.Main) {
+                // Again on main: reopen's progress report is queued there too, and a failure
+                // delivered after it would take a resumed transfer down in the host.
+                if (outcome.get() != Outcome.FAILED) return@withContext
                 try {
                     DataManager.getCallbacks()?.receiveFailure(data = snapshot, failure = failure)
                 } catch (e: Exception) {
@@ -539,6 +580,9 @@ class FileReceiver(
      */
     private suspend fun saveFailureToMessages(failure: FileFailure) {
         rowMutex.withLock {
+            // Packages resumed (see reopen) or completed the file before this write ran: the
+            // failure no longer stands, and writing it would leave a live transfer's row FAILED.
+            if (outcome.get() != Outcome.FAILED) return
             messageId?.let { id ->
                 try {
                     if (DataManager.getAppRepo().markIncomingTransferFailed(id, failure)) return
