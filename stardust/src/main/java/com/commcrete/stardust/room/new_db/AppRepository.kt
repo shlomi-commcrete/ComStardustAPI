@@ -592,6 +592,10 @@ class AppRepository(
     suspend fun chatIdForContact(contact: FullContactData): String? =
         contacts.chatIdForContactDraft(ContactDraft.fromFullContactData(contact))
 
+    /** [chatIdForContact], creating the chat when the saved contact has none. */
+    suspend fun chatIdForContactOrCreate(contact: FullContactData): String? =
+        inTransaction { contacts.chatIdForContactDraftOrCreate(ContactDraft.fromFullContactData(contact)) }
+
     suspend fun mainContactIdByChatId(chatId: String): String? {
         val data = getChatWithParticipantsShortParticipantInfo(chatId) ?: return null
         val main = if (data.chat.type == ChatType.GROUP) {

@@ -767,6 +767,22 @@ internal class ContactsRepository(
     }
 
     /**
+     * [draft]'s chat, created first if the contact has none — a saved contact can lack one, and
+     * the operator asked to open it. Null only when [draft] resolves to no saved contact.
+     * Run inside a transaction: the check and the insert must not race a second caller.
+     */
+    suspend fun chatIdForContactDraftOrCreate(draft: ContactDraft): String? = withContext(Dispatchers.IO) {
+        val contactId = resolveContactId(draft) ?: return@withContext null
+        chatIdForContact(draft.type, contactId)?.let { return@withContext it }
+        val contact = contactsDao.getContactById(contactId) ?: return@withContext null
+        when (contact.type) {
+            ContactType.GROUP -> chats.createGroupChat(contact, contactId, contactsDao.getAllMemberContactIds())
+            ContactType.USER, ContactType.DEVICE -> chats.createPrivateChat(contact, contactId)
+        }
+        chatIdForContact(contact.type, contactId)
+    }
+
+    /**
      * Contact id behind [draft]'s identity, or null when it resolves to nothing.
      * Read before a destructive op so the audit row can name the contact that is
      * about to stop existing.

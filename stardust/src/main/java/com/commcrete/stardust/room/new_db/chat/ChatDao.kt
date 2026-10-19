@@ -145,7 +145,10 @@ interface ChatDao {
     //
     // State ints — SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5.
 
-    /** Whole chats list, newest last-message first. [excludedTypes] = message types to hide. */
+    /**
+     * Whole chats list, newest last-message first. Chats with no message have a NULL time, which
+     * SQLite sorts last under DESC; among them, by callsign. [excludedTypes] = message types to hide.
+     */
     @Query("""
         SELECT
             c.id                                            AS chatId,
@@ -187,7 +190,7 @@ interface ChatDao {
             GROUP BY chat_id
         ) unseen
             ON unseen.chat_id = c.id
-        ORDER BY lastMessageEpochMs DESC
+        ORDER BY lastMessageEpochMs DESC, name COLLATE NOCASE ASC
     """)
     fun getChatSummaries(excludedTypes: List<MessageType>): Flow<List<ChatSummary>>
 
