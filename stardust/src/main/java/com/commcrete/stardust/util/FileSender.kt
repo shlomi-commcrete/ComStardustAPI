@@ -35,6 +35,7 @@ import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.zip.GZIPInputStream
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -85,6 +86,13 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
      * package counts as sent: see [confirmPendingPackage].
      */
     @Volatile private var pendingPackageIndex: Int? = null
+
+    /**
+     * The file's size before gzip, for the row and the start package — see [computeOriginalSize].
+     * Lazy so the gzip is read once, and only on the send's IO coroutine: the first read is in
+     * [saveLocalMessages].
+     */
+    private val originalSize: Int by lazy { computeOriginalSize() }
 
     /** Whether the start package went out. Without it the receiver never learns of the transfer. */
     private val startConfirmed = AtomicBoolean(false)
@@ -595,6 +603,8 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
             // Parse the contact CSV once here so the conversation UI
             // renders from the summary without re-reading the file.
             fileSummary = FileUtils.buildFileSummary(localFile, subtype),
+            // The figure the start package will carry, so both ends' rows agree.
+            originalSize = originalSize.takeIf { it > 0 }?.toLong(),
         )
         return try {
             // SENDING until the send settles it — by finishing, by a disconnect deciding from
@@ -693,6 +703,40 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         )
     }
 
+    /**
+     * The file's size before it was gzipped, for the start package. File and Contact arrive here
+     * already gzipped by the host, so the size is counted by decompressing — the gzip trailer's
+     * own size field is only the size mod 2^32 and only covers the last member. An image is not
+     * compressed: its size is its length. 0 (unknown) when it cannot be read or does not fit the
+     * field's 3 bytes; a send is never failed over this figure, which only informs the receiver.
+     */
+    private fun computeOriginalSize(): Int {
+        val src = data.file
+        val size = try {
+            when (data.fileType) {
+                FileType.Image -> src.length()
+                FileType.File, FileType.Contact -> GZIPInputStream(src.inputStream()).use { gzis ->
+                    val buffer = ByteArray(8 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val read = gzis.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        // Past what the field can carry the exact figure no longer matters.
+                        if (total > StardustFileStartPackage.MAX_ORIGINAL_SIZE) break
+                    }
+                    total
+                }
+            }
+        } catch (e: Exception) {
+            // Not a send failure: the payload goes out regardless, and a broken gzip is the
+            // receiver's to report when it decompresses. The start package says "unknown".
+            Log.w(LOG_TAG, "original size unknown: ${e.javaClass.simpleName}")
+            return 0
+        }
+        return if (size in 0..StardustFileStartPackage.MAX_ORIGINAL_SIZE.toLong()) size.toInt() else 0
+    }
+
     private fun first50BytesUtf8(input: String): String {
         val utf8 = input.toByteArray(Charsets.UTF_8)
         if (utf8.size <= 50) return input
@@ -728,7 +772,7 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
         val fileName = first50BytesUtf8(data.file.nameWithoutExtension)
         val fileEnding = data.file.extension
 
-        val fileStart = StardustFileStartPackage(type = data.fileType.bitCode, total = totalPackages, data.stardustAPIPackage.spare, spareData, fileEnding, fileName)
+        val fileStart = StardustFileStartPackage(type = data.fileType.bitCode, total = totalPackages, data.stardustAPIPackage.spare, spareData, fileEnding, fileName, originalSize)
 
         val radio = getRadioToSend(functionalityType = data.fileType.relatedFunctionalityType(), carrier = data.stardustAPIPackage.carrier)
             ?: return false

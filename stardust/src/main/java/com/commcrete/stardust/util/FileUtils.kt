@@ -555,6 +555,14 @@ object FileUtils {
              * defaulted so existing constructor calls keep compiling; 0 means no parity.
              */
             val spare: Int = 0,
+            /**
+             * The file's size in bytes before the sender gzipped it — for an image, which is
+             * not compressed, its size as sent — from the start package. Known from the first
+             * package, so a host can show the size before the file arrives. 0 means unknown:
+             * the sender predates the field, or the file is larger than its 3 bytes can carry
+             * (16 MiB). Last and defaulted so existing constructor calls keep compiling.
+             */
+            val originalSize: Int = 0,
         ) : FileTransferData(
             id = id,
             chatId = chatId,

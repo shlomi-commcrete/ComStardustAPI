@@ -77,6 +77,16 @@ sealed class MessageExtraData {
          * or was, [MessageState.SENDING]; `null` on every incoming row. Omitted when `null`.
          */
         val sendProgress: SendProgress? = null,
+        /**
+         * The file's size in bytes before it was gzipped for the air — for an image, which is
+         * not compressed, its size as sent. The same figure the start package carries, so it is
+         * known from the first package of an incoming transfer, before the file exists.
+         *
+         * `null` when unknown: a sender that predates the field, a file past the start package's
+         * 16 MiB limit, or a row written before this field existed. Omitted when `null`, like
+         * [failure].
+         */
+        val originalSize: Long? = null,
     ) : MessageExtraData()
 
     @Serializable

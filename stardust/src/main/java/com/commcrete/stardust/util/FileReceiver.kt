@@ -98,6 +98,7 @@ class FileReceiver(
             deliveryChannel = stardustPackage.stardustControlByte.stardustDeliveryType,
             numOfPackages = firstPackage.total,
             spare = firstPackage.spare,
+            originalSize = firstPackage.originalSize,
         )
     }
 
@@ -132,6 +133,7 @@ class FileReceiver(
                                 // are only assembled once. Readers go by the row's state, not this.
                                 path = "",
                                 subtype = data.fileType.toAttachmentType(),
+                                originalSize = originalSizeOrNull(),
                             ),
                         )
                     )
@@ -564,6 +566,9 @@ class FileReceiver(
         }
     }
 
+    /** The start package's original size for the row: its 0 ("unknown") is the row's null. */
+    private fun originalSizeOrNull(): Long? = data.originalSize.takeIf { it > 0 }?.toLong()
+
     /** ".jpg" for an image, otherwise the sender-supplied ending. */
     private fun fileExtension(): String =
         if (data.fileType == FileUtils.FileType.Image) ".jpg" else ".${data.fileEnding}"
@@ -609,6 +614,7 @@ class FileReceiver(
                             path = "",
                             subtype = data.fileType.toAttachmentType(),
                             failure = failure,
+                            originalSize = originalSizeOrNull(),
                         )
                     )
                 )
@@ -668,6 +674,7 @@ class FileReceiver(
                                 path = file.absolutePath,
                                 subtype = subtype,
                                 fileSummary = summary,
+                                originalSize = originalSizeOrNull(),
                             )
                         )
                     )

@@ -17,6 +17,17 @@ class StardustFileStartParser : StardustParser() {
         const val spareDataLength = 1
         const val fileEndingLength = 5
         const val fileNameLength = 50
+        const val originalSizeLength = 3
+    }
+
+    /**
+     * The 3-byte big-endian original size after the name, or 0 when the start package ends at
+     * the name — senders from before the field, this SDK's own included, do not send it.
+     */
+    private fun parseOriginalSize(byteArray: ByteArray, offset: Int): Int {
+        val bytes = cutByteArray(byteArray, originalSizeLength, offset)
+        if (bytes.size != originalSizeLength) return 0
+        return byteArrayToUInt(bytes.reversedArray()).toInt()
     }
 
     fun parseFileStart (bittelPackage: StardustPackage) : StardustFileStartPackage? {
@@ -44,7 +55,8 @@ class StardustFileStartParser : StardustParser() {
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
                 fileName = getCharValue(String(removeZeros(fileNameBytes)) ) ,
-                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))) )
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))),
+                originalSize = parseOriginalSize(byteArray, offset) )
 
         }
         return null
@@ -80,7 +92,8 @@ class StardustFileStartParser : StardustParser() {
                 spare = byteArrayToUInt(spareBytes.reversedArray()).toInt(),
                 spareData = byteArrayToUInt(spareDataBytes.reversedArray()).toInt(),
                 fileName = getCharValue(String(removeZeros(fileNameBytes)) ) ,
-                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))) )
+                fileEnding = getCharValue(String(removeZeros(fileEndingBytes))),
+                originalSize = parseOriginalSize(byteArray, offset) )
 
         }
         return null
