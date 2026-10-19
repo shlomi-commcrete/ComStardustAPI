@@ -50,6 +50,9 @@ object SOSUtils {
 
         sosMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
         sosMessage.stardustControlByte.stardustAcknowledgeType = StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
+        // Single package, so LAST. Set explicitly: the control byte is SEND_MESSAGE's shared
+        // instance, and a multi-part text cut short by link loss leaves it at MESSAGE.
+        sosMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
         saveSOSMessage(sosType, stardustAPIPackage, location)
     }

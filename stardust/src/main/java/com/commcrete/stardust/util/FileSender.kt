@@ -749,6 +749,10 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
                 data = dataToSend)
             fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
+            // START opens the transfer, so MESSAGE: only the final data package carries LAST.
+            // Set explicitly, never left to the opcode default: getStardustPackage hands out the
+            // SEND_FILE enum's one shared control byte, whose default is LAST.
+            fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.MESSAGE
             pendingPackageIndex = START_PACKAGE_INDEX
             registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
@@ -849,8 +853,12 @@ class FileSender(val data: FileUtils.FileTransferData.Send) {
                 data = stardustFilePackage.toArrayInt()
             )
             fileStartMessage.stardustControlByte.stardustDeliveryType = radio.deliveryType
-            if (stardustFilePackage.isLast) {
-                fileStartMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
+            // Only the final package carries LAST. Both branches are needed: SEND_FILE's default
+            // part type is LAST, so setting LAST alone left every package marked final.
+            fileStartMessage.stardustControlByte.stardustPartType = if (stardustFilePackage.isLast) {
+                StardustControlByte.StardustPartType.LAST
+            } else {
+                StardustControlByte.StardustPartType.MESSAGE
             }
             packagesSent++
             if (stardustFilePackage.current in parityIndices) sparePackagesSent++
