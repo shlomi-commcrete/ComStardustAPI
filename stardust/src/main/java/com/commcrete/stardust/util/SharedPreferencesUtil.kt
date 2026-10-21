@@ -339,11 +339,11 @@ object SharedPreferencesUtil {
 
     @Synchronized
     fun removeAppUser() : Boolean{
-        RegisteredUserUtils.updateRegisteredUser(null)
+        // Prefs first: RegisteredUserUtils reloads the user from prefs whenever its in-memory copy
+        // is null, so clearing memory first let any read in between log the user straight back in.
         getPrefs().edit { remove(KEY_APP_USER) }
-        // After the prefs removal, not after the null above: in between, reading the current user
-        // reloads it from prefs, so the lock would still see a logged-in user. A USB link survives
-        // logout, so nothing else would release it.
+        RegisteredUserUtils.updateRegisteredUser(null)
+        // A USB link survives logout, so no connection-state change would release the lock.
         LinkWakeLock.refresh()
         return true
     }
