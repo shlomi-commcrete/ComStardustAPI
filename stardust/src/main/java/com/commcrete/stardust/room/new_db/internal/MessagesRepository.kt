@@ -17,6 +17,7 @@ import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.SosAck
+import com.commcrete.stardust.room.new_db.message.SosAckKind
 import com.commcrete.stardust.room.new_db.message.settlementForInterruptedSend
 import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
@@ -376,6 +377,9 @@ internal class MessagesRepository(
      * Appending rather than overwriting is the point: an SOS addressed to a group can be
      * acknowledged by several members, and the first responder is the one worth keeping.
      * Re-recording the same acker is a no-op, so a retransmitted ack changes nothing.
+     *
+     * An ack from this user's own paired radio is not a confirmation: it is the SOS being
+     * cancelled on the radio, recorded as [SosAckKind.CANCELLED_FROM_DEVICE] — see [recordSosCancel].
      */
     suspend fun recordSosAck(
         chatId: String?,
@@ -383,8 +387,12 @@ internal class MessagesRepository(
         ackedAtMs: Long = System.currentTimeMillis(),
     ): Boolean = withContext(Dispatchers.IO) {
         val ackerId = normalizeIdOrNull(ackedBy) ?: return@withContext false
-        val me = normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.appId)
-            ?: return@withContext false
+        val user = RegisteredUserUtils.currentUserFlow.value
+        val me = normalizeIdOrNull(user?.appId) ?: return@withContext false
+
+        if (ackerId == normalizeIdOrNull(user?.deviceId)) {
+            return@withContext recordCancel(me, ackerId, SosAckKind.CANCELLED_FROM_DEVICE, ackedAtMs)
+        }
 
         val row = findSosRowForAck(chatId, ackerId, me) ?: run {
             Timber.d("SOS ack from $ackerId matched no SOS sent by this user")
@@ -396,6 +404,36 @@ internal class MessagesRepository(
         messagesDao.recordSosAck(
             messageId = row.id.toLong(),
             extraData = sos.copy(acks = sos.acks + SosAck(ackedBy = ackerId, ackedAtMs = ackedAtMs)),
+        ) > 0
+    }
+
+    /**
+     * Records that this user cancelled their live SOS from the app, as a
+     * [SosAckKind.CANCELLED] entry on its row. Call once the cancel has been handed to the
+     * radio. Returns false when there is no registered user or no open SOS to cancel.
+     */
+    suspend fun recordSosCancel(
+        cancelledAtMs: Long = System.currentTimeMillis(),
+    ): Boolean = withContext(Dispatchers.IO) {
+        val me = normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.appId)
+            ?: return@withContext false
+        recordCancel(me, me, SosAckKind.CANCELLED, cancelledAtMs)
+    }
+
+    /**
+     * Stamps a cancel on this user's newest SOS, whichever chat it went to: the radio holds one
+     * live SOS. Only while no ack has ended it — a confirmation already stands the SOS down
+     * (the app answers it with its own ack), so a later cancel belongs to an SOS this app
+     * never recorded, and must not land on an old one. That also makes a repeated cancel,
+     * or both routes at once, a no-op.
+     */
+    private suspend fun recordCancel(me: String, cancelledBy: String, kind: SosAckKind, atMs: Long): Boolean {
+        val row = messagesDao.findLatestSosSent(me, MessageType.SOS) ?: return false
+        val sos = row.extraData as? MessageExtraData.Sos ?: return false
+        if (sos.acks.isNotEmpty()) return false
+        return messagesDao.recordSosAck(
+            messageId = row.id.toLong(),
+            extraData = sos.copy(acks = listOf(SosAck(ackedBy = cancelledBy, ackedAtMs = atMs, kind = kind))),
         ) > 0
     }
 

@@ -744,6 +744,15 @@ class AppRepository(
     ): Boolean = messages.recordSosAck(chatId, ackedBy, ackedAtMs)
 
     /**
+     * Records that this user cancelled their live SOS from the app, on that SOS's own row.
+     * Call once the cancel has been handed to the radio. Returns false when there is no open
+     * SOS to cancel. See `MessagesRepository.recordSosCancel`.
+     */
+    suspend fun recordSosCancel(
+        cancelledAtMs: Long = System.currentTimeMillis(),
+    ): Boolean = messages.recordSosCancel(cancelledAtMs)
+
+    /**
      * Records a file/image transfer failure on an existing OUTGOING message row (where
      * the row was created when the send started): state FAILED plus the reason merged
      * into the row's extra_data, and the row restamped with the moment it gave up.
