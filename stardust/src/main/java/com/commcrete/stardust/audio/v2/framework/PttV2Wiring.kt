@@ -134,10 +134,18 @@ object PttV2Wiring {
 
     private fun build(context: Context) {
         val clock = SystemClock()
-        // KeepAlive port backed directly by the legacy refcounted wake-lock object — no wrapper class.
+        // KeepAlive port backed by the shared wake-lock object. That object hands out one hold per
+        // acquire; RecordingSession balances each acquire with exactly one release, so any v2 hold is
+        // as good as another to return — but only v2's own, never a legacy recorder's.
         val keepAlive = object : KeepAlive {
-            override fun acquire() = AudioRecordingKeepAlive.acquire(context)
-            override fun release() = AudioRecordingKeepAlive.release()
+            private val holds = ArrayDeque<AudioRecordingKeepAlive.Hold>()
+            override fun acquire() {
+                val hold = AudioRecordingKeepAlive.acquire(context)
+                synchronized(holds) { holds.addLast(hold) }
+            }
+            override fun release() {
+                synchronized(holds) { holds.removeFirstOrNull() }?.release()
+            }
         }
         // Port backed by RecorderUtils, where the legacy beep + host callbacks already live, so both
         // pipelines announce the ceiling identically.

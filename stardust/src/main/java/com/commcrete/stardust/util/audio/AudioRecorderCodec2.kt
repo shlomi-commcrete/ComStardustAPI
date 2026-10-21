@@ -67,6 +67,13 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
      * even when the recording thread has already exited the capture loop.
      */
     @Volatile private var currentPipeline: Codec2SendPipeline? = null
+
+    /**
+     * This recording's wake-lock claim. Its own hold rather than a shared count, because the
+     * stop path can run twice (key-up racing the max-PTT stop) and the second release must not
+     * drop a lock another session still needs.
+     */
+    @Volatile private var keepAliveHold: AudioRecordingKeepAlive.Hold? = null
     private var handler = Handler(Looper.getMainLooper())
     private var numOfPackage = 0
     private var captureRateHz = RECORDER_SAMPLE_RATE
@@ -98,7 +105,6 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
 
     @SuppressLint("MissingPermission")
     fun startRecording(file: File, carrier: Carrier?) {
-        AudioRecordingKeepAlive.acquire(DataManager.appContext)
         val capturePlan = AudioCaptureConfig.buildCapturePlan(
             context = DataManager.appContext,
             requestedRate = RECORDER_SAMPLE_RATE,
@@ -128,6 +134,10 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         }
         AudioCaptureConfig.applyInputRoute(DataManager.appContext, recorder, capturePlan.preferredInputDevice)
         recorder?.startRecording()
+        // Taken only once startRecording() has returned: it throws on an uninitialised record, and
+        // nothing calls a stop path after a failed start, so a hold taken earlier would never be released.
+        keepAliveHold?.release()
+        keepAliveHold = AudioRecordingKeepAlive.acquire(DataManager.appContext)
         isRecording = true
 
         recordingThread = thread(true) {
@@ -224,7 +234,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
-                    AudioRecordingKeepAlive.release()
+                    keepAliveHold?.release()
+                    keepAliveHold = null
                     recordingThread = null
                     recorder = null
                 }
@@ -260,7 +271,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     stopRecording(retryNum, chatId, receiverId, path, carrier)
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
-                    AudioRecordingKeepAlive.release()
+                    keepAliveHold?.release()
+                    keepAliveHold = null
                     recordingThread = null
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }

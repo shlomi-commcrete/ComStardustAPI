@@ -402,7 +402,7 @@ object RecorderUtils {
                     notifyPttRecordingStarted()
                 } else {
                     notifyPttRecordingStopped()
-                    finishAIRecording(session)
+                    finishAIRecording(session, this)
                 }
             }
         }
@@ -541,11 +541,13 @@ object RecorderUtils {
         }
     }
 
-    private fun finishAIRecording(session: PttSession) {
+    private fun finishAIRecording(session: PttSession, recorder: AudioRecorderAI) {
         Scopes.getDefaultCoroutine().launch {
             delay(3000)
             PttSendManager.finish(session)
-            AudioRecordingKeepAlive.release()
+            // The recorder's own hold, not a shared decrement: aiRecorder has been nulled by now,
+            // and a bare release() could drop a claim belonging to the next recording.
+            recorder.releaseKeepAlive()
             // Best-effort SENT for the legacy AI path: unlike v2's transmit gate there is no
             // "every frame is on the link" signal here, so this is "the session was finalized".
             notifyPttRecordingSent()

@@ -59,6 +59,13 @@ class AudioRecorderAI(
     @Volatile
     private var job: Job? = null
 
+    /**
+     * Wake-lock claim taken in [start]. Released by the owner via [releaseKeepAlive] once the
+     * session is finalized, not when capture ends — RecorderUtils holds it across PttSendManager.finish.
+     */
+    @Volatile
+    private var keepAliveHold: AudioRecordingKeepAlive.Hold? = null
+
     private val bytesPerSample = bitsPerSample / 8
     private val samplesPerChunk = (sampleRate * chunkDurationMs / 1000.0).toInt() // 24,000
     private val bytesPerChunk = samplesPerChunk * bytesPerSample * channels
@@ -70,7 +77,8 @@ class AudioRecorderAI(
         synchronized(this) {
             // Already running or cancelling
             if (job?.isActive == true) return
-            AudioRecordingKeepAlive.acquire(DataManager.appContext)
+            keepAliveHold?.release()
+            keepAliveHold = AudioRecordingKeepAlive.acquire(DataManager.appContext)
 
             job = scope.launch {
                 onStateChanged?.invoke(true)
@@ -93,6 +101,12 @@ class AudioRecorderAI(
             job?.cancel()
         }
         AudioCaptureConfig.clearInputRoute(DataManager.appContext)
+    }
+
+    /** Drops the wake-lock claim taken in [start]. Idempotent. */
+    internal fun releaseKeepAlive() {
+        keepAliveHold?.release()
+        keepAliveHold = null
     }
 
     fun release() {

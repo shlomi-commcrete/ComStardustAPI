@@ -384,9 +384,9 @@ object PttSendManager {
         return coroutineScope.launch {
             // Hold a wake lock for the duration of encode + finalize so
             // screen-off / background does not suspend the codec coroutine
-            // mid-session. The recorder also holds one of these; refcount
-            // makes both safe.
-            AudioRecordingKeepAlive.acquire(session.context)
+            // mid-session. The recorder also holds one of these; each
+            // holder releases only its own hold.
+            val keepAliveHold = AudioRecordingKeepAlive.acquire(session.context)
             try {
                 // Single-session-at-a-time barrier: wait for the previous
                 // session to fully finalize before this one touches any
@@ -523,7 +523,7 @@ object PttSendManager {
                     Log.e(TAG, "Session ${session.id}: job failed", t)
                 }
             } finally {
-                AudioRecordingKeepAlive.release()
+                keepAliveHold.release()
             }
         }
     }
