@@ -350,11 +350,13 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             // row to be recorded on.
             val saved = saveLocalMessages()
             // saveLocalMessages has already read the lazy size off this IO coroutine; from here
-            // on every callback tells the host how big the file is, as a receive's does.
-            data = data.copy(originalSize = originalSize)
+            // on every callback tells the host how big the file is and which row it fills, as a
+            // receive's does.
+            data = data.copy(originalSize = originalSize, messageId = messageId)
             // Raised after messageId is written and before `cancelled` is read, which is
             // the other half of the handshake in stopSendingPackages().
             localRowSettled.set(true)
+            if (saved) announceMessageSaved()
 
             // The host has been showing a progress ring since startSending() above, so a
             // cancel can land anywhere in the preparation below — and until the timer is
@@ -570,6 +572,21 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         handler.post {
             if (cancelled.get() || terminalOutcomeClaimed.get()) return@post
             onFileStatusChange?.updateStep(data, 0)
+        }
+    }
+
+    /**
+     * Tells the host the row exists, with [data] now carrying its id — while the send is still
+     * being built, so a host can tie its "preparing" state to the row rather than wait for the
+     * first step, which ends preparing.
+     *
+     * Posted to [handler] like [announcePreparationOver], which it therefore always precedes,
+     * and with the same re-check: a cancel or failure landing in between is not followed by it.
+     */
+    private fun announceMessageSaved() {
+        handler.post {
+            if (cancelled.get() || terminalOutcomeClaimed.get()) return@post
+            onFileStatusChange?.messageSaved(data)
         }
     }
 
@@ -1072,6 +1089,15 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
     interface OnFileStatusChange {
         fun startSending(data: FileUtils.FileTransferData.Send) {}
+
+        /**
+         * The send's conversation row is written: [data] now carries its
+         * [FileUtils.FileTransferData.Send.messageId]. Between [startSending] and the first
+         * [updateStep], so the send is still being prepared. Not raised when the row could not be
+         * written, or when the send was stopped first.
+         */
+        fun messageSaved(data: FileUtils.FileTransferData.Send) {}
+
         fun finishSending(data: FileUtils.FileTransferData.Send) {}
         fun stopSending(data: FileUtils.FileTransferData.Send) {}
         fun updateStep(data: FileUtils.FileTransferData.Send, percentage: Int) {}

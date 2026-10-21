@@ -522,6 +522,14 @@ object FileUtils {
              * a send leaves it at the default. Last and defaulted so existing calls compile.
              */
             val originalSize: Int = 0,
+            /**
+             * The conversation row this send writes — what a host binds the send to, as it binds
+             * a receive to [Receive.messageId]. Not the file name: two sends in one chat can carry
+             * the same one. Null until the SDK has written the row, which it announces with
+             * [FileSender.OnFileStatusChange.messageSaved]; set on every callback after that. A
+             * host constructing a send leaves it at the default.
+             */
+            val messageId: Long? = null,
         ) : FileTransferData(
             id = id,
             chatId = chatId,
