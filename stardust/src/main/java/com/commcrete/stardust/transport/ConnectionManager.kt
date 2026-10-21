@@ -233,6 +233,8 @@ object ConnectionManager {
         val next = derive(active, lastInitState, inReconnectGrace())
         _connectionState.value = next
         if (next != previous) BleDiag.log("state", "$previous -> $next (transport=$active init=$lastInitState)")
+        // After the publish: the lock reads the state just set.
+        LinkWakeLock.refresh()
 
         // Reaching a connected state means any pending reconnect is moot and backoff can reset.
         if (next is ConnectionState.LinkUp || next is ConnectionState.Syncing || next is ConnectionState.Ready) {
@@ -282,6 +284,8 @@ object ConnectionManager {
     fun reportBlocked(reason: Blocker) {
         Timber.tag(TAG).w("connection blocked: $reason")
         _connectionState.value = ConnectionState.Blocked(reason)
+        // Published past recompute, so the lock must be told: a refused connect ends a Searching hold.
+        LinkWakeLock.refresh()
     }
 
     private fun derive(active: TransportId?, s: State, inGrace: Boolean): ConnectionState = when {

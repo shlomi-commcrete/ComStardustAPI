@@ -10,6 +10,7 @@ import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
+import com.commcrete.stardust.transport.LinkWakeLock
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.config.Preset
@@ -332,12 +333,18 @@ object SharedPreferencesUtil {
         }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
+        // Login over a link that is already up changes no connection state, so recompute won't run.
+        LinkWakeLock.refresh()
     }
 
     @Synchronized
     fun removeAppUser() : Boolean{
         RegisteredUserUtils.updateRegisteredUser(null)
         getPrefs().edit { remove(KEY_APP_USER) }
+        // After the prefs removal, not after the null above: in between, reading the current user
+        // reloads it from prefs, so the lock would still see a logged-in user. A USB link survives
+        // logout, so nothing else would release it.
+        LinkWakeLock.refresh()
         return true
     }
 
