@@ -13,7 +13,7 @@ import org.junit.Test
 
 /**
  * Two numberings of one transceiver: its slot (an event's xcvr, the send side's Carrier.index) and
- * its F (Xcvr.carrier.index 0-8, shown as the RD carrier's fNumber 1-9). The layout below is the
+ * its F (Xcvr.carrier.index 0-8, shown as the RD carrier's fRange 1-9). The layout below is the
  * radio where they were mixed up: RD2 (slot 1, LR) sits on F3.
  */
 class EventCarrierMappingTest {
@@ -35,14 +35,15 @@ class EventCarrierMappingTest {
         ConfigurationUtils.selectedPreset = null
     }
 
-    private fun xcvr(fIndex: Int, type: CarrierType, bandwidth: Bandwidth) = Xcvr(
+    private fun xcvr(fIndex: Int, type: CarrierType, bandwidth: Bandwidth?) = Xcvr(
         txFrequency = 0.0,
         rxFrequency = 0.0,
         power = 0,
         options = 0,
         carrier = Carrier(index = fIndex, type = type),
         carrierOn = true,
-        bandwidth = bandwidth.code,
+        // Legacy firmware reports -1.
+        bandwidth = bandwidth?.code ?: -1,
     )
 
     private fun eventOn(xcvr: Int?) =
@@ -72,30 +73,56 @@ class EventCarrierMappingTest {
     }
 
     @Test
-    fun `the RD list carries each RD's F, numbered by slot`() {
+    fun `the RD list carries each RD's F range, numbered by slot`() {
         val rds = CarriersUtils.getCarriersByPreset(ConfigurationUtils.selectedPreset!!)
         assertEquals(listOf(0, 1, 2), rds.map { it.index })
-        assertEquals("RD2 shows F3", listOf(1, 3, 2), rds.map { it.fNumber })
+        // 62.5 kHz spans 8 F, 7.81 kHz one, 15.63 kHz two.
+        assertEquals("RD2 shows F3", listOf(1..8, 3..3, 2..3), rds.map { it.fRange })
+    }
+
+    @Test
+    fun `legacy firmware, with no bandwidth, gives each RD its single F`() {
+        val legacy = Preset(
+            index = 0,
+            xcvrList = mutableListOf(xcvr(fIndex = 4, type = CarrierType.HR, bandwidth = null)),
+        )
+        assertEquals(listOf(5..5), CarriersUtils.getCarriersByPreset(legacy).map { it.fRange })
+    }
+
+    @Test
+    fun `a bandwidth that spans no F still names the transceiver's own`() {
+        val unsupported = Preset(
+            index = 0,
+            xcvrList = mutableListOf(xcvr(fIndex = 1, type = CarrierType.HR, bandwidth = Bandwidth.BW_10_42)),
+        )
+        assertEquals(listOf(2..2), CarriersUtils.getCarriersByPreset(unsupported).map { it.fRange })
     }
 
     @Test
     fun `a saved list without F, or with an F the device moved, takes it from the configuration`() {
         val saved = listOf(
-            Carrier(index = 0, type = CarrierType.HR),                // saved before fNumber existed
-            Carrier(index = 1, type = CarrierType.LR, fNumber = 2),   // RD2 has since moved to F3
-            Carrier(index = 2, type = CarrierType.HR, fNumber = 2),   // unchanged
+            Carrier(index = 0, type = CarrierType.HR),                          // saved before the F existed
+            Carrier(index = 1, type = CarrierType.LR, fFirst = 2, fLast = 2),   // RD2 has since moved to F3
+            Carrier(index = 2, type = CarrierType.HR, fFirst = 2, fLast = 3),   // unchanged
         )
-        val synced = CarriersUtils.withFNumbers(saved, ConfigurationUtils.selectedPreset!!)
-        assertEquals(listOf(1, 3, 2), synced.map { it.fNumber })
+        val synced = CarriersUtils.withFRanges(saved, ConfigurationUtils.selectedPreset!!)
+        assertEquals(listOf(1..8, 3..3, 2..3), synced.map { it.fRange })
         assertEquals(saved.map { it.index }, synced.map { it.index })
     }
 
     @Test
     fun `an RD with no transceiver in the configuration has no F`() {
-        val synced = CarriersUtils.withFNumbers(
-            listOf(Carrier(index = 5, type = CarrierType.HR, fNumber = 4)),
+        val synced = CarriersUtils.withFRanges(
+            listOf(Carrier(index = 5, type = CarrierType.HR, fFirst = 4, fLast = 4)),
             ConfigurationUtils.selectedPreset!!,
         )
-        assertNull(synced.single().fNumber)
+        assertNull(synced.single().fRange)
+    }
+
+    @Test
+    fun `the F survives the Gson round trip a saved carrier list takes`() {
+        val json = com.google.gson.Gson().toJson(Carrier(index = 1, type = CarrierType.HR, fFirst = 2, fLast = 3))
+        val back = com.google.gson.Gson().fromJson(json, Carrier::class.java)
+        assertEquals(2..3, back.fRange)
     }
 }

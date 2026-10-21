@@ -9,6 +9,7 @@ import com.commcrete.stardust.stardust.model.StardustConfigurationPackage
 import com.commcrete.stardust.stardust.model.config.CarrierType
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.config.Preset
+import com.commcrete.stardust.stardust.model.config.Xcvr
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.google.gson.Gson
 import com.google.gson.JsonElement
@@ -39,23 +40,35 @@ object CarriersUtils {
 
     /**
      * The presets are as saved, but each RD's F still comes from the [configPackage] that just
-     * arrived: a saved list may predate [Carrier.fNumber] or hold an F the device has since moved.
+     * arrived: a saved list may predate [Carrier.fRange] or hold an F the device has since moved.
      */
     fun setPresetsWithoutChange(configPackage: StardustConfigurationPackage) {
         carriersMap.clear()
         for (i in 0..2) {
             val localCarriers = getLocalCarriersByPreset(i) ?: continue
-            val synced = configPackage.presets.getOrNull(i)?.let { withFNumbers(localCarriers, it) } ?: localCarriers
-            // Carrier.equals ignores fNumber, so compare it directly.
-            if (synced.map { it.fNumber } != localCarriers.map { it.fNumber }) setLocalCarriersByPreset(i, synced)
+            val synced = configPackage.presets.getOrNull(i)?.let { withFRanges(localCarriers, it) } ?: localCarriers
+            // Carrier.equals ignores the F, so compare it directly.
+            if (synced.map { it.fRange } != localCarriers.map { it.fRange }) setLocalCarriersByPreset(i, synced)
             carriersMap.put(i, synced)
         }
     }
 
     /** [carriers] (numbered by slot) with each one's F taken from [preset]'s transceiver in that slot. */
-    internal fun withFNumbers(carriers: List<Carrier>, preset: Preset): List<Carrier> = carriers.map { carrier ->
-        val f = preset.xcvrList.getOrNull(carrier.index)?.carrier?.index?.plus(1)
-        if (f == carrier.fNumber) carrier else carrier.copy(fNumber = f)
+    internal fun withFRanges(carriers: List<Carrier>, preset: Preset): List<Carrier> = carriers.map { carrier ->
+        val range = preset.xcvrList.getOrNull(carrier.index)?.let(::fRangeOf)
+        if (range == carrier.fRange) carrier else carrier.copy(fFirst = range?.first, fLast = range?.last)
+    }
+
+    /**
+     * The F (1-9) [xcvr] occupies: from its own F for as many as its bandwidth spans — the same
+     * start and width [com.commcrete.stardust.stardust.model.config.LeaseCalculator] computes
+     * leases from. Legacy firmware reports no bandwidth, and codes 1 and 7 span none; both still
+     * name the transceiver's own F, so either is that single F.
+     */
+    internal fun fRangeOf(xcvr: Xcvr): IntRange {
+        val first = xcvr.carrier.index + 1
+        val span = (xcvr.bandwidthOption?.carriers ?: 1).coerceAtLeast(1)
+        return first until first + span
     }
 
     fun updateCurrentPresetList(preset: CurrentPreset?) {
@@ -72,8 +85,15 @@ object CarriersUtils {
             val xcvr = preset.xcvrList.getOrNull(i) ?: continue
             val options = xcvr.getOptions().toMutableSet()
             val type = xcvr.carrier.type
+            val range = fRangeOf(xcvr)
             carriers.add(
-                Carrier(index = i, type = type, presetActiveFunctionality = options, fNumber = xcvr.carrier.index + 1)
+                Carrier(
+                    index = i,
+                    type = type,
+                    presetActiveFunctionality = options,
+                    fFirst = range.first,
+                    fLast = range.last,
+                )
             )
         }
 
@@ -167,14 +187,22 @@ object CarriersUtils {
 /**
  * [index] is the RD's slot in the preset on the send side (getCarriers, getRadioToSend), but the
  * transceiver's F (0-8) on a radio event's carrier — see ConfigurationUtils.setStardustCarrierFromEvent.
- * [fNumber] is an RD carrier's F as shown to the operator (1-9); null until a configuration sets it.
+ * [fFirst]..[fLast] is the F an RD carrier occupies as shown to the operator (1-9) — see
+ * [fRange]; both null until a configuration sets them.
  */
 data class Carrier (
     val index : Int,
     var type : CarrierType,
     private var presetActiveFunctionality: Set<FunctionalityType>? = null,
-    val fNumber: Int? = null,
+    // Two ints rather than an IntRange: a Carrier is persisted through Gson, which round-trips
+    // plain fields and not Kotlin's range classes.
+    val fFirst: Int? = null,
+    val fLast: Int? = null,
 ) {
+
+    /** The F this RD occupies, e.g. 1..4; a single F is first == last. Not persisted — no field. */
+    val fRange: IntRange?
+        get() = if (fFirst != null && fLast != null) fFirst..fLast else null
 
     val deliveryType: StardustDeliveryType = StardustDeliveryType.entries.find { it.ordinal == index } ?: StardustDeliveryType.RD1
 
