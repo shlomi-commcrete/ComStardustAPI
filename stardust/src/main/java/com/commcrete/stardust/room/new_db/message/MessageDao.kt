@@ -20,8 +20,11 @@ private const val ARCHIVABLE = "state NOT IN (4, 5, 7)"
  * State ints: SENT=0, SEEN=1, RECEIVED=2, FAILED=3, RECEIVING=4, ARCHIVED=5,
  * CANCELLED=6.
  *
- * Optional params use Room's null-or-IN idiom:
- *  - types / excludeTypes: null = no filter. Never pass an empty list.
+ * Optional params:
+ *  - types / excludeTypes: null = no filter. Never pass an empty list. Each is switched by its own
+ *    filterTypes / filterExcludeTypes flag (defaulted from the null check), NOT by `:types IS NULL`:
+ *    Room expands a list parameter everywhere it appears, so a two-item list turned that check into
+ *    `(?,? IS NULL …)` — "row value misused", a crash the first time a caller passed two types.
  *  - participantId: null = chat-scoped (group lanes); non-null = target-scoped.
  *
  * UNSEEN = state 2 only. RECEIVING (4) is an in-flight transfer, not an unread
@@ -60,8 +63,8 @@ interface MessageDao {
             WHERE chat_id = :chatId AND state != 5
               AND (:participantId IS NULL
                    OR sender_id = :participantId OR receiver_id = :participantId)
-              AND (:types IS NULL OR type IN (:types))
-              AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+              AND (:filterTypes = 0 OR type IN (:types))
+              AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
             ORDER BY epoch_time_ms DESC, id DESC
             LIMIT :limit
         ) ORDER BY epoch_time_ms ASC, id ASC
@@ -72,6 +75,8 @@ interface MessageDao {
         limit: Int,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): Flow<List<MessageEntity>>
 
     // ── Keyset pagination ────────────────────────────────────────────────
@@ -83,8 +88,8 @@ interface MessageDao {
             WHERE chat_id = :chatId AND state != 5
               AND (:participantId IS NULL
                    OR sender_id = :participantId OR receiver_id = :participantId)
-              AND (:types IS NULL OR type IN (:types))
-              AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+              AND (:filterTypes = 0 OR type IN (:types))
+              AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
               AND (:beforeEpochMs IS NULL
                    OR epoch_time_ms < :beforeEpochMs
                    OR (epoch_time_ms = :beforeEpochMs AND id < :beforeId))
@@ -100,6 +105,8 @@ interface MessageDao {
         limit: Int,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): List<MessageEntity>
 
     /** Strictly newer than (afterEpochMs, afterId). */
@@ -108,8 +115,8 @@ interface MessageDao {
         WHERE chat_id = :chatId AND state != 5
           AND (:participantId IS NULL
                OR sender_id = :participantId OR receiver_id = :participantId)
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
           AND (epoch_time_ms > :afterEpochMs
                OR (epoch_time_ms = :afterEpochMs AND id > :afterId))
         ORDER BY epoch_time_ms ASC, id ASC
@@ -123,6 +130,8 @@ interface MessageDao {
         limit: Int,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): List<MessageEntity>
 
     /** Inclusive of (fromEpochMs, fromId) — the anchor half of loadAround. */
@@ -131,8 +140,8 @@ interface MessageDao {
         WHERE chat_id = :chatId AND state != 5
           AND (:participantId IS NULL
                OR sender_id = :participantId OR receiver_id = :participantId)
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
           AND (epoch_time_ms > :fromEpochMs
                OR (epoch_time_ms = :fromEpochMs AND id >= :fromId))
         ORDER BY epoch_time_ms ASC, id ASC
@@ -146,6 +155,8 @@ interface MessageDao {
         limit: Int,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): List<MessageEntity>
 
     // ── Anchoring ────────────────────────────────────────────────────────
@@ -160,8 +171,8 @@ interface MessageDao {
         WHERE chat_id = :chatId AND state = 2
           AND (:participantId IS NULL
                OR sender_id = :participantId OR receiver_id = :participantId)
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
         ORDER BY epoch_time_ms ASC, id ASC
         LIMIT 1
     """)
@@ -170,6 +181,8 @@ interface MessageDao {
         participantId: String?,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): MessageEntity?
 
     // ── Unseen counters (state = 2 only) ─────────────────────────────────
@@ -177,12 +190,14 @@ interface MessageDao {
     @Query("""
         SELECT COUNT(*) FROM messages
         WHERE state = 2
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
     """)
     fun observeReceivedMessagesCount(
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): Flow<Int>
 
     /** Per-chat. Use for GROUP chats: the group target is synthetic. */
@@ -191,14 +206,16 @@ interface MessageDao {
         FROM messages
         WHERE state = 2
           AND chat_id IN (:chatIds)
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
         GROUP BY chat_id
     """)
     fun observeUnseenCountsForChats(
         chatIds: List<String>,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): Flow<List<ChatUnseenCountRow>>
 
     /**
@@ -212,8 +229,8 @@ interface MessageDao {
         WHERE state = 2
           AND chat_id IN (:chatIds)
           AND sender_id IN (:targetIds)
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
         GROUP BY chat_id, sender_id
     """)
     fun observeUnseenCountsForTargets(
@@ -221,6 +238,8 @@ interface MessageDao {
         targetIds: List<String>,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): Flow<List<UnseenCountRow>>
 
     // ── State transitions ────────────────────────────────────────────────
@@ -451,8 +470,8 @@ interface MessageDao {
                OR (epoch_time_ms = :fromEpochMs AND id >= :fromId))
           AND (epoch_time_ms < :toEpochMs
                OR (epoch_time_ms = :toEpochMs AND id <= :toId))
-          AND (:types IS NULL OR type IN (:types))
-          AND (:excludeTypes IS NULL OR type NOT IN (:excludeTypes))
+          AND (:filterTypes = 0 OR type IN (:types))
+          AND (:filterExcludeTypes = 0 OR type NOT IN (:excludeTypes))
     """)
     suspend fun markSeenInRange(
         chatId: String,
@@ -463,6 +482,8 @@ interface MessageDao {
         toId: Int,
         types: List<MessageType>? = null,
         excludeTypes: List<MessageType>? = null,
+        filterTypes: Boolean = types != null,
+        filterExcludeTypes: Boolean = excludeTypes != null,
     ): Int
 
     // ── Archival ─────────────────────────────────────────────────────────
