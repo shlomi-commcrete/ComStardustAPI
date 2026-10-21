@@ -1126,6 +1126,14 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
          */
         private const val START_PACKAGES = 1
 
+        /**
+         * The device holds a file's start package about a second longer than its airtime before
+         * the data follows — measured on the device, not derived from the airtime tables. The
+         * estimate adds it once per transfer, so the countdown a host builds on it ends with the
+         * transfer rather than a second before.
+         */
+        private const val START_PACKAGE_DEVICE_DELAY_MS = 1_000L
+
         fun calculateNumOfPackages(files: List<File>, spare: Int): Int {
             return files.sumOf { ceil(it.length().toDouble() / FILE_CHUNK_SIZE).toInt() } + spare
         }
@@ -1156,7 +1164,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         /**
          * The estimate as a number, for callers that need to compute with it rather than show it.
-         * Counts the start package on top of [numOfPackages].
+         * Counts the start package on top of [numOfPackages], and the device's extra hold on it
+         * ([START_PACKAGE_DEVICE_DELAY_MS]).
          */
         @JvmStatic
         @JvmOverloads
@@ -1165,7 +1174,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             functionalityType: FunctionalityType,
             carrier: Carrier? = null,
         ): Double = (numOfPackages.coerceAtLeast(0) + START_PACKAGES) *
-            secondsPerPackage(functionalityType, carrier)
+            secondsPerPackage(functionalityType, carrier) +
+            START_PACKAGE_DEVICE_DELAY_MS / 1000.0
 
         @JvmStatic
         @JvmOverloads

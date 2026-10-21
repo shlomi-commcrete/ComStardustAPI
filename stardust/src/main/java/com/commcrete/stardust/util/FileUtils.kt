@@ -486,11 +486,18 @@ object FileUtils {
          * actually on — fixed for the life of the transfer, for a host that runs its own
          * countdown rather than re-quoting the remainder on every percentage.
          *
-         * Counts what each side has to wait for: a send puts every package on air, parity
-         * included; a receive can build the file from the data packages alone, so the parity
-         * tail is not counted.
+         * Every package, parity included, on both sides: a receive waits for the sender's
+         * whole codeword, and a countdown that ended with the data read "Finishing…" through the
+         * parity tail. Includes the device's hold on the start package — see
+         * [FileSender.estimateSendSeconds].
          */
         abstract fun estimatedTransferSeconds(): Double
+
+        /**
+         * One package's airtime in seconds on the radio this transfer is on — the pace the rest
+         * of it goes at, for a host checking a countdown against how far it has got.
+         */
+        abstract fun packageSeconds(): Double
 
         /** Packages still to go at [progress] percent. */
         protected fun remainingPackages(progress: Int): Int {
@@ -537,6 +544,9 @@ object FileUtils {
                     fileType.relatedFunctionalityType(),
                     stardustAPIPackage.carrier,
                 )
+
+            override fun packageSeconds(): Double =
+                FileSender.secondsPerPackage(fileType.relatedFunctionalityType(), stardustAPIPackage.carrier)
         }
 
         data class Receive(
@@ -591,13 +601,18 @@ object FileUtils {
                     CarriersUtils.getCarrierByControl(deliveryChannel),
                 )
 
-            /** Data packages only: the file can be rebuilt before the parity tail arrives. */
+            /** Every package the sender transmits, parity included — see the base KDoc. */
             override fun estimatedTransferSeconds(): Double =
                 FileSender.estimateSendSeconds(
-                    numOfPackages - spare,
+                    numOfPackages,
                     fileType.relatedFunctionalityType(),
                     CarriersUtils.getCarrierByControl(deliveryChannel),
                 )
+
+            override fun packageSeconds(): Double = FileSender.secondsPerPackage(
+                fileType.relatedFunctionalityType(),
+                CarriersUtils.getCarrierByControl(deliveryChannel),
+            )
         }
     }
 
