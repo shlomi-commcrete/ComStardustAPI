@@ -40,6 +40,7 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
@@ -389,6 +390,9 @@ internal class ClientConnection(): BittelProtocol {
                     newState: Int
                 ) {
                     super.onConnectionStateChange(gatt, status, newState)
+                    // A radio dropping out of range must reach the host as promptly with the screen
+                    // off; a background reconnect's handshake likewise must not stall between steps.
+                    InboundWakeLock.onInbound(context)
 
                     Log.d("StardustDataManager", " onConnectionStateChange")
                     Log.d("ConfigDebug", "onConnectionStateChange status=$status newState=$newState hasCallback=$hasCallback mDevice=${mDevice?.address}")
@@ -485,6 +489,7 @@ internal class ClientConnection(): BittelProtocol {
                 @SuppressLint("MissingPermission")
                 override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                     super.onServicesDiscovered(gatt, status)
+                    InboundWakeLock.onInbound(context)
                     Log.d("StardustDataManager", " onServicesDiscovered")
                     if (!isServicesDiscoveredHandleable(status)) return
 
@@ -597,6 +602,7 @@ internal class ClientConnection(): BittelProtocol {
 
                 override fun onMtuChanged(gatt: BluetoothGatt?, mtu: Int, status: Int) {
                     super.onMtuChanged(gatt, mtu, status)
+                    InboundWakeLock.onInbound(context)
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         Timber.tag("SetMtu").d("MTU negotiated: $mtu")
                     } else {

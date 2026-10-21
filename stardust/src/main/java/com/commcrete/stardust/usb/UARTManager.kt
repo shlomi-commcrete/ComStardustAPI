@@ -129,6 +129,10 @@ class UARTManager() {
      * Polls the CTS line (used as the PTT button signal) on a background thread. The thread is
      * stoppable via [ctsPolling] + interrupt so [disconnect] can tear it down — previously this was
      * a `while(true)` thread with no reference, leaking one busy-poll thread per audio connect.
+     *
+     * The CTS line raises no interrupt the phone can wake on, so while the CPU is suspended this
+     * loop is suspended too and a button press is seen only at the next wake-up. InboundWakeLock
+     * covers the work after an edge, not the detection.
      */
     private fun startCtsPolling(onCTSChange: CTSChange) {
         var previousCtsStatus = serialPort?.cts

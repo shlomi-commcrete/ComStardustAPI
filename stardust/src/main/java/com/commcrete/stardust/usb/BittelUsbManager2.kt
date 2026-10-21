@@ -18,6 +18,7 @@ import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
@@ -579,6 +580,7 @@ object BittelUsbManager2 : BittelProtocol {
                 }
 
                 override fun onRunError(e: Exception) {
+                    InboundWakeLock.onInbound(DataManager.appContext)
                     Timber.tag("SerialInOutputManager").d("onRunError uartManagerAudio")
                     Timber.tag("SerialInOutputManager").d(e.message)
                     UsbDiag.error("connectToAudioDevice.onRunError", "audio serial IO thread died — tearing the audio link down", e)
@@ -592,6 +594,9 @@ object BittelUsbManager2 : BittelProtocol {
                 device.deviceId,
                 object : UARTManager.CTSChange {
                 override fun onCTSChanged(isActive: Boolean) {
+                    // Covers the work after a detected edge only. The poll that detects it is a
+                    // sleep loop, which stops while the CPU is suspended — see UARTManager.startCtsPolling.
+                    InboundWakeLock.onInbound(DataManager.appContext)
                     ButtonListener.notifyData(isActive)
                 }
 
@@ -624,6 +629,7 @@ object BittelUsbManager2 : BittelProtocol {
 
             }
             override fun onRunError(e: Exception) {
+                InboundWakeLock.onInbound(DataManager.appContext)
                 Timber.tag("SerialInOutputManager").d("onRunError uartManager")
                 Timber.tag("SerialInOutputManager").d(e.message)
                 UsbDiag.error("connectToDevice.onRunError", "serial IO thread died — tearing the USB data link down", e)

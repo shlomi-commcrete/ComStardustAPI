@@ -8,6 +8,7 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.connectivity.PortUtils
 import timber.log.Timber
 
@@ -755,6 +756,9 @@ object StardustPackageUtils {
         // PortUtils uses to declare the link dead.
         PortUtils.onTrafficReceived()
         val context = DataManager.appContext
+        // Same single entry point, so every inbound package — SOS, message, PTT, ack, status —
+        // keeps the CPU up until its handling (and the host's notification) has run.
+        InboundWakeLock.onInbound(context)
 //        if(lastByteArray == null || lastByteArray?.contentEquals(byteArray) == false){
         lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
@@ -813,6 +817,8 @@ object StardustPackageUtils {
         Timber.tag(tagTitle).d(stringBuilder.toString())
     }
 
+    // Both reassembly timeouts below must stay shorter than InboundWakeLock.HOLD_MS, or a partial
+    // package received with the screen off waits for the next wake-up to be cleared.
     private fun resetTimer(){
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
