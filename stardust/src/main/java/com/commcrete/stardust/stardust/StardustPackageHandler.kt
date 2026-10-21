@@ -13,6 +13,7 @@ import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.enums.LimitationType
 import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
+import com.commcrete.stardust.room.new_db.internal.normalizeIdOrNull
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
@@ -64,6 +65,9 @@ import timber.log.Timber
 
 /** Temporary diagnostic tag for the incoming-SOS investigation: `adb logcat -s SOSDebug`. */
 private const val SOS_LOG_TAG = "SOSDebug"
+
+/** SEND_SOS_INTERRUPT: one reason byte, then the 4-byte acker id. See handleSosStopped. */
+private const val SOS_STOPPED_PAYLOAD_SIZE = 5
 
 private const val TAG = "StardustPackageHandler"
 
@@ -322,8 +326,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             StardustPackageUtils.StardustOpCode.ADD_GROUPS_RESPONSE              -> handleAddGroupsResponse()
             StardustPackageUtils.StardustOpCode.DELETE_GROUPS_RESPONSE           -> handleDeleteGroupsResponse()
             StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT            -> handleRealSOS(mPackage)
-            StardustPackageUtils.StardustOpCode.SOS_ACK,
-            StardustPackageUtils.StardustOpCode.SEND_SOS_INTERRUPT               -> handleSOSAck(mPackage)
+            StardustPackageUtils.StardustOpCode.SOS_ACK                          -> handleSOSAck(mPackage)
+            StardustPackageUtils.StardustOpCode.SEND_SOS_INTERRUPT               -> handleSosStopped(mPackage)
             StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT                -> handleAppEvent(mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
             StardustPackageUtils.StardustOpCode.SOS_DESTINATION_UPDATED           -> getConfiguration()
@@ -415,8 +419,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * a group SOS) and the chat the ack resolved to; the repository matches those back to
      * the SOS row and appends the acker to it.
      */
-    private fun handleSOSAck(mPackage: StardustPackage) {
-        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: return
+    private fun handleSOSAck(mPackage: StardustPackage, ackedBy: String? = null) {
+        val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage)
+            ?.let { if (ackedBy != null) it.copy(senderId = ackedBy) else it }
+            ?: return
 
         handlerScope.launch {
             try {
@@ -429,6 +435,36 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             }
             DataManager.getCallbacks()?.handleSOSAck(pkg)
         }
+    }
+
+    /**
+     * The local radio reporting that its SOS stopped (SEND_SOS_INTERRUPT 0xF9). Its payload says
+     * why — observed on device, not documented by the firmware:
+     *
+     *  - `[0, 0,0,0,0]` — cancelled on the radio itself;
+     *  - `[1, id]` — stopped by an ack from `id`, a 4-byte id least-significant byte first, the
+     *    same order the packet's own source and destination use.
+     *
+     * Reading the stop by its sender alone (always this radio) filed a confirmation as a cancel
+     * on the device. And it is the ONLY signal of a confirmation for an SOS raised from the radio's
+     * own button: no SOS_ACK reaches the app then.
+     *
+     * `[1, this user's App ID]` is the echo of this app's own ack — its cancel, or its answer to a
+     * confirmation already handled — so nothing new happened and nothing is recorded or raised.
+     */
+    private fun handleSosStopped(mPackage: StardustPackage) {
+        val data = mPackage.data
+        val byAck = data != null && data.size >= SOS_STOPPED_PAYLOAD_SIZE && data[0] == 1
+        if (!byAck) {
+            // Cancelled on the radio: the ack's sender is this radio, which recordSosAck reads as such.
+            handleSOSAck(mPackage)
+            return
+        }
+        val acker = with(mPackage) { intArrayToHexString(data!!.sliceArray(1..4)).getSrcDestMin4Bytes() }
+        val me = normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.appId)
+        // Not silent by accident: this is the radio confirming an ack this app sent, already acted on.
+        if (normalizeIdOrNull(acker) == me) return
+        handleSOSAck(mPackage, ackedBy = acker)
     }
 
     private fun handleDeviceUpdateResponse(mPackage: StardustPackage) {

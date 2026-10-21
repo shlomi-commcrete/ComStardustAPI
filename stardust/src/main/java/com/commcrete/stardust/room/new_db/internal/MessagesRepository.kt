@@ -368,8 +368,9 @@ internal class MessagesRepository(
      * matched, when it carries no SOS extra data, or when this acker is already on it.
      *
      * The row is found, not passed in: no id survives the round trip to the radio, so
-     * the ack has to be matched back by address. [chatId] — the chat the ack packet
-     * itself resolved to — is tried first, which is exact for a direct SOS and for a
+     * the ack has to be matched back — to the live SOS while there is one (see
+     * [findSosRowForAck]), otherwise by address. [chatId] — the chat the ack packet
+     * itself resolved to — is then tried first, which is exact for a direct SOS and for a
      * group ack that came back through the group. When that finds nothing, the acker's
      * chat membership is tried, which catches a group SOS acknowledged straight back to
      * this user.
@@ -428,7 +429,7 @@ internal class MessagesRepository(
      * or both routes at once, a no-op.
      */
     private suspend fun recordCancel(me: String, cancelledBy: String, kind: SosAckKind, atMs: Long): Boolean {
-        val row = messagesDao.findLatestSosSent(me, MessageType.SOS) ?: return false
+        val row = messagesDao.findLatestSosSent(mySosSenderIds(me), MessageType.SOS) ?: return false
         val sos = row.extraData as? MessageExtraData.Sos ?: return false
         if (sos.acks.isNotEmpty()) return false
         return messagesDao.recordSosAck(
@@ -437,12 +438,39 @@ internal class MessagesRepository(
         ) > 0
     }
 
-    /** The SOS row an incoming ack belongs to. See [recordSosAck] for the two passes. */
+    /**
+     * Every sender id this user's own SOS rows carry: [me] (raised from the app) and the paired
+     * radio's Device ID (raised from the radio's button, saved by handleRealSOS under the radio).
+     * Without the second, a radio-raised SOS never received its ack or cancel line.
+     */
+    private fun mySosSenderIds(me: String): List<String> =
+        listOfNotNull(me, normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.deviceId))
+
+    /**
+     * The SOS row an incoming ack belongs to.
+     *
+     * First the live one, by the radio's own rule — the one [recordCancel] already uses: it holds
+     * one live SOS, so while this user's newest SOS has not been stood down, every ack is for it,
+     * whichever chat the ack resolves to. Going by chat first was wrong for a group SOS: the
+     * member's ack comes straight back and resolves to the private chat with them, which found an
+     * OLDER SOS sent there, already confirmed by them — so the ack was dropped as a repeat, and
+     * the radio's stop report then landed alone on the live row as
+     * [SosAckKind.CANCELLED_FROM_DEVICE].
+     *
+     * Only once the newest SOS is over do the address passes apply (see [recordSosAck]): a late
+     * ack then belongs to whichever SOS the acker could have seen.
+     */
     private suspend fun findSosRowForAck(
         chatId: String?,
         ackerId: String,
         me: String,
     ): MessageEntity? {
+        messagesDao.findLatestSosSent(mySosSenderIds(me), MessageType.SOS)?.let { latest ->
+            val stoodDown = (latest.extraData as? MessageExtraData.Sos)?.acks
+                ?.any { it.kind != SosAckKind.CONFIRMED } == true
+            if (!stoodDown) return latest
+        }
+
         normalizeIdOrNull(chatId)?.let { normalizedChatId ->
             messagesDao.findLatestSosSentInChat(normalizedChatId, me, MessageType.SOS)
                 ?.let { return it }

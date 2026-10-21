@@ -556,19 +556,22 @@ interface MessageDao {
     ): MessageEntity?
 
     /**
-     * The newest SOS [senderId] sent into any chat, or null when there is none — the one a
-     * cancel stands down: the radio holds one live SOS, whichever chat it went to. Archived
+     * The newest SOS any of [senderIds] sent into any chat, or null when there is none — the one
+     * a cancel stands down: the radio holds one live SOS, whichever chat it went to. Archived
      * rows (5) excluded, as in [findLatestSosSentInChat].
+     *
+     * Ids, plural: this user's SOS is stored under their App ID when raised from the app, and
+     * under their radio's Device ID when raised from the radio's own button.
      */
     @Query("""
         SELECT * FROM messages
-        WHERE sender_id = :senderId
+        WHERE sender_id IN (:senderIds)
           AND type = :type
           AND state != 5
         ORDER BY epoch_time_ms DESC, id DESC
         LIMIT 1
     """)
-    suspend fun findLatestSosSent(senderId: String, type: MessageType): MessageEntity?
+    suspend fun findLatestSosSent(senderIds: List<String>, type: MessageType): MessageEntity?
 
     /**
      * The newest SOS [senderId] sent into ANY chat that [participantContactId] belongs
