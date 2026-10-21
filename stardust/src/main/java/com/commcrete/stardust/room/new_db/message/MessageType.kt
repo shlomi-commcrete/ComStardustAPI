@@ -15,7 +15,14 @@ enum class MessageType {
     ATTACHMENT,
     PTT,
     LOCATION,
-    SOS
+    SOS,
+
+    /**
+     * The "Location Request" row: [MessageExtraData.Text] carrying LOCATION_REQUEST_TEXT, typed
+     * apart from TEXT so a location lane can claim it. Set explicitly by its two writers — Text
+     * alone maps to TEXT. Stored by name: add, never rename.
+     */
+    LOCATION_REQUEST,
 }
 
 enum class AttachmentType {

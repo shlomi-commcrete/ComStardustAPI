@@ -15,6 +15,7 @@ import com.commcrete.stardust.location.LocationUtils
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.stardust.model.StardustAddressesPackage
 import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -93,9 +94,11 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
             override suspend fun complete(messageId: Long?, pkg: StardustAPIPackage, text: String) {
                 if (messageId != null) {
-                    DataManager.getAppRepo().markIncomingTextReceived(messageId, text)
+                    DataManager.getAppRepo().markIncomingTextReceived(messageId, text, pkg.requireAck)
                 } else {
-                    DataManager.getAppRepo().saveMessage(pkg, MessageExtraData.Text(text), MessageState.RECEIVED)
+                    DataManager.getAppRepo().saveMessage(
+                        pkg, MessageExtraData.Text(text, locationRequested = pkg.requireAck), MessageState.RECEIVED,
+                    )
                 }
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveMessage(pkg.copy(isLast = true), text)
@@ -805,7 +808,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
             val locationPackage = StardustLocationParser().parseLocation(mPackage) ?: return@launch
 
-            LocationUtils.saveLocationMessage(mPackage.chatId, pkg, locationPackage, MessageState.RECEIVED)
+            LocationUtils.saveLocationMessage(
+                mPackage.chatId, pkg, locationPackage, MessageState.RECEIVED,
+                locationRequested = pkg.requireAck,
+            )
             val pollingUtils = DataManager.getPollingUtils()
             if(pollingUtils.isRunning) { pollingUtils.handleResponse(mPackage) }
 
@@ -834,6 +840,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                         pkg = pkg,
                         extraData = MessageExtraData.Text(text = DataManager.LOCATION_REQUEST_TEXT),
                         state = MessageState.RECEIVED,
+                        type = MessageType.LOCATION_REQUEST,
                         epochTimeMs = receivedAt,
                     )
                 } catch (e: CancellationException) {

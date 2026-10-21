@@ -488,9 +488,11 @@ internal class MessagesRepository(
      * `epoch_time_ms` stays where the first part put it. Returns false if the row had already
      * settled — see [MessageDao.markIncomingTransferReceived].
      */
-    suspend fun markIncomingTextReceived(messageId: Long, text: String): Boolean =
+    suspend fun markIncomingTextReceived(messageId: Long, text: String, locationRequested: Boolean = false): Boolean =
         withContext(Dispatchers.IO) {
-            messagesDao.markIncomingTransferReceived(messageId, MessageExtraData.Text(text)) > 0
+            messagesDao.markIncomingTransferReceived(
+                messageId, MessageExtraData.Text(text, locationRequested = locationRequested),
+            ) > 0
         }
 
     /**

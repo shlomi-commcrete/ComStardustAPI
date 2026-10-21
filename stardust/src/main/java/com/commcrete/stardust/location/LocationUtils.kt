@@ -36,7 +36,8 @@ object LocationUtils  {
         dataPackage: StardustAPIPackage,
         locationPackage: LocationPackage,
         state: MessageState,
-        isAckResponse: Boolean = false
+        isAckResponse: Boolean = false,
+        locationRequested: Boolean = false,
     ): Long? {
 
         val message = MessageEntity(
@@ -48,7 +49,8 @@ object LocationUtils  {
                 latitude = locationPackage.location.latitude,
                 longitude = locationPackage.location.longitude,
                 altitude = locationPackage.location.altitude,
-                isAckResponse = isAckResponse
+                isAckResponse = isAckResponse,
+                locationRequested = locationRequested,
             )
         )
         return DataManager.getAppRepo().saveMessage(message, dataPackage.groupId)
@@ -148,7 +150,8 @@ object LocationUtils  {
                     ),
                     LocationPackage(location, Date()),
                     MessageState.SENT,
-                    isDemandAck
+                    // Named: positionally this landed in isAckResponse, a different fact.
+                    locationRequested = isDemandAck,
                 )
             } catch (e: CancellationException) {
                 // Rethrown, never logged: cancellation is this coroutine being told to stop, not a

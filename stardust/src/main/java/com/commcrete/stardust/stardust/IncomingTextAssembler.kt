@@ -162,7 +162,8 @@ internal class IncomingTextAssembler(
         open.text.append(part.text)
         if (part.isLast) {
             pending.remove(part.key)
-            sink.complete(open.messageId, open.pkg, open.text.toString())
+            // Only the LAST part carries DEMAND_ACK; the rest of the package is the first part's.
+            sink.complete(open.messageId, open.pkg.copy(requireAck = part.pkg.requireAck), open.text.toString())
         } else {
             open.messageId?.let { sink.append(it, open.text.toString()) }
             arm(part.key, open)

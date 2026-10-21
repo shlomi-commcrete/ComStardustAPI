@@ -30,6 +30,12 @@ sealed class MessageExtraData {
          * [MessageState.FAILED] carries the fact, this carries the cause. Omitted when `null`.
          */
         val failure: FileReceiver.FileFailure? = null,
+        /**
+         * The text went out with DEMAND_ACK, which the receiver answers with its location. Sent:
+         * what was asked for. Received: what the LAST part carried. Omitted when false, so every
+         * row written before this field existed reads back as no request.
+         */
+        val locationRequested: Boolean = false,
     ) : MessageExtraData()
 
     @Serializable
@@ -126,6 +132,8 @@ sealed class MessageExtraData {
         override val longitude: Double,
         override val altitude: Double,
         val isAckResponse: Boolean = false,
+        /** As [Text.locationRequested]: the location went out with DEMAND_ACK. Omitted when false. */
+        val locationRequested: Boolean = false,
     ) : GeoData()
 
     @Serializable

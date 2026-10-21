@@ -37,8 +37,12 @@ class IncomingTextAssemblerTest {
             calls += "append#$messageId:$text"
         }
 
+        /** The package each complete() was handed, for what only the LAST part carries. */
+        val completed = mutableListOf<StardustAPIPackage>()
+
         override suspend fun complete(messageId: Long?, pkg: StardustAPIPackage, text: String) {
             calls += "complete#${messageId ?: "-"}:$text"
+            completed += pkg
         }
 
         override suspend fun abandon(
@@ -82,6 +86,18 @@ class IncomingTextAssemblerTest {
      * The field capture: HR parts sent 800 ms apart arrived 2.9 s and 2.05 s apart. All of them
      * land in the first part's row, which is settled once, on LAST — never in between.
      */
+    @Test
+    fun `a multi-part text completes with the LAST part's ack request`() = runTest {
+        val sink = RecordingSink()
+        val assembler = assembler(sink)
+        assembler.onPart(alicePrivate, pkg, "hel", isLast = false)
+        assembler.onPart(alicePrivate, pkg.copy(requireAck = true), "lo", isLast = true)
+        runCurrent()
+
+        assertEquals(listOf("open#1:hel", "complete#1:hello"), sink.calls)
+        assertTrue("DEMAND_ACK rides only on LAST", sink.completed.single().requireAck)
+    }
+
     @Test
     fun `parts are joined in one row that settles only on LAST`() = runTest {
         val sink = RecordingSink()

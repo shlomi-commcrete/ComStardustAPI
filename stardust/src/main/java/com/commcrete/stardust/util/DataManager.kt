@@ -37,6 +37,7 @@ import com.commcrete.stardust.room.new_db.message.FileTransferCancellation
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.SendProgress
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
@@ -217,6 +218,7 @@ object DataManager : StardustAPI, PttInterface {
             val unsent = MessageExtraData.Text(
                 text = text,
                 sendProgress = if (isMultiPart) SendProgress(partsSent = 0, partsNeeded = splitData.size) else null,
+                locationRequested = stardustAPIPackage.requireAck,
             )
 
             // Saved before the packages go out, because each of them carries this row's id and
@@ -408,7 +410,12 @@ object DataManager : StardustAPI, PttInterface {
                     senderID = stardustAPIPackage.senderId,
                     receiverID = stardustAPIPackage.receiverId,
                     state = MessageState.FAILED,
-                    extraData = MessageExtraData.Text(text = text, failure = failure),
+                    // What was asked for, though nothing left: the row is the attempt.
+                    extraData = MessageExtraData.Text(
+                        text = text,
+                        failure = failure,
+                        locationRequested = stardustAPIPackage.requireAck,
+                    ),
                 ),
                 groupId = stardustAPIPackage.groupId,
             )
@@ -600,6 +607,7 @@ object DataManager : StardustAPI, PttInterface {
                     pkg = stardustAPIPackage,
                     extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
                     state = MessageState.SENT,
+                    type = MessageType.LOCATION_REQUEST,
                 )
             } catch (e: CancellationException) {
                 // Rethrown, never logged: cancellation is this coroutine being told to stop, not a

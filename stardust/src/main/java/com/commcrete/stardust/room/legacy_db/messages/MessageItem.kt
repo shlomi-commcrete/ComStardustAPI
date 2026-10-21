@@ -160,7 +160,8 @@ data class MessageItem (
                 )
             }
 
-            MessageType.TEXT -> null
+            // The legacy store never typed a location request apart from its text.
+            MessageType.TEXT, MessageType.LOCATION_REQUEST -> null
         }
     }
 

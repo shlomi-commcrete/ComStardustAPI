@@ -39,6 +39,7 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
+import com.commcrete.stardust.room.new_db.message.toMessageType
 import android.util.Log
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
@@ -697,12 +698,14 @@ class AppRepository(
         extraData: MessageExtraData,
         state: MessageState,
         epochTimeMs: Long = System.currentTimeMillis(),
+        type: MessageType = extraData.toMessageType(),
     ): Long? = messages.saveMessage(
         MessageEntity(
             chatId = pkg.chatId,
             senderID = pkg.senderId,
             receiverID = pkg.receiverId,
             extraData = extraData,
+            type = type,
             state = state,
             epochTimeMs = epochTimeMs,
             carrierType = pkg.carrier?.type?.type,
@@ -775,10 +778,11 @@ class AppRepository(
 
     /**
      * Settles an incoming multi-part text's RECEIVING row as RECEIVED with its whole [text].
-     * Returns false when the row had already settled and the write was refused.
+     * [locationRequested] is what the LAST part carried. Returns false when the row had already
+     * settled and the write was refused.
      */
-    suspend fun markIncomingTextReceived(messageId: Long, text: String): Boolean =
-        messages.markIncomingTextReceived(messageId, text)
+    suspend fun markIncomingTextReceived(messageId: Long, text: String, locationRequested: Boolean = false): Boolean =
+        messages.markIncomingTextReceived(messageId, text, locationRequested)
 
     /**
      * Settles an incoming multi-part text that ended without its LAST part — gap timeout
