@@ -5,6 +5,9 @@ import android.os.SystemClock
 import com.commcrete.stardust.ble.BleDiag
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.PairingRepository
+import com.commcrete.stardust.enums.LicenseType
+import com.commcrete.stardust.stardust.model.config.activePresetProblem
+import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -145,6 +148,26 @@ object ConnectionManager {
 
     /** Called from `BleManager.updateStatus()` whenever a transport link flips. */
     fun onTransportChanged() = recompute()
+
+    /**
+     * Warnings published on [ConnectionState.Ready], re-judged on every applied configuration, every
+     * preset switch and every saved RD selection — so a preset fixed or broken mid-session shows up
+     * without a reconnect. Ready is only derived after this session's handshake read the
+     * configuration, so a previous radio's value is never shown.
+     */
+    @Volatile
+    private var configWarnings: Set<ConnectionWarning> = emptySet()
+
+    /** Re-derives [configWarnings] from the current configuration and active preset. */
+    fun refreshConfigWarnings() {
+        val config = ConfigurationUtils.currentConfig
+        configWarnings = buildSet {
+            // Same test as StardustInitConnectionHandler.onInitDone's NO_LICENSE.
+            if (config?.licenseType == LicenseType.UNDEFINED) add(ConnectionWarning.NoLicense)
+            activePresetProblem()?.let { add(ConnectionWarning.Preset(it)) }
+        }
+        recompute()
+    }
 
     /** Called from the init-handler state setter whenever the handshake state changes. */
     fun onInitStateChanged(state: State) {
@@ -294,7 +317,7 @@ object ConnectionManager {
             ConnectionState.Error(toConnectionError(s))
         // A link-down inside the post-drop grace is a reconnect in progress, not a dead connection.
         active == null -> if (s == State.SEARCHING || inGrace) ConnectionState.Searching else ConnectionState.Disconnected
-        s == State.SUCCESS -> ConnectionState.Ready(active)
+        StardustInitConnectionHandler.isConnectedOutcome(s) -> ConnectionState.Ready(active, configWarnings)
         StardustInitConnectionHandler.isSyncing() -> ConnectionState.Syncing(active)
         else -> ConnectionState.LinkUp(active)
     }
@@ -322,9 +345,7 @@ object ConnectionManager {
 
     /** Maps the internal handshake state to the stable public [ConnectionError]. */
     private fun toConnectionError(s: State): ConnectionError = when (s) {
-        State.NO_LICENSE -> ConnectionError.NoLicense
         State.ENCRYPTION_KEY_ERROR -> ConnectionError.EncryptionKey
-        State.PRESET_ERROR -> ConnectionError.Preset
         State.CANCELED -> ConnectionError.Canceled
         else -> ConnectionError.Unknown
     }

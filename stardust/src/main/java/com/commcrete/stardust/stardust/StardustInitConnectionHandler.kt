@@ -547,8 +547,10 @@ object StardustInitConnectionHandler {
         return state == State.CANCELED || state == State.BLUETOOTH_OFF || hasUnsyncableError()
     }
 
+    // NO_LICENSE and PRESET_ERROR are not here: the handshake completed and the radio is usable —
+    // they are warnings (see isConnectedSuccessfully). Only a key failure blocks communication.
     fun hasUnsyncableError(): Boolean {
-        return state in setOf(State.ENCRYPTION_KEY_ERROR, State.NO_LICENSE, State.PRESET_ERROR)
+        return state == State.ENCRYPTION_KEY_ERROR
     }
 
     fun isSearchingToConnect(): Boolean {
@@ -564,8 +566,16 @@ object StardustInitConnectionHandler {
     }
 
     fun isConnectedSuccessfully(): Boolean {
-        return state == State.SUCCESS
+        return isConnectedOutcome(state)
     }
+
+    /**
+     * The handshake finished and the radio is usable. NO_LICENSE / PRESET_ERROR are kept as distinct
+     * values only for the deprecated onDeviceInitialized callback; publicly they are
+     * ConnectionState.Ready with a ConnectionWarning.
+     */
+    internal fun isConnectedOutcome(s: State): Boolean =
+        s == State.SUCCESS || s == State.NO_LICENSE || s == State.PRESET_ERROR
 
     fun updateConnectionState(newState: State) {
         if(state != newState) state = newState

@@ -2,27 +2,50 @@ package com.commcrete.stardust.transport
 
 import com.commcrete.stardust.BleUnavailableReason
 import com.commcrete.stardust.enums.ScanFailure
+import com.commcrete.stardust.stardust.model.config.PresetProblem
 
 /**
  * Stable, public reason a connection ended in a terminal error. Mapped from the SDK's internal
  * handshake state so consumers never depend on that internal enum ([com.commcrete.stardust.stardust.StardustInitConnectionHandler.State]).
  *
  * The split against [Blocker] is deliberate and is about WHO fixes it: a [ConnectionError] is about
- * the radio or its license (the user cannot resolve it from the phone), a [Blocker] is something the
+ * the radio (the user cannot resolve it from the phone), a [Blocker] is something the
  * user changes on the phone.
  */
 enum class ConnectionError {
-    /** No valid license on the device. */
+    @Deprecated("Never produced: an unlicensed radio is Ready with ConnectionWarning.NoLicense.")
     NoLicense,
-    /** Encryption-key mismatch / key setup failed. */
+    /** Encryption-key mismatch / key setup failed. Blocks all communication with the radio. */
     EncryptionKey,
-    /** Device presets are missing or invalid. */
+    @Deprecated("Never produced: a preset problem is Ready with ConnectionWarning.Preset.")
     Preset,
     /** The connection/handshake was canceled or aborted. */
     Canceled,
     /** Terminal failure with no more specific cause. */
     Unknown,
 }
+
+/**
+ * A radio-side condition that does NOT block the link: the device is connected and usable, and the
+ * consumer shows the condition alongside [ConnectionState.Ready]. Each one carries its own feature
+ * rules elsewhere (e.g. [com.commcrete.stardust.util.LicenseLimitationsUtil] for the licence).
+ */
+sealed interface ConnectionWarning {
+    /** No valid license on the device. */
+    object NoLicense : ConnectionWarning
+
+    /**
+     * The ACTIVE preset has [problem] — [PresetProblem.blocksTransmission] says whether nothing can
+     * be sent or only RD Auto is affected. Re-judged on every preset switch, configuration and saved
+     * RD selection.
+     */
+    data class Preset(val problem: PresetProblem) : ConnectionWarning
+}
+
+/** The active preset's problem while [ConnectionState.Ready]; null otherwise or when it is usable. */
+val ConnectionState.presetProblem: PresetProblem?
+    get() = (this as? ConnectionState.Ready)?.warnings
+        ?.firstNotNullOfOrNull { (it as? ConnectionWarning.Preset)?.problem }
 
 /**
  * Something on the PHONE prevents connecting or scanning, and the user can fix it. Reported through
@@ -90,8 +113,14 @@ sealed interface ConnectionState {
     /** Connected and running the init handshake. */
     data class Syncing(val transport: TransportId) : ConnectionState
 
-    /** Fully connected and synced — the device is usable. */
-    data class Ready(val transport: TransportId) : ConnectionState
+    /**
+     * Fully connected and synced — the device is usable, even when [warnings] is not empty.
+     * [warnings] follows the latest configuration the radio sent, so it can change mid-session.
+     */
+    data class Ready(
+        val transport: TransportId,
+        val warnings: Set<ConnectionWarning> = emptySet(),
+    ) : ConnectionState
 
     /** Terminal failure with a typed [cause]. Surfaced regardless of whether a link is up. */
     data class Error(val cause: ConnectionError) : ConnectionState

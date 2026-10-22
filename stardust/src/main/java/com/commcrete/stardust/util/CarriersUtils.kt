@@ -11,6 +11,7 @@ import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.config.Xcvr
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
+import com.commcrete.stardust.transport.ConnectionManager
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
@@ -138,6 +139,9 @@ object CarriersUtils {
     private fun updateCarrierList (mutableList : List<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList)
         carrierList.value = mutableList
+        // A new selection can cover (or uncover) the active preset's missing defaults. Off the
+        // caller's thread: the check re-reads and parses the saved lists.
+        Scopes.getDefaultCoroutine().launch { ConnectionManager.refreshConfigWarnings() }
     }
 
     fun getCarrierByControl(deliveryType: StardustDeliveryType): Carrier? {
@@ -167,6 +171,14 @@ object CarriersUtils {
 
         return carrier
     }
+
+    /**
+     * The functionalities the operator's saved RD selection for [presetIndex] routes, or null when
+     * nothing is saved. RD Auto ([getRadioToSend] with no carrier) only sends a functionality some
+     * RD has SELECTED.
+     */
+    internal fun savedSelection(presetIndex: Int): Set<FunctionalityType>? =
+        getLocalCarriersByPreset(presetIndex)?.flatMapTo(mutableSetOf()) { it.activeFunctionalities }
 
     private fun getLocalCarriersByPreset(presetIndex: Int) : List<Carrier>? {
         // Filter ST: lists saved before ST was dropped from the carrier list still contain it.

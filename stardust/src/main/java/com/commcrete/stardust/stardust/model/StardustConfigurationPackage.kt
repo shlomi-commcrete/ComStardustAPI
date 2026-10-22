@@ -87,6 +87,15 @@ data class StardustConfigurationPackage(
         }
     }
 
+    /**
+     * [preset]'s required functionalities and its default ones — the two sets [presetsWithoutConfig]
+     * compares.
+     */
+    internal fun requiredAndDefaultFunctionalities(preset: Preset): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
+        val (defaultFunctionalities, requiredFunctionalities) = preset.collectFunctionalities()
+        return requiredFunctionalities to defaultFunctionalities
+    }
+
     private fun Preset.collectFunctionalities(): Pair<Set<FunctionalityType>, Set<FunctionalityType>> {
         val presetFunctionalities = mutableSetOf<FunctionalityType>()
         val requiredFunctionalities = mutableSetOf<FunctionalityType>()

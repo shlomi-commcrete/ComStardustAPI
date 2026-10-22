@@ -11,6 +11,7 @@ import com.commcrete.stardust.stardust.model.config.CurrentPreset
 import com.commcrete.stardust.stardust.model.config.FirmwareVersion
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.StardustPackage
+import com.commcrete.stardust.transport.ConnectionManager
 import kotlinx.coroutines.launch
 
 object ConfigurationUtils {
@@ -52,6 +53,8 @@ object ConfigurationUtils {
     fun setCurrentPresetLocal(preset : CurrentPreset) {
         currentPresetNow = preset
         _currentPreset.postValue(preset)
+        // The preset warning is about the ACTIVE preset, so a switch re-judges it.
+        ConnectionManager.refreshConfigWarnings()
         val config = currentConfig ?: return
 
         if (presetsList.isEmpty()) return

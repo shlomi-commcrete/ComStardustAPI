@@ -3,6 +3,7 @@ package com.commcrete.stardust.stardust
 
 import android.util.Log
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
+import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.LicenseLimitationsUtil
@@ -35,6 +36,9 @@ internal object StardustIncomingConfigurationHandler {
             LicenseLimitationsUtil().createSupportedFunctionalitiesByLicenseType(cfg.licenseType)
         ConfigurationUtils.setConfigFile(cfg)
         ConfigurationUtils.setDefaults()
+
+        // After setDefaults: the preset check reads the RD selection it just saved.
+        ConnectionManager.refreshConfigWarnings()
 
         return ApplyResult(
             applied = true,
