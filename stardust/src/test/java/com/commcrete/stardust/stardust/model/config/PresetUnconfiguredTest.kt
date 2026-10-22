@@ -33,6 +33,21 @@ class PresetUnconfiguredTest {
         assertTrue(preset(xcvr(CarrierType.HR), xcvr(CarrierType.ST, tx = 1600.5, rx = 1500.5)).isUnconfigured())
     }
 
+    /**
+     * Preset 1 of a live legacy config (fw Ver_2.0.23.6, captured 2026-10-22): TX set on every RD,
+     * RX 0 (Commander: RX 1095.000000). It was reported as missing features rather than unconfigured.
+     */
+    @Test
+    fun `TX without RX, or RX without TX, is no channel`() {
+        val txOnly = 434.929166
+        assertTrue(xcvr(CarrierType.HR, tx = txOnly).hasDefaultFrequency())
+        assertTrue(xcvr(CarrierType.HR, rx = 1500.5).hasDefaultFrequency())
+        assertTrue(
+            preset(xcvr(CarrierType.HR, tx = txOnly), xcvr(CarrierType.LR, tx = txOnly), xcvr(CarrierType.HR, tx = txOnly))
+                .isUnconfigured()
+        )
+    }
+
     @Test
     fun `one RD transceiver with a frequency is enough`() {
         assertFalse(preset(xcvr(CarrierType.HR), xcvr(CarrierType.LR, tx = 1600.5, rx = 1500.5)).isUnconfigured())

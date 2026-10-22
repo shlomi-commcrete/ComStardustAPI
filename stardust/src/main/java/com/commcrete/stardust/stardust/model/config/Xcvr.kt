@@ -22,7 +22,15 @@ data class Xcvr(
         return FunctionalityType.entries.filter { type -> (options and type.bitwise) == type.bitwise }.toSet()
     }
 
+    /**
+     * No usable channel: TX or RX is unset (0). Either half missing is enough — a transceiver that
+     * cannot both send and receive carries nothing — and the lease calculator already drops a
+     * transceiver with either half at 0 (LeaseCalculator.xcvrLeases), so the two agree.
+     *
+     * The wire values are offsets from the TX/RX bases (1195.5 / 1095 MHz), so an unset half is what
+     * Commander shows as TX 1195.500000 or RX 1095.000000.
+     */
     fun hasDefaultFrequency(): Boolean {
-        return txFrequency == 0.0 && rxFrequency == 0.0
+        return txFrequency == 0.0 || rxFrequency == 0.0
     }
 }

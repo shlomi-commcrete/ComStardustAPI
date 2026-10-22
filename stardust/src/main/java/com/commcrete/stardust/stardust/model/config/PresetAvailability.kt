@@ -99,13 +99,32 @@ private fun StardustConfigurationPackage.missingFunctionality(): Map<CurrentPres
  * The required functionalities RD Auto cannot send on [preset]: in no RD's selection. The selection
  * is the operator's saved one when there is one, else the preset's defaults — the same list
  * [CarriersUtils.getRadioToSend] routes from. Unlicensed functionalities are left out: no preset can
- * route them, so they are the licence's warning, not the preset's. Reads saved preferences.
+ * route them, so they are the licence's warning, not the preset's. Neither are
+ * [NOT_ROUTED_BY_AUTO]. Reads saved preferences.
  */
 fun StardustConfigurationPackage.unroutedFunctionalities(preset: Preset): Set<FunctionalityType> {
     val (required, defaults) = requiredAndDefaultFunctionalities(preset)
     val routed = CarriersUtils.savedSelection(preset.index) ?: defaults
-    return required.filterTo(mutableSetOf()) { it.isLicensed() && it !in routed }
+    return required.filterTo(mutableSetOf()) {
+        it !in NOT_ROUTED_BY_AUTO && it.isLicensed() && it !in routed
+    }
 }
+
+/**
+ * Functionalities nothing sends through RD Auto today, so a preset missing them is not a problem.
+ * Each must come out of this set — and back into the check — once it is sent on its own RD:
+ * - REPORTS: deprecated; the host's Reports feature is being removed.
+ * - BFT (periodic location): not implemented yet.
+ * - IMAGE: uses the file's RD — the host's RD settings set FILE and IMAGE with one toggle, so
+ *   checking FILE covers it. Routing itself still asks for IMAGE (FileType.relatedFunctionalityType),
+ *   so a radio whose defaults set FILE without IMAGE is not caught here until the operator saves
+ *   a selection.
+ */
+private val NOT_ROUTED_BY_AUTO = setOf(
+    FunctionalityType.REPORTS,
+    FunctionalityType.BFT,
+    FunctionalityType.IMAGE,
+)
 
 /** [unroutedFunctionalities] for the preset numbered [preset]; empty when the radio has no such preset. */
 fun StardustConfigurationPackage.unroutedFunctionalities(preset: CurrentPreset): Set<FunctionalityType> =
