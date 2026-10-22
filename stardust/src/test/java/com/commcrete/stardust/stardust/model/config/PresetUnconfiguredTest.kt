@@ -35,17 +35,30 @@ class PresetUnconfiguredTest {
 
     /**
      * Preset 1 of a live legacy config (fw Ver_2.0.23.6, captured 2026-10-22): TX set on every RD,
-     * RX 0 (Commander: RX 1095.000000). It was reported as missing features rather than unconfigured.
+     * RX 0 (Commander: RX 1095.000000). One half set is a separate problem from nothing set: it
+     * still sends (or still receives), so the preset is not unconfigured.
      */
     @Test
-    fun `TX without RX, or RX without TX, is no channel`() {
-        val txOnly = 434.929166
-        assertTrue(xcvr(CarrierType.HR, tx = txOnly).hasDefaultFrequency())
-        assertTrue(xcvr(CarrierType.HR, rx = 1500.5).hasDefaultFrequency())
-        assertTrue(
-            preset(xcvr(CarrierType.HR, tx = txOnly), xcvr(CarrierType.LR, tx = txOnly), xcvr(CarrierType.HR, tx = txOnly))
-                .isUnconfigured()
-        )
+    fun `TX without RX, or RX without TX, is configured but one-sided`() {
+        val txOnly = xcvr(CarrierType.HR, tx = 434.929166)
+        assertTrue(txOnly.hasTx)
+        assertFalse(txOnly.hasRx)
+        assertFalse(txOnly.hasDefaultFrequency())
+        assertFalse(preset(txOnly, xcvr(CarrierType.LR), xcvr(CarrierType.HR)).isUnconfigured())
+
+        val rxOnly = xcvr(CarrierType.HR, rx = 1500.5)
+        assertFalse(rxOnly.hasTx)
+        assertTrue(rxOnly.hasRx)
+        assertFalse(preset(rxOnly).isUnconfigured())
+    }
+
+    @Test
+    fun `no TX blocks sending, no RX does not, and both are Commander fixes`() {
+        assertTrue(PresetProblem.NO_TX.blocksTransmission)
+        assertFalse(PresetProblem.NO_RX.blocksTransmission)
+        assertFalse(PresetProblem.NO_TX.fixableInApp)
+        assertFalse(PresetProblem.NO_RX.fixableInApp)
+        assertTrue(PresetProblem.MISSING_FUNCTIONALITY.fixableInApp)
     }
 
     @Test

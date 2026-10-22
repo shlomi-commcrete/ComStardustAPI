@@ -12,27 +12,44 @@ private const val LEASES_MINOR = 0
 private const val LEASES_PATCH = 7
 
 /**
- * Why a preset cannot be used. Named rather than boolean because the operator is told which one it
- * is: both are fixed in Commander, but they are fixed by doing different things there.
+ * Why a preset cannot be fully used. Named rather than boolean because the operator is told which
+ * one it is, and each is fixed by doing something different.
  */
 enum class PresetProblem(
     /**
      * Nothing at all can be sent on the preset — text, voice, files, location, SOS. False means
-     * only RD Auto is affected: an RD picked by hand still sends.
+     * sending still works (an RD picked by hand, at least).
      */
     val blocksTransmission: Boolean,
+    /**
+     * Fixed on the phone (the RD selection in the host's settings); false means only Commander can
+     * fix it. Decides the severity the host shows.
+     */
+    val fixableInApp: Boolean,
 ) {
     /**
      * A required functionality is in no RD's selection — the operator's saved one, else the
      * preset's defaults — so RD Auto has no RD to route it to. See [unroutedFunctionalities].
      */
-    MISSING_FUNCTIONALITY(blocksTransmission = false),
+    MISSING_FUNCTIONALITY(blocksTransmission = false, fixableInApp = true),
+
+    /**
+     * No RD has a TX frequency, but one has RX: nothing can be sent, receiving still works.
+     * Reported only when RX is set somewhere — with neither, see [NOT_CONFIGURED] / [NO_LEASE].
+     */
+    NO_TX(blocksTransmission = true, fixableInApp = false),
+
+    /**
+     * No RD has an RX frequency, but one has TX: sending works, nothing sent to this radio on the
+     * preset arrives.
+     */
+    NO_RX(blocksTransmission = false, fixableInApp = false),
 
     /** No RD assigned with a usable bandwidth, so the preset owns no lease to transmit on. */
-    NO_LEASE(blocksTransmission = true),
+    NO_LEASE(blocksTransmission = true, fixableInApp = false),
 
     /** Legacy firmware only: no transceiver on the preset has a frequency set. */
-    NOT_CONFIGURED(blocksTransmission = true),
+    NOT_CONFIGURED(blocksTransmission = true, fixableInApp = false),
 }
 
 /**
@@ -55,38 +72,54 @@ enum class PresetProblem(
  * the active-preset warning on [com.commcrete.stardust.transport.ConnectionState.Ready] and the
  * host's send gates. Each carriers screen calls its own check directly.
  *
- * A preset failing both halves is reported by the half that blocks transmission: until that is
- * fixed nothing can be sent at all, so a missing default is not what the operator needs to hear.
+ * One problem per preset, the most severe: nothing configured, then no TX (nothing can be sent),
+ * then no RX, then (lease firmware) no lease, then a missing default. The host's explanation adds
+ * the missing defaults to a NO_RX preset itself, since RD Auto still sends there.
  */
 fun StardustConfigurationPackage.presetProblems(): Map<CurrentPreset, PresetProblem> =
     if (ConfigurationUtils.isFirmwareAtLeast(LEASES_MAJOR, LEASES_MINOR, LEASES_PATCH)) leasePresetProblems()
     else legacyPresetProblems()
 
-/** Firmware with leases: no lease, else missing functionality. */
-fun StardustConfigurationPackage.leasePresetProblems(): Map<CurrentPreset, PresetProblem> {
+/**
+ * Firmware with leases: no TX and no RX anywhere reads as no lease (the existing wording), then
+ * one half missing, then no lease, then missing functionality.
+ */
+fun StardustConfigurationPackage.leasePresetProblems(): Map<CurrentPreset, PresetProblem> =
+    problemsBy(nothingConfigured = PresetProblem.NO_LEASE) { preset ->
+        PresetProblem.NO_LEASE.takeIf { preset.leases.isEmpty() }
+    }
+
+/**
+ * Legacy firmware: no transceiver with a frequency — the preset nobody configured, which
+ * [StardustConfigurationPackage.presetsWithoutConfig] passes; ST carries no RD — then one half
+ * missing, then missing functionality.
+ */
+fun StardustConfigurationPackage.legacyPresetProblems(): Map<CurrentPreset, PresetProblem> =
+    problemsBy(nothingConfigured = PresetProblem.NOT_CONFIGURED) { null }
+
+private inline fun StardustConfigurationPackage.problemsBy(
+    nothingConfigured: PresetProblem,
+    generationCheck: (Preset) -> PresetProblem?,
+): Map<CurrentPreset, PresetProblem> {
     val problems = linkedMapOf<CurrentPreset, PresetProblem>()
-    presets.filter { it.leases.isEmpty() }.mapNotNull { it.currentPreset }.forEach {
-        problems[it] = PresetProblem.NO_LEASE
+    for (preset in presets) {
+        val key = preset.currentPreset ?: continue
+        val rds = preset.xcvrList.filter { it.carrier.type != CarrierType.ST }
+        val canSend = rds.any { it.hasTx }
+        val canReceive = rds.any { it.hasRx }
+        val problem = when {
+            preset.isUnconfigured() -> nothingConfigured
+            !canSend -> PresetProblem.NO_TX
+            !canReceive -> PresetProblem.NO_RX
+            else -> generationCheck(preset)
+        }
+        problem?.let { problems[key] = it }
     }
     missingFunctionality().forEach { (preset, problem) -> problems.putIfAbsent(preset, problem) }
     return problems
 }
 
-/**
- * Legacy firmware: no transceiver with a frequency — the preset nobody configured, which
- * [StardustConfigurationPackage.presetsWithoutConfig] passes; ST carries no RD — else missing
- * functionality.
- */
-fun StardustConfigurationPackage.legacyPresetProblems(): Map<CurrentPreset, PresetProblem> {
-    val problems = linkedMapOf<CurrentPreset, PresetProblem>()
-    presets.filter { it.isUnconfigured() }
-        .mapNotNull { it.currentPreset }
-        .forEach { problems[it] = PresetProblem.NOT_CONFIGURED }
-    missingFunctionality().forEach { (preset, problem) -> problems.putIfAbsent(preset, problem) }
-    return problems
-}
-
-/** No transceiver that can carry an RD (ST cannot) has a frequency set. */
+/** No transceiver that can carry an RD (ST cannot) has a TX or an RX frequency set. */
 internal fun Preset.isUnconfigured(): Boolean =
     xcvrList.none { it.carrier.type != CarrierType.ST && !it.hasDefaultFrequency() }
 

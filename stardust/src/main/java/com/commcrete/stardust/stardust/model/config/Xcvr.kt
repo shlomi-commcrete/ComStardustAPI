@@ -23,14 +23,19 @@ data class Xcvr(
     }
 
     /**
-     * No usable channel: TX or RX is unset (0). Either half missing is enough — a transceiver that
-     * cannot both send and receive carries nothing — and the lease calculator already drops a
-     * transceiver with either half at 0 (LeaseCalculator.xcvrLeases), so the two agree.
-     *
-     * The wire values are offsets from the TX/RX bases (1195.5 / 1095 MHz), so an unset half is what
-     * Commander shows as TX 1195.500000 or RX 1095.000000.
+     * A TX frequency is set, so this transceiver can send. The wire values are offsets from the
+     * TX/RX bases (1195.5 / 1095 MHz), so an unset TX is what Commander shows as TX 1195.500000.
+     */
+    val hasTx: Boolean get() = txFrequency != 0.0
+
+    /** An RX frequency is set, so this transceiver can receive. Unset shows as RX 1095.000000. */
+    val hasRx: Boolean get() = rxFrequency != 0.0
+
+    /**
+     * Neither half is set. TX and RX are separate problems — one without the other still sends or
+     * still receives — so this is only "nothing configured at all"; see [hasTx] and [hasRx].
      */
     fun hasDefaultFrequency(): Boolean {
-        return txFrequency == 0.0 || rxFrequency == 0.0
+        return !hasTx && !hasRx
     }
 }

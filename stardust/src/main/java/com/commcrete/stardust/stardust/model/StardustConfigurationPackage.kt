@@ -101,7 +101,8 @@ data class StardustConfigurationPackage(
         val requiredFunctionalities = mutableSetOf<FunctionalityType>()
         for (xcvr in xcvrList) {
             // Actual: only for non-default frequency XCVRs
-            if (!xcvr.hasDefaultFrequency() && xcvr.carrier.type != CarrierType.ST) {
+            // Only a transceiver that can send carries functionalities: they are what gets sent.
+            if (xcvr.hasTx && xcvr.carrier.type != CarrierType.ST) {
                 presetFunctionalities.addAll(xcvr.getOptions())
                 // Required: all allowed options with valid bitwise
                 requiredFunctionalities.addAll(
