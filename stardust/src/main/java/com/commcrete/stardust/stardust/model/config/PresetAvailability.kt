@@ -12,6 +12,24 @@ private const val LEASES_MINOR = 0
 private const val LEASES_PATCH = 7
 
 /**
+ * What [com.commcrete.stardust.StardustAPI.switchToPreset] did. Every case but [Queued] means
+ * nothing was sent and the radio stays on its current preset.
+ */
+sealed interface PresetSwitchRequest {
+    /**
+     * The request is on the send queue. Not a confirmation from the radio: the switch shows once
+     * [ConfigurationUtils.currentPreset] reports the new preset.
+     */
+    object Queued : PresetSwitchRequest
+
+    /**
+     * No registered user, or the user has no device id yet — there is no local address to send
+     * from. Recoverable: register, or let the radio finish connecting so it reports its id.
+     */
+    object NoLocalIdentity : PresetSwitchRequest
+}
+
+/**
  * Why a preset cannot be fully used. Named rather than boolean because the operator is told which
  * one it is, and each is fixed by doing something different.
  */

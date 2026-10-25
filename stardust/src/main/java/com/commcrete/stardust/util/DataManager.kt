@@ -46,6 +46,7 @@ import com.commcrete.stardust.stardust.StardustPackageHandler
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.PresetSwitchRequest
 import com.commcrete.stardust.stardust.model.config.PacketAirtime
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -681,8 +682,8 @@ object DataManager : StardustAPI, PttInterface {
         return RecorderUtils.canRecord
     }
 
-    override fun switchToPreset(preset: CurrentPreset) {
-        val (src, dst) = requireLocalSrcDst() ?: return
+    override fun switchToPreset(preset: CurrentPreset): PresetSwitchRequest {
+        val (src, dst) = requireLocalSrcDst() ?: return PresetSwitchRequest.NoLocalIdentity
 
         val msg = StardustPackageUtils.getStardustPackage(
             data = arrayListOf<Int>().apply {
@@ -692,6 +693,7 @@ object DataManager : StardustAPI, PttInterface {
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SWITCH_PRESET_REQUEST)
         getClientConnection().addMessageToQueue(msg)
+        return PresetSwitchRequest.Queued
     }
 
     override fun scanForDevices(): kotlinx.coroutines.flow.StateFlow<com.commcrete.stardust.transport.ScanState> {

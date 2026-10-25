@@ -10,6 +10,7 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.model.SOSPackage
 import com.commcrete.stardust.stardust.model.StardustAppEventPackage
 import com.commcrete.stardust.stardust.model.config.CurrentPreset
+import com.commcrete.stardust.stardust.model.config.PresetSwitchRequest
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.transport.ConnectionState
 import com.commcrete.stardust.transport.DiscoveredDevice
@@ -241,7 +242,11 @@ interface StardustAPI {
     fun reconnectToCurrentDevice()
     fun canRecord(): MutableLiveData<Boolean>
 
-    fun switchToPreset(preset: CurrentPreset)
+    /**
+     * Asks the radio to switch to [preset]. Only enqueues, on the caller's thread; the result says
+     * whether anything was sent — see [PresetSwitchRequest].
+     */
+    fun switchToPreset(preset: CurrentPreset): PresetSwitchRequest
 
     /**
      * Stardust devices already bonded to the phone that are not the app's current device.
