@@ -21,6 +21,7 @@ import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceiver
 import com.commcrete.stardust.util.FileSender
 import com.commcrete.stardust.util.FileUtils.FileTransferData
+import com.commcrete.stardust.util.OwnSosSender
 import com.commcrete.stardust.util.SOSUtils
 import com.commcrete.stardust.util.audio.RecorderUtils
 import kotlinx.coroutines.Deferred
@@ -235,11 +236,27 @@ interface StardustAPI {
      */
     fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean
     /**
-     * Sends this radio's SOS from [location]. The identity check runs on the caller's thread; the
-     * recording and queueing run off it. [SOSUtils.SosSendRequest.NoLocalIdentity] means nothing
-     * was sent — the host must not tell the operator it was.
+     * Starts this user's SOS from [location]. Retried until the radio accepts it — through no link,
+     * no Device ID yet, a lost write or reply — and never re-sent after. Follow [ownSosState]: only
+     * [OwnSosSender.State.Sent] means it went out. False when one is already under way.
      */
-    fun sendRealSOS(location: Location): SOSUtils.SosSendRequest
+    fun sendRealSOS(location: Location): Boolean
+
+    /** This user's own SOS, from the trigger until the radio reports transmitting it. */
+    fun ownSosState(): StateFlow<OwnSosSender.State>
+
+    /**
+     * Stops this user's SOS. True when nothing was ever written to the radio, so there is nothing
+     * to cancel on it; false when the radio may hold it and the host must send the cancel
+     * ([AckSOS] from this user to the local radio).
+     */
+    fun cancelOwnSos(): Boolean
+
+    /**
+     * Sends a refused SOS ([OwnSosSender.State.Refused], the radio's Nack) again, from the same
+     * location. False when there is none.
+     */
+    fun retryOwnSos(): Boolean
     fun AckSOS(stardustAPIPackage: StardustAPIPackage)
     fun setSecurityKey(key: String, name : String)
     fun setSecurityKeyDefault()
@@ -296,6 +313,13 @@ interface StardustAPICallbacks {
     fun receiveSOS(stardustAPIPackage: StardustAPIPackage, sosPackage: SOSPackage)
     fun receiveRealSOS(stardustAPIPackage: StardustAPIPackage, location: Location)
     fun handleSOSAck(stardustAPIPackage: StardustAPIPackage)
+
+    /**
+     * The local radio's SOS send process ended (SEND_SOS_INTERRUPT 0xF9 `[0,…]`): after its last
+     * round, or cancelled on the radio — the payload does not say which. Not an acknowledgement;
+     * an ack by someone arrives through [handleSOSAck].
+     */
+    fun onOwnSosEnded() {}
     fun receivePTT(stardustAPIPackage: StardustAPIPackage, byteArray : ByteArray)
     fun startedReceivingPTT(stardustAPIPackage: StardustAPIPackage, file: File)
     fun stopReceivingPTT(stardustAPIPackage: StardustAPIPackage)

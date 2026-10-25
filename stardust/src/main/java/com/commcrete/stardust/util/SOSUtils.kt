@@ -16,7 +16,6 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLoca
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
-import kotlinx.coroutines.CancellationException
 import timber.log.Timber
 
 object SOSUtils {
@@ -112,21 +111,6 @@ object SOSUtils {
     }
 
     /**
-     * What [com.commcrete.stardust.StardustAPI.sendRealSOS] did. Decided before anything is sent,
-     * so the host knows whether to tell the operator the SOS went out.
-     */
-    sealed interface SosSendRequest {
-        /** Handed to the send queue (recorded and queued off the caller's thread). */
-        object Queued : SosSendRequest
-
-        /**
-         * No registered user, or the user has no device id yet — there is no local address to
-         * send from, so NOTHING was sent. Recoverable once the radio finishes connecting.
-         */
-        object NoLocalIdentity : SosSendRequest
-    }
-
-    /**
      * Asks the radio to send SOS alerts to [destinationId] (a user or group id, hex).
      *
      * Synchronous and non-blocking: it only enqueues, on the caller's thread, and is safe to call
@@ -164,33 +148,31 @@ object SOSUtils {
         }.toIntArray().toTypedArray()
     }
 
-    suspend fun sendSos(location: Location) {
-        // sendRealSOS checks identity before launching this and reports a missing one; reaching
-        // null here means it was cleared in between (logout), so there is no sender left to report.
-        val (src, dst) = requireLocalSrcDst() ?: run {
-            StardustLog.w(LOG_TAG, "SOS not sent: local identity cleared after the check")
-            return
-        }
-
-        var data : Array<Int> = arrayOf()
-
-        data = data.plus(LocationUtils.getLocationForSOSMyLocation(location))
-
-
+    /**
+     * Writes this user's SOS from [location] to the local radio — one attempt, for [OwnSosSender].
+     * False when there is no local identity to address it from, so nothing was written.
+     */
+    internal fun writeSos(location: Location): Boolean {
+        val (src, dst) = requireLocalSrcDst() ?: return false
         val sosMessage = StardustPackageUtils.getStardustPackage(
             source = src,
             destination = dst,
             stardustOpCode = StardustPackageUtils.StardustOpCode.SOS,
-            data = data)
-        try {
-            buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            StardustLog.e(LOG_TAG, "SOS could not be saved; sending it anyway", e)
-        }
-
+            data = LocationUtils.getLocationForSOSMyLocation(location))
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
+        return true
+    }
+
+    /**
+     * Files this user's SOS in its destination's chat — called once the radio reported transmitting
+     * it, never before, so the history never shows an SOS that did not go out.
+     */
+    internal suspend fun recordSentSos(location: Location) {
+        val (src, _) = requireLocalSrcDst() ?: run {
+            StardustLog.w(LOG_TAG, "SOS transmitted but not recorded: local identity cleared")
+            return
+        }
+        buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
     }
 
     /**

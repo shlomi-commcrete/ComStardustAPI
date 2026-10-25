@@ -21,6 +21,7 @@ import com.commcrete.stardust.stardust.model.StardustAddressesParser
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustLocationParser
 import com.commcrete.stardust.util.LogUtils
+import com.commcrete.stardust.util.OwnSosSender
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.update.StardustUpdateProcess
@@ -332,14 +333,14 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             StardustPackageUtils.StardustOpCode.RECEIVE_SOS_INTERRUPT            -> handleRealSOS(mPackage)
             StardustPackageUtils.StardustOpCode.SOS_ACK                          -> handleSOSAck(mPackage)
             StardustPackageUtils.StardustOpCode.SEND_SOS_INTERRUPT               -> handleSosStopped(mPackage)
+            StardustPackageUtils.StardustOpCode.RECEIVE_SOS                      -> OwnSosSender.onRadioReply(mPackage.data)
             StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT                -> handleAppEvent(mPackage)
             StardustPackageUtils.StardustOpCode.UPDATE_PRESET_DATA,
             StardustPackageUtils.StardustOpCode.SOS_DESTINATION_UPDATED           -> getConfiguration()
             else -> {
-                // Diagnostic: an SOS opcode the dispatcher has no branch for (RECEIVE_SOS 0x85,
-                // SEND_SOS_INTERRUPT 0xF9 — both local-radio confirmations we deliberately
-                // ignore) dies here without trace. Restricted to the SOS family so the routine
-                // no-op opcodes do not spam the log.
+                // Diagnostic: an SOS opcode the dispatcher has no branch for dies here without
+                // trace. Restricted to the SOS family so the routine no-op opcodes do not spam
+                // the log.
                 if (isSosOpCode(mPackage.stardustOpCode)) StardustLog.d(SOS_LOG_TAG,
                     "unhandled opCode=${mPackage.stardustOpCode} " +
                         "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) " +
@@ -404,6 +405,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 null -> {}
             }
             Timber.tag("AppEvent").d("eventType: ${sdPackage.eventType}")
+            // This user's SOS counts as sent only once the radio reports transmitting it.
+            OwnSosSender.onTxEvent(sdPackage.eventType, sdPackage.xcvr)
             AppEvents.updateAppEvents(sdPackage)
             val rssiReportSource = SharedPreferencesUtil.getRSSIReportSource()
             if(sdPackage.senderID.equals(rssiReportSource, true)) {
@@ -443,10 +446,14 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     /**
-     * The local radio reporting that its SOS stopped (SEND_SOS_INTERRUPT 0xF9). Its payload says
-     * why — observed on device, not documented by the firmware:
+     * The local radio's "SOS send process ended" (SEND_SOS_INTERRUPT 0xF9, per the firmware spec).
+     * The radio repeats an SOS every 30 s and sends this after the 7th round, or when it stops
+     * earlier. The payload, observed on device (the spec does not break it down):
      *
-     *  - `[0, 0,0,0,0]` — cancelled on the radio itself;
+     *  - `[0, 0,0,0,0]` — ended with no ack: after its last round, AND when cancelled on the radio
+     *    (both seen with this payload, so it cannot tell them apart). Not a cancel: filing it as
+     *    one marked every SOS that ran its course "cancelled from device", and the host answered
+     *    it with a cancel of its own. Reported as [StardustAPICallbacks.onOwnSosEnded].
      *  - `[1, id]` — stopped by an ack from `id`, a 4-byte id least-significant byte first, the
      *    same order the packet's own source and destination use.
      *
@@ -458,11 +465,13 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * confirmation already handled — so nothing new happened and nothing is recorded or raised.
      */
     private fun handleSosStopped(mPackage: StardustPackage) {
+        // The radio's own SOS is over, however it ended — the one signal that is always about
+        // this user's SOS, unlike an inbound SOS_ACK.
+        OwnSosSender.onEnded()
         val data = mPackage.data
         val byAck = data != null && data.size >= SOS_STOPPED_PAYLOAD_SIZE && data[0] == 1
         if (!byAck) {
-            // Cancelled on the radio: the ack's sender is this radio, which recordSosAck reads as such.
-            handleSOSAck(mPackage)
+            handlerScope.launch { DataManager.getCallbacks()?.onOwnSosEnded() }
             return
         }
         val acker = with(mPackage) { intArrayToHexString(data!!.sliceArray(1..4)).getSrcDestMin4Bytes() }

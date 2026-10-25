@@ -632,22 +632,16 @@ object DataManager : StardustAPI, PttInterface {
         }
     }
 
-    override fun sendRealSOS(location: Location): SOSUtils.SosSendRequest {
+    override fun sendRealSOS(location: Location): Boolean {
         checkInitialized()
-        // Checked before the launch, on the caller's thread, so the host learns it before telling
-        // the operator the SOS went out — sendSos alone used to drop it with no answer.
-        if (requireLocalSrcDst() == null) return SOSUtils.SosSendRequest.NoLocalIdentity
-        CoroutineScope(Dispatchers.IO).launch {
-            // Caught here because this is a bare launch: an SOS that throws while being
-            // recorded would otherwise take the failure down with it, unreported.
-            try {
-                SOSUtils.sendSos(location = location)
-            } catch (e: Exception) {
-                Timber.tag("SOSUtils").e(e, "Failed to send SOS")
-            }
-        }
-        return SOSUtils.SosSendRequest.Queued
+        return OwnSosSender.send(location)
     }
+
+    override fun ownSosState(): StateFlow<OwnSosSender.State> = OwnSosSender.state
+
+    override fun cancelOwnSos(): Boolean = OwnSosSender.cancel()
+
+    override fun retryOwnSos(): Boolean = OwnSosSender.retry()
 
     override fun AckSOS(stardustAPIPackage: StardustAPIPackage) {
         checkInitialized()
