@@ -28,7 +28,7 @@ import kotlinx.coroutines.launch
  * kept in memory only, to recognise it in scan results and in the OS connected-device list. GATT
  * clients are printed as an identity hash (`g@1a2b3c`), which is enough to tell two clients apart.
  *
- * Same pattern as `usb/UsbDiag.kt`: android.util.Log, never Timber, and every platform call is
+ * Same pattern as `usb/UsbDiag.kt`: StardustLog, never Timber, and every platform call is
  * wrapped so diagnostics can never be what crashes the host. Delete this file and its call sites
  * once both root causes are fixed.
  */

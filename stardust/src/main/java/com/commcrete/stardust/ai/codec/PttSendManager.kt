@@ -805,9 +805,6 @@ object PttSendManager {
         )
     }
 
-    private fun ByteArray.toHexString(): String =
-        joinToString("") { "%02x ".format(it) }
-
     /**
      * Write the session's accumulated decoded PCM to its target WAV file
      * and persist a PTT message row. Runs at most once per session

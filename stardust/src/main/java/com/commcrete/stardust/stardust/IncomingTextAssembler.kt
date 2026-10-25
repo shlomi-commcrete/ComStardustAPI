@@ -37,7 +37,7 @@ internal class IncomingTextAssembler(
     private val continuationWindowMs: (StardustAPIPackage) -> Long =
         { TextPartPacing.continuationWindowMs(it.carrier) },
     /** Injected so the class runs in plain JVM tests, where android.util.Log is not available. */
-    private val log: (message: String, error: Throwable?) -> Unit = ::logToLogcat,
+    private val log: (message: String, error: Throwable?) -> Unit = ::logToStardustLog,
 ) {
 
     /** What makes two parts belong to the same message. */
@@ -181,7 +181,7 @@ internal class IncomingTextAssembler(
     companion object {
         private const val TAG = "IncomingTextAssembler"
 
-        private fun logToLogcat(message: String, error: Throwable?) {
+        private fun logToStardustLog(message: String, error: Throwable?) {
             if (error != null) StardustLog.e(TAG, message, error) else StardustLog.d(TAG, message)
         }
     }

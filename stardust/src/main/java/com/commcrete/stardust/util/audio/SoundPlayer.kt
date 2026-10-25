@@ -39,7 +39,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * `pluginContext.assets`. The caller's context stays as the fallback, so
  * a standalone (non-plugin) build is unaffected.
  *
- * Logging is [android.util.Log], deliberately, not Timber: the SDK never
+ * Logging is [StardustLog], deliberately, not Timber: the SDK never
  * calls `Timber.plant()` (see `UsbDiag`), so a Timber warning here is a
  * no-op — which is exactly why the failure above was silent in logcat as
  * well as in the speaker.

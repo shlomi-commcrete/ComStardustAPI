@@ -1674,7 +1674,7 @@ internal class ClientConnection(): BittelProtocol {
         BleDiag.rememberRadio(deviceToUnbond.address)
         BleDiag.osLinkToRadio("unpair-before")
         val unbondStarted = requestUnbond(deviceToUnbond)
-        // android.util.Log, not Timber: this library never plants a tree, so Timber output is
+        // StardustLog, not Timber: this library never plants a tree, so Timber output is
         // invisible in the host and this result could not be seen in a capture.
         StardustLog.d("ConfigDebug",
             "removeBittelBond: osUnbondStarted=$unbondStarted force=$forceClearLocal")

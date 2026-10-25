@@ -82,7 +82,7 @@ object DataManager : StardustAPI, PttInterface {
     /** Body of the chat row written when the user asks a contact for its location. */
     const val LOCATION_REQUEST_TEXT = "Location Request"
 
-    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    /** StardustLog, not Timber: the host app plants no Timber tree, so Timber output is lost. */
     private const val LOG_TAG = "DataManager"
 
     private var clientConnection : ClientConnection?  = null

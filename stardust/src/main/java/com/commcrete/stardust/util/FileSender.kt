@@ -51,7 +51,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
     @Volatile var data: FileUtils.FileTransferData.Send = data
         private set
 
-    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    /** StardustLog, not Timber: the host app plants no Timber tree, so Timber output is lost. */
     private val LOG_TAG = "FileSender"
 
 

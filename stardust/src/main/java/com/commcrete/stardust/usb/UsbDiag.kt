@@ -19,7 +19,8 @@ import com.commcrete.stardust.util.StardustLog
  * adb logcat -s UsbDiag
  * ```
  *
- * Deliberately uses [android.util.Log] rather than Timber: `Timber.plant()` is never called
+ * Deliberately uses [StardustLog] (and logcat only for the per-chunk [log]) rather than
+ * Timber: `Timber.plant()` is never called
  * anywhere in this library, so every `Timber.tag(...)` line in the USB stack
  * (`SerialInOutputManager`, `UsbPermission`, …) prints NOTHING unless the host app happened to
  * plant a tree. That is itself a likely reason the existing USB logging looks "missing".

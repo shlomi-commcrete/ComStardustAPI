@@ -240,7 +240,4 @@ object PttReceiveManager {
             }
         }
     }
-
-    private fun ByteArray.toHexString(): String =
-        joinToString("") { "%02x ".format(it) }
 }

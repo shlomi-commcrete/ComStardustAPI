@@ -26,7 +26,7 @@ import java.util.Date
 @SuppressLint("StaticFieldLeak")
 object LocationUtils  {
 
-    /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+    /** StardustLog, not Timber: the host app plants no Timber tree, so Timber output is lost. */
     private const val LOG_TAG = "LocationUtils"
 
     var location : Location? = null
