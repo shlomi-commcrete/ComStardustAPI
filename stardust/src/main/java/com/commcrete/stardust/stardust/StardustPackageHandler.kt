@@ -759,8 +759,17 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     private fun handleAddressesReceived(mPackage: StardustPackage) {
         StardustAddressesParser().parseAddresses(mPackage)?.let { addressesPackage ->
             registerDevice(addressesPackage.stardustID)
-            updateDeviceSmartphoneAddress(addressesPackage)
+            updateDeviceSmartphoneAddress()
         }
+    }
+
+    /**
+     * Re-sends UPDATE_ADDRESS after the registered user's AppId changed, so the connected radio
+     * routes to the new ID without waiting for the next handshake. Called only while a link is up.
+     * Sends on [handlerScope], off the caller's thread.
+     */
+    internal fun onRegisteredAppIdChanged() {
+        handlerScope.launch { updateDeviceSmartphoneAddress() }
     }
 
     private fun registerDevice(deviceId: String) {
@@ -786,10 +795,19 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * Sends UPDATE_ADDRESS packet to device with this app's ID and device type.
      * Packet structure: [appId_4bytes][padding_4bytes][device_type_1byte]
      */
-    private fun updateDeviceSmartphoneAddress(addressesPackage: StardustAddressesPackage) {
-        val appId = RegisteredUserUtils.currentUserFlow.value?.appId
+    private fun updateDeviceSmartphoneAddress() {
+        // No link, no radio to tell — the next handshake sends UPDATE_ADDRESS on connect.
+        if (!DataManager.isLinkUp()) return
+        val user = RegisteredUserUtils.currentUserFlow.value
+        val appId = user?.appId
         if (appId.isNullOrBlank()) {
             Timber.tag("UpdateAddress").w("Cannot send UPDATE_ADDRESS: appId not registered")
+            return
+        }
+        // Always the registered user's radio, never an ID taken from elsewhere.
+        val destination = user.deviceId
+        if (destination.isNullOrBlank()) {
+            Timber.tag("UpdateAddress").w("Cannot send UPDATE_ADDRESS: registered user has no device ID")
             return
         }
 
@@ -799,14 +817,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             val payload = buildUpdateAddressPayload(appId)
             val mPackage = StardustPackageUtils.getStardustPackage(
                 source = appId,
-                destination = addressesPackage.stardustID,
+                destination = destination,
                 stardustOpCode = StardustPackageUtils.StardustOpCode.UPDATE_ADDRESS,
                 data = payload
             )
             clientConnection.addMessageToQueue(mPackage)
-            Timber.tag("UpdateAddress").d(
-                "Sent UPDATE_ADDRESS from $appId to ${addressesPackage.stardustID}"
-            )
+            Timber.tag("UpdateAddress").d("Sent UPDATE_ADDRESS")
         } catch (e: Exception) {
             Timber.tag("UpdateAddress").e(e, "Failed to send UPDATE_ADDRESS packet")
         }

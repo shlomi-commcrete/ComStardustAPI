@@ -331,10 +331,17 @@ object SharedPreferencesUtil {
         if (appUser.iconKey == null) {
             appUser.iconKey = getAppUser()?.iconKey
         }
+        val previous = RegisteredUserUtils.currentUserFlow.value
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
         // Login over a link that is already up changes no connection state, so recompute won't run.
         LinkWakeLock.refresh()
+        // The radio learned the old AppId in the handshake's UPDATE_ADDRESS; tell it the new one.
+        // The handshake's own setAppUser calls keep the AppId, so they don't trigger this. With no
+        // link up there is nothing to tell, and the next handshake sends it anyway.
+        if (appUser.appId.isNotBlank() && appUser.appId != previous?.appId && DataManager.isLinkUp()) {
+            DataManager.getStardustPackageHandler().onRegisteredAppIdChanged()
+        }
     }
 
     @Synchronized
