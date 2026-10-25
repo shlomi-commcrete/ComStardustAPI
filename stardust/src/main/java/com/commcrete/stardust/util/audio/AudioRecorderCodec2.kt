@@ -41,7 +41,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     BleMediaConnector() {
 
     companion object {
-        /** android.util.Log, not Timber: the host app plants no Timber tree, so Timber output is lost. */
+        /** StardustLog, not Timber: the host app plants no Timber tree, so Timber output is lost. */
         private const val LOG_TAG = "AudioRecorderCodec2"
         const val TAG_PTT_DEBUG = "tag_ptt_debug"
         const val RECORDER_SAMPLE_RATE = 8000
@@ -283,8 +283,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             // ✅ Save PTT regardless of whether recorder was null
             saveOrRemovePttFile(chatId, receiverId, path)
         } catch (e: Exception) {
-            e.printStackTrace()
-            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
+            StardustLog.w(TAG_PTT_DEBUG, "mWavRecorder failed while stopping; retrying", e)
 
             stopRecording(retryNum, chatId, receiverId, path, carrier)
         } finally {
