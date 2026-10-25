@@ -112,6 +112,21 @@ object SOSUtils {
     }
 
     /**
+     * What [com.commcrete.stardust.StardustAPI.sendRealSOS] did. Decided before anything is sent,
+     * so the host knows whether to tell the operator the SOS went out.
+     */
+    sealed interface SosSendRequest {
+        /** Handed to the send queue (recorded and queued off the caller's thread). */
+        object Queued : SosSendRequest
+
+        /**
+         * No registered user, or the user has no device id yet — there is no local address to
+         * send from, so NOTHING was sent. Recoverable once the radio finishes connecting.
+         */
+        object NoLocalIdentity : SosSendRequest
+    }
+
+    /**
      * Asks the radio to send SOS alerts to [destinationId] (a user or group id, hex).
      *
      * Synchronous and non-blocking: it only enqueues, on the caller's thread, and is safe to call
@@ -150,7 +165,12 @@ object SOSUtils {
     }
 
     suspend fun sendSos(location: Location) {
-        val (src, dst) = requireLocalSrcDst() ?: return
+        // sendRealSOS checks identity before launching this and reports a missing one; reaching
+        // null here means it was cleared in between (logout), so there is no sender left to report.
+        val (src, dst) = requireLocalSrcDst() ?: run {
+            StardustLog.w(LOG_TAG, "SOS not sent: local identity cleared after the check")
+            return
+        }
 
         var data : Array<Int> = arrayOf()
 

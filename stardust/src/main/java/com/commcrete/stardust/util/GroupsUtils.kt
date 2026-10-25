@@ -47,7 +47,11 @@ object GroupsUtils {
         return intData.toIntArray().toTypedArray().reversedArray()
     }
 
-    /** Builds and enqueues a Stardust package. No-op when no endpoints are available. */
+    /**
+     * Builds and enqueues a Stardust package. No-op when no endpoints are available — silent on
+     * purpose: every handshake re-sends the whole group list (delete all, then add all), so a
+     * contact change made before the radio reported its id reaches it once it does.
+     */
     private fun sendOp(
         opCode: StardustOpCode,
         data: Array<Int>? = null

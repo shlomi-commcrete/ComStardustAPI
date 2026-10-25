@@ -234,7 +234,12 @@ interface StardustAPI {
      * restarts. The first call may touch a lock file or load a native library: call it off the main thread.
      */
     fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean
-    fun sendRealSOS(location: Location)
+    /**
+     * Sends this radio's SOS from [location]. The identity check runs on the caller's thread; the
+     * recording and queueing run off it. [SOSUtils.SosSendRequest.NoLocalIdentity] means nothing
+     * was sent — the host must not tell the operator it was.
+     */
+    fun sendRealSOS(location: Location): SOSUtils.SosSendRequest
     fun AckSOS(stardustAPIPackage: StardustAPIPackage)
     fun setSecurityKey(key: String, name : String)
     fun setSecurityKeyDefault()
