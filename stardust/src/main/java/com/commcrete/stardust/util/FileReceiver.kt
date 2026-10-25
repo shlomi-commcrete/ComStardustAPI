@@ -53,6 +53,10 @@ class FileReceiver(
     /** Written by [start] on an IO thread, read by the progress callbacks on the main one. */
     @Volatile var data: FileUtils.FileTransferData.Receive
 
+    /** The RD the start package's control byte names, as received text and locations record it. */
+    private fun arrivedOn(): Carrier? =
+        CarriersUtils.getCarrierByControl(stardustPackage.stardustControlByte.stardustDeliveryType)
+
     private val receivingInterval : Long = 1800
 
     /** No package for a while: settle from what arrived — see [checkData]. On [lane]. */
@@ -136,7 +140,7 @@ class FileReceiver(
                                 subtype = data.fileType.toAttachmentType(),
                                 originalSize = originalSizeOrNull(),
                             ),
-                        )
+                        ).withRd(arrivedOn())
                     )
                     messageId = id
                     // Carried on every later progress callback so the host can bind the animation
@@ -632,7 +636,7 @@ class FileReceiver(
                             failure = failure,
                             originalSize = originalSizeOrNull(),
                         )
-                    )
+                    ).withRd(arrivedOn())
                 )
             } catch (e: Exception) {
                 Log.e("FileReceiver", "Error persisting failed transfer: ${data.fileName}", e)
@@ -693,7 +697,7 @@ class FileReceiver(
                                 fileSummary = summary,
                                 originalSize = landedSize ?: originalSizeOrNull(),
                             )
-                        )
+                        ).withRd(arrivedOn())
                     )
                 } catch (e: Exception) {
                     Log.e("FileReceiver", "Error persisting received transfer: ${file.name}", e)

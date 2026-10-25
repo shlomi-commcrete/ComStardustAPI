@@ -8,6 +8,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
 import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.util.Carrier
 import java.util.Locale
 
 @Entity(
@@ -63,6 +64,15 @@ data class MessageEntity(
     @ColumnInfo(name = "carrier_range")
     val carrierRange: String = "",
 ) {
+
+    /**
+     * This row with the RD it travelled on recorded in its [extraData] — see
+     * [MessageExtraData.deliveryRd]. Null [radio] leaves the row as it is, so it reads "not recorded".
+     */
+    internal fun withRd(radio: Carrier?): MessageEntity {
+        radio ?: return this
+        return copy(extraData = extraData?.withDeliveryRd(radio))
+    }
 
 
     init {

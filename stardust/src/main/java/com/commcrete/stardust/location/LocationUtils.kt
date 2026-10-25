@@ -8,6 +8,7 @@ import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.LocationPackage
+import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CoordinatesUtil
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -52,7 +53,7 @@ object LocationUtils  {
                 isAckResponse = isAckResponse,
                 locationRequested = locationRequested,
             )
-        )
+        ).withRd(dataPackage.carrier)
         return DataManager.getAppRepo().saveMessage(message, dataPackage.groupId)
     }
 
@@ -121,7 +122,9 @@ object LocationUtils  {
         isDemandAck : Boolean = false,
         isHR : StardustControlByte.StardustDeliveryType = StardustControlByte.StardustDeliveryType.RD1,
         opCode : StardustPackageUtils.StardustOpCode? = null,
-        randomID: String = "") {
+        randomID: String = "",
+        // The RD [isHR] was taken from, recorded on the saved row; null when the caller has none.
+        sentOn: Carrier? = null) {
 
         // TODO: change xor check
         //TODO: WTF is going on???
@@ -146,6 +149,7 @@ object LocationUtils  {
                         senderId = mPackage.getSourceAsString(),
                         receiverId = mPackage.getDestAsString(),
                         groupId = mPackage.groupId,
+                        carrier = sentOn,
                         isLast = true
                     ),
                     LocationPackage(location, Date()),

@@ -711,7 +711,7 @@ class AppRepository(
             carrierType = pkg.carrier?.type?.type,
             rd = pkg.carrier?.deliveryType?.value,
             // TODO: freqMhz / carrierRange once the package exposes them.
-        ),
+        ).withRd(pkg.carrier),
         pkg.groupId,
     )
 

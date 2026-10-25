@@ -786,7 +786,8 @@ object PttSendManager {
                     path = path,
                     encoderType = EncoderType.AI
                 )
-            )
+                // The resolution sendData makes per chunk.
+            ).withRd(CarriersUtils.getRadioToSend(session.carrier, functionalityType = FunctionalityType.PTT))
         )
     }
 

@@ -3,10 +3,13 @@ package com.commcrete.stardust.audio.v2.framework
 import android.content.Context
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.RecordingId
+import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
+import com.commcrete.stardust.util.Carrier
+import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.CoroutineScope
@@ -34,8 +37,19 @@ class PttSendStore(private val context: Context) {
     fun mirrorFile(id: RecordingId): File =
         File(StardustStorage.mediaRoot, "ptt_v2/${id.value}-mirror.wav")
 
-    /** Called by the bridge after the recording has finalized (its mirror WAV, if any, is written). */
-    fun onFinalized(id: RecordingId, chatId: String, receiverId: String, codecId: CodecId, epochTimeMs: Long) {
+    /**
+     * Called by the bridge after the recording has finalized (its mirror WAV, if any, is written).
+     * [carrier] is the recording's requested RD (null for default), resolved here as
+     * BleSendTransport resolves it per frame so the row names the RD the frames went out on.
+     */
+    fun onFinalized(
+        id: RecordingId,
+        chatId: String,
+        receiverId: String,
+        codecId: CodecId,
+        epochTimeMs: Long,
+        carrier: Carrier? = null,
+    ) {
         if (!DataManager.getSavePTTFilesRequired()) return
         val file = mirrorFile(id)
         // The row is written even when the WAV is missing. The mirror is a self-decode of the
@@ -59,7 +73,7 @@ class PttSendStore(private val context: Context) {
                         state = MessageState.SENT,
                         epochTimeMs = epochTimeMs,
                         extraData = MessageExtraData.PTT(path = file.absolutePath, encoderType = encoderType),
-                    ),
+                    ).withRd(CarriersUtils.getRadioToSend(carrier, functionalityType = FunctionalityType.PTT)),
                 )
             }
         }

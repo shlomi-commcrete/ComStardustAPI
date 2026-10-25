@@ -54,7 +54,8 @@ object SOSUtils {
         // instance, and a multi-part text cut short by link loss leaves it at MESSAGE.
         sosMessage.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.LAST
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
-        saveSOSMessage(sosType, stardustAPIPackage, location)
+        // The resolved REPORTS RD, so the row records what the SOS went on.
+        saveSOSMessage(sosType, stardustAPIPackage.copy(carrier = radio), location)
     }
 
     fun ackSOS(stardustAPIPackage: StardustAPIPackage) {

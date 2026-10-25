@@ -3,6 +3,8 @@
 package com.commcrete.stardust.room.new_db.message
 
 
+import com.commcrete.stardust.stardust.model.config.CarrierType
+import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.FileReceiver
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
@@ -13,6 +15,14 @@ import kotlinx.serialization.SerialName
  */
 @Serializable
 sealed class MessageExtraData {
+
+    /**
+     * The RD this message travelled on — the one a send resolved, or the one a received package's
+     * control byte named — or `null` when not recorded: rows written before this field existed,
+     * and the paths that do not record it (PTT receive, the legacy Codec2 recorder, the
+     * hardware-key SOS). Omitted entirely when `null`, like [Attachment.failure].
+     */
+    abstract val deliveryRd: DeliveryRd?
 
     @Serializable
     @SerialName("Text")
@@ -36,6 +46,7 @@ sealed class MessageExtraData {
          * row written before this field existed reads back as no request.
          */
         val locationRequested: Boolean = false,
+        override val deliveryRd: DeliveryRd? = null,
     ) : MessageExtraData()
 
     @Serializable
@@ -93,6 +104,7 @@ sealed class MessageExtraData {
          * [failure].
          */
         val originalSize: Long? = null,
+        override val deliveryRd: DeliveryRd? = null,
     ) : MessageExtraData()
 
     @Serializable
@@ -112,6 +124,7 @@ sealed class MessageExtraData {
          * field existed reads back exactly as it did.
          */
         val truncated: Boolean = false,
+        override val deliveryRd: DeliveryRd? = null,
     ) : MessageExtraData()
 
     /**
@@ -134,6 +147,7 @@ sealed class MessageExtraData {
         val isAckResponse: Boolean = false,
         /** As [Text.locationRequested]: the location went out with DEMAND_ACK. Omitted when false. */
         val locationRequested: Boolean = false,
+        override val deliveryRd: DeliveryRd? = null,
     ) : GeoData()
 
     @Serializable
@@ -155,7 +169,44 @@ sealed class MessageExtraData {
          * row written before this field existed reads back exactly as it did.
          */
         val acks: List<SosAck> = emptyList(),
+        override val deliveryRd: DeliveryRd? = null,
     ) : GeoData()
+}
+
+/**
+ * The RD a message travelled on and the F it occupied — see [MessageExtraData.deliveryRd].
+ *
+ * [rd] is numbered as the operator sees it (RD1 = 1). [fFirst]..[fLast] are F in the operator's
+ * global 1–9 numbering, as THIS radio's configuration placed the RD; both `null` when that
+ * configuration had not set them yet. [type] is the RD's rate (HR, LR, ST), stored by name; `null`
+ * on a row recorded before it was.
+ */
+@Serializable
+data class DeliveryRd(
+    val rd: Int,
+    val fFirst: Int? = null,
+    val fLast: Int? = null,
+    val type: CarrierType? = null,
+) {
+    /** The F as a range, a single F being first == last; `null` when not known. Not serialized. */
+    val fRange: IntRange?
+        get() = if (fFirst != null && fLast != null) fFirst..fLast else null
+}
+
+/** This RD as a [DeliveryRd]: its zero-based slot is the RD number, its F as configured. */
+internal fun Carrier.toDeliveryRd(): DeliveryRd =
+    DeliveryRd(rd = index + 1, fFirst = fFirst, fLast = fLast, type = type)
+
+/** This metadata with [radio] recorded as the RD it travelled on. */
+internal fun MessageExtraData.withDeliveryRd(radio: Carrier): MessageExtraData {
+    val recorded = radio.toDeliveryRd()
+    return when (this) {
+        is MessageExtraData.Text -> copy(deliveryRd = recorded)
+        is MessageExtraData.Attachment -> copy(deliveryRd = recorded)
+        is MessageExtraData.PTT -> copy(deliveryRd = recorded)
+        is MessageExtraData.Location -> copy(deliveryRd = recorded)
+        is MessageExtraData.Sos -> copy(deliveryRd = recorded)
+    }
 }
 
 fun MessageExtraData?.toMessageType(): MessageType = when (this) {

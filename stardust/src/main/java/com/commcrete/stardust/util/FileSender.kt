@@ -13,6 +13,7 @@ import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.SendProgress
+import com.commcrete.stardust.room.new_db.message.toDeliveryRd
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.config.CarrierType
@@ -634,6 +635,13 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             fileSummary = FileUtils.buildFileSummary(localFile, subtype),
             // The figure the start package will carry, so both ends' rows agree.
             originalSize = originalSize.takeIf { it > 0 }?.toLong(),
+            // Resolved the way createStartPackage resolves it moments later, so the row names the
+            // RD the transfer goes out on; keep the two calls alike. Set here rather than on the
+            // saved row: every progress write rewrites the row from this attachment.
+            deliveryRd = getRadioToSend(
+                functionalityType = data.fileType.relatedFunctionalityType(),
+                carrier = data.stardustAPIPackage.carrier,
+            )?.toDeliveryRd(),
         )
         return try {
             // SENDING until the send settles it — by finishing, by a disconnect deciding from
@@ -803,6 +811,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         val fileStart = StardustFileStartPackage(type = data.fileType.bitCode, total = totalPackages, data.stardustAPIPackage.spare, spareData, fileEnding, fileName, originalSize)
 
+        // saveLocalMessages records the same resolution on the row; keep the two calls alike.
         val radio = getRadioToSend(functionalityType = data.fileType.relatedFunctionalityType(), carrier = data.stardustAPIPackage.carrier)
             ?: return false
 

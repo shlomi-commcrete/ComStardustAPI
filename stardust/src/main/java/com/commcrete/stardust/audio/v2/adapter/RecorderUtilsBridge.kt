@@ -129,7 +129,7 @@ class RecorderUtilsBridge(
                 Timber.tag(TAG).w("recording $id never finished within ${finalizeTimeoutMs}ms; releasing anyway")
             }
             routing.release(id)
-            sendStore.onFinalized(id, cmd.chatId, cmd.destination, cmd.codecId, cmd.startedAtMs)
+            sendStore.onFinalized(id, cmd.chatId, cmd.destination, cmd.codecId, cmd.startedAtMs, cmd.carrier)
             // Only a clean LAST means the whole recording reached the link. TIMEOUT means the gate's
             // watchdog discarded the tail; ERROR/CANCELLED mean the pipeline gave up; null means it
             // never finished at all — none of those are "sent". A more specific error (e.g.

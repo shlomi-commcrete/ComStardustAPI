@@ -39,6 +39,7 @@ import com.commcrete.stardust.room.new_db.message.MessageExtraData
 import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.SendProgress
+import com.commcrete.stardust.room.new_db.message.toDeliveryRd
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
 import com.commcrete.stardust.stardust.StardustPackageHandler
@@ -219,6 +220,8 @@ object DataManager : StardustAPI, PttInterface {
                 text = text,
                 sendProgress = if (isMultiPart) SendProgress(partsSent = 0, partsNeeded = splitData.size) else null,
                 locationRequested = stardustAPIPackage.requireAck,
+                // Here, not on the saved row: each progress write rewrites the row from this.
+                deliveryRd = radio.toDeliveryRd(),
             )
 
             // Saved before the packages go out, because each of them carries this row's id and
@@ -493,7 +496,7 @@ object DataManager : StardustAPI, PttInterface {
             stardustOpCode = StardustPackageUtils.StardustOpCode.RECEIVE_LOCATION)
 
         val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, functionalityType = FunctionalityType.LOCATION) ?: return
-        LocationUtils.sendLocation(chatId,stardustPackage, location, getClientConnection(), isHR = radio.deliveryType)
+        LocationUtils.sendLocation(chatId,stardustPackage, location, getClientConnection(), isHR = radio.deliveryType, sentOn = radio)
     }
 
     override fun sendImage(data: FileUtils.FileTransferData.Send, onFileStatusChange: OnFileStatusChange): Deferred<Boolean> {
@@ -604,7 +607,8 @@ object DataManager : StardustAPI, PttInterface {
             // exception here would kill this coroutine and the request would never be sent.
             try {
                 getAppRepo().saveMessage(
-                    pkg = stardustAPIPackage,
+                    // The resolved RD, not the requested one (null for AUTO): the row records what it went on.
+                    pkg = stardustAPIPackage.copy(carrier = radio),
                     extraData = MessageExtraData.Text(text = LOCATION_REQUEST_TEXT),
                     state = MessageState.SENT,
                     type = MessageType.LOCATION_REQUEST,
