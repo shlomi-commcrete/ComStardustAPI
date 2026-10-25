@@ -1,6 +1,5 @@
 package com.commcrete.stardust.stardust.model
 
-import android.util.Log
 import com.commcrete.stardust.enums.LicenseType
 import com.commcrete.stardust.stardust.model.config.AirEncryptionMode
 import com.commcrete.stardust.stardust.model.config.AntennaType
@@ -14,6 +13,7 @@ import com.commcrete.stardust.stardust.model.config.StardustBatteryCharge
 import com.commcrete.stardust.stardust.model.config.StardustRDPLevel
 import com.commcrete.stardust.stardust.model.config.StardustType
 import com.commcrete.stardust.util.ByteReader
+import com.commcrete.stardust.util.StardustLog
 
 class StardustConfigurationParser : StardustParser() {
 
@@ -33,10 +33,10 @@ class StardustConfigurationParser : StardustParser() {
     fun parseConfiguration(pkg: StardustPackage, firmwareVersion: String? = null): StardustConfigurationPackage? {
         val intArray = pkg.data
         if (intArray == null) {
-            Log.w("ConfigDebug", "parseConfiguration: pkg.data is NULL (opCode=${pkg.stardustOpCode}) -> returning null")
+            StardustLog.w("ConfigDebug", "parseConfiguration: pkg.data is NULL (opCode=${pkg.stardustOpCode}) -> returning null")
             return null
         }
-        Log.d("ConfigDebug", "parseConfiguration: parsing data size=${intArray.size} fw=$firmwareVersion data=[${intArray.joinToString(" ") { "%02X".format(it and 0xFF) }}]")
+        StardustLog.d("ConfigDebug", "parseConfiguration: parsing data size=${intArray.size} fw=$firmwareVersion")
         try {
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             val format = ConfigFormatRegistry.resolve(FirmwareVersion.parse(firmwareVersion))
@@ -119,7 +119,7 @@ class StardustConfigurationParser : StardustParser() {
                 sosDestinations = parseSosDestinations(sosBytes),
             )
         } catch (e: Exception) {
-            Log.w("ConfigDebug", "parseConfiguration THREW while parsing (data size=${intArray.size}): ${e.message}", e)
+            StardustLog.w("ConfigDebug", "parseConfiguration THREW while parsing (data size=${intArray.size}): ${e.message}", e)
             e.printStackTrace()
         }
         return null

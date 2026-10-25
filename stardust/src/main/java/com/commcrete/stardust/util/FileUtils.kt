@@ -6,6 +6,7 @@ import android.net.Uri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileInputStream
@@ -22,6 +23,7 @@ import java.io.BufferedOutputStream
 import java.io.FileWriter
 import java.io.OutputStream
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -30,6 +32,11 @@ import com.commcrete.stardust.room.new_db.message.AttachmentType
 import com.commcrete.stardust.room.new_db.message.FileSummary
 
 object FileUtils {
+    private const val TAG = "FileUtils"
+
+    /** A `logcat -d` that has not returned by now is stuck; the export goes on without it. */
+    private const val LOGCAT_TIMEOUT_S = 10L
+
     fun createFile(folderName : String = "logs"
                            , fileName : String, fileType : String = ".txt") : File {
         // Inside the SDK's own subtree: `logs` and `config` are exactly the
@@ -138,9 +145,46 @@ object FileUtils {
         }
     }
 
+    /**
+     * For the Logs export: copies of [StardustLog]'s files, oldest first, plus a logcat dump
+     * of this process. Copies, because the zip deletes what it is given and the log is still
+     * being written. Anything that could not be included is listed in `export_problems.txt`.
+     */
+    suspend fun exportAppLogs(): List<File> = withContext(Dispatchers.IO) {
+        val problems = mutableListOf<String>()
+        val exportDir = File(getTempDir(), "logs_export").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+
+        val copies = StardustLog.logFiles().mapNotNull { file ->
+            try {
+                file.copyTo(File(exportDir, file.name), overwrite = true)
+            } catch (e: IOException) {
+                StardustLog.w(TAG, "Logs export: could not copy ${file.name}", e)
+                problems += "${file.name} could not be copied: ${e.javaClass.simpleName}"
+                null
+            }
+        }
+        if (copies.isEmpty()) problems += "No log files were found."
+
+        val logcat = exportAppLogcat()
+        if (logcat == null) problems += "The logcat dump was empty or failed."
+
+        val problemsFile = if (problems.isEmpty()) null else try {
+            File(exportDir, "export_problems.txt").apply { writeText(problems.joinToString("\n", postfix = "\n")) }
+        } catch (e: IOException) {
+            StardustLog.w(TAG, "Logs export: could not write the problems list", e)
+            null
+        }
+
+        copies + listOfNotNull(logcat, problemsFile)
+    }
+
+    /** A logcat dump of this process's lines still in the ring buffer, or null when it is empty or failed. */
     fun exportAppLogcat(
         fileName: String = "app_logs_${System.currentTimeMillis()}.logcat"
-    ): File {
+    ): File? {
 
         val outputDir = DataManager.appContext.getExternalFilesDir(null) ?: DataManager.appContext.filesDir
         val logFile = File(outputDir, fileName)
@@ -155,8 +199,24 @@ object FileUtils {
             "-d"                         // dump and exit
         )
 
-        Runtime.getRuntime().exec(command)?.waitFor()
+        val exitCode = try {
+            val process = Runtime.getRuntime().exec(command)
+            if (process.waitFor(LOGCAT_TIMEOUT_S, TimeUnit.SECONDS)) {
+                process.exitValue()
+            } else {
+                process.destroy()
+                null
+            }
+        } catch (e: IOException) {
+            StardustLog.w(TAG, "logcat could not be started", e)
+            null
+        }
 
+        if (exitCode != 0 || logFile.length() == 0L) {
+            StardustLog.w(TAG, "logcat dump empty or failed, exit code $exitCode")
+            logFile.delete()
+            return null
+        }
         return logFile
     }
 

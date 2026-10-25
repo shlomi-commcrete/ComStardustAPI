@@ -57,12 +57,14 @@ object RegisteredUserUtils {
             val password = async { SharedPreferencesUtil.removePassword() }
             val appUser = async { SharedPreferencesUtil.removeAppUser() }
             val user = async { SharedPreferencesUtil.removeUser() }
+            val logs = async { StardustLog.deleteFiles() }
 
             databases.await() &&
                     phone.await() &&
                     password.await() &&
                     appUser.await() &&
-                    user.await()
+                    user.await() &&
+                    logs.await()
         }
     }
 

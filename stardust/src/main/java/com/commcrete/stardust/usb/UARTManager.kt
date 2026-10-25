@@ -4,6 +4,7 @@ package com.commcrete.stardust.usb
 import android.content.Context.USB_SERVICE
 import android.hardware.usb.UsbManager
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.StardustLog
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
 import com.hoho.android.usbserial.driver.UsbSerialProber
@@ -33,7 +34,7 @@ class UARTManager() {
     fun connectDevice(callback : SerialInputOutputManager.Listener, mPort : Int, onCTSChange: CTSChange? = null) : Boolean{
         val usbManager = DataManager.appContext.getSystemService(USB_SERVICE) as UsbManager
         val availableDrivers = UsbSerialProber.getDefaultProber().findAllDrivers(usbManager)
-        android.util.Log.d("ConfigDebug", "UART connectDevice targetDeviceId=$mPort driversFound=${availableDrivers.size} context: ${DataManager.appContext}")
+        StardustLog.d("ConfigDebug", "UART connectDevice targetDeviceId=$mPort driversFound=${availableDrivers.size} context: ${DataManager.appContext}")
         UsbDiag.log(
             "UART.connectDevice",
             "ENTER targetDeviceId=$mPort driversFound=${availableDrivers.size} wantsCts=${onCTSChange != null} " +
@@ -41,7 +42,7 @@ class UARTManager() {
         )
         if (availableDrivers.isEmpty()) {
             Timber.tag("SerialInputOutputManager").d("availableDrivers.isEmpty()")
-            android.util.Log.w("ConfigDebug", "UART ABORT — UsbSerialProber found NO drivers (device not recognised by the default prober)")
+            StardustLog.w("ConfigDebug", "UART ABORT — UsbSerialProber found NO drivers (device not recognised by the default prober)")
             UsbDiag.verdict(
                 "UsbSerialProber found NO drivers. The device is attached but the default prober does " +
                     "not recognise its VID/PID — a custom ProbeTable is needed, or the device is not a " +
@@ -55,7 +56,7 @@ class UARTManager() {
             for (port in mDriver.ports) {
                 Timber.tag("SerialInputOutputManager").d("mPort : $mPort")
                 Timber.tag("SerialInputOutputManager").d("port.device.deviceId : ${port.device.deviceId}")
-                android.util.Log.d("ConfigDebug", "UART candidate driver=${mDriver.javaClass.simpleName} portDeviceId=${port.device.deviceId} productName='${port.device.productName}'")
+                StardustLog.d("ConfigDebug", "UART candidate driver=${mDriver.javaClass.simpleName} portDeviceId=${port.device.deviceId}")
                 UsbDiag.log(
                     "UART.probe",
                     "candidate driver=${mDriver.javaClass.simpleName} portDeviceId=${port.device.deviceId} " +
@@ -67,7 +68,7 @@ class UARTManager() {
             }
         }
         if( driver == null) {
-            android.util.Log.w("ConfigDebug", "UART ABORT — no driver whose port.device.deviceId == $mPort")
+            StardustLog.w("ConfigDebug", "UART ABORT — no driver whose port.device.deviceId == $mPort")
             UsbDiag.verdict(
                 "No driver matched deviceId=$mPort. The prober found ${availableDrivers.size} driver(s) " +
                     "but none for the device we were granted permission for — the deviceId changed " +
@@ -83,7 +84,7 @@ class UARTManager() {
         )
         val connection = usbManager.openDevice(driver.device)
         if (connection == null) {
-            android.util.Log.w("ConfigDebug", "UART ABORT — usbManager.openDevice() returned null (permission not actually held?)")
+            StardustLog.w("ConfigDebug", "UART ABORT — usbManager.openDevice() returned null (permission not actually held?)")
             UsbDiag.verdict(
                 "openDevice() returned NULL. hasPermission=" +
                     "${runCatching { usbManager.hasPermission(driver.device) }.getOrNull()} — if that is false, " +
@@ -118,7 +119,7 @@ class UARTManager() {
 
         } catch (e: IOException) {
             Timber.tag("SerialInputOutputManager").e("connectDevice : " + e)
-            android.util.Log.w("ConfigDebug", "UART ABORT — IOException opening/configuring the serial port: ${e.message}", e)
+            StardustLog.w("ConfigDebug", "UART ABORT — IOException opening/configuring the serial port: ${e.message}", e)
             UsbDiag.error("UART.connectDevice", "IOException on open/setParameters — port not usable", e)
             return false
             // Handle error
@@ -143,7 +144,7 @@ class UARTManager() {
                     val currentCtsStatus = serialPort?.cts
                     if (currentCtsStatus != previousCtsStatus) {
                         previousCtsStatus = currentCtsStatus
-                        android.util.Log.d("PttButton", "CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
+                        StardustLog.d("PttButton", "CTS changed to ${if (currentCtsStatus == true) "ON" else "OFF"}")
                         onCTSChange.onCTSChanged(currentCtsStatus == true)
                     }
                     Thread.sleep(50)

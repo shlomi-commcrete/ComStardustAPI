@@ -5,7 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.LoudnessEnhancer
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.PlaybackSink
 import com.commcrete.stardust.audio.v2.domain.Gain
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
@@ -59,7 +59,7 @@ class AiPlaybackSink : PlaybackSink {
         // Here, not on the first boost: attaching an effect is a call into the audio server, and
         // setGain runs on the host's UI thread. Disabled until a gain above unity asks for it.
         enhancer = runCatching { LoudnessEnhancer(built.audioSessionId) }
-            .onFailure { Log.w(TAG, "LoudnessEnhancer unavailable", it) }
+            .onFailure { StardustLog.w(TAG, "LoudnessEnhancer unavailable", it) }
             .getOrNull()
         applyGain(built, gainRef.get())
         built.play()
@@ -104,7 +104,7 @@ class AiPlaybackSink : PlaybackSink {
             runCatching {
                 fx.setTargetGain(boost)
                 fx.enabled = boost > 0
-            }.onFailure { Log.w(TAG, "LoudnessEnhancer gain not applied", it) }
+            }.onFailure { StardustLog.w(TAG, "LoudnessEnhancer gain not applied", it) }
         }
     }
 

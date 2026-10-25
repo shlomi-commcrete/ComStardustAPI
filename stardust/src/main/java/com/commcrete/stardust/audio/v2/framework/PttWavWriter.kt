@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.framework
 
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.WavHelper
 import java.io.File
 import java.io.IOException
@@ -58,7 +59,8 @@ internal class PttWavWriter(private val file: File) {
         try {
             val out = raf ?: open(rateHz) ?: return
             if (rateHz != headerRateHz) {
-                Log.w(TAG, "rate changed mid-stream ($headerRateHz -> $rateHz) for ${file.name}; keeping header rate")
+                // logcat only: per-frame, would flood the log file
+                Log.w(TAG, "rate changed mid-stream ($headerRateHz -> $rateHz); keeping header rate")
             }
             out.seek(HEADER_BYTES.toLong() + dataBytes)
             out.write(shortsToLePcm16(samples))
@@ -81,7 +83,7 @@ internal class PttWavWriter(private val file: File) {
         try {
             patchSizes(out)
         } catch (e: IOException) {
-            Log.w(TAG, "Could not finalize WAV header for ${file.name}", e)
+            StardustLog.w(TAG, "Could not finalize WAV header", e)
         } finally {
             runCatching { out.close() }
         }
@@ -114,7 +116,7 @@ internal class PttWavWriter(private val file: File) {
 
     private fun fail(e: IOException, what: String) {
         broken = true
-        Log.e(TAG, "Error $what WAV ${file.absolutePath}; dropping the rest of this stream", e)
+        StardustLog.e(TAG, "Error $what WAV; dropping the rest of this stream", e)
         raf?.let { runCatching { it.close() } }
         raf = null
     }

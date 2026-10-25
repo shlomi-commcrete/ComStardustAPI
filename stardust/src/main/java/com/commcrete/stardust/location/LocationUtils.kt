@@ -2,7 +2,7 @@ package com.commcrete.stardust.location
 
 import android.annotation.SuppressLint
 import android.location.Location
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
 import com.commcrete.stardust.stardust.StardustPackageUtils
@@ -71,13 +71,13 @@ object LocationUtils  {
             destinationBytes = temp
         }
 
-        Log.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
+        StardustLog.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
         val location = location
         if(location == null) {
-            Log.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
+            StardustLog.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
             sendMissingLocation(packageForResponse, clientConnection, isDemandAck, isHR, opCode)
         } else {
-            Log.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
+            StardustLog.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
             sendLocation(mPackage.chatId,packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
@@ -105,11 +105,11 @@ object LocationUtils  {
 
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             dataPackage.stardustControlByte.stardustDeliveryType = isHR
-            Log.d("LocationRequest", "send to ble ${System.currentTimeMillis()}")
+            StardustLog.d("LocationRequest", "send to ble ${System.currentTimeMillis()}")
             try {
                 clientConnection.sendMessage(dataPackage)
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Failed to send missing location", e)
+                StardustLog.e(LOG_TAG, "Failed to send missing location", e)
             }
         }
     }
@@ -162,7 +162,7 @@ object LocationUtils  {
                 // database error. Swallowing it would send the location after the caller gave up.
                 throw e
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Location could not be saved; sending it anyway", e)
+                StardustLog.e(LOG_TAG, "Location could not be saved; sending it anyway", e)
                 null
             }
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
@@ -170,12 +170,12 @@ object LocationUtils  {
             dataPackage.idNumber = id
             dataPackage.stardustControlByte.stardustDeliveryType = isHR
 
-            Log.d("LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
+            StardustLog.d("LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
 
             try {
                 clientConnection.sendMessage(dataPackage, randomID)
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Failed to send location message to BLE", e)
+                StardustLog.e(LOG_TAG, "Failed to send location message to BLE", e)
             }
 
         }

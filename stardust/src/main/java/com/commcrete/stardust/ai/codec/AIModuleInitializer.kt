@@ -1,7 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.filter.PyTorchInitGate
 import com.commcrete.stardust.util.Scopes
 import kotlinx.coroutines.Job
@@ -74,21 +74,21 @@ object AIModuleInitializer {
             initPttManagers()
 
             initialized = true
-            Log.d(TAG, "AI modules initialized.")
+            StardustLog.d(TAG, "AI modules initialized.")
         } catch (t: Throwable) {
             // Leave `initialized` false so a later call retries the whole
             // pipeline instead of getting permanently stuck behind this
             // mutex on a bad model asset / OOM / I/O error. Contained here
             // so it can't escape as an uncaught exception on the bare
             // Dispatchers.Default coroutine `initModules()` launches on.
-            Log.e(TAG, "AI module init failed", t)
+            StardustLog.e(TAG, "AI module init failed", t)
         }
     }
 
     private fun resolveAiEnabled(): Boolean {
         aiEnabled = PyTorchInitGate.isPrimaryInitializer()
         if (!aiEnabled) {
-            Log.d(TAG, "AI Codec not enabled for this process.")
+            StardustLog.d(TAG, "AI Codec not enabled for this process.")
         }
         return aiEnabled
     }
@@ -119,7 +119,7 @@ object AIModuleInitializer {
             decoderJob.join()
         }
         if (joined == null) {
-            Log.w(TAG, "joinModelLoad: timed out after ${MODEL_LOAD_TIMEOUT_MS}ms — proceeding anyway")
+            StardustLog.w(TAG, "joinModelLoad: timed out after ${MODEL_LOAD_TIMEOUT_MS}ms — proceeding anyway")
         }
     }
 

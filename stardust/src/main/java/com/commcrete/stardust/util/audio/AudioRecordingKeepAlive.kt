@@ -2,7 +2,7 @@ package com.commcrete.stardust.util.audio
 
 import android.content.Context
 import android.os.PowerManager
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -39,7 +39,7 @@ internal object AudioRecordingKeepAlive {
         if (wakeLock?.isHeld == true) return hold
 
         val pm = context.applicationContext.getSystemService(PowerManager::class.java) ?: run {
-            Log.w(TAG, "PowerManager unavailable; cannot hold wake lock")
+            StardustLog.w(TAG, "PowerManager unavailable; cannot hold wake lock")
             return hold
         }
 
@@ -47,7 +47,7 @@ internal object AudioRecordingKeepAlive {
             setReferenceCounted(false)
             acquire()
         }
-        Log.d(TAG, "Wake lock acquired")
+        StardustLog.d(TAG, "Wake lock acquired")
         return hold
     }
 
@@ -69,7 +69,7 @@ internal object AudioRecordingKeepAlive {
         wakeLock?.let {
             if (it.isHeld) {
                 runCatching { it.release() }
-                Log.d(TAG, "Wake lock released")
+                StardustLog.d(TAG, "Wake lock released")
             }
         }
         wakeLock = null

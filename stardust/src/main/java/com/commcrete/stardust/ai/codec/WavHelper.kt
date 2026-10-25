@@ -1,6 +1,6 @@
 package com.commcrete.stardust.ai.codec
 
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -37,7 +37,7 @@ object WavHelper {
             return pcmData
 
         } catch (e: Exception) {
-            Log.e("MainActivity", "Error extracting PCM from WAV file", e)
+            StardustLog.e("MainActivity", "Error extracting PCM from WAV file", e)
             throw e
         }
     }
@@ -107,10 +107,10 @@ object WavHelper {
                     bb.putShort(sample)
                 }
                 fos.write(bb.array())
-                Log.e("WavHelper", "Finish Writeing WAV file to ${file.absolutePath}" )
+                StardustLog.e("WavHelper", "Finish Writeing WAV file" )
             }
         } catch (e: IOException) {
-            Log.e("WavHelper", "Error creating WAV file", e)
+            StardustLog.e("WavHelper", "Error creating WAV file", e)
         }
     }
 
@@ -132,10 +132,10 @@ object WavHelper {
                     bb.put(sample)
                 }
                 fos.write(bb.array())
-                Log.e("WavHelper", "Finish Writeing WAV file to ${file.absolutePath}" )
+                StardustLog.e("WavHelper", "Finish Writeing WAV file" )
             }
         } catch (e: IOException) {
-            Log.e("WavHelper", "Error creating WAV file", e)
+            StardustLog.e("WavHelper", "Error creating WAV file", e)
         }
     }
 

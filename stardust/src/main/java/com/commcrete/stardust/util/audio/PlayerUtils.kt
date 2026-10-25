@@ -99,6 +99,7 @@ object PlayerUtils : BleMediaConnector() {
                 val selectedModule = getModel(model[0].toInt())
                 val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
 
+                // logcat only: per-PTT-packet, would flood the log file
                 Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
 
                 return ParsedAiData(

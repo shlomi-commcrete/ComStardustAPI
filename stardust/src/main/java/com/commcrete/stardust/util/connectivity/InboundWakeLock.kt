@@ -3,7 +3,7 @@ package com.commcrete.stardust.util.connectivity
 import android.content.Context
 import android.os.PowerManager
 import android.os.SystemClock
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 
 /**
  * Keeps the CPU awake for a short window after anything arrives from the radio: a package, a
@@ -60,7 +60,7 @@ internal object InboundWakeLock {
             // is called per packet. SecurityException if the host process lacks WAKE_LOCK.
             if (!failureLogged) {
                 failureLogged = true
-                Log.w(TAG, "Inbound wake lock unavailable; screen-off receive may stall", e)
+                StardustLog.w(TAG, "Inbound wake lock unavailable; screen-off receive may stall", e)
             }
         }
     }

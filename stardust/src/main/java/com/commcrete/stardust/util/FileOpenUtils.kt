@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.util.Log
 import android.webkit.MimeTypeMap
 import androidx.core.content.FileProvider
 import java.io.File
@@ -107,7 +106,7 @@ object FileOpenUtils {
         val candidates = mimeTypeCandidates(fileName)
         val pm = context.packageManager
         val type = candidates.firstOrNull { pm.hasViewerFor(uri, it) } ?: candidates.first()
-        Log.d(TAG, "open $fileName as $type (candidates=$candidates)")
+        StardustLog.d(TAG, "open file as $type (candidates=$candidates)")
         return viewIntent(uri, type)
     }
 

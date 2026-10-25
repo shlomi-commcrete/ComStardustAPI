@@ -26,9 +26,10 @@ object AppEvents {
     fun updateAppEvents (bittelAppEventPackage: StardustAppEventPackage) {
         val callbacks = DataManager.getCallbacks()
         if (callbacks == null) {
-            Log.w(TX_RX_TRACE, "sdk event ${bittelAppEventPackage.eventType} xcvr=${bittelAppEventPackage.xcvr} DROPPED: no host callbacks")
+            StardustLog.w(TX_RX_TRACE, "sdk event ${bittelAppEventPackage.eventType} xcvr=${bittelAppEventPackage.xcvr} DROPPED: no host callbacks")
             return
         }
+        // logcat only: per-radio-event (TX/RX, signal reports), would flood the log file
         Log.d(TX_RX_TRACE, "sdk event ${bittelAppEventPackage.eventType} xcvr=${bittelAppEventPackage.xcvr} -> host")
         callbacks.onAppEvent(bittelAppEventPackage)
     }

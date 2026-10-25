@@ -9,7 +9,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
 import android.provider.MediaStore
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import androidx.annotation.RequiresApi
 import com.commcrete.stardust.util.audio.RecorderUtils
 import java.io.File
@@ -96,9 +96,9 @@ class DebugRawWavWriter {
 
             writePlaceholderHeader()
             started = true
-            Log.i(TAG, "started: $displayName ($sampleRate Hz, $channels ch, $bitsPerSample bit)")
+            StardustLog.i(TAG, "started: $displayName ($sampleRate Hz, $channels ch, $bitsPerSample bit)")
         } catch (t: Throwable) {
-            Log.e(TAG, "start failed; debug capture disabled", t)
+            StardustLog.e(TAG, "start failed; debug capture disabled", t)
             cleanupHandles()
             started = false
         }
@@ -116,7 +116,7 @@ class DebugRawWavWriter {
             while (bb.hasRemaining()) ch.write(bb)
             bytesWritten += length * 2L
         } catch (t: Throwable) {
-            Log.w(TAG, "append failed; disabling capture", t)
+            StardustLog.w(TAG, "append failed; disabling capture", t)
             stop()
         }
     }
@@ -142,7 +142,7 @@ class DebugRawWavWriter {
                 while (b2.hasRemaining()) ch.write(b2)
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "stop: header patch failed", t)
+            StardustLog.w(TAG, "stop: header patch failed", t)
         } finally {
             cleanupHandles()
             // Mark MediaStore entry as no longer pending so it shows up.
@@ -154,7 +154,7 @@ class DebugRawWavWriter {
                         put(MediaStore.MediaColumns.IS_PENDING, 0)
                     }
                     cr.update(uri, cv, null, null)
-                    Log.i(TAG, "saved $uri ($bytesWritten bytes)")
+                    StardustLog.i(TAG, "saved $uri ($bytesWritten bytes)")
                 }
             } catch (_: Throwable) {}
             mediaStoreUri = null
@@ -214,7 +214,7 @@ class DebugRawWavWriter {
         val raf = RandomAccessFile(file, "rw")
         this.raf = raf
         this.channel = raf.channel
-        Log.i(TAG, "writing directly to ${file.absolutePath}")
+        StardustLog.i(TAG, "writing directly to output dir")
     }
 
     private fun writePlaceholderHeader() {

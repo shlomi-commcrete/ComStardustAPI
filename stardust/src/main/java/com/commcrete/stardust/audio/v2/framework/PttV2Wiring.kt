@@ -2,6 +2,7 @@ package com.commcrete.stardust.audio.v2.framework
 
 import android.content.Context
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.audio.v2.adapter.RecorderUtilsBridge
 import com.commcrete.stardust.audio.v2.adapter.StardustPackageRouter
@@ -232,7 +233,7 @@ object PttV2Wiring {
             scope = sendScope,
             decodeContext = decodeDispatcher,
             onPipelineError = { id, t ->
-                Log.w(RecorderUtils.PTT_TRACE, "recording v2 ${id.value} pipeline failed: ${t.javaClass.simpleName}", t)
+                StardustLog.w(RecorderUtils.PTT_TRACE, "recording v2 ${id.value} pipeline failed: ${t.javaClass.simpleName}", t)
             },
         )
 
@@ -263,12 +264,13 @@ object PttV2Wiring {
 
     /** One line per received frame; filter logcat on [RX_TIMING_TAG]. See [ReceiveFrameTiming] for how to read it. */
     private fun logReceiveTiming(t: ReceiveFrameTiming) {
+        // logcat only: per-frame, would flood the log file
         Log.d(
             RX_TIMING_TAG,
             String.format(
                 Locale.US,
-                "%s %s #%d%s gap=%.0f queued=%.0f lockWait=%.0f decode=%.0f write=%.0f audio=%.0f ahead=%.0f underruns=%d",
-                t.key.value, t.codecId.value, t.index, if (t.isTerminal) " LAST" else "",
+                "%s #%d%s gap=%.0f queued=%.0f lockWait=%.0f decode=%.0f write=%.0f audio=%.0f ahead=%.0f underruns=%d",
+                t.codecId.value, t.index, if (t.isTerminal) " LAST" else "",
                 t.sinceLastArrivalMs, t.queuedMs, t.decodeLockWaitMs, t.decodeMs, t.writeMs, t.audioMs,
                 t.bufferedAheadMs, t.underruns,
             ),

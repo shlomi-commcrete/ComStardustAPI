@@ -1,6 +1,6 @@
 package com.commcrete.stardust.transport
 
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,7 +114,8 @@ internal object PairingTracker {
     }
 
     private fun publish(next: PairingState) {
-        Log.d(TAG, "pairing: ${_state.value} -> $next")
+        StardustLog.d(TAG, "pairing: ${_state.value.javaClass.simpleName} -> ${next.javaClass.simpleName}" +
+            ((next as? PairingState.Failed)?.let { " reason=${it.reason}" } ?: ""))
         _state.value = next
     }
 }

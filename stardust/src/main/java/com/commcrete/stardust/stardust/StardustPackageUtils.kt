@@ -2,12 +2,12 @@ package com.commcrete.stardust.stardust
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.connectivity.PortUtils
 import timber.log.Timber
@@ -39,7 +39,7 @@ object StardustPackageUtils {
     init {
         try {
 
-            Log.d("ConfigDebug","StardustPackageUtils init")
+            StardustLog.d("ConfigDebug","StardustPackageUtils init")
             bittelPackageHandler = DataManager.getStardustPackageHandler()
         }catch (e : Exception) {
             e.printStackTrace()
@@ -763,7 +763,8 @@ object StardustPackageUtils {
         lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
 //            logByteArray("handlePackageReceivedbyteArray $randomID", byteArray)
-        Log.d("handlePackageReceived $randomID", "handlePackageReceived")
+        // logcat only: per-chunk, would flood the log file
+        android.util.Log.d("handlePackageReceived $randomID", "handlePackageReceived")
 
         // Parse under the lock; extract what to hand off. All packagesList access is confined here.
         var bittelPackage: StardustPackage? = null
@@ -796,11 +797,13 @@ object StardustPackageUtils {
         // behind slow package handling (ANR). Spare bytes are re-fed first (unchanged ordering).
         spareData?.let {
             if(it.isNotEmpty()){
+                // logcat only: per-chunk, would flood the log file
                 android.util.Log.d("ConfigDebug", "reassembly: spare bytes present size=${it.size} — recursing")
                 handlePackageReceived(it, randomID)
             }
         }
         bittelPackage?.let {
+            // logcat only: per-packet, would flood the log file
             android.util.Log.d("ConfigDebug", "reassembly COMPLETE opCode=${it.stardustOpCode} dataNull=${it.data == null} dataSize=${it.data?.size} — dispatching")
             bittelPackageHandler?.handleStardustPackage( it, randomID)
         }

@@ -7,7 +7,7 @@ import android.content.Context.AUDIO_SERVICE
 import android.content.Intent
 import android.media.AudioManager
 import android.support.v4.media.session.MediaSessionCompat
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.R
@@ -85,7 +85,7 @@ object ButtonListener {
      */
     private suspend fun resolveTarget(): PttTarget? {
         val senderId = RegisteredUserUtils.currentUserFlow.value?.appId?.takeIf { it.isNotBlank() }
-            ?: return null.also { Log.w(TAG, "no registered user") }
+            ?: return null.also { StardustLog.w(TAG, "no registered user") }
 
         var chatId = DataManager.getChatId()
         var receiverId = DataManager.getDestination()
@@ -93,7 +93,7 @@ object ButtonListener {
             val group = firstGroupChat() ?: return null
             chatId = group.first
             receiverId = group.second
-            Log.d(TAG, "no PTT target set — falling back to group $receiverId (chat $chatId)")
+            StardustLog.d(TAG, "no PTT target set — falling back to the first group chat")
         }
         return PttTarget(chatId, StardustAPIPackage(senderId = senderId, receiverId = receiverId, chatId = chatId, isLast = false))
     }
@@ -119,7 +119,7 @@ object ButtonListener {
     private var pendingRelease: Job? = null
 
     fun notifyData(isClicked: Boolean) {
-        Log.d(TAG, "CTS ${if (isClicked) "PRESSED" else "RELEASED"}")
+        StardustLog.d(TAG, "CTS ${if (isClicked) "PRESSED" else "RELEASED"}")
 
         // Everything runs on one background thread, so a quick tap's release can never overtake its
         // press (separate Dispatchers.IO launches carry no ordering), and pendingRelease needs no lock.
@@ -130,7 +130,7 @@ object ButtonListener {
                 pendingRelease?.cancel()
                 pendingRelease = null
                 if (bounced && activeTarget != null) {
-                    Log.d(TAG, "release cancelled — CTS came back within ${RELEASE_DEBOUNCE_MS}ms, still transmitting")
+                    StardustLog.d(TAG, "release cancelled — CTS came back within ${RELEASE_DEBOUNCE_MS}ms, still transmitting")
                     return@launch
                 }
                 onPress()
@@ -147,12 +147,12 @@ object ButtonListener {
 
     private suspend fun onPress() {
         if (activeTarget != null) {
-            Log.w(TAG, "press ignored — a button recording is already open")
+            StardustLog.w(TAG, "press ignored — a button recording is already open")
             return
         }
         if (RecorderUtils.isRecordingInProgress()) {
             // e.g. on-screen PTT is held: RecorderUtils would reject the start anyway.
-            Log.w(TAG, "press ignored — another recording is in progress")
+            StardustLog.w(TAG, "press ignored — another recording is in progress")
             publishPlayPtt(false)
             return
         }
@@ -160,7 +160,7 @@ object ButtonListener {
         if (target == null) {
             // Nowhere to send: no target set and no group chat. The stop beep tells the user the
             // press did nothing.
-            Log.w(TAG, "press ignored — no PTT target and no group chat to fall back to")
+            StardustLog.w(TAG, "press ignored — no PTT target and no group chat to fall back to")
             runCatching {
                 SoundPlayer.play(DataManager.appContext, R.raw.ptt_finished_beep, channel = SoundChannel.SYSTEM)
             }
@@ -170,28 +170,28 @@ object ButtonListener {
         // The v2 pipeline returns null here by design, so whether a recording started is read from
         // RecorderUtils' in-progress flag, never from currentFile.
         currentFile = runCatching { startPttRecord(target.chatId, target.pttPackage) }
-            .onFailure { Log.e(TAG, "startRecording threw", it) }
+            .onFailure { StardustLog.e(TAG, "startRecording threw", it) }
             .getOrNull()
         if (!RecorderUtils.isRecordingInProgress()) {
-            Log.w(TAG, "recording did not start chatId=${target.chatId} to=${target.pttPackage.receiverId}")
+            StardustLog.w(TAG, "recording did not start")
             currentFile = null
             publishPlayPtt(false)
             return
         }
         activeTarget = target
         publishPlayPtt(true)
-        Log.d(TAG, "startRecording chatId=${target.chatId} to=${target.pttPackage.receiverId} file=${currentFile != null}")
+        StardustLog.d(TAG, "startRecording file=${currentFile != null}")
     }
 
     private fun onRelease() {
         publishPlayPtt(false)
         val target = activeTarget
         if (target == null) {
-            Log.d(TAG, "release ignored — no button recording is open")
+            StardustLog.d(TAG, "release ignored — no button recording is open")
             return
         }
         dismissPttRecording(target.chatId, target.pttPackage.copy(isLast = true), currentFile)
-        Log.d(TAG, "stopRecording chatId=${target.chatId} to=${target.pttPackage.receiverId}")
+        StardustLog.d(TAG, "stopRecording")
         activeTarget = null
         currentFile = null
     }

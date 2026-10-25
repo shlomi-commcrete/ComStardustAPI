@@ -14,6 +14,7 @@ import com.commcrete.stardust.usb.BittelUsbManager2.connectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.disconnectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.usbManager
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.StardustLog
 import timber.log.Timber
 import java.util.LinkedList
 import java.util.Queue
@@ -192,15 +193,15 @@ object UsbDevicePermissionHandler {
                     // unconditionally, so a DENIED result looked identical to a granted one and
                     // then failed opaquely inside openDevice().
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                    android.util.Log.d("ConfigDebug",
-                        "ACTION_USB_PERMISSION granted=$granted currentDevice='${currentDevice?.productName}'"
+                    StardustLog.d("ConfigDebug",
+                        "ACTION_USB_PERMISSION granted=$granted hasCurrentDevice=${currentDevice != null}"
                     )
                     // Cross-checks `granted` against UsbManager.hasPermission() — the single most
                     // decisive line in this whole investigation. See UsbDiag.permissionResult.
                     UsbDiag.permissionResult("PERMISSION_RESULT", intent, granted, currentDevice)
 
                     if (currentDevice == null) {
-                        android.util.Log.w("ConfigDebug",
+                        StardustLog.w("ConfigDebug",
                             "ACTION_USB_PERMISSION but currentDevice is NULL (timed out / already drained) — nothing to connect"
                         )
                         UsbDiag.verdict(
@@ -215,7 +216,7 @@ object UsbDevicePermissionHandler {
                             UsbDiag.log("PERMISSION_RESULT", "→ connectToUnknownDevice ${UsbDiag.describe(device)}")
                             connectToUnknownDevice(device)
                         } else {
-                            android.util.Log.w("ConfigDebug", "USB permission DENIED for '${device.productName}' — not connecting")
+                            StardustLog.w("ConfigDebug", "USB permission DENIED — not connecting")
                             UsbDiag.warn("PERMISSION_RESULT", "NOT connecting — code read the result as denied")
                         }
                     }

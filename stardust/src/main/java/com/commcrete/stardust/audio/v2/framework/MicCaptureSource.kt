@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioFormat
 import android.media.AudioRecord
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
 import com.commcrete.stardust.audio.v2.domain.RecordingId
@@ -115,7 +115,7 @@ class MicCaptureSource(
         // A stop() that landed while the mic was opening must not be overwritten back to `true` here —
         // that is the race that leaves the microphone live after a key-up the user already made.
         running = capturing && !stopRequested
-        Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} opened: capturing=$capturing running=$running")
+        StardustLog.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} opened: capturing=$capturing running=$running")
         if (capturing) onCaptureStarted() else onCaptureFailed()
 
         val read = ShortArray(frameSamples)
@@ -146,7 +146,7 @@ class MicCaptureSource(
             // [PcmFramer.drain] is single-shot, so this cannot re-send audio already emitted above.
             framer.drain()?.let { emit(PcmChunk(it, rate, id)) }
         } finally {
-            Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} loop ended: running=$running lastRead=$lastRead")
+            StardustLog.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} loop ended: running=$running lastRead=$lastRead")
             running = false
             synchronized(recordLock) {
                 activeRecord = null
@@ -159,7 +159,7 @@ class MicCaptureSource(
             runCatching { AudioCaptureConfig.clearInputRoute(context) }
             // The mic is only now genuinely released — that is the host's "recording stopped". Skipped
             // when it never opened, since that recording was already reported as failed.
-            Log.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} released")
+            StardustLog.d(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} released")
             if (capturing) onCaptureStopped()
         }
     }.flowOn(Dispatchers.IO)
@@ -172,7 +172,7 @@ class MicCaptureSource(
      * here from touching a released one.
      */
     override suspend fun stop() {
-        Log.d(RecorderUtils.PTT_TRACE, "mic v2 $traceId stop(): record=${activeRecord != null} running=$running")
+        StardustLog.d(RecorderUtils.PTT_TRACE, "mic v2 $traceId stop(): record=${activeRecord != null} running=$running")
         stopRequested = true
         running = false
         synchronized(recordLock) {

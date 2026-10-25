@@ -5,7 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.LoudnessEnhancer
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.PlaybackSink
 import com.commcrete.stardust.audio.v2.domain.Gain
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
@@ -101,7 +101,7 @@ class Codec2PlaybackSink : PlaybackSink {
         runCatching { t.setVolume(g.value.coerceIn(0f, 1f)) }
         enhancer?.let { fx ->
             runCatching { fx.setTargetGain(BASE_GAIN_MB + g.boostMb()) }
-                .onFailure { Log.w(TAG, "LoudnessEnhancer gain not applied", it) }
+                .onFailure { StardustLog.w(TAG, "LoudnessEnhancer gain not applied", it) }
         }
     }
 
@@ -111,7 +111,7 @@ class Codec2PlaybackSink : PlaybackSink {
                 setTargetGain(BASE_GAIN_MB)
                 enabled = true
             }
-        }.onFailure { Log.w(TAG, "LoudnessEnhancer unavailable", it) }
+        }.onFailure { StardustLog.w(TAG, "LoudnessEnhancer unavailable", it) }
     }
 
     private companion object {

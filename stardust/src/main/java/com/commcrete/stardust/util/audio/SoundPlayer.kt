@@ -7,7 +7,7 @@ import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import androidx.annotation.RawRes
 import com.commcrete.stardust.util.DataManager
 import kotlinx.coroutines.CompletableDeferred
@@ -104,7 +104,7 @@ object SoundPlayer {
         val finished = CompletableDeferred<Unit>()
         play(context, resId, volume, channel) { finished.complete(Unit) }
         if (withTimeoutOrNull(timeoutMs) { finished.await() } == null) {
-            Log.w(TAG, "res=$resId did not finish within ${timeoutMs}ms — continuing")
+            StardustLog.w(TAG, "res=$resId did not finish within ${timeoutMs}ms — continuing")
         }
     }
 
@@ -137,7 +137,7 @@ object SoundPlayer {
             finish()
         }
         mp.setOnErrorListener { player, what, extra ->
-            Log.w(TAG, "playback error what=$what extra=$extra res=$resId")
+            StardustLog.w(TAG, "playback error what=$what extra=$extra res=$resId")
             runCatching { player.release() }
             finish()
             true
@@ -145,7 +145,7 @@ object SoundPlayer {
 
         runCatching { mp.start() }
             .onFailure {
-                Log.w(TAG, "mp.start() failed for res=$resId", it)
+                StardustLog.w(TAG, "mp.start() failed for res=$resId", it)
                 runCatching { mp.release() }
                 finish()
             }
@@ -157,10 +157,10 @@ object SoundPlayer {
             .setAudioAttributes(attributes)
             .build()
         val result = runCatching { audioManager.requestAudioFocus(request) }
-            .onFailure { Log.w(TAG, "requestAudioFocus threw", it) }
+            .onFailure { StardustLog.w(TAG, "requestAudioFocus threw", it) }
             .getOrNull()
         if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            Log.d(TAG, "audio focus not granted (result=$result) — playing without ducking")
+            StardustLog.d(TAG, "audio focus not granted (result=$result) — playing without ducking")
             return null
         }
         return request
@@ -168,7 +168,7 @@ object SoundPlayer {
 
     private fun abandonFocus(context: Context, request: AudioFocusRequest) {
         runCatching { context.getSystemService(AudioManager::class.java)?.abandonAudioFocusRequest(request) }
-            .onFailure { Log.w(TAG, "abandonAudioFocusRequest threw", it) }
+            .onFailure { StardustLog.w(TAG, "abandonAudioFocusRequest threw", it) }
     }
 
     /**
@@ -183,10 +183,10 @@ object SoundPlayer {
         val plugin = runCatching { DataManager.pluginContext }.getOrNull()
         if (plugin != null && plugin !== fallback) {
             create(plugin, resId, attributes)?.let { return it }
-            Log.w(TAG, "res=$resId not playable from the plugin context — trying the caller's")
+            StardustLog.w(TAG, "res=$resId not playable from the plugin context — trying the caller's")
         }
         return create(fallback, resId, attributes) ?: run {
-            Log.w(TAG, "could not prepare res=$resId — nothing will play")
+            StardustLog.w(TAG, "could not prepare res=$resId — nothing will play")
             null
         }
     }
@@ -206,7 +206,7 @@ object SoundPlayer {
             mp.prepare()
             mp
         }.onFailure {
-            Log.w(TAG, "MediaPlayer setup failed for res=$resId on $context", it)
+            StardustLog.w(TAG, "MediaPlayer setup failed for res=$resId on $context", it)
             runCatching { mp.release() }
         }.getOrNull()
     }

@@ -40,9 +40,9 @@ import com.commcrete.stardust.room.RepositoryProvider
 import com.commcrete.stardust.room.new_db.chat.ChatTypeUnseen
 import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.toMessageType
-import android.util.Log
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
@@ -165,7 +165,7 @@ class AppRepository(
         RepositoryProvider.AppScopes.applicationScope.launch {
             contactsDao.observeIdentityTables()
                 // Cause only: a database error message can quote the row it failed on.
-                .catch { Log.w(TAG, "Id lookup sync stopped: ${it.javaClass.simpleName}") }
+                .catch { StardustLog.w(TAG, "Id lookup sync stopped: ${it.javaClass.simpleName}") }
                 .collect { caches.invalidateIdentity() }
         }
     }
@@ -1003,7 +1003,7 @@ class AppRepository(
                 }
             }
             // A count, never names: a callsign must not reach a log line (§28).
-            Log.i(TAG, "Merged duplicate private chats: removed $removed")
+            StardustLog.i(TAG, "Merged duplicate private chats: removed $removed")
             removed
         }
     }

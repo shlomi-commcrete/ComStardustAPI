@@ -1,7 +1,6 @@
 package com.commcrete.stardust.stardust
 
 import android.annotation.SuppressLint
-import android.util.Log
 import com.commcrete.stardust.ble.BleDiag
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.ble.ClientConnection
@@ -20,6 +19,7 @@ import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,7 +76,7 @@ object StardustInitConnectionHandler {
         set(value) {
             field = value
 
-            Log.d("StardustDataManager", "StardustInitConnectionHandler onDeviceInitialized -> $value")
+            StardustLog.d("StardustDataManager", "StardustInitConnectionHandler onDeviceInitialized -> $value")
             // Deprecated fan-out: ConnectionManager below carries the same news on the unified stream.
             @Suppress("DEPRECATION")
             DataManager.getCallbacks()?.onDeviceInitialized(value)
@@ -91,7 +91,7 @@ object StardustInitConnectionHandler {
 
     fun start() {
 
-        Log.d("StardustDataManager", "start")
+        StardustLog.d("StardustDataManager", "start")
         onInitRunning()
         attempts.clear()
         transitionTo(State.REQUESTING_ADDRESSES) { sendGetAddresses() }
@@ -126,12 +126,14 @@ object StardustInitConnectionHandler {
         // the flow isn't running or isn't in READING_CONFIGURATION (i.e. gets dropped here).
         if (p.stardustOpCode == StardustPackageUtils.StardustOpCode.READ_CONFIGURATION_RESPONSE ||
             p.stardustOpCode == StardustPackageUtils.StardustOpCode.READ_STATUS || p.stardustOpCode == StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE) {
-            Log.d("ConfigDebug",
+            // logcat only: per-poll-tick (UPDATE_PORT_RESPONSE every 20s), would flood the log file
+            android.util.Log.d("ConfigDebug",
                 "onIncoming config-opcode=${p.stardustOpCode} state=$state isRunning=$isRunning " +
                     "dataNull=${p.data == null} dataSize=${p.data?.size}"
             )
         }
-        Log.w("ConfigDebug", "isRunning=$isRunning state=$state op=${p.stardustOpCode}" )
+        // logcat only: per-packet, would flood the log file
+        android.util.Log.w("ConfigDebug", "isRunning=$isRunning state=$state op=${p.stardustOpCode}" )
         Timber.tag("InitHandler").d("isRunning=$isRunning state=$state op=${p.stardustOpCode}")
         if (!isRunning) return false
 
@@ -248,7 +250,7 @@ object StardustInitConnectionHandler {
                 if (state != step) return@launch
                 Timber.tag("InitHandler").w("$step timeout")
                 if (step == State.READING_CONFIGURATION) {
-                    Log.d("ConfigDebug",
+                    StardustLog.d("ConfigDebug",
                         "READING_CONFIGURATION step TIMED OUT (attempt ${attempts[step] ?: 0}) — " +
                             "no config response consumed; will retry requestConfiguration or fail"
                     )
@@ -263,7 +265,7 @@ object StardustInitConnectionHandler {
                     State.READING_VERSION -> {
                         // Older firmware never answers GET_VERSION — fall back to the legacy wire
                         // format and continue rather than failing the connection.
-                        Log.d("ConfigDebug", "READING_VERSION timed out — assuming legacy format, continuing")
+                        StardustLog.d("ConfigDebug", "READING_VERSION timed out — assuming legacy format, continuing")
                         transitionTo(State.READING_CONFIGURATION) { requestConfiguration() }
                     }
                     State.READING_CONFIGURATION -> retryOrFail { requestConfiguration() }
@@ -294,7 +296,7 @@ object StardustInitConnectionHandler {
 
     private fun failAndStop(reason: String) {
         Timber.tag("InitHandler").w("Init flow failed: $reason")
-        Log.d("ConfigDebug","Init flow FAILED at state=$state reason=$reason")
+        StardustLog.d("ConfigDebug","Init flow FAILED at state=$state reason=$reason")
         if (BleManager.isBleConnected) {
             BleDiag.verdict("init gave up at $state ($reason) on a live BLE link — the state becomes " +
                 "Error(Canceled), which auto-reconnect never retries; the session stays dead until the user acts.")
@@ -312,7 +314,7 @@ object StardustInitConnectionHandler {
     private fun sendGetAddresses() {
         val user = RegisteredUserUtils.currentUserFlow.value
         val src = user?.appId
-        Log.d("ConfigDebug", "sendGetAddresses appId=$src deviceId=${user?.deviceId} attempt=${attempts[State.REQUESTING_ADDRESSES] ?: 0}")
+        StardustLog.d("ConfigDebug", "sendGetAddresses hasAppId=${src != null} hasDeviceId=${user?.deviceId != null} attempt=${attempts[State.REQUESTING_ADDRESSES] ?: 0}")
         if (src != null) {
             val pkg = StardustPackageUtils.getStardustPackage(
                 source = src,
@@ -322,23 +324,23 @@ object StardustInitConnectionHandler {
             pkg.openControlByte.stardustCryptType = OpenStardustControlByte.StardustCryptType.DECRYPTED
             conn.addMessageToQueue(pkg)
             Timber.tag("InitHandler").d("Sent GET_ADDRESSES")
-            Log.d("ConfigDebug", "SENT REQUEST_ADDRESS src=$src dst=1 bytes=[${pkg.toHex()}]")
+            StardustLog.d("ConfigDebug", "SENT REQUEST_ADDRESS")
         } else {
             Timber.tag("InitHandler").d("Waiting for GET_ADDRESSES…")
-            Log.w("ConfigDebug", "sendGetAddresses SKIPPED — appId is NULL (no logged-in user)")
+            StardustLog.w("ConfigDebug", "sendGetAddresses SKIPPED — appId is NULL (no logged-in user)")
         }
     }
 
     private fun handleAddressesReceived(p: StardustPackage) {
         DataManager.getClientConnection().removeConnectionTimer()
 
-        Log.d("ConfigDebug", "RECEIVED GET_ADDRESSES bytes=[${p.toHex()}] dataNull=${p.data == null} dataSize=${p.data?.size}")
+        StardustLog.d("ConfigDebug", "RECEIVED GET_ADDRESSES dataNull=${p.data == null} dataSize=${p.data?.size}")
         val addresses = StardustAddressesParser().parseAddresses(p)
         if (addresses == null) {
-            Log.w("ConfigDebug", "parseAddresses returned NULL — cannot proceed to UPDATE_ADDRESS")
+            StardustLog.w("ConfigDebug", "parseAddresses returned NULL — cannot proceed to UPDATE_ADDRESS")
             return
         }
-        Log.d("ConfigDebug", "Parsed addresses stardustID=${addresses.stardustID}")
+        StardustLog.d("ConfigDebug", "Parsed addresses")
         lastAddresses = addresses
         registerBittel(addresses.stardustID)
         transitionTo(State.UPDATING_SMARTPHONE_ADDR) { sendUpdateSmartphoneAddress(addresses) }
@@ -348,7 +350,7 @@ object StardustInitConnectionHandler {
     private fun sendUpdateSmartphoneAddress(addr: StardustAddressesPackage) {
         val user = RegisteredUserUtils.currentUserFlow.value
         if (user == null) {
-            Log.w("ConfigDebug", "sendUpdateSmartphoneAddress SKIPPED — user is NULL")
+            StardustLog.w("ConfigDebug", "sendUpdateSmartphoneAddress SKIPPED — user is NULL")
             return
         }
         val appId = user.appId
@@ -365,7 +367,7 @@ object StardustInitConnectionHandler {
         )
         conn.addMessageToQueue(pkg)
         Timber.tag("InitHandler").d("Sent UPDATE_ADDRESS (smartphone) to ${addr.stardustID}")
-        Log.d("ConfigDebug", "SENT UPDATE_ADDRESS src=$appId dst=${addr.stardustID} attempt=${attempts[State.UPDATING_SMARTPHONE_ADDR] ?: 0} bytes=[${pkg.toHex()}]")
+        StardustLog.d("ConfigDebug", "SENT UPDATE_ADDRESS attempt=${attempts[State.UPDATING_SMARTPHONE_ADDR] ?: 0}")
     }
 
     private fun afterUpdateAddressAck() {
@@ -374,13 +376,13 @@ object StardustInitConnectionHandler {
 
     // 3) Delete groups
     private fun sendDeleteGroups() {
-        Log.d("ConfigDebug", "SENT DELETE_GROUPS (via GroupsUtils) attempt=${attempts[State.DELETING_GROUPS] ?: 0}")
+        StardustLog.d("ConfigDebug", "SENT DELETE_GROUPS (via GroupsUtils) attempt=${attempts[State.DELETING_GROUPS] ?: 0}")
         GroupsUtils.sendDeleteAllGroups()
     }
 
     // 4) Add groups
     private fun sendAddGroups() {
-        Log.d("ConfigDebug", "SENT ADD_GROUPS (via GroupsUtils) attempt=${attempts[State.ADDING_GROUPS] ?: 0}")
+        StardustLog.d("ConfigDebug", "SENT ADD_GROUPS (via GroupsUtils) attempt=${attempts[State.ADDING_GROUPS] ?: 0}")
         GroupsUtils.sendAddAllGroups()
     }
 
@@ -394,7 +396,7 @@ object StardustInitConnectionHandler {
         )
         conn.addMessageToQueue(pkg)
         Timber.tag("InitHandler").d("Sent GET_VERSION")
-        Log.d("ConfigDebug", "SENT GET_VERSION src=$src dst=$dst bytes=[${pkg.toHex()}]")
+        StardustLog.d("ConfigDebug", "SENT GET_VERSION")
     }
 
     // 6) Get configuration
@@ -407,19 +409,18 @@ object StardustInitConnectionHandler {
         )
         conn.addMessageToQueue(pkg)
         Timber.tag("InitHandler").d("Sent READ_STATUS for configuration")
-        Log.d("ConfigDebug","SENT READ_STATUS ${pkg.toString()}")
+        StardustLog.d("ConfigDebug","SENT READ_STATUS")
     }
 
     private fun handleConfiguration(p: StardustPackage) {
-        Log.d("ConfigDebug",
+        StardustLog.d("ConfigDebug",
             "RECEIVED config resp opCode=${p.stardustOpCode} dataNull=${p.data == null} rawDataSize=${p.data?.size} " +
-                "dataLen=${p.getDataSizeLength()} attempt=${attempts[State.READING_CONFIGURATION] ?: 0} " +
-                "dataStr=${p.getDataAsString()} bytes=[${p.toHex()}]"
+                "dataLen=${p.getDataSizeLength()} attempt=${attempts[State.READING_CONFIGURATION] ?: 0}"
         )
         val result = StardustIncomingConfigurationHandler.parseAndApplyConfiguration( p)
-        Log.d("ConfigDebug","parseAndApplyConfiguration -> applied=${result.applied}")
+        StardustLog.d("ConfigDebug","parseAndApplyConfiguration -> applied=${result.applied}")
         if (!result.applied) {
-            Log.d("ConfigDebug","Config parse FAILED (null cfg) -> retryOrFail. bytes=[${p.toHex()}]")
+            StardustLog.d("ConfigDebug","Config parse FAILED (null cfg) -> retryOrFail. dataSize=${p.data?.size}")
             return retryOrFail { requestConfiguration() }
         }
         transitionTo(State.UPDATING_ADMIN_MODE) { sendUpdateAdminMode() }
@@ -435,7 +436,7 @@ object StardustInitConnectionHandler {
         )
         conn.addMessageToQueue(pkg)
         Timber.tag("InitHandler").d("Sent SET_ADMIN_MODE")
-        Log.d("ConfigDebug", "SENT SET_ADMIN_MODE src=$src dst=$dst bytes=[${pkg.toHex()}]")
+        StardustLog.d("ConfigDebug", "SENT SET_ADMIN_MODE")
         finishAdminModeUpdate()
     }
 
@@ -460,14 +461,14 @@ object StardustInitConnectionHandler {
     private fun setPortModeOnHandshakeDone() {
         when {
             BleManager.isUsbEnabled() -> {
-                Log.d("ConfigDebug", "handshake done → setUsbPortModeOnRadio")
+                StardustLog.d("ConfigDebug", "handshake done → setUsbPortModeOnRadio")
                 BittelUsbManager2.setUsbPortModeOnRadio()
             }
             BleManager.isBluetoothConnected() -> {
-                Log.d("ConfigDebug", "handshake done → setBlePortModeOnRadio")
+                StardustLog.d("ConfigDebug", "handshake done → setBlePortModeOnRadio")
                 conn.setBlePortModeOnRadio()
             }
-            else -> Log.w("ConfigDebug",
+            else -> StardustLog.w("ConfigDebug",
                 "handshake done but no transport matched, port mode NOT sent — " +
                     "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
                     "isBluetoothEnabled=${conn.isBluetoothEnabled()}")
@@ -494,12 +495,12 @@ object StardustInitConnectionHandler {
     fun requireLocalSrcDst(): Pair<String, String>? {
         val u = RegisteredUserUtils.currentUserFlow.value
         if (u == null) {
-            Log.w("ConfigDebug", "requireLocalSrcDst returned NULL — user is null (send will silently no-op)")
+            StardustLog.w("ConfigDebug", "requireLocalSrcDst returned NULL — user is null (send will silently no-op)")
             return null
         }
         val dst = u.deviceId
         if (dst == null) {
-            Log.w("ConfigDebug", "requireLocalSrcDst returned NULL — user.deviceId is null (appId=${u.appId}); send will silently no-op")
+            StardustLog.w("ConfigDebug", "requireLocalSrcDst returned NULL — user.deviceId is null; send will silently no-op")
             return null
         }
         return u.appId to dst

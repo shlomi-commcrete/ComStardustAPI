@@ -90,6 +90,7 @@ internal object StardustStorage {
     // reports, where "app.db" would say nothing about whose database it is.
     private const val APP_DB_FILE = "stardust.db"
     private const val UNKNOWN_CHAT_DIR = "_unknown_chat"
+    private const val LOGS_DIR = "logs"
 
     /**
      * Everything directly under [root] that is *not* media: the database and
@@ -101,13 +102,19 @@ internal object StardustStorage {
      * ask [internalDir] for it, which is exactly when a wipe would already have
      * run.
      */
-    private val INTERNAL_DIR_NAMES = setOf(DB_DIR, MEDIA_DIR, "models", "locks", "logs", "config")
+    private val INTERNAL_DIR_NAMES = setOf(DB_DIR, MEDIA_DIR, "models", "locks", LOGS_DIR, "config")
 
     /** `files/stardust` — the root of everything this SDK owns. */
     val root: File get() = File(DataManager.appContext.filesDir, ROOT_DIR)
 
     /** `files/stardust/db` — Room databases only. */
     private val databaseDir: File get() = File(root, DB_DIR)
+
+    /**
+     * `files/stardust/logs` — `StardustLog`'s files. Not created here: the log writer
+     * creates it off the main thread.
+     */
+    val logsDir: File get() = File(root, LOGS_DIR)
 
     /** `files/stardust/media` — where media goes when the host supplied nowhere else. */
     private val internalMediaRoot: File get() = File(root, MEDIA_DIR)

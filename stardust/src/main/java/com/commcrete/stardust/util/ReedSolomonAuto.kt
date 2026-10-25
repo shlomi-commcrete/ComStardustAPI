@@ -1,7 +1,6 @@
 @file:Suppress("MemberVisibilityCanBePrivate")
 package com.commcrete.stardust.util
 import android.annotation.SuppressLint
-import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -294,7 +293,7 @@ class ReedSolomon(
         val Ntotal = Ktotal + Ptotal
         require(receivedPackets.size >= Ntotal) {
             "decode expects an array of length $Ntotal (got ${receivedPackets.size})"
-            Log.d("ReedSolomon", "decode expects an array of length $Ntotal (got ${receivedPackets.size})")
+            StardustLog.d("ReedSolomon", "decode expects an array of length $Ntotal (got ${receivedPackets.size})")
         }
 
         // infer pktLen from any non-null
@@ -318,7 +317,7 @@ class ReedSolomon(
                 val pk = blockSlice[i]
                 if (pk != null) {
                     require(pk.size == pktLen) {
-                        Log.d("ReedSolomon", "inconsistent packet lengths")
+                        StardustLog.d("ReedSolomon", "inconsistent packet lengths")
                         "inconsistent packet lengths"
                     }
                     availableIdx.add(i)
@@ -326,7 +325,7 @@ class ReedSolomon(
                 }
             }
             require(availablePackets.size >= k) {
-                Log.d("ReedSolomon", "Not enough packets to decode block $b (need $k, got ${availablePackets.size})")
+                StardustLog.d("ReedSolomon", "Not enough packets to decode block $b (need $k, got ${availablePackets.size})")
                 "Not enough packets to decode block $b (need $k, got ${availablePackets.size})"
 
             }

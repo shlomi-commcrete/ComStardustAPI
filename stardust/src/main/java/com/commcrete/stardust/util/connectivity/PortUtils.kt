@@ -6,6 +6,7 @@ import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.usb.BittelUsbManager2
 import com.commcrete.stardust.util.DataManager
@@ -107,7 +108,7 @@ object PortUtils {
         Timber.tag("PortUtils").w(
             "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings over $transport (${silenceMs}ms of silence) — declaring the link dead"
         )
-        android.util.Log.w("ConfigDebug",
+        StardustLog.w("ConfigDebug",
             "$transport link declared dead after ${silenceMs}ms of silence — disconnecting and retrying")
         silentWindows = 0
         ConnectionManager.onKeepaliveLost(transport, "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings (${silenceMs}ms)")
@@ -147,7 +148,7 @@ object PortUtils {
                     // that is Ready over BLE while isBleConnected / isBluetoothEnabled() reads false
                     // lands here and never sets the port mode (seen in the 2026-10-04 capture).
                     // Plain disconnected ticks stay quiet.
-                    StardustInitConnectionHandler.isConnected() -> android.util.Log.w("ConfigDebug",
+                    StardustInitConnectionHandler.isConnected() -> StardustLog.w("ConfigDebug",
                         "startUpdatingPort tick: init connected but no transport matched, port mode NOT sent — " +
                             "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
                             "isBluetoothEnabled=${DataManager.getClientConnection().isBluetoothEnabled()}")

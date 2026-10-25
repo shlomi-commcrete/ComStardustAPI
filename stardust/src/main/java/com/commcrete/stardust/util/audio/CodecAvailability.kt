@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util.audio
 
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.filter.PyTorchInitGate
 import com.ustadmobile.codec2.Codec2
 
@@ -24,7 +24,7 @@ object CodecAvailability {
     /** Forces Codec2's static initializer, which loads its native libraries; the answer cannot change. */
     private fun isCodec2Available(): Boolean = codec2Available ?: synchronized(this) {
         codec2Available ?: runCatching { Class.forName(Codec2::class.java.name, true, Codec2::class.java.classLoader) }
-            .onFailure { Log.w(TAG, "Classic codec native libraries unavailable in this process", it) }
+            .onFailure { StardustLog.w(TAG, "Classic codec native libraries unavailable in this process", it) }
             .isSuccess
             .also { codec2Available = it }
     }

@@ -1,6 +1,5 @@
 package com.commcrete.stardust.util
 
-import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -147,7 +146,7 @@ class FileReceiver(
                     // to the bubble this row renders as.
                     if (id != null) data = data.copy(messageId = id)
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error persisting in-flight transfer: ${data.fileName}", e)
+                    StardustLog.e("FileReceiver", "Error persisting in-flight transfer", e)
                 }
             }
         }
@@ -161,7 +160,7 @@ class FileReceiver(
             // Outside the codeword the start announced: not a package of this transfer. Counting
             // it would push progress to 100% with real packages still missing.
             if (index !in 0 until firstPackage.total) {
-                Log.w("FileReceiver", "package $index outside 0..${firstPackage.total - 1}; dropped")
+                StardustLog.w("FileReceiver", "package $index outside 0..${firstPackage.total - 1}; dropped")
                 return@launch
             }
             // A repeat (the radio delivers some twice) adds nothing, and counting it would end the
@@ -195,7 +194,7 @@ class FileReceiver(
         lateWindow = lane.launch {
             delay(LATE_WINDOW_MS)
             if (isDisposed) return@launch
-            Log.d("FileReceiver", "late window closed: id=${data.id}")
+            StardustLog.d("FileReceiver", "late window closed")
             removeReceiveTimer()
             dataList.clear()
             receivedIndices.clear()
@@ -210,7 +209,7 @@ class FileReceiver(
      */
     private fun reopen() {
         if (!outcome.compareAndSet(Outcome.FAILED, Outcome.NONE)) return
-        Log.d("FileReceiver", "transfer resumed: id=${data.id}")
+        StardustLog.d("FileReceiver", "transfer resumed")
         lateWindow?.cancel()
         lateWindow = null
         CoroutineScope(Dispatchers.IO).launch {
@@ -224,10 +223,10 @@ class FileReceiver(
                     if (!DataManager.getAppRepo().reopenIncomingTransfer(id)) {
                         // The failure write had not landed yet and now never will (it checks
                         // the outcome), so the row is still RECEIVING.
-                        Log.d("FileReceiver", "row $id not reopened; it was not failed")
+                        StardustLog.d("FileReceiver", "row $id not reopened; it was not failed")
                     }
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error reopening in-flight row $id", e)
+                    StardustLog.e("FileReceiver", "Error reopening in-flight row $id", e)
                 }
             }
         }
@@ -262,7 +261,7 @@ class FileReceiver(
         try {
             onLastPackageReceived.invoke(this)
         } catch (e: Exception) {
-            Log.e("FileReceiver", "Error invoking callback", e)
+            StardustLog.e("FileReceiver", "Error invoking callback", e)
         }
     }
 
@@ -300,7 +299,7 @@ class FileReceiver(
                         try {
                             DataManager.getAppRepo().deleteInFlightMessage(id)
                         } catch (e: Exception) {
-                            Log.e("FileReceiver", "Error removing abandoned transfer row $id", e)
+                            StardustLog.e("FileReceiver", "Error removing abandoned transfer row $id", e)
                         }
                     }
                 }
@@ -389,7 +388,7 @@ class FileReceiver(
                 try {
                     DataManager.getCallbacks()?.receiveFileStatus(data = snapshot, percentage = 100)
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error notifying completion", e)
+                    StardustLog.e("FileReceiver", "Error notifying completion", e)
                 }
             }
         }
@@ -421,7 +420,7 @@ class FileReceiver(
      */
     private fun updateFailure(failure: FileFailure) {
         if (!outcome.compareAndSet(Outcome.NONE, Outcome.FAILED)) return
-        Log.w("FileReceiver", "transfer failed: id=${data.id} reason=$failure")
+        StardustLog.w("FileReceiver", "transfer failed: reason=$failure")
         val lateCanUndo = failure == FileFailure.MISSING || failure == FileFailure.DISCONNECTED
         if (lateCanUndo && !isDisposed) enterLateWindow() else removeReceiveTimer()
         val snapshot = data
@@ -439,7 +438,7 @@ class FileReceiver(
                 try {
                     DataManager.getCallbacks()?.receiveFailure(data = snapshot, failure = failure)
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error notifying failure", e)
+                    StardustLog.e("FileReceiver", "Error notifying failure", e)
                 }
             }
         }
@@ -474,7 +473,7 @@ class FileReceiver(
      * packages find the receiver sealed and are dropped.
      */
     fun failInvalidStart() {
-        Log.w(
+        StardustLog.w(
             "FileReceiver",
             "invalid file start: total=${firstPackage.total} spare=${firstPackage.spare} " +
                 "spareData=${firstPackage.spareData}",
@@ -514,7 +513,7 @@ class FileReceiver(
                     writeDataToFile(outputStream)
                 }
             }
-            Log.d("FileReceiver", "File saved successfully: ${targetFile.absolutePath}")
+            StardustLog.d("FileReceiver", "File saved successfully")
             saveToMessages(targetFile)
             // The file is built on [lane]; the host has always heard of it on main.
             val snapshot = data
@@ -530,11 +529,11 @@ class FileReceiver(
                 } catch (e: Exception) {
                     // saveToMessages has claimed the outcome and is settling the row RECEIVED; a
                     // host that threw here still finds the file in the conversation.
-                    Log.e("FileReceiver", "Error notifying received file", e)
+                    StardustLog.e("FileReceiver", "Error notifying received file", e)
                 }
             }
         } catch (e: Exception) {
-            Log.e("FileReceiver", "Error saving file: id=${data.id}", e)
+            StardustLog.e("FileReceiver", "Error saving file", e)
             // A late attempt that cannot write the file leaves the earlier failure standing,
             // and ends the window: the next package would only fail the same way.
             if (outcome.get() == Outcome.FAILED) removeReceiveTimer() else updateFailure(FileFailure.ERROR)
@@ -567,7 +566,7 @@ class FileReceiver(
         }
 
         if (lostPackagesIndex.isNotEmpty()) {
-            Log.d("FileReceiver", "Missing packages: $lostPackagesIndex")
+            StardustLog.d("FileReceiver", "Missing packages: $lostPackagesIndex")
         }
     }
 
@@ -584,7 +583,7 @@ class FileReceiver(
         val announced = originalSizeOrNull()
         // Sizes only, never the name: worth seeing in Dev Logs when a sender's figure is off.
         if (announced != null && announced != landed) {
-            Log.w("FileReceiver", "received size differs from announced: $landed vs $announced")
+            StardustLog.w("FileReceiver", "received size differs from announced: $landed vs $announced")
         }
         return landed
     }
@@ -613,10 +612,10 @@ class FileReceiver(
                     if (DataManager.getAppRepo().markIncomingTransferFailed(id, failure)) return
                     // Refused: the row settled by another path already, so it is not ours to
                     // overwrite and a second row would contradict it.
-                    Log.d("FileReceiver", "failure not recorded on $id; row already settled")
+                    StardustLog.d("FileReceiver", "failure not recorded on $id; row already settled")
                     return
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error failing in-flight row $id; inserting instead", e)
+                    StardustLog.e("FileReceiver", "Error failing in-flight row $id; inserting instead", e)
                 }
             }
             val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
@@ -639,7 +638,7 @@ class FileReceiver(
                     ).withRd(arrivedOn())
                 )
             } catch (e: Exception) {
-                Log.e("FileReceiver", "Error persisting failed transfer: ${data.fileName}", e)
+                StardustLog.e("FileReceiver", "Error persisting failed transfer", e)
             }
         }
     }
@@ -675,10 +674,10 @@ class FileReceiver(
                         if (DataManager.getAppRepo()
                                 .markIncomingTransferReceived(id, file.absolutePath, summary, landedSize)
                         ) return@launch
-                        Log.d("FileReceiver", "arrival not recorded on $id; row already settled")
+                        StardustLog.d("FileReceiver", "arrival not recorded on $id; row already settled")
                         return@launch
                     } catch (e: Exception) {
-                        Log.e("FileReceiver", "Error settling in-flight row $id; inserting instead", e)
+                        StardustLog.e("FileReceiver", "Error settling in-flight row $id; inserting instead", e)
                     }
                 }
                 // Caught here rather than left to the default handler: this runs on a bare
@@ -700,7 +699,7 @@ class FileReceiver(
                         ).withRd(arrivedOn())
                     )
                 } catch (e: Exception) {
-                    Log.e("FileReceiver", "Error persisting received transfer: ${file.name}", e)
+                    StardustLog.e("FileReceiver", "Error persisting received transfer", e)
                 }
             }
         }

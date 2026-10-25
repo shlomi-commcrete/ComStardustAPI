@@ -7,9 +7,9 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.SystemClock
-import android.util.Log
 import com.commcrete.stardust.util.DataManager
 import java.util.Locale
+import com.commcrete.stardust.util.StardustLog
 
 /**
  * Temporary, self-contained diagnostics for the "USB never connects" investigation.
@@ -46,12 +46,13 @@ internal object UsbDiag {
 
     // Explicit Unit returns: Log.* returns Int, which would make `return warn(...)` a type error
     // in the Unit-returning helpers below.
-    fun log(where: String, msg: String) { Log.d(TAG, "${stamp()} [$where] $msg") }
-    fun warn(where: String, msg: String) { Log.w(TAG, "${stamp()} [$where] $msg") }
-    fun error(where: String, msg: String, e: Throwable? = null) { Log.e(TAG, "${stamp()} [$where] $msg", e) }
+    // logcat only: per-chunk (RX/TX call sites in BittelUsbManager2), would flood the log file
+    fun log(where: String, msg: String) { android.util.Log.d(TAG, "${stamp()} [$where] $msg") }
+    fun warn(where: String, msg: String) { StardustLog.w(TAG, "${stamp()} [$where] $msg") }
+    fun error(where: String, msg: String, e: Throwable? = null) { StardustLog.e(TAG, "${stamp()} [$where] $msg", e) }
 
     /** Loud marker for a conclusion the log itself can prove. */
-    fun verdict(msg: String) { Log.e(TAG, "${stamp()} [VERDICT] $msg") }
+    fun verdict(msg: String) { StardustLog.e(TAG, "${stamp()} [VERDICT] $msg") }
 
     private fun contextOrNull(): Context? =
         runCatching { DataManager.appContext }.getOrNull()

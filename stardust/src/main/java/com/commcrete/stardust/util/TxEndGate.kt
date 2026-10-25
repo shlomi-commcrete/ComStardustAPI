@@ -63,6 +63,7 @@ internal object TxEndGate {
 
     /** Injected in tests. */
     internal var clock: () -> Long = System::currentTimeMillis
+    // logcat only: per-packet TxEnd, would flood the log file
     internal var log: (String) -> Unit = { Log.d(TAG, it) }
 
     /**

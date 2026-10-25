@@ -1,7 +1,6 @@
 package com.commcrete.stardust.stardust
 
 
-import android.util.Log
 import com.commcrete.stardust.stardust.model.StardustConfigurationParser
 import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -9,6 +8,7 @@ import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.LicenseLimitationsUtil
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.launch
 
 internal object StardustIncomingConfigurationHandler {
@@ -21,10 +21,10 @@ internal object StardustIncomingConfigurationHandler {
     fun parseAndApplyConfiguration(packet: StardustPackage): ApplyResult {
         val cfg = StardustConfigurationParser().parseConfiguration(packet, ConfigurationUtils.firmwareVersion)
         if (cfg == null) {
-            Log.w(
+            StardustLog.w(
                 "ConfigDebug",
                 "parseConfiguration returned NULL opCode=${packet.stardustOpCode} " +
-                    "dataLen=${packet.getDataSizeLength()} dataStr=${packet.getDataAsString()} bytes=[${packet.toHex()}]"
+                    "dataLen=${packet.getDataSizeLength()} dataSize=${packet.data?.size}"
             )
             return ApplyResult(applied = false, hasPresetsWithoutConfig = false)
         }

@@ -4,7 +4,6 @@ package com.commcrete.stardust.util
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFilePackage
 import com.commcrete.stardust.stardust.model.StardustFileStartPackage
 import com.commcrete.stardust.enums.FunctionalityType
@@ -291,7 +290,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(LOG_TAG, "Could not record send progress", e)
+                    StardustLog.e(LOG_TAG, "Could not record send progress", e)
                 }
             }
         }
@@ -340,7 +339,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         // never persisted — see its KDoc. Checked on the actual spare, not the resilience
         // setting: this is what would go on the wire.
         if (numOfPackages > MAX_TOTAL_PACKAGES) {
-            Log.w(LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
+            StardustLog.w(LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
             failTransfer(FileReceiver.FileFailure.TOO_LARGE)
             return CompletableDeferred(false)
         }
@@ -372,7 +371,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             // on the next link — and the row, already written, is failed DISCONNECTED so the
             // attempt shows with its reason. Checked after the row exists so there is one.
             if (!DataManager.isLinkUp()) {
-                Log.w(LOG_TAG, "file not sent: no radio connected")
+                StardustLog.w(LOG_TAG, "file not sent: no radio connected")
                 failTransfer(FileReceiver.FileFailure.DISCONNECTED)
                 return@async saved
             }
@@ -383,7 +382,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 // Nothing to send. Left to run, the timer walked past an empty map forever and
                 // the send never finished; failed here, the row says so.
                 if (packages.isEmpty()) {
-                    Log.w(LOG_TAG, "file not sent: it is empty")
+                    StardustLog.w(LOG_TAG, "file not sent: it is empty")
                     failTransfer(FileReceiver.FileFailure.ERROR)
                     return@async saved
                 }
@@ -667,7 +666,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             // could not start, when in fact it was called off.
             throw e
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Error persisting MessageEntity for ${data.file.name}", e)
+            StardustLog.e(LOG_TAG, "Error persisting MessageEntity for the sent file", e)
             false
         }
     }
@@ -768,7 +767,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         } catch (e: Exception) {
             // Not a send failure: the payload goes out regardless, and a broken gzip is the
             // receiver's to report when it decompresses. The start package says "unknown".
-            Log.w(LOG_TAG, "original size unknown: ${e.javaClass.simpleName}")
+            StardustLog.w(LOG_TAG, "original size unknown: ${e.javaClass.simpleName}")
             return 0
         }
         return if (size in 0..StardustFileStartPackage.MAX_ORIGINAL_SIZE.toLong()) size.toInt() else 0
@@ -1022,7 +1021,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                     throw e
                 } catch (e: Exception) {
                     // Left SENDING; the startup sweep settles it from the recorded progress.
-                    Log.e(LOG_TAG, "Could not record the finished send", e)
+                    StardustLog.e(LOG_TAG, "Could not record the finished send", e)
                 }
             }
             handler.post { onFileStatusChange?.finishSending(data) }

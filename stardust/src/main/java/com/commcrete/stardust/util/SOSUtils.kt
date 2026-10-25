@@ -2,7 +2,6 @@ package com.commcrete.stardust.util
 
 
 import android.location.Location
-import android.util.Log
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -168,7 +167,7 @@ object SOSUtils {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "SOS could not be saved; sending it anyway", e)
+            StardustLog.e(LOG_TAG, "SOS could not be saved; sending it anyway", e)
         }
 
         DataManager.getClientConnection().addMessageToQueue(sosMessage)
@@ -187,7 +186,7 @@ object SOSUtils {
     private suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
         val destination = resolvePrimarySosDestination()
         if (destination == null) {
-            Log.w(LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")
+            StardustLog.w(LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")
             return null
         }
 

@@ -9,7 +9,7 @@ import android.media.AudioRecord
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.request_objects.Message
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import com.commcrete.stardust.room.new_db.message.MessageEntity
@@ -127,7 +127,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         )
 
         try {
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder Started recorder ${recorder}")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Started recorder ${recorder}")
 //            AudioRecordManager.register(recorder!!)
         }catch ( e : Exception) {
             e.printStackTrace()
@@ -146,7 +146,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     }
 
     private fun syncBleDevice (context: Context) {
-        Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice")
+        StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice")
 
         val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             context.getSystemService(AudioManager::class.java)
@@ -172,12 +172,12 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         // (falls back through the configured input hierarchy).
         val preferred = getPreferredDevice(audioManager, AudioManager.GET_DEVICES_INPUTS)
         if (preferred == null) {
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice: no matching input device")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice: no matching input device")
             return
         }
 
-        Log.d(TAG_PTT_DEBUG,
-            "mWavRecorder syncBleDevice: using ${preferred.productName}/${preferred.type}")
+        StardustLog.d(TAG_PTT_DEBUG,
+            "mWavRecorder syncBleDevice: using device type ${preferred.type}")
 
         // 1. Force AudioRecord to capture from the chosen device — this is the
         //    main fix: previously we only did this for BLUETOOTH_SCO, so a
@@ -198,7 +198,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         if (preferred.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO) {
             try { audioManager.startBluetoothSco() } catch (_: Throwable) {}
             try { audioManager.isBluetoothScoOn = true } catch (_: Throwable) {}
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice SCO enabled")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder syncBleDevice SCO enabled")
         } else {
             try { audioManager.isBluetoothScoOn = false } catch (_: Throwable) {}
             try { audioManager.stopBluetoothSco() } catch (_: Throwable) {}
@@ -206,7 +206,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
     }
 
     private fun removeSyncBleDevices (context: Context) {
-        Log.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
+        StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder removeSyncBleDevices")
         val audioManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             context.getSystemService(AudioManager::class.java)
         } else {
@@ -226,12 +226,12 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             isRecording = false
             recorder?.let {
                 try {
-                    Log.d(TAG_PTT_DEBUG, "Stopping recorder")
+                    StardustLog.d(TAG_PTT_DEBUG, "Stopping recorder")
                     it.stop()
                     it.release()
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
-                    Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
                     keepAliveHold?.release()
@@ -261,13 +261,13 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             isRecording = false
             recorder?.let {
                 try {
-                    Log.d(TAG_PTT_DEBUG, "Stopping recorder")
+                    StardustLog.d(TAG_PTT_DEBUG, "Stopping recorder")
                     it.stop()
                     it.release()
-                    Log.d(TAG_PTT_DEBUG, "mWavRecorder Stopped recorder ${recorder}")
+                    StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Stopped recorder ${recorder}")
                 } catch (e: Exception) {
                     e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
-                    Log.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
                     stopRecording(retryNum, chatId, receiverId, path, carrier)
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
@@ -277,21 +277,21 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
 //                    val mRecorder = recorder
 //                    mRecorder?.let { it1 -> AudioRecordManager.unregister(it1) }
                     recorder = null
-                    Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally Recorder")
+                    StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Finally Recorder")
                 }
             }
             // ✅ Save PTT regardless of whether recorder was null
             saveOrRemovePttFile(chatId, receiverId, path)
         } catch (e: Exception) {
             e.printStackTrace()
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder while stopping ${e.printStackTrace()}")
 
             stopRecording(retryNum, chatId, receiverId, path, carrier)
         } finally {
             // ✅ Always notify
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Finally before sendRecordEnd")
             flushPipelineEnd()
-            Log.d(TAG_PTT_DEBUG, "mWavRecorder Finally after sendRecordEnd")
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Finally after sendRecordEnd")
             // Host-facing lifecycle. The mic was released in the block above, and flushPipelineEnd has
             // just queued the last packet — legacy has no per-packet transmit confirmation, so "sent"
             // here means "handed to the BLE queue", weaker than the v2 pipeline's SENT. Both are
@@ -299,7 +299,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             RecorderUtils.notifyPttRecordingStopped()
             RecorderUtils.notifyPttRecordingSent()
         }
-        Log.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
+        StardustLog.d(TAG_PTT_DEBUG, "stopRecording called $retryNum")
     }
 
 
@@ -568,7 +568,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                 // database error, and this scope is cancelled on teardown.
                 throw e
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "PTT recording could not be saved: $path", e)
+                StardustLog.e(LOG_TAG, "PTT recording could not be saved", e)
             }
         }
     }

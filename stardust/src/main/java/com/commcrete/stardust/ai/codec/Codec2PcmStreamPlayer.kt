@@ -13,6 +13,7 @@ import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.audio.BleMediaConnector
 import kotlinx.coroutines.CoroutineScope
@@ -44,19 +45,21 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             if (track == null) {
                 track = buildTrack(bufferSizeInBytes, speedFactor)
                 syncBleDevice()
-                Log.d(TAG, "ensureTrack created track=${track?.hashCode()} buffer=$bufferSizeInBytes")
+                StardustLog.d(TAG, "ensureTrack created track=${track?.hashCode()} buffer=$bufferSizeInBytes")
             }
             attachEnhancer(track)
             Handler(Looper.getMainLooper()).postDelayed({ track?.play() }, 150)
         } catch (e: Exception) {
-            Log.e(TAG, "ensureTrack failed", e)
+            StardustLog.e(TAG, "ensureTrack failed", e)
         }
     }
 
     fun playStream(audioData: ByteArray, bufferSizeInBytes: Int, receivedPkgs: Int, playFromSdk: Boolean) {
         val current = track
+        // logcat only: per-packet, would flood the log file
         Log.d(TAG, "playStream track=${current?.hashCode()} dataSize=${audioData.size} buffer=$bufferSizeInBytes receivedPkgs=$receivedPkgs flag=$playFromSdk")
         if (current == null) {
+            // logcat only: per-packet, would flood the log file
             Log.d(TAG, "playStream skipped because track is null")
             return
         }
@@ -65,6 +68,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             current.notificationMarkerPosition = bufferSizeInBytes / 2
             scope.launch {
                 if (!playFromSdk) {
+                    // logcat only: per-packet, would flood the log file
                     Log.d(TAG, "playStream skipped because isPlayPttFromSdk=false track=${current.hashCode()}")
                     return@launch
                 }
@@ -83,7 +87,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             enhancer?.release()
             equalizer?.release()
         } catch (e: Exception) {
-            Log.e(TAG, "releaseTrack failed", e)
+            StardustLog.e(TAG, "releaseTrack failed", e)
         } finally {
             track = null
             enhancer = null
@@ -93,7 +97,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
 
     fun writeMinimumSilenceAndPlay(byteArray: ByteArray, onPlaybackComplete: () -> Unit) {
         val tempTrack = buildTempTrack()
-        Log.d(TAG, "writeMinimumSilenceAndPlay size=${byteArray.size} tempTrack=${tempTrack.hashCode()}")
+        StardustLog.d(TAG, "writeMinimumSilenceAndPlay size=${byteArray.size} tempTrack=${tempTrack.hashCode()}")
         tempTrack.play()
         tempTrack.write(byteArray, 0, byteArray.size)
 
@@ -163,6 +167,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
                 try {
                     track.play()
                 } catch (e: IllegalStateException) {
+                    // logcat only: per-frame, would flood the log file
                     Log.e(TAG, "Failed to start playback: ${e.message}")
                     return
                 }
@@ -173,6 +178,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             try {
                 track.write(audioData, 0, audioData.size)
             } catch (e: IllegalStateException) {
+                // logcat only: per-frame, would flood the log file
                 Log.e(TAG, "AudioTrack write failed: ${e.message}")
             }
         }
@@ -190,7 +196,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             try {
                 routeAudioToMediaRouter()
             } catch (e: Exception) {
-                Log.e(TAG, "syncBleDevice routeAudioToMediaRouter failed", e)
+                StardustLog.e(TAG, "syncBleDevice routeAudioToMediaRouter failed", e)
             }
         }
     }

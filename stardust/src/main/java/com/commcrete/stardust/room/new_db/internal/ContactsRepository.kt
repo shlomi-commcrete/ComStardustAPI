@@ -1,6 +1,5 @@
 package com.commcrete.stardust.room.new_db.internal
 
-import android.util.Log
 import com.commcrete.stardust.room.new_db.audit.IdentityKind
 import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
 import com.commcrete.stardust.room.new_db.chat.ChatDao
@@ -13,6 +12,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -107,7 +107,7 @@ internal class ContactsRepository(
                 // creating a chat/participant referencing it would trip
                 // the chat_participants.contact_id foreign key.
                 if (contactId == null) {
-                    Log.w(TAG, "insertContactsWithChats: skipping chat creation — unresolvable primary ID for ${data.contact.name}")
+                    StardustLog.w(TAG, "insertContactsWithChats: skipping chat creation — unresolvable primary ID")
                     return@forEach
                 }
 
@@ -163,7 +163,7 @@ internal class ContactsRepository(
 
             val contactId = contactsDao.addContact(contact)
             if (contactId == null) {
-                Log.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID for ${contact.contact.name}")
+                StardustLog.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID")
                 return@withContext
             }
             forgetDisplacedIds(contact, contactId, priorOwners, priorHoldings)

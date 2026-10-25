@@ -1,6 +1,7 @@
 package com.commcrete.stardust.ai.codec.filter
 
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.audio.StreamingPolyphaseResampler
 import java.lang.reflect.Method
 
@@ -54,7 +55,7 @@ class RnNoiseProcessor : NoiseProcessor {
         try {
             val klass = resolveClass()
             if (klass == null) {
-                Log.i(TAG, "RNNoise wrapper not on classpath; pass-through mode")
+                StardustLog.i(TAG, "RNNoise wrapper not on classpath; pass-through mode")
                 return
             }
 
@@ -81,7 +82,7 @@ class RnNoiseProcessor : NoiseProcessor {
                 }
             }
             if (proc == null) {
-                Log.w(TAG, "No compatible process(short[]) on ${klass.name}; pass-through")
+                StardustLog.w(TAG, "No compatible process(short[]) on ${klass.name}; pass-through")
                 return
             }
 
@@ -98,9 +99,9 @@ class RnNoiseProcessor : NoiseProcessor {
             nativeInstance = instance
             processMethod = proc
             releaseMethod = rel
-            Log.d(TAG, "init: ready via ${klass.name}#${proc.name} (sampleRate=$sampleRate)")
+            StardustLog.d(TAG, "init: ready via ${klass.name}#${proc.name} (sampleRate=$sampleRate)")
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to initialize RNNoise; falling back to pass-through", t)
+            StardustLog.w(TAG, "Failed to initialize RNNoise; falling back to pass-through", t)
             nativeInstance = null
             processMethod = null
             releaseMethod = null
@@ -149,7 +150,7 @@ class RnNoiseProcessor : NoiseProcessor {
                     System.arraycopy(cleaned, 0, combined, off, FRAME_SIZE)
                 }
             } catch (t: Throwable) {
-                Log.w(TAG, "RNNoise frame call failed; disabling for this session", t)
+                StardustLog.w(TAG, "RNNoise frame call failed; disabling for this session", t)
                 runCatching { releaseMethod?.invoke(instance) }
                 nativeInstance = null
                 processMethod = null
@@ -174,6 +175,7 @@ class RnNoiseProcessor : NoiseProcessor {
         // (sub-frame shortfall); they get denoised on the next call.
 
         val totalMs = System.currentTimeMillis() - processStartMs
+        // logcat only: per-chunk, would flood the log file
         Log.d(
             TAG_LATENCY,
             "process(): $frameCount frame(s) of $FRAME_SIZE, total ${totalMs}ms " +

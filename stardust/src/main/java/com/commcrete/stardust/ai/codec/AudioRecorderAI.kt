@@ -6,7 +6,7 @@ import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
@@ -73,7 +73,7 @@ class AudioRecorderAI(
 
 
     fun start() {
-        Log.d("AudioRecorder", "Starting audio recorder")
+        StardustLog.d("AudioRecorder", "Starting audio recorder")
         synchronized(this) {
             // Already running or cancelling
             if (job?.isActive == true) return
@@ -115,7 +115,7 @@ class AudioRecorderAI(
 
     @SuppressLint("MissingPermission")
     private suspend fun recordLoop() = withContext(Dispatchers.IO) {
-        Log.d("AudioRecorder", "recordLoop")
+        StardustLog.d("AudioRecorder", "recordLoop")
 
         // Input gain: profile setting takes precedence, then SharedPreferences.
         val gain = SharedPreferencesUtil.getAudioGain() / 100f

@@ -6,7 +6,6 @@ import android.content.Context.USB_SERVICE
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
-import android.util.Log
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLocalSrcDst
@@ -18,6 +17,7 @@ import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.HandlerObject
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -66,7 +66,7 @@ object BittelUsbManager2 : BittelProtocol {
     private val mDeviceList: MutableSet<UsbDevice> = mutableSetOf()
 
     fun init() {
-        Log.d("ConfigDebug",
+        StardustLog.d("ConfigDebug",
             "BittelUsbManager2 init ${DataManager.appContext}"
         )
         UsbDiag.log("init", "ENTER — resolving USB_SERVICE")
@@ -121,8 +121,8 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (device: UsbDevice) {
-        Log.d("ConfigDebug",
-            "connectToUnknownDevice productName='${device.productName}' deviceId=${device.deviceId} " +
+        StardustLog.d("ConfigDebug",
+            "connectToUnknownDevice deviceId=${device.deviceId} " +
                 "isJboxAudio=${isJboxAudioDevice(device)} isStardustData=${isStardustDataDevice(device)}"
         )
         UsbDiag.log("connectToUnknownDevice", "ENTER ${UsbDiag.describe(device)} hasPermission=${UsbDiag.hasPermission(device)}")
@@ -141,8 +141,8 @@ object BittelUsbManager2 : BittelProtocol {
             )
             // Previously silent: the permission filter (contains) is looser than these matchers, so
             // a granted device could land here and simply be ignored.
-            android.util.Log.w("ConfigDebug",
-                "connectToUnknownDevice NO MATCH for productName='${device.productName}' — permission was " +
+            StardustLog.w("ConfigDebug",
+                "connectToUnknownDevice NO MATCH — permission was " +
                     "granted but neither the audio nor the data matcher accepted it; nothing will connect"
             )
         }
@@ -204,7 +204,7 @@ object BittelUsbManager2 : BittelProtocol {
                 "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
         )
         if (user == null) {
-            android.util.Log.w("ConfigDebug", "initDataToUsb ABORT — no logged-in user; USB link is open but the init handshake will NOT run")
+            StardustLog.w("ConfigDebug", "initDataToUsb ABORT — no logged-in user; USB link is open but the init handshake will NOT run")
             UsbDiag.verdict("USB port is OPEN but the handshake will not run: no logged-in user. The link will look connected and stay silent.")
             return
         }
@@ -216,7 +216,7 @@ object BittelUsbManager2 : BittelProtocol {
         // connected cable permanently reported as not connected. A real error is re-derived by the
         // handshake we now run; it no longer has to be inherited to be reported.
         if(!BleManager.isUSBConnected || (!freshLink && StardustInitConnectionHandler.hasUnsyncableError())) {
-            Log.w("ConfigDebug",
+            StardustLog.w("ConfigDebug",
                 "initDataToUsb ABORT — isUSBConnected=${BleManager.isUSBConnected} " +
                     "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
             )
@@ -262,7 +262,7 @@ object BittelUsbManager2 : BittelProtocol {
             )
             return
         }
-        android.util.Log.d("ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
+        StardustLog.d("ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
 
         CoroutineScope(Dispatchers.Default).launch {
             // USB is another fresh-session entry — normalise singleton state exactly like the BLE
@@ -534,6 +534,7 @@ object BittelUsbManager2 : BittelProtocol {
         if (sent) {
             UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
             // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
+            // logcat only: per-packet, would flood the log file
             android.util.Log.d(
                 "AppEvent",
                 "USB write ${bittelPackage.stardustOpCode} part=${bittelPackage.stardustControlByte.stardustPartType}"
@@ -653,7 +654,7 @@ object BittelUsbManager2 : BittelProtocol {
             }
         }, device.deviceId)
         Timber.tag("SerialInOutputManager").d("connectionStatus : $connectionStatus")
-        android.util.Log.d("ConfigDebug", "connectToDevice UART open result=$connectionStatus for '${device.productName}'")
+        StardustLog.d("ConfigDebug", "connectToDevice UART open result=$connectionStatus")
         UsbDiag.log("connectToDevice", "UART open result=$connectionStatus")
         if(connectionStatus == true) {
             stardustDevice = device
@@ -661,7 +662,7 @@ object BittelUsbManager2 : BittelProtocol {
             // tick to notice (a tick that would otherwise open a SECOND UARTManager).
             stopUsbRecovery("port reopened")
             Scopes.getMainCoroutine().launch {
-                android.util.Log.d("ConfigDebug", "USB up → isUSBConnected=true, initDataToUsb(), updateStatus() (this is what disconnects BLE)")
+                StardustLog.d("ConfigDebug", "USB up → isUSBConnected=true, initDataToUsb(), updateStatus() (this is what disconnects BLE)")
                 UsbDiag.log("connectToDevice", "USB UP — setting isUSBConnected=true; note initDataToUsb() runs BEFORE the BLE teardown in updateStatus()")
                 BleManager.isUSBConnected = true
                 BleManager.usbConnectionStatus.value = true
@@ -679,7 +680,7 @@ object BittelUsbManager2 : BittelProtocol {
             }
         }else {
             Timber.tag("SerialInOutputManager").d("cant connect")
-            android.util.Log.w("ConfigDebug", "connectToDevice FAILED — UART did not open; isUSBConnected stays false so BLE is NOT handed over")
+            StardustLog.w("ConfigDebug", "connectToDevice FAILED — UART did not open; isUSBConnected stays false so BLE is NOT handed over")
             UsbDiag.verdict(
                 "UART did not open for ${UsbDiag.describe(device)} — permission was granted but the " +
                     "serial port could not be opened. See the UsbDiag 'UART' lines above for which step failed."
@@ -725,6 +726,7 @@ object BittelUsbManager2 : BittelProtocol {
      */
     fun setUsbPortModeOnRadio() {
         val (src, dst) = requireLocalSrcDst() ?: return
+        // logcat only: per-poll-tick (PortUtils, 20s), would flood the log file
         android.util.Log.d("ConfigDebug", "BittelUsbManager2.setUsbPortModeOnRadio → ${getUartPortType()} (radio to USB mode) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
 
         val uartPort = getUartPortType().type.intToByteArray().reversedArray()

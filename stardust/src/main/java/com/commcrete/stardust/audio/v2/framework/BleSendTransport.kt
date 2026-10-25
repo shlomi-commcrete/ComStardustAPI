@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.framework
 
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.codec.CodecRegistry
 import com.commcrete.stardust.audio.v2.application.port.SendTransport
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
@@ -32,14 +33,17 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
 
     override suspend fun send(frame: EncodedFrame) {
         val owner = frame.owner ?: run {
+            // logcat only: per-frame, would flood the log file
             Log.w(AppEvents.TX_RX_TRACE, "ptt frame DROPPED: no owner")
             return
         }
         val route = routing.get(owner) ?: run {
+            // logcat only: per-frame, would flood the log file
             Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: route released")
             return
         }
         val radio = CarriersUtils.getRadioToSend(route.carrier, functionalityType = FunctionalityType.PTT) ?: run {
+            // logcat only: per-frame, would flood the log file
             Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: no PTT radio for carrier ${route.carrier?.index}")
             return
         }
@@ -47,7 +51,7 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
         val resolved = owner.value to radio.index
         if (resolved != lastLoggedRadio) {
             lastLoggedRadio = resolved
-            Log.d(
+            StardustLog.d(
                 AppEvents.TX_RX_TRACE,
                 "ptt v2 ${owner.value} sends on carrier ${radio.index} (${radio.deliveryType}), requested ${route.carrier?.index ?: "auto"}",
             )

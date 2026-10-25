@@ -1,6 +1,7 @@
 package com.commcrete.stardust.util.audio
 
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.commcrete.stardust.util.audio.filters.AGCFilter
 import com.commcrete.stardust.util.audio.filters.AdaptiveNotchDetector
@@ -174,6 +175,7 @@ object PttAudioProcessor {
         val filterChainMs = System.currentTimeMillis() - startMs
 
         if (nativeRate == targetRate) {
+            // logcat only: per-buffer, would flood the log file
             Log.d(TAG_LATENCY, "process(): ${pcmArray.size} samples, filterChain ${filterChainMs}ms, no resample needed")
             return filtered
         }
@@ -187,6 +189,7 @@ object PttAudioProcessor {
         }
         val resampleMs = System.currentTimeMillis() - resampleStartMs
         val totalMs = System.currentTimeMillis() - startMs
+        // logcat only: per-buffer, would flood the log file
         Log.d(
             TAG_LATENCY,
             "process(): ${pcmArray.size} samples $nativeRate->$targetRate, total ${totalMs}ms " +
@@ -223,7 +226,7 @@ object PttAudioProcessor {
      */
     fun reset() = synchronized(this) {
         runCatching { rnNoiseProcessor?.release() }
-            .onFailure { Log.w(TAG, "RnNoise release failed", it) }
+            .onFailure { StardustLog.w(TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
         notchFilter = null
@@ -395,7 +398,7 @@ object PttAudioProcessor {
      */
     private fun releaseFiltersInternal() {
         runCatching { rnNoiseProcessor?.release() }
-            .onFailure { Log.w(TAG, "RnNoise release failed", it) }
+            .onFailure { StardustLog.w(TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
         notchFilter = null

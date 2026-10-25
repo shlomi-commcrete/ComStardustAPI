@@ -1,6 +1,6 @@
 package com.commcrete.rnnoise
 
-import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 
 /**
  * Thin Kotlin wrapper around xiph/rnnoise via a JNI shim (`librnnoise_jni.so`).
@@ -42,10 +42,10 @@ class RnNoise {
             try {
                 System.loadLibrary(LIB_NAME)
                 loaded = true
-                Log.i(TAG, "lib$LIB_NAME.so loaded")
+                StardustLog.i(TAG, "lib$LIB_NAME.so loaded")
             } catch (t: Throwable) {
                 loadError = t
-                Log.w(TAG, "Failed to load lib$LIB_NAME.so: ${t.message}")
+                StardustLog.w(TAG, "Failed to load lib$LIB_NAME.so: ${t.message}")
             }
         }
 

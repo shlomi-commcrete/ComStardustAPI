@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.media.MediaCodec
 import android.util.Log
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.room.new_db.message.EncoderType
@@ -222,6 +223,7 @@ object PttSendManager {
         chatId: String
     ) {
         val session = synchronized(sessionsLock) { currentSession } ?: run {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG, "addNewFrame: no active session — dropping ${pcmArray.size}-sample chunk")
             return
         }
@@ -231,6 +233,7 @@ object PttSendManager {
         session.receiverId = receiverId
         session.chatId = chatId
         if (!session.queue.trySend(pcmArray).isSuccess) {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG, "Session ${session.id}: queue trySend failed (queue closed?)")
         }
     }
@@ -259,6 +262,7 @@ object PttSendManager {
         receiverId: String? = null,
     ) {
         val session = synchronized(sessionsLock) { currentSession } ?: run {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG, "addRawFrame: no active session — dropping ${pcmArray.size}-sample chunk")
             return
         }
@@ -269,6 +273,7 @@ object PttSendManager {
         session.receiverId = receiverId
         val chunk = RawAiChunk(pcmArray, nativeRate, enableNoiseCancellation, isFinal)
         if (!session.rawQueue.trySend(chunk).isSuccess) {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG, "Session ${session.id}: raw queue trySend failed (queue closed?)")
         }
     }
@@ -324,7 +329,7 @@ object PttSendManager {
 
     private fun finishSession(session: PttSession) {
         if (!session.finishRequested.compareAndSet(false, true)) {
-            Log.d(TAG, "finish(${session.id}): already finished — ignoring")
+            StardustLog.d(TAG, "finish(${session.id}): already finished — ignoring")
             return
         }
         // Closing the raw queue lets [launchDspProcessingLoop] drain whatever raw chunks are
@@ -333,7 +338,7 @@ object PttSendManager {
         // launchSessionJob. The job then runs finalizeSession exactly once and releases
         // [codecMutex] so any newer session can start using the shared codec.
         session.rawQueue.close()
-        Log.d(TAG, "finish(${session.id}): raw queue closed — awaiting DSP + encode drain")
+        StardustLog.d(TAG, "finish(${session.id}): raw queue closed — awaiting DSP + encode drain")
     }
 
     fun restart(onMaxTimeoutReached: (() -> Unit)? = null): PttSession {
@@ -361,7 +366,7 @@ object PttSendManager {
         // would suspend forever, holding the shared codec mutex and
         // blocking every future session — including this one.
         if (orphan != null && !orphan.finishRequested.get()) {
-            Log.w(TAG, "restart(): previous session ${orphan.id} was never finished — auto-finalizing")
+            StardustLog.w(TAG, "restart(): previous session ${orphan.id} was never finished — auto-finalizing")
             finishSession(orphan)
         }
 
@@ -375,7 +380,7 @@ object PttSendManager {
         // processing. `finishSession(orphan)` above closes the orphan's
         // rawQueue so that join is guaranteed to complete rather than hang.
         newSession.job = launchSessionJob(newSession, previous = orphan)
-        Log.d(TAG, "restart() -> new session ${newSession.id}")
+        StardustLog.d(TAG, "restart() -> new session ${newSession.id}")
         return newSession
     }
 
@@ -405,13 +410,13 @@ object PttSendManager {
                 // raw frames into this session's UNLIMITED rawQueue, so no
                 // audio is lost while we wait.
                 previous?.job?.let { prevJob ->
-                    Log.d(TAG, "Session ${session.id}: awaiting previous session ${previous.id} to finalize")
+                    StardustLog.d(TAG, "Session ${session.id}: awaiting previous session ${previous.id} to finalize")
                     val drained = withTimeoutOrNull(PREVIOUS_SESSION_DRAIN_TIMEOUT_MS) {
                         prevJob.join()
                         true
                     }
                     if (drained == null) {
-                        Log.w(
+                        StardustLog.w(
                             TAG,
                             "Session ${session.id}: previous session ${previous.id} did not " +
                                 "finalize within ${PREVIOUS_SESSION_DRAIN_TIMEOUT_MS}ms — proceeding anyway"
@@ -434,7 +439,7 @@ object PttSendManager {
                     // mirror job, so a slow decode pass can never delay
                     // this loop's next encode+send.
                     codecMutex.withLock {
-                        Log.d(TAG, "Session ${session.id}: codec acquired")
+                        StardustLog.d(TAG, "Session ${session.id}: codec acquired")
                         PttAudioProcessor.reset()
                         session.lastTokens = null
                         session.lastPCM = null
@@ -464,12 +469,12 @@ object PttSendManager {
                         try {
                             handleTokenizerChunk(session, pcmArray)
                         } catch (e: MediaCodec.CodecException) {
-                            Log.e(TAG, "Session ${session.id}: codec exception", e)
+                            StardustLog.e(TAG, "Session ${session.id}: codec exception", e)
                         } catch (e: Exception) {
-                            Log.e(TAG, "Session ${session.id}: chunk error", e)
+                            StardustLog.e(TAG, "Session ${session.id}: chunk error", e)
                         }
                     }
-                    Log.d(TAG, "Session ${session.id}: encode loop done — draining mirror decode")
+                    StardustLog.d(TAG, "Session ${session.id}: encode loop done — draining mirror decode")
                 } finally {
                     // Atomic CAS guarantees finalize runs at most once
                     // per session even if some future code path adds
@@ -489,7 +494,7 @@ object PttSendManager {
                                 // instead exited via the `!isActive` break.
                                 session.dspJob?.join()
                             } catch (e: Exception) {
-                                Log.e(TAG, "Session ${session.id}: DSP loop drain failed", e)
+                                StardustLog.e(TAG, "Session ${session.id}: DSP loop drain failed", e)
                             }
                             try {
                                 // Every packedData chunk was pushed to
@@ -500,12 +505,12 @@ object PttSendManager {
                                 session.mirrorQueue.close()
                                 session.mirrorJob?.join()
                             } catch (e: Exception) {
-                                Log.e(TAG, "Session ${session.id}: mirror decode drain failed", e)
+                                StardustLog.e(TAG, "Session ${session.id}: mirror decode drain failed", e)
                             }
                             try {
                                 finalizeSession(session)
                             } catch (e: Exception) {
-                                Log.e(TAG, "Session ${session.id}: finalize failed", e)
+                                StardustLog.e(TAG, "Session ${session.id}: finalize failed", e)
                             }
                         }
                     }
@@ -520,7 +525,7 @@ object PttSendManager {
                 // don't pollute logs with stack traces for it. Other
                 // throwables are real and worth recording.
                 if (t !is kotlinx.coroutines.CancellationException) {
-                    Log.e(TAG, "Session ${session.id}: job failed", t)
+                    StardustLog.e(TAG, "Session ${session.id}: job failed", t)
                 }
             } finally {
                 keepAliveHold.release()
@@ -549,6 +554,7 @@ object PttSendManager {
         enforceMaxPttTimeout(session)
 
         if (!session.mirrorQueue.trySend(packedData).isSuccess) {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG_DECODE, "Session ${session.id}: mirror queue trySend failed (queue closed?)")
         }
 
@@ -563,6 +569,7 @@ object PttSendManager {
         val expectedElapsedMs = session.numPacketsSent.toLong() * AI_PACKET_DURATION_MS
         val actualElapsedMs = System.currentTimeMillis() - session.loopStartMs
         val backlogMs = actualElapsedMs - expectedElapsedMs
+        // logcat only: per-chunk, would flood the log file
         Log.d(
             TAG_LATENCY,
             "Session ${session.id}: chunk #${session.numPacketsSent} loop took ${chunkTotalMs}ms " +
@@ -571,8 +578,10 @@ object PttSendManager {
     }
 
     private fun encodeAndSendChunk(session: PttSession, pcmArray: ShortArray): ByteArray {
+        // logcat only: per-chunk, would flood the log file
         Log.d(TAG_ENCODE, "Session ${session.id}: encoding ${pcmArray.size} samples")
         val chunkCodes = wavTokenizerEncoder.encode(pcmArray)
+        // logcat only: per-chunk, would flood the log file
         Log.d(TAG_ENCODE, "Session ${session.id}: encoded chunk size ${chunkCodes.size}")
 
         val packedData = BitPacking12.pack12(chunkCodes.toList())
@@ -610,7 +619,7 @@ object PttSendManager {
 
         val onTimeout = session.onMaxTimeoutReached ?: return
         session.onMaxTimeoutReached = null
-        Log.w(
+        StardustLog.w(
             TAG,
             "Session ${session.id}: PTT max timeout reached " +
                 "(${session.numPacketsSent} packets × ${AI_PACKET_DURATION_MS}ms > ${maxMs}ms)"
@@ -652,13 +661,15 @@ object PttSendManager {
                     isFinal = raw.isFinal,
                 )
                 if (!session.queue.trySend(processed).isSuccess) {
+                    // logcat only: per-chunk, would flood the log file
                     Log.w(TAG, "Session ${session.id}: encode queue trySend failed after DSP (queue closed?)")
                 }
             } catch (t: Throwable) {
+                // logcat only: per-chunk, would flood the log file
                 Log.e(TAG, "Session ${session.id}: DSP processing failed", t)
             }
         }
-        Log.d(TAG, "Session ${session.id}: DSP loop drained — closing encode queue")
+        StardustLog.d(TAG, "Session ${session.id}: DSP loop drained — closing encode queue")
         session.queue.close()
     }
 
@@ -674,10 +685,11 @@ object PttSendManager {
             try {
                 mirrorDecodeChunk(session, packedData)
             } catch (t: Throwable) {
+                // logcat only: per-chunk, would flood the log file
                 Log.w(TAG_DECODE, "Session ${session.id}: mirror decode loop error", t)
             }
         }
-        Log.d(TAG_DECODE, "Session ${session.id}: mirror decode loop drained")
+        StardustLog.d(TAG_DECODE, "Session ${session.id}: mirror decode loop drained")
     }
 
     /**
@@ -720,12 +732,14 @@ object PttSendManager {
                 session.frameBuffer.add(pcm)
             }
         } catch (t: Throwable) {
+            // logcat only: per-chunk, would flood the log file
             Log.w(TAG_DECODE, "Session ${session.id}: per-chunk decode failed", t)
         }
     }
 
     private fun sendData(session: PttSession, data: ByteArray) {
-        Log.d(TAG, "Session ${session.id} send msg: ${data.size} data: ${data.toHexString()}")
+        // logcat only: per-packet, would flood the log file
+        Log.d(TAG, "Session ${session.id} send msg: ${data.size} bytes")
         val radio = CarriersUtils.getRadioToSend(session.carrier, functionalityType = FunctionalityType.PTT) ?: return
 
         Scopes.getDefaultCoroutine().launch {
@@ -764,15 +778,15 @@ object PttSendManager {
      */
     private suspend fun savePttMessage(session: PttSession, path: String) {
         val chatId = session.chatId ?: run {
-            Log.w(TAG, "Session ${session.id}: no chatId — skipping message save")
+            StardustLog.w(TAG, "Session ${session.id}: no chatId — skipping message save")
             return
         }
         val receiverId = session.receiverId ?: run {
-            Log.w(TAG, "Session ${session.id}: no receiverId — skipping message save")
+            StardustLog.w(TAG, "Session ${session.id}: no receiverId — skipping message save")
             return
         }
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: run {
-            Log.w(TAG, "Session ${session.id}: no logged-in user — skipping message save")
+            StardustLog.w(TAG, "Session ${session.id}: no logged-in user — skipping message save")
             return
         }
         DataManager.getAppRepo().saveMessage(
@@ -800,24 +814,24 @@ object PttSendManager {
      * (guarded by [PttSession.finalized] in the caller).
      */
     private suspend fun finalizeSession(session: PttSession) {
-        Log.d(TAG, "Session ${session.id}: finalize (${session.frameBuffer.size} frame(s))")
+        StardustLog.d(TAG, "Session ${session.id}: finalize (${session.frameBuffer.size} frame(s))")
         if (!DataManager.getSavePTTFilesRequired()) {
-            Log.d(TAG, "Session ${session.id}: save not required — skipping file")
+            StardustLog.d(TAG, "Session ${session.id}: save not required — skipping file")
             return
         }
         val file = session.file ?: run {
-            Log.d(TAG, "Session ${session.id}: file is null — nothing to save")
+            StardustLog.d(TAG, "Session ${session.id}: file is null — nothing to save")
             return
         }
         if (session.frameBuffer.isEmpty()) {
-            Log.d(TAG, "Session ${session.id}: no decoded frames — skipping file save")
+            StardustLog.d(TAG, "Session ${session.id}: no decoded frames — skipping file save")
             return
         }
         try {
             val sampleArray = session.frameBuffer.flatMap { it.asIterable() }.toShortArray()
             WavHelper.createWavFile(sampleArray, 24000, file)
 
-            Log.d(TAG, "Session ${session.id}: WAV created -> ${file.absolutePath}")
+            StardustLog.d(TAG, "Session ${session.id}: WAV created")
             runCatching {
 
                 val artifactDir = RecorderUtils.dirToSaveFile
@@ -833,14 +847,14 @@ object PttSendManager {
                     val mirrorName = "${file.nameWithoutExtension}-ptt_finish.wav"
                     val mirror = File(artifactDir, mirrorName)
                     file.copyTo(mirror, overwrite = true)
-                    Log.d(TAG, "Session ${session.id}: WAV mirror -> ${mirror.absolutePath}")
+                    StardustLog.d(TAG, "Session ${session.id}: WAV mirror written")
                 }
-            }.onFailure { Log.w(TAG, "Session ${session.id}: mirror copy failed", it) }
+            }.onFailure { StardustLog.w(TAG, "Session ${session.id}: mirror copy failed", it) }
 
             savePttMessage(session, file.absolutePath)
             RecorderUtils.ts = 0
         } catch (e: Exception) {
-            Log.e(TAG, "Session ${session.id}: WAV save failed", e)
+            StardustLog.e(TAG, "Session ${session.id}: WAV save failed", e)
         }
     }
 }

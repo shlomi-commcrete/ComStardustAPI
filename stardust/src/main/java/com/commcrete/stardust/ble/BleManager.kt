@@ -4,7 +4,6 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.content.Intent
 import android.provider.Settings
-import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.stardust.util.Scopes
@@ -17,6 +16,7 @@ import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.getClientConnection
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -84,7 +84,7 @@ object BleManager {
             else -> null
         }
 
-        Log.d("StardustDataManager", "updateStatus: newStatus -> $newStatus")
+        StardustLog.d("StardustDataManager", "updateStatus: newStatus -> $newStatus")
 
         if(lastConnectionStatus == newStatus) return
         connectionStatus = newStatus

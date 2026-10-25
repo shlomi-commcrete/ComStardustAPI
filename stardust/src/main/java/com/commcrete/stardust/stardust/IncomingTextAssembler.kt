@@ -1,8 +1,8 @@
 package com.commcrete.stardust.stardust
 
-import android.util.Log
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.util.FileReceiver
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.TextPartPacing
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -182,7 +182,7 @@ internal class IncomingTextAssembler(
         private const val TAG = "IncomingTextAssembler"
 
         private fun logToLogcat(message: String, error: Throwable?) {
-            if (error != null) Log.e(TAG, message, error) else Log.d(TAG, message)
+            if (error != null) StardustLog.e(TAG, message, error) else StardustLog.d(TAG, message)
         }
     }
 }

@@ -7,9 +7,9 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.os.SystemClock
-import android.util.Log
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -50,9 +50,9 @@ internal object BleDiag {
         return "#" + seq.toString().padStart(4, '0') + " +" + ms.toString().padStart(7, ' ') + "ms"
     }
 
-    fun log(where: String, msg: String) { Log.d(TAG, "${stamp()} [$where] $msg") }
-    fun warn(where: String, msg: String) { Log.w(TAG, "${stamp()} [$where] $msg") }
-    fun verdict(msg: String) { Log.e(TAG, "${stamp()} [VERDICT] $msg") }
+    fun log(where: String, msg: String) { StardustLog.d(TAG, "${stamp()} [$where] $msg") }
+    fun warn(where: String, msg: String) { StardustLog.w(TAG, "${stamp()} [$where] $msg") }
+    fun verdict(msg: String) { StardustLog.e(TAG, "${stamp()} [VERDICT] $msg") }
 
     /** Identity of a GATT client object; distinguishes clients without printing the device. */
     fun id(gatt: BluetoothGatt?): String =

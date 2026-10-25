@@ -5,7 +5,6 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import android.location.Location
-import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.commcrete.bittell.util.text_utils.createDataByteArray
 import com.commcrete.bittell.util.text_utils.getAsciiValue
@@ -139,6 +138,7 @@ object DataManager : StardustAPI, PttInterface {
 
 
         requireFileLocation(fileLocation)
+        StardustLog.start(StardustStorage.logsDir)
         AIModuleInitializer.initModules()
 
         runCatching {
@@ -154,7 +154,7 @@ object DataManager : StardustAPI, PttInterface {
         if(clientConnection == null) {
             clientConnection = ClientConnection()
 
-            Log.d("ConfigDebug","RECYCLED!!!! getClientConnection")
+            StardustLog.d("ConfigDebug","RECYCLED!!!! getClientConnection")
         }
         getStardustPackageHandler()
         return clientConnection!!
@@ -198,7 +198,7 @@ object DataManager : StardustAPI, PttInterface {
             // not lost silently. Checked before the RD lookup, which comes back empty without a
             // link and used to end this send with no row at all.
             if (!isLinkUp()) {
-                Log.w(LOG_TAG, "text not sent: no radio connected")
+                StardustLog.w(LOG_TAG, "text not sent: no radio connected")
                 saveRefusedText(chatId, stardustAPIPackage, text)
                 return@launch
             }
@@ -207,7 +207,7 @@ object DataManager : StardustAPI, PttInterface {
             // Recorded like the no-link case, as ERROR — it used to end the send with no row and
             // no log, the message simply vanishing.
             val radio = CarriersUtils.getRadioToSend(stardustAPIPackage.carrier, FunctionalityType.TEXT) ?: run {
-                Log.w(LOG_TAG, "text not sent: no RD to send it on")
+                StardustLog.w(LOG_TAG, "text not sent: no RD to send it on")
                 saveRefusedText(chatId, stardustAPIPackage, text, FileReceiver.FileFailure.ERROR)
                 return@launch
             }
@@ -245,7 +245,7 @@ object DataManager : StardustAPI, PttInterface {
                 // database error. Swallowing it would send the message after the caller gave up.
                 throw e
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Message could not be saved; sending it anyway", e)
+                StardustLog.e(LOG_TAG, "Message could not be saved; sending it anyway", e)
                 null
             }
 
@@ -327,14 +327,14 @@ object DataManager : StardustAPI, PttInterface {
                 }
                 throw e
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Multi-part text send stopped before its last part", e)
+                StardustLog.e(LOG_TAG, "Multi-part text send stopped before its last part", e)
                 if (isMultiPart && id != null) settleInterruptedText(id, FileReceiver.FileFailure.ERROR)
                 return@launch
             } finally {
                 sendJob?.let { outgoingTextSends.remove(it) }
             }
             if (linkLost) {
-                Log.w(LOG_TAG, "link gone mid-send — stopping outgoing text")
+                StardustLog.w(LOG_TAG, "link gone mid-send — stopping outgoing text")
                 if (id != null) settleInterruptedText(id, FileReceiver.FileFailure.DISCONNECTED)
                 return@launch
             }
@@ -350,7 +350,7 @@ object DataManager : StardustAPI, PttInterface {
                     // Left SENDING with every part recorded but the last write lost; the startup
                     // sweep settles it by its progress. Logged because until then it reads as
                     // still sending.
-                    Log.e(LOG_TAG, "Outgoing text could not be settled as SENT", e)
+                    StardustLog.e(LOG_TAG, "Outgoing text could not be settled as SENT", e)
                 }
             }
         }
@@ -370,7 +370,7 @@ object DataManager : StardustAPI, PttInterface {
      */
     internal fun stopInFlightOutgoingTexts() {
         if (outgoingTextSends.isEmpty()) return
-        Log.w(LOG_TAG, "link lost — stopping ${outgoingTextSends.size} outgoing text(s) in flight")
+        StardustLog.w(LOG_TAG, "link lost — stopping ${outgoingTextSends.size} outgoing text(s) in flight")
         outgoingTextSends.forEach { it.cancel() }
     }
 
@@ -384,7 +384,7 @@ object DataManager : StardustAPI, PttInterface {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Outgoing text progress could not be recorded", e)
+            StardustLog.e(LOG_TAG, "Outgoing text progress could not be recorded", e)
         }
     }
 
@@ -426,7 +426,7 @@ object DataManager : StardustAPI, PttInterface {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Refused text could not be recorded", e)
+            StardustLog.e(LOG_TAG, "Refused text could not be recorded", e)
         }
     }
 
@@ -438,11 +438,11 @@ object DataManager : StardustAPI, PttInterface {
     private suspend fun settleInterruptedText(messageId: Long, failure: FileReceiver.FileFailure) {
         try {
             val settled = getAppRepo().settleInterruptedSend(messageId, failure)
-            Log.d(LOG_TAG, "interrupted outgoing text settled as ${settled ?: "unchanged (already settled)"}")
+            StardustLog.d(LOG_TAG, "interrupted outgoing text settled as ${settled ?: "unchanged (already settled)"}")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Log.e(LOG_TAG, "Interrupted outgoing text could not be settled", e)
+            StardustLog.e(LOG_TAG, "Interrupted outgoing text could not be settled", e)
         }
     }
 
@@ -619,7 +619,7 @@ object DataManager : StardustAPI, PttInterface {
                 // database error. Swallowing it would send the request after the caller gave up.
                 throw e
             } catch (e: Exception) {
-                Log.e(LOG_TAG, "Location request could not be saved; sending it anyway", e)
+                StardustLog.e(LOG_TAG, "Location request could not be saved; sending it anyway", e)
             }
             sendDataToBle(stardustPackage)
         }
@@ -757,14 +757,14 @@ object DataManager : StardustAPI, PttInterface {
 
     fun bondOnStartup() {
         val user = RegisteredUserUtils.currentUserFlow.value
-        android.util.Log.d("ConfigDebug",
-            "bondOnStartup ENTER user.appId=${user?.appId} user.deviceId=${user?.deviceId} " +
+        StardustLog.d("ConfigDebug",
+            "bondOnStartup ENTER hasUser=${user != null} " +
                 "isBluetoothEnabled=${getClientConnection().isBluetoothEnabled()}"
         )
         // Only attempt to (re)connect once a user is logged in.
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             Timber.w("bondOnStartup skipped: no user logged in")
-            android.util.Log.w("ConfigDebug", "bondOnStartup SKIPPED — no user logged in")
+            StardustLog.w("ConfigDebug", "bondOnStartup SKIPPED — no user logged in")
             return
         }
         // Do NOT connect after an intentional disconnect/unpair. The host calls this on start AND
@@ -776,7 +776,7 @@ object DataManager : StardustAPI, PttInterface {
         // genuine cold start is never blocked by this. To connect after a disconnect the host calls
         // connect(address) or reconnectToCurrentDevice(), both of which lift the suppression.
         if (com.commcrete.stardust.transport.ConnectionManager.isAutoConnectSuppressed()) {
-            android.util.Log.d("ConfigDebug",
+            StardustLog.d("ConfigDebug",
                 "bondOnStartup SKIPPED — user disconnected/unpaired; waiting for an explicit connect")
             return
         }
@@ -796,10 +796,10 @@ object DataManager : StardustAPI, PttInterface {
         PairingRepository.reconcile()
 
         val pairedAddress = PairingRepository.currentPairedAddress()
-        android.util.Log.d("ConfigDebug", "bondOnStartup pairedAddress=$pairedAddress")
+        StardustLog.d("ConfigDebug", "bondOnStartup paired=${pairedAddress != null}")
         if (pairedAddress != null) {
             val device = getClientConnection().getBleConnectedStardustDeviceBySavedAddress(pairedAddress)
-            android.util.Log.d("ConfigDebug", "bondOnStartup resolvedDevice=${device?.address}")
+            StardustLog.d("ConfigDebug", "bondOnStartup resolvedDevice=${device != null}")
             if (device != null) {
                 // Case 2 (saved-in-app device): unconditionally reset every piece of per-session
                 // state that could silently block init on a reconnect — the InitConnectionHandler
@@ -918,7 +918,7 @@ object DataManager : StardustAPI, PttInterface {
         val device = result?.device
             ?: runCatching { android.bluetooth.BluetoothAdapter.getDefaultAdapter()?.getRemoteDevice(address) }.getOrNull()
             ?: run {
-                Log.w(LOG_TAG, "connect($address) failed: no such device")
+                StardustLog.w(LOG_TAG, "connect failed: no such device")
                 PairingTracker.failed(address, PairingFailure.NotReachable)
                 return PairingTracker.state
             }
@@ -961,7 +961,7 @@ object DataManager : StardustAPI, PttInterface {
         // BLE with USB connected kills in-flight USB file transfers too. This entry point is
         // BLE-scoped (it only ever tears down the BLE link below).
         if (BleManager.isUSBConnected) {
-            android.util.Log.d("ConfigDebug", "disconnectFromDevice: USB active — skipping package-handler cleanup (BLE-scoped disconnect)")
+            StardustLog.d("ConfigDebug", "disconnectFromDevice: USB active — skipping package-handler cleanup (BLE-scoped disconnect)")
         } else {
             cleanupPackageHandlerOnDisconnect()
         }

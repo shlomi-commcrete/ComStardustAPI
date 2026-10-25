@@ -2,7 +2,6 @@ package com.commcrete.stardust.stardust
 
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.commcrete.bittell.util.bittel_package.model.StardustFileParser
 import com.commcrete.bittell.util.bittel_package.model.StardustFileStartParser
 import com.commcrete.bittell.util.text_utils.getCharValue
@@ -23,6 +22,7 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustLocationParser
 import com.commcrete.stardust.util.LogUtils
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.update.StardustUpdateProcess
 import com.commcrete.stardust.stardust.model.StardustLogParser
 import com.commcrete.stardust.stardust.model.StardustPackage
@@ -183,31 +183,32 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     fun handleStardustPackage(bittelPackage: StardustPackage?, randomID: String) {
         val mPackage = bittelPackage ?: run {
-            Log.w("ConfigDebug", "handleStardustPackage bittelPackage=NULL (dropped) id=$randomID")
+            StardustLog.w("ConfigDebug", "handleStardustPackage bittelPackage=NULL (dropped) id=$randomID")
             return
         }
-        Log.d("ConfigDebug", "handleStardustPackage ENTER opCode=${mPackage.stardustOpCode} id=$randomID savedOpCode=${savedPackage?.stardustOpCode}")
+        // logcat only: per-packet, would flood the log file
+        android.util.Log.d("ConfigDebug", "handleStardustPackage ENTER opCode=${mPackage.stardustOpCode} id=$randomID savedOpCode=${savedPackage?.stardustOpCode}")
 
         if (isSosOpCode(mPackage.stardustOpCode)) {
-            Log.d(SOS_LOG_TAG,
+            StardustLog.d(SOS_LOG_TAG,
                 "INBOUND op=${mPackage.stardustOpCode} " +
                     "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) id=$randomID " +
-                    "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
-                    "dataSize=${mPackage.data?.size} data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+                    "dataSize=${mPackage.data?.size}"
             )
         }
 
         val isRadioEvent = mPackage.stardustOpCode == StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT
         if (isRadioEvent) {
-            Log.d(AppEvents.TX_RX_TRACE, "sdk raw event in id=$randomID data=[${mPackage.data?.take(2)?.joinToString(",")}]")
+            // logcat only: per-packet, would flood the log file
+            android.util.Log.d(AppEvents.TX_RX_TRACE, "sdk raw event in id=$randomID data=[${mPackage.data?.take(2)?.joinToString(",")}]")
         }
 
         synchronized(packageProcessingLock) {
             if (isDuplicate(mPackage)) {
-                Log.w("ConfigDebug", "handleStardustPackage -> isDuplicate == true for $randomID (opCode=${mPackage.stardustOpCode})")
-                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: duplicate")
+                StardustLog.w("ConfigDebug", "handleStardustPackage -> isDuplicate == true for $randomID (opCode=${mPackage.stardustOpCode})")
+                if (isRadioEvent) StardustLog.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: duplicate")
                 if (isSosOpCode(mPackage.stardustOpCode)) {
-                    Log.w(SOS_LOG_TAG,"INBOUND DROPPED as duplicate: op=${mPackage.stardustOpCode} id=$randomID")
+                    StardustLog.w(SOS_LOG_TAG,"INBOUND DROPPED as duplicate: op=${mPackage.stardustOpCode} id=$randomID")
                 }
                 resetTimer()
                 return
@@ -228,24 +229,26 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             if (mPackage.stardustControlByte.stardustMessageType == StardustControlByte.StardustMessageType.SNIFFED) {
                 // TODO: Handle Sniffed message
                 if (isSosOpCode(mPackage.stardustOpCode)) {
-                    Log.w(SOS_LOG_TAG,"INBOUND DROPPED as SNIFFED: op=${mPackage.stardustOpCode} id=$randomID")
+                    StardustLog.w(SOS_LOG_TAG,"INBOUND DROPPED as SNIFFED: op=${mPackage.stardustOpCode} id=$randomID")
                 }
-                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: sniffed")
+                if (isRadioEvent) StardustLog.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: sniffed")
                 return@launch
             }
 
             if (StardustInitConnectionHandler.onIncoming(mPackage)) {
                 if (isSosOpCode(mPackage.stardustOpCode)) {
-                    Log.w(SOS_LOG_TAG,"INBOUND CONSUMED by init handler: op=${mPackage.stardustOpCode} id=$randomID")
+                    StardustLog.w(SOS_LOG_TAG,"INBOUND CONSUMED by init handler: op=${mPackage.stardustOpCode} id=$randomID")
                 }
-                if (isRadioEvent) Log.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: consumed by init handler")
-                Log.w("ConfigDebug", "handleStardustPackage -> StardustInitConnectionHandler.onIncoming for $randomID" )
+                if (isRadioEvent) StardustLog.w(AppEvents.TX_RX_TRACE, "sdk raw event id=$randomID DROPPED: consumed by init handler")
+                // logcat only: per-packet, would flood the log file
+                android.util.Log.w("ConfigDebug", "handleStardustPackage -> StardustInitConnectionHandler.onIncoming for $randomID" )
                 synchronized(packageProcessingLock) { resetTimer() }
                 return@launch
             }
             Timber.tag("InitHandler").d("not handled by init handler")
 
-            Log.w("ConfigDebug", "handleStardustPackage -> dispatchPackage for $randomID" )
+            // logcat only: per-packet, would flood the log file
+            android.util.Log.w("ConfigDebug", "handleStardustPackage -> dispatchPackage for $randomID" )
             dispatchPackage(mPackage, randomID)
             synchronized(packageProcessingLock) { resetTimer() }
         }
@@ -276,7 +279,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun logIncomingPackage(mPackage: StardustPackage, randomID: String) {
-        Log.i("IncomingPackage", "op: ${mPackage.stardustOpCode}; src: ${mPackage.getSourceAsString()}")
+        // logcat only: per-packet, would flood the log file
+        android.util.Log.i("IncomingPackage", "op: ${mPackage.stardustOpCode}")
         Timber.tag(ClientConnection.LOG_TAG).d("handlePackageReceivedbyteArray $randomID: ${mPackage.stardustOpCode}")
     }
 
@@ -336,12 +340,10 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 // SEND_SOS_INTERRUPT 0xF9 — both local-radio confirmations we deliberately
                 // ignore) dies here without trace. Restricted to the SOS family so the routine
                 // no-op opcodes do not spam the log.
-                if (isSosOpCode(mPackage.stardustOpCode)) Log.d(SOS_LOG_TAG,
+                if (isSosOpCode(mPackage.stardustOpCode)) StardustLog.d(SOS_LOG_TAG,
                     "unhandled opCode=${mPackage.stardustOpCode} " +
                         "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) " +
-                        "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
-                        "dataSize=${mPackage.data?.size} " +
-                        "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+                        "dataSize=${mPackage.data?.size}"
                 )
             }
         }
@@ -351,10 +353,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         val eventPackage = StardustAppEventParser().parseAppEvent(mPackage)
         // Plain Log, not Timber: the TX/RX event timing has to be visible in logcat without the
         // host planting a tree (`adb logcat -s AppEvent`).
-        Log.d("AppEvent", "type=${eventPackage.eventType} xcvr=${eventPackage.xcvr} sender=${eventPackage.senderID}")
-        Log.d(AppEvents.TX_RX_TRACE, "sdk parsed ${eventPackage.eventType} xcvr=${eventPackage.xcvr}")
+        // logcat only: per-packet (one radio event per TX/RX packet), would flood the log file
+        android.util.Log.d("AppEvent", "type=${eventPackage.eventType} xcvr=${eventPackage.xcvr}")
+        // logcat only: per-packet, would flood the log file
+        android.util.Log.d(AppEvents.TX_RX_TRACE, "sdk parsed ${eventPackage.eventType} xcvr=${eventPackage.xcvr}")
         if (eventPackage.eventType == null) {
-            Log.w(AppEvents.TX_RX_TRACE, "sdk event type unknown/unparsed, data=[${mPackage.data?.take(2)?.joinToString(",")}]")
+            StardustLog.w(AppEvents.TX_RX_TRACE, "sdk event type unknown/unparsed, data=[${mPackage.data?.take(2)?.joinToString(",")}]")
         }
 
         eventPackage.let { sdPackage ->
@@ -362,7 +366,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 RXSuccess, RXFail, TXStart, TXFinish, TXBufferFull, TxEnd -> {
                     ConfigurationUtils.setStardustCarrierFromEvent(sdPackage)
                     // Null here means the host will ignore it: xcvr is not in the selected preset.
-                    Log.d(AppEvents.TX_RX_TRACE, "sdk ${sdPackage.eventType} xcvr=${sdPackage.xcvr} -> carrier ${sdPackage.carrier?.index}")
+                    // logcat only: per-packet, would flood the log file
+                    android.util.Log.d(AppEvents.TX_RX_TRACE, "sdk ${sdPackage.eventType} xcvr=${sdPackage.xcvr} -> carrier ${sdPackage.carrier?.index}")
                     // A multi-package send waiting on this transmission can move on now.
                     // xcvr is the transceiver's position in the preset — the same index the
                     // senders' Carrier carries (CarriersUtils.getCarriersByPreset).
@@ -381,7 +386,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     // The radio also sends this for an edit in place (RD / F changed on the current
                     // preset), and nothing else follows: the switch above uses the cached config, so
                     // re-read it, as UPDATE_PRESET_DATA does.
-                    Log.d("ConfigDebug", "PresetChange -> re-reading configuration")
+                    StardustLog.d("ConfigDebug", "PresetChange -> re-reading configuration")
                     getConfiguration()
                 }
                 ArmDelete -> {
@@ -597,7 +602,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     // Dropped, but not silently: a file that never shows up is easier to trace
                     // with this in the log. The index only — no sender or file name.
                     val activeKey = activeTransferByTransport[transportKey] ?: run {
-                        Log.d("FileReceiver", "file package ${fileData.current} with no transfer open; dropped")
+                        StardustLog.d("FileReceiver", "file package ${fileData.current} with no transfer open; dropped")
                         return@let
                     }
                     fileReceivers[activeKey]?.addDataPackage(fileData)
@@ -637,37 +642,32 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * not share a parser, see the note there.
      */
     private fun handleSOS(mPackage: StardustPackage) {
-        Log.d(SOS_LOG_TAG,
+        StardustLog.d(SOS_LOG_TAG,
             "handleSOS ENTER op=${mPackage.stardustOpCode} " +
                 "(0x${Integer.toHexString(mPackage.stardustOpCode.codeID)}) " +
-                "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
-                "len=${mPackage.length} dataSize=${mPackage.data?.size} " +
-                "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+                "len=${mPackage.length} dataSize=${mPackage.data?.size}"
         )
 
         val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: run {
-            Log.w(SOS_LOG_TAG,"handleSOS DROPPED: mapper returned null (no registered app user)")
+            StardustLog.w(SOS_LOG_TAG,"handleSOS DROPPED: mapper returned null (no registered app user)")
             return
         }
-        Log.d(SOS_LOG_TAG,
-            "handleSOS mapped sender=${pkg.senderId} receiver=${pkg.receiverId} " +
-                "group=${pkg.groupId} chat='${pkg.chatId}'"
+        StardustLog.d(SOS_LOG_TAG,
+            "handleSOS mapped toGroup=${pkg.groupId != null}"
         )
 
         handlerScope.launch {
             try {
                 val sosPackage = StardustLocationParser().parseSOS(mPackage) ?: run {
-                    Log.w(SOS_LOG_TAG,
+                    StardustLog.w(SOS_LOG_TAG,
                         "handleSOS DROPPED: parseSOS returned null for op=${mPackage.stardustOpCode} " +
                             "dataSize=${mPackage.data?.size} " +
                             "(parseSOS needs >= 12 bytes: 'SOS' + type + 8-byte location)"
                     )
                     return@launch
                 }
-                Log.d(SOS_LOG_TAG,
-                    "handleSOS parsed type=${sosPackage.sosType} " +
-                        "lat=${sosPackage.location.latitude} lon=${sosPackage.location.longitude} " +
-                        "alt=${sosPackage.location.altitude}"
+                StardustLog.d(SOS_LOG_TAG,
+                    "handleSOS parsed type=${sosPackage.sosType}"
                 )
 
                 val rowId = SOSUtils.saveSOSMessage(
@@ -677,22 +677,21 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     state = MessageState.RECEIVED
                 )
                 if (rowId == null) {
-                    Log.w(SOS_LOG_TAG,
+                    StardustLog.w(SOS_LOG_TAG,
                         "handleSOS DROPPED: repository saved no row " +
-                            "(contact/chat resolution failed) sender=${pkg.senderId} " +
-                            "group=${pkg.groupId} chat='${pkg.chatId}'"
+                            "(contact/chat resolution failed) toGroup=${pkg.groupId != null}"
                     )
                 } else {
-                    Log.d(SOS_LOG_TAG,"handleSOS SAVED rowId=$rowId")
+                    StardustLog.d(SOS_LOG_TAG,"handleSOS SAVED rowId=$rowId")
                 }
 
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveSOS(pkg, sosPackage)
-                Log.d(SOS_LOG_TAG,
+                StardustLog.d(SOS_LOG_TAG,
                     "handleSOS callback receiveSOS delivered=${DataManager.getCallbacks() != null}"
                 )
             } catch (e: Exception) {
-                Log.e(SOS_LOG_TAG, "handleSOS DROPPED: exception while handling SOS", e)
+                StardustLog.e(SOS_LOG_TAG, "handleSOS DROPPED: exception while handling SOS", e)
                 Timber.tag("StardustPackageHandler").e(e, "Failed to save SOS message")
             }
         }
@@ -711,22 +710,20 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * There is no report type to record, so the row is saved with a null subtype.
      */
     private fun handleRealSOS(mPackage: StardustPackage) {
-        Log.d(SOS_LOG_TAG,
+        StardustLog.d(SOS_LOG_TAG,
             "handleRealSOS ENTER op=${mPackage.stardustOpCode} " +
-                "src=${mPackage.getSourceAsString()} dst=${mPackage.getDestAsString()} " +
-                "len=${mPackage.length} dataSize=${mPackage.data?.size} " +
-                "data=[${mPackage.data?.take(16)?.joinToString(",")}]"
+                "len=${mPackage.length} dataSize=${mPackage.data?.size}"
         )
 
         val pkg = StardustPackageApiMapper.toStardustAPIPackage(mPackage) ?: run {
-            Log.w(SOS_LOG_TAG, "handleRealSOS DROPPED: mapper returned null (no registered app user)")
+            StardustLog.w(SOS_LOG_TAG, "handleRealSOS DROPPED: mapper returned null (no registered app user)")
             return
         }
 
         handlerScope.launch {
             try {
                 val sosPackage = StardustLocationParser().parseSOSReal(mPackage) ?: run {
-                    Log.w(SOS_LOG_TAG,
+                    StardustLog.w(SOS_LOG_TAG,
                         "handleRealSOS DROPPED: parseSOSReal returned null, " +
                             "dataSize=${mPackage.data?.size} (needs >= 8 bytes of packed location)"
                     )
@@ -740,23 +737,20 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     state = MessageState.RECEIVED
                 )
                 if (rowId == null) {
-                    Log.w(SOS_LOG_TAG,
+                    StardustLog.w(SOS_LOG_TAG,
                         "handleRealSOS DROPPED: repository saved no row " +
-                            "(contact/chat resolution failed) sender=${pkg.senderId} " +
-                            "group=${pkg.groupId} chat='${pkg.chatId}'"
+                            "(contact/chat resolution failed) toGroup=${pkg.groupId != null}"
                     )
                 } else {
-                    Log.d(SOS_LOG_TAG,
-                        "handleRealSOS SAVED rowId=$rowId sender=${pkg.senderId} " +
-                            "group=${pkg.groupId} chat='${pkg.chatId}' " +
-                            "lat=${sosPackage.location.latitude} lon=${sosPackage.location.longitude}"
+                    StardustLog.d(SOS_LOG_TAG,
+                        "handleRealSOS SAVED rowId=$rowId toGroup=${pkg.groupId != null}"
                     )
                 }
 
                 PlayerUtils.playNotificationSound()
                 DataManager.getCallbacks()?.receiveRealSOS(pkg, sosPackage.location)
             } catch (e: Exception) {
-                Log.e(SOS_LOG_TAG, "handleRealSOS DROPPED: exception while handling SOS", e)
+                StardustLog.e(SOS_LOG_TAG, "handleRealSOS DROPPED: exception while handling SOS", e)
                 Timber.tag("StardustPackageHandler").e(e, "Failed to save real SOS message")
             }
         }
@@ -861,7 +855,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private fun handleLocationRequested(mPackage: StardustPackage, randomID: String) {
 
-        Log.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
+        StardustLog.d("LocationRequest $randomID", "start ts ${System.currentTimeMillis()}")
         // Mapped here, before responding: respondToRequestedLocation swaps this package's source
         // and destination in place. Stamped now so the request sorts ahead of the location that
         // answers it, whichever row reaches the database first.
@@ -882,7 +876,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    Log.e(TAG, "Location request could not be saved; answering it anyway", e)
+                    StardustLog.e(TAG, "Location request could not be saved; answering it anyway", e)
                 }
             }
         }
