@@ -159,4 +159,62 @@ class MessagesOnIdChangeTest {
         assertEquals(alphaChat, chatOfMessage(fromOldQ))
         assertEquals("kept, but not Alpha's", MessageState.ARCHIVED, stateOf(fromOldQ))
     }
+
+    // User ↔ group: an id's messages never move into the other kind of chat.
+
+    private suspend fun group(name: String, groupId: String) =
+        repo.insertContactWithChat(FullContactData.createGroupContact(name = name, image = null, groupId = groupId)!!)
+
+    @Test
+    fun aUserAndAGroupSwappingAppIdsKeepTheirOwnHistory() = runBlocking {
+        user("Alpha", appX)
+        group("Ops", appY)
+        val alphaChat = chatIdOf("Alpha")
+        val opsChat = chatIdOf("Ops")
+        val fromX = received(alphaChat, appX)
+        val groupTraffic = db.appMessagesDao().addMessage(
+            MessageEntity(chatId = opsChat, senderID = appZ, receiverID = appY, extraData = MessageExtraData.Text("all"), state = MessageState.RECEIVED)
+        )
+        val alpha = draftNamed("Alpha")
+        val ops = draftNamed("Ops")
+
+        repo.applyContactOperations(
+            listOf(
+                ContactOperation.UpdateExisting(alpha, alpha.copy(appId = "")),
+                ContactOperation.UpdateExisting(ops, ops.copy(appId = "")),
+                ContactOperation.UpdateExisting(alpha.copy(appId = ""), alpha.copy(appId = appY)),
+                ContactOperation.UpdateExisting(ops.copy(appId = ""), ops.copy(appId = appX)),
+            )
+        )
+
+        assertEquals("the group's traffic stays in the group chat", opsChat, chatOfMessage(groupTraffic))
+        assertEquals(MessageState.RECEIVED, stateOf(groupTraffic))
+        assertEquals("Alpha's own messages do not go to the group", alphaChat, chatOfMessage(fromX))
+        assertEquals(MessageState.ARCHIVED, stateOf(fromX))
+    }
+
+    @Test
+    fun anEmptiedGroupsChatLandsArchivedInAPrivateChat() = runBlocking {
+        user("Alpha", appX)
+        group("Ops", appY)
+        val alphaChat = chatIdOf("Alpha")
+        val opsChat = chatIdOf("Ops")
+        val groupTraffic = db.appMessagesDao().addMessage(
+            MessageEntity(chatId = opsChat, senderID = appZ, receiverID = appY, extraData = MessageExtraData.Text("all"), state = MessageState.RECEIVED)
+        )
+        val alpha = draftNamed("Alpha")
+        val ops = draftNamed("Ops")
+        val applied = alpha.copy(appId = appY)
+
+        repo.applyContactOperations(
+            listOf(
+                ContactOperation.UpdateExisting(alpha, applied),
+                ContactOperation.DeleteExisting(ops, reparentTo = applied),
+            )
+        )
+
+        assertNull(db.appChatsDao().getChatByChatId(opsChat))
+        assertEquals(alphaChat, chatOfMessage(groupTraffic))
+        assertEquals("kept, never shown as a private chat's", MessageState.ARCHIVED, stateOf(groupTraffic))
+    }
 }

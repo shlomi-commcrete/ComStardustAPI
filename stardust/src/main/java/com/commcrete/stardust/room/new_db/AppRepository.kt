@@ -350,6 +350,12 @@ class AppRepository(
             val reparentToChatId = d.reparentTo?.let { contacts.chatIdForContactDraft(it) }
             if (reparentToChatId != null) {
                 if (sourceChatId != null && sourceChatId != reparentToChatId) {
+                    // Into the other kind of chat — a group's traffic into a private chat, or the
+                    // reverse — the history lands archived: kept, never shown as that chat's. The
+                    // same as a contact changing kind. In-flight rows settle unarchived.
+                    if (chatTypeOf(sourceChatId) != chatTypeOf(reparentToChatId)) {
+                        messagesDao.archiveChatMessages(sourceChatId)
+                    }
                     val toContactId = reparentToContactId
                     val moved = messagesDao.reassignChat(sourceChatId, reparentToChatId)
                     identityLog.recordReparent(
@@ -399,9 +405,13 @@ class AppRepository(
         return contacts.chatIdForContactId(type, contactId)
     }
 
+    private suspend fun chatTypeOf(chatId: String): ChatType? = chatsDao.getChatByChatId(chatId)?.type
+
     /**
      * An id that moved to another contact in this batch takes its messages with it: rows in
-     * the former holder's chat exchanged with that id move to the new holder's chat.
+     * the former holder's chat exchanged with that id move to the new holder's chat — unless
+     * that chat is the other kind (user ↔ group). Then they stay: a private chat archives them
+     * in [archiveMessagesOfFormerIds], a group chat keeps them as its own history.
      *
      * Returns every chat whose contact held an involved id before or holds one now — the
      * chats [archiveMessagesOfFormerIds] then cleans up.
@@ -420,6 +430,7 @@ class AppRepository(
             val fromChatId = chatOf(fromContactId) ?: return@forEach
             val toChatId = chatOf(toContactId) ?: return@forEach
             if (fromChatId == toChatId) return@forEach
+            if (chatTypeOf(fromChatId) != chatTypeOf(toChatId)) return@forEach
             val moved = messagesDao.moveChatMessagesOfPeer(fromChatId, toChatId, id)
             if (moved > 0) {
                 identityLog.recordReparent(
