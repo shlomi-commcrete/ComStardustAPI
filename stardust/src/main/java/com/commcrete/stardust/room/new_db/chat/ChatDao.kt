@@ -27,6 +27,45 @@ private const val CHAT_NAME_SQL = """
     )
 """
 
+/**
+ * A message `m` that chat `c` shows: not archived, not an excluded type, and in a private chat
+ * exchanged with one of its contact's CURRENT ids. A private chat hides rows under an id its
+ * contact gave up, so they must not be its preview or its unread count either. Ids compare
+ * case-insensitively, as archiveMessagesOfFormerIds normalises them.
+ */
+private const val VISIBLE_MESSAGE_SQL = """
+    m.state != 5 AND m.type NOT IN (:excludedTypes)
+    AND (
+        c.type != 'PRIVATE'
+        OR EXISTS (
+            SELECT 1 FROM chat_participants cpv
+            LEFT JOIN app_contact_user_ids uv ON uv.contact_id = cpv.contact_id
+            LEFT JOIN app_contact_devices  dv ON dv.contact_id = cpv.contact_id
+            WHERE cpv.chat_id = c.id
+              AND (LOWER(m.sender_id)   IN (LOWER(uv.user_id), LOWER(dv.device_id))
+                OR LOWER(m.receiver_id) IN (LOWER(uv.user_id), LOWER(dv.device_id)))
+        )
+    )
+"""
+
+/**
+ * The chat's preview: its newest [VISIBLE_MESSAGE_SQL] row, newest id on a tie — a MAX(time) join
+ * matched every row at that time, an archived one included, and returned the chat twice.
+ */
+private const val LAST_MESSAGE_JOIN_SQL = """
+    LEFT JOIN messages lm ON lm.id = (
+        SELECT m.id FROM messages m
+        WHERE m.chat_id = c.id AND $VISIBLE_MESSAGE_SQL
+        ORDER BY m.epoch_time_ms DESC, m.id DESC
+        LIMIT 1
+    )
+"""
+
+/** Received and not yet seen (state 2), among the rows the chat shows. */
+private const val UNSEEN_COUNT_SQL = """
+    (SELECT COUNT(*) FROM messages m WHERE m.chat_id = c.id AND m.state IN (2) AND $VISIBLE_MESSAGE_SQL)
+"""
+
 /** One private chat of one contact — see [ChatDao.getDuplicatePrivateChats]. */
 data class ContactChatRow(
     @ColumnInfo(name = "contactId") val contactId: Int,
@@ -161,35 +200,15 @@ interface ChatDao {
             lm.sender_id                                    AS lastSenderId,
             COALESCE(ct.name, lm.sender_id)                 AS lastSenderName,
             lm.epoch_time_ms                                AS lastMessageEpochMs,
-            COALESCE(unseen.unseen_count, 0)                AS unseenCount
+            $UNSEEN_COUNT_SQL                               AS unseenCount
         FROM chats c
-        LEFT JOIN (
-            SELECT m.chat_id, m.type, m.state, m.extra_data, m.sender_id, m.epoch_time_ms
-            FROM messages m
-            JOIN (
-                SELECT chat_id, MAX(epoch_time_ms) AS max_epoch_time_ms
-                FROM messages
-                WHERE state != 5 AND type NOT IN (:excludedTypes)
-                GROUP BY chat_id
-            ) latest
-                ON latest.chat_id = m.chat_id
-               AND latest.max_epoch_time_ms = m.epoch_time_ms
-            WHERE m.type NOT IN (:excludedTypes)
-        ) lm
-            ON lm.chat_id = c.id
+        $LAST_MESSAGE_JOIN_SQL
         LEFT JOIN app_contact_user_ids u
             ON u.user_id = lm.sender_id
         LEFT JOIN app_contact_devices d
             ON d.device_id = lm.sender_id
         LEFT JOIN contacts ct
             ON ct.id = COALESCE(u.contact_id, d.contact_id)
-        LEFT JOIN (
-            SELECT chat_id, COUNT(*) AS unseen_count
-            FROM messages
-            WHERE state IN (2) AND type NOT IN (:excludedTypes)
-            GROUP BY chat_id
-        ) unseen
-            ON unseen.chat_id = c.id
         ORDER BY lastMessageEpochMs DESC, name COLLATE NOCASE ASC
     """)
     fun getChatSummaries(excludedTypes: List<MessageType>): Flow<List<ChatSummary>>
@@ -207,35 +226,15 @@ interface ChatDao {
             lm.sender_id                                    AS lastSenderId,
             COALESCE(ct.name, lm.sender_id)                 AS lastSenderName,
             lm.epoch_time_ms                                AS lastMessageEpochMs,
-            COALESCE(unseen.unseen_count, 0)                AS unseenCount
+            $UNSEEN_COUNT_SQL                               AS unseenCount
         FROM chats c
-        LEFT JOIN (
-            SELECT m.chat_id, m.type, m.state, m.extra_data, m.sender_id, m.epoch_time_ms
-            FROM messages m
-            JOIN (
-                SELECT chat_id, MAX(epoch_time_ms) AS max_epoch_time_ms
-                FROM messages
-                WHERE state != 5 AND type NOT IN (:excludedTypes)
-                GROUP BY chat_id
-            ) latest
-                ON latest.chat_id = m.chat_id
-               AND latest.max_epoch_time_ms = m.epoch_time_ms
-            WHERE m.type NOT IN (:excludedTypes)
-        ) lm
-            ON lm.chat_id = c.id
+        $LAST_MESSAGE_JOIN_SQL
         LEFT JOIN app_contact_user_ids u
             ON u.user_id = lm.sender_id
         LEFT JOIN app_contact_devices d
             ON d.device_id = lm.sender_id
         LEFT JOIN contacts ct
             ON ct.id = COALESCE(u.contact_id, d.contact_id)
-        LEFT JOIN (
-            SELECT chat_id, COUNT(*) AS unseen_count
-            FROM messages
-            WHERE state IN (2) AND type NOT IN (:excludedTypes)
-            GROUP BY chat_id
-        ) unseen
-            ON unseen.chat_id = c.id
         WHERE c.id = :chatId
         LIMIT 1
     """)

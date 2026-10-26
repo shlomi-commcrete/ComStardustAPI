@@ -187,10 +187,103 @@ class MessagesOnIdChangeTest {
             )
         )
 
+        // Each step after the first starts from a draft with no id: the contacts must still be found.
+        assertEquals(appY, draftNamed("Alpha").appId)
+        assertEquals(appX, draftNamed("Ops").appId)
         assertEquals("the group's traffic stays in the group chat", opsChat, chatOfMessage(groupTraffic))
         assertEquals(MessageState.RECEIVED, stateOf(groupTraffic))
         assertEquals("Alpha's own messages do not go to the group", alphaChat, chatOfMessage(fromX))
         assertEquals(MessageState.ARCHIVED, stateOf(fromX))
+    }
+
+    @Test
+    fun twoUsersWithOnlyAnAppIdSwapThemAndKeepTheirChats() = runBlocking {
+        user("Alpha", appX)
+        user("Bravo", appY)
+        val alphaChat = chatIdOf("Alpha")
+        val bravoChat = chatIdOf("Bravo")
+        val fromX = received(alphaChat, appX)
+        val alpha = draftNamed("Alpha")
+        val bravo = draftNamed("Bravo")
+
+        repo.applyContactOperations(
+            listOf(
+                ContactOperation.UpdateExisting(alpha, alpha.copy(appId = "")),
+                ContactOperation.UpdateExisting(bravo, bravo.copy(appId = "")),
+                ContactOperation.UpdateExisting(alpha.copy(appId = ""), alpha.copy(appId = appY)),
+                ContactOperation.UpdateExisting(bravo.copy(appId = ""), bravo.copy(appId = appX)),
+            )
+        )
+
+        assertEquals(appY, draftNamed("Alpha").appId)
+        assertEquals(appX, draftNamed("Bravo").appId)
+        assertEquals("the id's messages follow it", bravoChat, chatOfMessage(fromX))
+        assertEquals(MessageState.RECEIVED, stateOf(fromX))
+    }
+
+    @Test
+    fun anUpdateOfAContactThatIsNotThereFailsTheWholeSave() = runBlocking {
+        user("Alpha", appX)
+        val alpha = draftNamed("Alpha")
+        val ghost = ContactDraft(name = "Ghost", appId = oldQ, type = alpha.type)
+
+        val failed = runCatching {
+            repo.applyContactOperations(
+                listOf(
+                    ContactOperation.UpdateExisting(alpha, alpha.copy(name = "Alpha 2")),
+                    ContactOperation.UpdateExisting(ghost, ghost.copy(name = "Ghost 2")),
+                )
+            )
+        }.isFailure
+
+        assertEquals("refused, not skipped", true, failed)
+        assertEquals("rolled back", "Alpha", draftNamed("Alpha").name)
+    }
+
+    @Test
+    fun contactsASwapLeftWithNoIdGetTheirOwnIdsBack() = runBlocking {
+        user("Alpha", appX)
+        group("Ops", appY)
+        val alpha = draftNamed("Alpha")
+        val ops = draftNamed("Ops")
+        // What a swap before the applyOperations fix wrote: the strips, and nothing after.
+        repo.applyContactOperations(
+            listOf(
+                ContactOperation.UpdateExisting(alpha, alpha.copy(appId = "")),
+                ContactOperation.UpdateExisting(ops, ops.copy(appId = "")),
+            )
+        )
+        assertEquals("both invisible", emptyList<String>(), repo.getAllContacts().map { it.contact.name })
+
+        assertEquals(2, repo.restoreContactsLeftWithoutIds())
+
+        assertEquals(appX, draftNamed("Alpha").appId)
+        assertEquals(appY, draftNamed("Ops").appId)
+        assertEquals("nothing left to repair", 0, repo.restoreContactsLeftWithoutIds())
+    }
+
+    @Test
+    fun aPrivateChatsPreviewIsNeverAnArchivedRowOrOneUnderAFormerId() = runBlocking {
+        user("Alpha", appX)
+        val chat = chatIdOf("Alpha")
+        val live = db.appMessagesDao().addMessage(
+            MessageEntity(chatId = chat, senderID = appX, receiverID = me, extraData = MessageExtraData.Text("live"), state = MessageState.RECEIVED, epochTimeMs = 1_000)
+        )
+        // Newer, but under an id Alpha does not hold: the conversation does not show it.
+        db.appMessagesDao().addMessage(
+            MessageEntity(chatId = chat, senderID = oldQ, receiverID = me, extraData = MessageExtraData.Text("old id"), state = MessageState.RECEIVED, epochTimeMs = 3_000)
+        )
+        // Same time as the live row, archived: a MAX(time) join used to pick it as well.
+        db.appMessagesDao().addMessage(
+            MessageEntity(chatId = chat, senderID = appX, receiverID = me, extraData = MessageExtraData.Text("gone"), state = MessageState.ARCHIVED, epochTimeMs = 1_000)
+        )
+
+        val rows = repo.getChatSummaries().first().filter { it.chatId == chat }
+        assertEquals("one row per chat", 1, rows.size)
+        assertEquals(1_000L, rows.single().lastMessageEpochMs)
+        assertEquals(MessageState.RECEIVED, rows.single().lastMessageState)
+        assertEquals("only the live row counts as unseen", 1, rows.single().unseenCount)
+        assertEquals(MessageState.RECEIVED, stateOf(live))
     }
 
     @Test

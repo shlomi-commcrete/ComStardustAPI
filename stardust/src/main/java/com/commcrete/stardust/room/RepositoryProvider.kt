@@ -58,6 +58,11 @@ object RepositoryProvider {
                         // was and must not stop the sweep after it.
                         runCatching { repo.mergeDuplicatePrivateChats() }
                             .onFailure { StardustLog.w("RepositoryProvider", "Chat merge failed: ${it.javaClass.simpleName}") }
+                        // Repairs what a swap before the applyOperations fix left: contacts with
+                        // no id, invisible with their chats. Idempotent, and on its own like the
+                        // merge so a failure stops nothing after it.
+                        runCatching { repo.restoreContactsLeftWithoutIds() }
+                            .onFailure { StardustLog.w("RepositoryProvider", "Contact id repair failed: ${it.javaClass.simpleName}") }
                         // Last, so it sees the migrated rows too: settles the
                         // transfers the previous run died in the middle of, which
                         // nothing else can finish for them.

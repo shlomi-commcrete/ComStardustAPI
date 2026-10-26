@@ -67,4 +67,7 @@ object IdentityLogSource {
 
     /** Source not stated by the caller. */
     const val UNKNOWN = "unknown"
+
+    /** A startup repair giving a contact left with no id back the ids it last had. */
+    const val REPAIR = "repair"
 }

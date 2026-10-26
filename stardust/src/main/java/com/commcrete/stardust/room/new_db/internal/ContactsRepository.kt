@@ -425,14 +425,19 @@ internal class ContactsRepository(
      * Each strip is recorded in `contact_identity_log`: the mapping is deleted
      * outright here, so this is the only moment the losing side of a swap is
      * still known.
+     *
+     * @param resolvedContactId [original]'s contact as resolved before its batch ran — see
+     *   `AppRepository.applyContactOperations`. A swap's second step starts from a draft with no
+     *   id left, which resolves to nothing by itself.
      */
     suspend fun updateExistingContact(
         original: ContactDraft,
         updated: ContactDraft,
         source: String = IdentityLogSource.UNKNOWN,
         batchId: Long? = null,
+        resolvedContactId: Int? = null,
     ) = withContext(Dispatchers.IO) {
-        val contactId = resolveContactId(original) ?: return@withContext
+        val contactId = resolvedContactId ?: resolveContactId(original) ?: return@withContext
         val newKind = updated.effectiveType()
         val oldKind = original.effectiveType()
         if (oldKind != null && newKind != null && (oldKind == ContactType.GROUP) != (newKind == ContactType.GROUP)) {

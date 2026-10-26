@@ -9,7 +9,12 @@ import com.commcrete.stardust.contacts.ContactOperation
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogDao
 import com.commcrete.stardust.room.new_db.audit.ContactIdentityLogEntity
+import com.commcrete.stardust.room.new_db.audit.IdentityChangeKind
+import com.commcrete.stardust.room.new_db.audit.IdentityKind
 import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
+import com.commcrete.stardust.room.new_db.contact.ContactGroupIdEntity
+import com.commcrete.stardust.room.new_db.contact.ContactUserIdEntity
+import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.internal.IdentityLogRecorder
 import com.commcrete.stardust.room.new_db.chat.ChatDao
 import com.commcrete.stardust.room.new_db.chat.ChatEntity
@@ -329,7 +334,22 @@ class AppRepository(
             Triple(d, contactId, chatId)
         }
 
-        for (u in updates) contacts.updateExistingContact(u.original, u.updated, source, batchId)
+        // Every update's contact too, before anything is written. A contact updated twice — a
+        // swap frees its id first, so another contact can take it, then gives it its new one —
+        // starts its second step from a draft with no id left: that step is the contact the
+        // previous one wrote. An update whose contact cannot be found fails the whole save rather
+        // than skip itself and leave a contact with no id.
+        val updateTargets = mutableListOf<Pair<ContactOperation.UpdateExisting, Int>>()
+        for (u in updates) {
+            val contactId = updateTargets.lastOrNull { (previous, _) -> previous.updated == u.original }?.second
+                ?: contacts.contactIdForDraft(u.original)
+                ?: throw IllegalStateException("Contact to update not found")
+            updateTargets += u to contactId
+        }
+
+        for ((u, contactId) in updateTargets) {
+            contacts.updateExistingContact(u.original, u.updated, source, batchId, resolvedContactId = contactId)
+        }
         for (r in renames) contacts.renameContactAndChat(r.target, r.newName, source, batchId)
 
         val toInsert = inserts.mapNotNull { it.contact.toFullContactData() }
@@ -1016,6 +1036,53 @@ class AppRepository(
             // A count, never names: a callsign must not reach a log line (§28).
             StardustLog.i(TAG, "Merged duplicate private chats: removed $removed")
             removed
+        }
+    }
+
+    /**
+     * Gives each contact left with no id the ids its last stripping took, read from
+     * `contact_identity_log`, and returns how many contacts were restored. Before the swap fix in
+     * applyOperations, a swap's second step could not find its contact and skipped itself: both
+     * contacts lost their ids, and with them their chats' contact.
+     *
+     * An id another contact holds now stays with it. Messages archived by that save stay archived:
+     * nothing tells them apart from ones the operator archived. Idempotent — with nothing to restore
+     * it is one query — so it runs on every start.
+     */
+    suspend fun restoreContactsLeftWithoutIds(): Int = messages.withSaveLock {
+        withContext(Dispatchers.IO) {
+            val orphans = contactsDao.getContactIdsWithoutIds()
+            if (orphans.isEmpty()) return@withContext 0
+            val batchId = identityLog.nextBatchId()
+            var restored = 0
+            inTransaction {
+                orphans.forEach { contactId ->
+                    val strips = identityLog.historyForContact(contactId)
+                        .filter { it.kind == IdentityChangeKind.STRIPPED && it.fromContactId == contactId }
+                    // The last save that took its ids: its strips, not every id it ever had.
+                    val last = strips.maxByOrNull { it.atMs }?.let { latest ->
+                        strips.filter { it.batchId == latest.batchId && (latest.batchId != null || it.id == latest.id) }
+                    }.orEmpty()
+                    val name = contactsDao.getContactById(contactId)?.name
+                    var any = false
+                    last.forEach { strip ->
+                        val id = strip.idValue ?: return@forEach
+                        if (contactsDao.findContactIdByUserOrDeviceId(id) != null || contactsDao.findContactIdByGroupId(id) != null) return@forEach
+                        when (strip.idKind) {
+                            IdentityKind.USER_ID -> contactsDao.upsertUserAppId(ContactUserIdEntity(userId = id, contactId = contactId))
+                            IdentityKind.GROUP_ID -> contactsDao.upsertGroupId(ContactGroupIdEntity(groupId = id, contactId = contactId))
+                            IdentityKind.DEVICE_ID -> contactsDao.linkDevice(DeviceEntity(id = id), contactId)
+                            null -> return@forEach
+                        }
+                        identityLog.recordAssign(strip.idKind, id, contactId, name, IdentityLogSource.REPAIR, batchId)
+                        any = true
+                    }
+                    if (any) restored++
+                }
+            }
+            // A count, never names or ids: they must not reach a log line (§28).
+            StardustLog.i(TAG, "Restored contacts left without ids: $restored of ${orphans.size}")
+            restored
         }
     }
 

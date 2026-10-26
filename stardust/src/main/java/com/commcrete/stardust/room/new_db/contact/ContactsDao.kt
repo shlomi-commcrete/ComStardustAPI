@@ -224,6 +224,20 @@ interface ContactsDao {
     )
     suspend fun getOwnedIdRows(contactIds: List<Int>): List<OwnedIdRow>
 
+    /**
+     * Contacts that own no id at all — nothing can address them and the readers drop them, so
+     * they are invisible. Only a fault leaves one: see AppRepository.restoreContactsLeftWithoutIds.
+     */
+    @Query(
+        """
+        SELECT c.id FROM contacts c
+        WHERE NOT EXISTS (SELECT 1 FROM app_contact_user_ids  WHERE contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM app_contact_group_ids WHERE contact_id = c.id)
+          AND NOT EXISTS (SELECT 1 FROM app_contact_devices   WHERE contact_id = c.id)
+        """
+    )
+    suspend fun getContactIdsWithoutIds(): List<Int>
+
     @Query("SELECT contact_id FROM app_contact_group_ids WHERE group_id = :groupId LIMIT 1")
     suspend fun findContactIdByGroupId(groupId: String): Int?
 
