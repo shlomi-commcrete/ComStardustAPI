@@ -25,6 +25,7 @@ import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -833,6 +834,12 @@ internal class MessagesRepository(
     // ─────────────────────────────────────────────────────────────────────
     // Unseen counters
     // ─────────────────────────────────────────────────────────────────────
+
+    /** See [MessageDao.observeLatestPositionFrom]. Equal emissions are dropped. */
+    fun observeLatestPositionFrom(senderId: String): Flow<MessageEntity?> =
+        messagesDao.observeLatestPositionFrom(senderId)
+            .distinctUntilChanged()
+            .flowOn(Dispatchers.IO)
 
     fun observeReceivedMessageCount(
         types: List<MessageType>? = null,

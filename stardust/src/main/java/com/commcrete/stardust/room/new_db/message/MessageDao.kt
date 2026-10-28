@@ -599,6 +599,25 @@ interface MessageDao {
     ): MessageEntity?
 
     /**
+     * The newest message [senderId] sent that carries a position — a [location] or an [sos]
+     * message, in ANY chat — re-emitted whenever the messages table changes; null while it has
+     * sent none. Archived rows (5) count: archiving hides a message, it does not make the
+     * position less recent.
+     */
+    @Query("""
+        SELECT * FROM messages
+        WHERE sender_id = :senderId
+          AND (type = :location OR type = :sos)
+        ORDER BY epoch_time_ms DESC, id DESC
+        LIMIT 1
+    """)
+    fun observeLatestPositionFrom(
+        senderId: String,
+        location: MessageType = MessageType.LOCATION,
+        sos: MessageType = MessageType.SOS,
+    ): Flow<MessageEntity?>
+
+    /**
      * Appends an acknowledgement to an SOS row's extra_data. Returns the number of rows
      * written (0 = refused).
      *

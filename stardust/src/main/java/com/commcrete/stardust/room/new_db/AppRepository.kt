@@ -947,6 +947,14 @@ class AppRepository(
     ): Flow<Int> = messages.observeReceivedMessageCount(types, excludeTypes)
 
     /**
+     * The newest LOCATION or SOS message [senderId] (an app or device ID) sent, in any chat; null
+     * while it has sent none. Re-emits when a newer one arrives — for following a contact's last
+     * known position.
+     */
+    fun observeLatestPositionFrom(senderId: String): Flow<MessageEntity?> =
+        messages.observeLatestPositionFrom(senderId)
+
+    /**
      * Live unseen counts keyed by chatId. Use for GROUP chats — the group target
      * is synthetic, so its unseen count is the chat's unseen count.
      */
