@@ -77,6 +77,28 @@ class ContactKindSwitchTest {
         }
 
     @Test
+    fun aDeviceGivenAnAppIdBecomesAUserInItsOwnChat() = runBlocking {
+        repo.insertContactWithChat(
+            FullContactData.createDeviceContact(name = "Radio 7", image = null, deviceId = deviceId)!!,
+        )
+        val chat = chatOf("Radio 7")
+        val fromDevice = addMessage(chat.chatId, from = deviceId)
+        val device = repo.getAllContacts().map(ContactDraft.Companion::fromFullContactData).single { it.name == "Radio 7" }
+
+        // As the contact editor sends it: the device's own draft, with an App ID typed in.
+        repo.applyContactOperations(listOf(ContactOperation.UpdateExisting(device, device.copy(appId = appId))))
+
+        val user = repo.getAllContacts().single { it.contact.name == "Radio 7" }
+        assertTrue("a user now", user is FullContactData.User)
+        assertEquals(appId, draftOf(appId).appId)
+        assertEquals("keeps its radio", deviceId, draftOf(appId).deviceId)
+        assertEquals("same chat", chat.chatId, chatOf("Radio 7").chatId)
+        assertEquals(ChatType.PRIVATE, chatOf("Radio 7").chatType)
+        assertEquals("its radio's messages stay shown", MessageState.RECEIVED, db.appMessagesDao().getMessageById(fromDevice)?.state)
+        assertEquals("the App ID reaches it", chat.chatId, repo.getChatIdForReceivedPackage(appId, null))
+    }
+
+    @Test
     fun aUserBecomesAGroupInItsOwnChat() = runBlocking {
         repo.insertContactWithChat(
             FullContactData.createUserContact(name = "Alpha", image = null, userId = appId, deviceId = deviceId)!!,
