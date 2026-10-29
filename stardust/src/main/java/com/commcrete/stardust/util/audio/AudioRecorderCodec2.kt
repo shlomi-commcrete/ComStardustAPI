@@ -130,7 +130,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Started recorder ${recorder}")
 //            AudioRecordManager.register(recorder!!)
         }catch ( e : Exception) {
-            e.printStackTrace()
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder could not log the started recorder", e)
         }
         AudioCaptureConfig.applyInputRoute(DataManager.appContext, recorder, capturePlan.preferredInputDevice)
         recorder?.startRecording()
@@ -230,8 +230,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     it.stop()
                     it.release()
                 } catch (e: Exception) {
-                    e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
-                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder", e)
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
                     keepAliveHold?.release()
@@ -241,7 +240,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder failed while stopping", e)
         }
     }
 
@@ -266,8 +265,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     it.release()
                     StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder Stopped recorder ${recorder}")
                 } catch (e: Exception) {
-                    e.printStackTrace() // or Timber.e(e, "Failed to stop recorder")
-                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder: ${e.message}")
+                    StardustLog.d(TAG_PTT_DEBUG, "Exception while stopping recorder", e)
                     stopRecording(retryNum, chatId, receiverId, path, carrier)
                 } finally {
                     AudioCaptureConfig.clearInputRoute(DataManager.appContext)
@@ -283,7 +281,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             // ✅ Save PTT regardless of whether recorder was null
             saveOrRemovePttFile(chatId, receiverId, path)
         } catch (e: Exception) {
-            StardustLog.w(TAG_PTT_DEBUG, "mWavRecorder failed while stopping; retrying", e)
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder failed while stopping; retrying", e)
 
             stopRecording(retryNum, chatId, receiverId, path, carrier)
         } finally {
@@ -327,7 +325,8 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
             }
 
         } catch (e: FileNotFoundException) {
-            e.printStackTrace()
+            // Class only: the message is the PTT file path, which names the chat.
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder could not open the PTT file: ${e.javaClass.simpleName}")
         }
         val data = arrayListOf<Byte>()
         val dataPrint = arrayListOf<Byte>()
@@ -395,7 +394,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
                     chunkIndex++
                 }
             } catch (e: IOException) {
-                e.printStackTrace()
+                StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder could not process a captured frame", e)
             }
         }
 
@@ -421,7 +420,7 @@ class AudioRecorderCodec2(private val viewModel : PttInterface? = null) :
         try {
             os?.close()
         } catch (e: IOException) {
-            e.printStackTrace()
+            StardustLog.d(TAG_PTT_DEBUG, "mWavRecorder could not close the PTT file: ${e.javaClass.simpleName}")
         }
         logByteArray("totalRecording", dataPrint.toByteArray())
     }
