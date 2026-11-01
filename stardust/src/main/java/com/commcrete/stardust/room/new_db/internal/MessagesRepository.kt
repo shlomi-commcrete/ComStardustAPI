@@ -835,9 +835,16 @@ internal class MessagesRepository(
     // Unseen counters
     // ─────────────────────────────────────────────────────────────────────
 
-    /** See [MessageDao.observeLatestPositionFrom]. Equal emissions are dropped. */
-    fun observeLatestPositionFrom(senderId: String): Flow<MessageEntity?> =
-        messagesDao.observeLatestPositionFrom(senderId)
+    /**
+     * See [MessageDao.observeLatestPositionFrom]. Equal emissions are dropped. [includeSos] false
+     * passes LOCATION as both types: the query's two-type match then finds locations only.
+     */
+    fun observeLatestPositionFrom(senderId: String, includeSos: Boolean = true): Flow<MessageEntity?> =
+        messagesDao.observeLatestPositionFrom(
+            senderId,
+            location = MessageType.LOCATION,
+            sos = if (includeSos) MessageType.SOS else MessageType.LOCATION,
+        )
             .distinctUntilChanged()
             .flowOn(Dispatchers.IO)
 

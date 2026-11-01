@@ -949,10 +949,11 @@ class AppRepository(
     /**
      * The newest LOCATION or SOS message [senderId] (an app or device ID) sent, in any chat; null
      * while it has sent none. Re-emits when a newer one arrives — for following a contact's last
-     * known position.
+     * known position. [includeSos] false: LOCATION messages only, so an SOS is not a position to
+     * follow and the last location stays the answer.
      */
-    fun observeLatestPositionFrom(senderId: String): Flow<MessageEntity?> =
-        messages.observeLatestPositionFrom(senderId)
+    fun observeLatestPositionFrom(senderId: String, includeSos: Boolean = true): Flow<MessageEntity?> =
+        messages.observeLatestPositionFrom(senderId, includeSos)
 
     /**
      * Live unseen counts keyed by chatId. Use for GROUP chats — the group target
