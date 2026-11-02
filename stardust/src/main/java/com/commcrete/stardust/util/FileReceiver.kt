@@ -24,11 +24,16 @@ import kotlinx.coroutines.withContext
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.io.FileOutputStream
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicReference
 
 class FileReceiver(
     val firstPackage: StardustFileStartPackage,
     val stardustPackage: StardustPackage,
+    /** [transferId] for this file — becomes [FileUtils.FileTransferData.Receive.id]. */
+    transferId: String,
+    /** When the start package arrived; part of [transferId], so the two must be the same value. */
+    startedAtMs: Long,
     val onLastPackageReceived: (receiver: FileReceiver) -> Unit) {
 
     /**
@@ -93,7 +98,7 @@ class FileReceiver(
 
     init {
         data = FileUtils.FileTransferData.Receive(
-            id = getUniqueKey(stardustPackage),
+            id = transferId,
             senderId = stardustPackage.senderId,
             chatId = stardustPackage.chatId,
             fileName = firstPackage.fileName,
@@ -103,6 +108,7 @@ class FileReceiver(
             numOfPackages = firstPackage.total,
             spare = firstPackage.spare,
             originalSize = firstPackage.originalSize,
+            timestamp = startedAtMs,
         )
     }
 
@@ -815,8 +821,37 @@ class FileReceiver(
                 start.spare in 0 until start.total &&
                 start.spareData >= 0
 
+        /**
+         * The transport's key: one sender, one destination, one RD. The same for every file that
+         * sender sends there — never a file's identity, see [transferId].
+         */
         fun getUniqueKey(filePackage: StardustPackage): String {
             return "${filePackage.getSourceAsString()}_${filePackage.getDestAsString()}_${filePackage.stardustControlByte.stardustDeliveryType}".hashCode().toString()
+        }
+
+        /**
+         * One file's identity: [FileUtils.FileTransferData.Receive.id] and its receiver's registry
+         * key. Was [getUniqueKey], shared by every file from one sender to one chat, so a host
+         * keying progress on it took a second file's percentages as late ones for the first.
+         * MD5 only shortens the key; it is not a security measure. 16 hex chars (64 bits): a
+         * clash would silently bring that bug back, and is ~1 in 10^9 even at 100k files per run.
+         */
+        fun transferId(
+            transportKey: String,
+            senderId: String,
+            chatId: String,
+            start: StardustFileStartPackage,
+            startedAtMs: Long,
+            sequence: Long,
+        ): String {
+            val source = listOf(
+                transportKey, senderId, chatId, start.fileName, start.fileEnding,
+                start.total, start.spare, startedAtMs, sequence,
+            ).joinToString("_")
+            return MessageDigest.getInstance("MD5")
+                .digest(source.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+                .take(16)
         }
     }
 }

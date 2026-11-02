@@ -565,8 +565,16 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         val transportKey = FileReceiver.getUniqueKey(mPackage)
 
         fun registerReceiver(startData: StardustFileStartPackage) {
-            val transferKey = buildTransferKey(transportKey, startData)
-            val receiver = FileReceiver(startData, mPackage) {
+            val startedAtMs = System.currentTimeMillis()
+            val transferKey = FileReceiver.transferId(
+                transportKey = transportKey,
+                senderId = mPackage.senderId,
+                chatId = mPackage.chatId,
+                start = startData,
+                startedAtMs = startedAtMs,
+                sequence = fileTransferCounter.incrementAndGet(),
+            )
+            val receiver = FileReceiver(startData, mPackage, transferKey, startedAtMs) {
                 // Completion callback: only clean up if this transfer is still the active one
                 // for this transport (guards against stale callbacks from replaced receivers).
                 synchronized(packageProcessingLock) {
@@ -618,11 +626,6 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 }
             }
         }
-    }
-
-    private fun buildTransferKey(transportKey: String, startData: StardustFileStartPackage): String {
-        val uniquePart = fileTransferCounter.incrementAndGet()
-        return "${transportKey}_${startData.total}_${startData.spare}_$uniquePart"
     }
 
     private fun handleUpdatePolygonFreqResponse(mPackage: StardustPackage) {

@@ -618,6 +618,10 @@ object FileUtils {
         }
 
         data class Receive(
+            /**
+             * This file's own identity, never shared by the sender's next file — a host keys
+             * progress on it. Set by the SDK from `FileReceiver.transferId`.
+             */
             override val id: String = UUID.randomUUID().toString(),
             override val chatId: String,
             val senderId: String,
