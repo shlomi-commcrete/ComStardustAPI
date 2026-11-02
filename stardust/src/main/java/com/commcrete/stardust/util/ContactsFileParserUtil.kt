@@ -400,7 +400,22 @@ object ContactsFileParserUtil {
     /** Strips the leading `=` used by the Excel text guard (`="..."`) left over after quote handling. */
     private fun decodeCsvField(field: String): String = field.removePrefix("=")
 
-    fun parseContactsForDb(contacts: List<FolderReader.ExcelUser>): List<FullContactData> {
+    /** Why [parseContactsForDb] left a row out. */
+    enum class RejectReason {
+        /** Its type is not app, group or device — blank included. */
+        UNKNOWN_TYPE,
+        /** Its type is known, but it carries no id that kind of contact needs. */
+        NOT_A_CONTACT,
+    }
+
+    /**
+     * @param onRejected told of every row left out and why, so the operator can be shown it.
+     *   Null keeps the old callers (files from our own exporter) unchanged.
+     */
+    fun parseContactsForDb(
+        contacts: List<FolderReader.ExcelUser>,
+        onRejected: ((FolderReader.ExcelUser, RejectReason) -> Unit)? = null,
+    ): List<FullContactData> {
         val result = mutableListOf<FullContactData>()
 
         for (contact in contacts) {
@@ -413,10 +428,16 @@ object ContactsFileParserUtil {
             val model = contact.model.trim().takeIf { it.isNotEmpty() }
             val serial = contact.serial.trim().takeIf { it.isNotEmpty() }
 
-            val type = when(contact.type.lowercase()) {
+            // Only the three types the exporter writes. Anything else used to become a DEVICE
+            // with the App ID taken as its Device ID — a typo made a radio out of a person.
+            val type = when(contact.type.trim().lowercase()) {
                 "app" -> ContactType.USER
                 "group" -> ContactType.GROUP
-                else -> ContactType.DEVICE
+                "device" -> ContactType.DEVICE
+                else -> {
+                    onRejected?.invoke(contact, RejectReason.UNKNOWN_TYPE)
+                    continue
+                }
             }
 
             val fullContact = when (type) {
@@ -445,7 +466,8 @@ object ContactsFileParserUtil {
                 )
             }
 
-            fullContact?.let { result.add(it) }
+            if (fullContact != null) result.add(fullContact)
+            else onRejected?.invoke(contact, RejectReason.NOT_A_CONTACT)
         }
         return result.sortedBy { it.contact.name }
     }

@@ -478,14 +478,15 @@ object StardustInitConnectionHandler {
     // ───────────────────────── Utilities ─────────────────────────
 
     private fun registerBittel(bittelId: String) {
-        val savedUser = RegisteredUserUtils.currentUserFlow.value ?: return
-
-        val newUser = RegisterUser(
-            displayName = savedUser.displayName,
-            _deviceId = bittelId,
-            _appId = savedUser.appId,
-        )
-        savedUser.appId.let { SharedPreferencesUtil.setAppUser(newUser) }
+        // Read and write in one step: a logout or App ID change in between must not be undone.
+        SharedPreferencesUtil.updateAppUser { savedUser ->
+            RegisterUser(
+                displayName = savedUser.displayName,
+                _deviceId = bittelId,
+                _appId = savedUser.appId,
+            )
+        } ?: return
+        RegisteredUserUtils.checkRadioHolder(bittelId)
     }
 
     private fun handleVersion(p: StardustPackage) {

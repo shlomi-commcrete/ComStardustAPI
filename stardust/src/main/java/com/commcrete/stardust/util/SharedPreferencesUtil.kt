@@ -12,6 +12,7 @@ import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
 import com.commcrete.stardust.transport.LinkWakeLock
 import com.commcrete.stardust.request_objects.model.license.License
+import com.commcrete.stardust.request_objects.takeHistoryFrom
 import com.commcrete.stardust.request_objects.toJson
 import com.commcrete.stardust.stardust.model.config.Preset
 import com.commcrete.stardust.stardust.model.config.SnifferMode
@@ -332,6 +333,11 @@ object SharedPreferencesUtil {
             appUser.iconKey = getAppUser()?.iconKey
         }
         val previous = RegisteredUserUtils.currentUserFlow.value
+        // The own-id history lives only here, so every write keeps it — see takeHistoryFrom.
+        appUser.takeHistoryFrom(previous, System.currentTimeMillis())
+        if ((appUser.formerIds?.size ?: 0) != (previous?.formerIds?.size ?: 0)) {
+            StardustLog.i("SharedPreferencesUtil", "Own id replaced; former ids=${appUser.formerIds?.size ?: 0}")
+        }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
         // Login over a link that is already up changes no connection state, so recompute won't run.
@@ -342,6 +348,18 @@ object SharedPreferencesUtil {
         if (appUser.appId.isNotBlank() && appUser.appId != previous?.appId && DataManager.isLinkUp()) {
             DataManager.getStardustPackageHandler().onRegisteredAppIdChanged()
         }
+    }
+
+    /**
+     * Reads the registration and writes [transform]'s result in one step, under the same lock as
+     * [setAppUser] and [removeAppUser] (JVM monitors are reentrant). A logout or an App ID
+     * change landing between a separate read and write would otherwise be undone by it. A no-op
+     * while logged out: there is nobody to update.
+     */
+    @Synchronized
+    internal fun updateAppUser(transform: (RegisterUser) -> RegisterUser): RegisterUser? {
+        val current = RegisteredUserUtils.currentUserFlow.value ?: return null
+        return transform(current).also { setAppUser(it) }
     }
 
     @Synchronized

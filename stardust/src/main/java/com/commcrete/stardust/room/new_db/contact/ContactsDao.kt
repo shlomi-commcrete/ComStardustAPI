@@ -105,6 +105,13 @@ interface ContactsDao {
     @Query("UPDATE contacts SET name = :name WHERE id = :contactId")
     suspend fun renameContact(contactId: Int, name: String): Int
 
+    /**
+     * Whether a contact already has [name], ignoring case — the clash rule every contact path
+     * applies. NOCASE folds ASCII only; auto-created names are ids, so that is enough there.
+     */
+    @Query("SELECT EXISTS(SELECT 1 FROM contacts WHERE name = :name COLLATE NOCASE)")
+    suspend fun isCallsignTaken(name: String): Boolean
+
     /** The contact's icon key ([ContactEntity.image]); null clears it. */
     @Query("UPDATE contacts SET image = :image WHERE id = :contactId")
     suspend fun setContactImage(contactId: Int, image: String?): Int

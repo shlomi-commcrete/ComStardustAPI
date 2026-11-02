@@ -742,10 +742,17 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                     return@launch
                 }
 
+                // This user's own radio raised it from its button: file it where an app-raised SOS
+                // goes, the SOS destination's chat. Filed as received it is addressed to this
+                // user's own App ID, which created a contact named after it. With no destination
+                // configured it is filed as before rather than not at all.
+                val ownRadio = RegisteredUserUtils.selfIdentity().deviceId
+                    ?.let { it == normalizeIdOrNull(pkg.senderId) } == true
+                val filed = if (ownRadio) SOSUtils.buildSosMessagePackage(pkg.senderId) ?: pkg else pkg
                 val rowId = SOSUtils.saveSOSMessage(
                     type = null,
                     location = sosPackage.location,
-                    stardustAPIPackage = pkg,
+                    stardustAPIPackage = filed,
                     state = MessageState.RECEIVED
                 )
                 if (rowId == null) {
@@ -785,20 +792,19 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
     }
 
     private fun registerDevice(deviceId: String) {
-        val savedUser = SharedPreferencesUtil.getAppUser()
         val deviceName = SharedPreferencesUtil.getBittelDeviceName()
 
         //Temp
         if (BleManager.isBluetoothConnected() || BleManager.isUsbEnabled()) {
             deviceName.let { name ->
-                savedUser?.let { user ->
-                    val newUser = RegisterUser(
+                // Read and write in one step: a logout or App ID change in between must not be undone.
+                SharedPreferencesUtil.updateAppUser { user ->
+                    RegisterUser(
                         displayName = user.displayName,
                         _deviceId = deviceId,
                         _appId = user.appId,
                     )
-                    SharedPreferencesUtil.setAppUser(newUser)
-                }
+                }?.let { RegisteredUserUtils.checkRadioHolder(deviceId) }
             }
         }
     }

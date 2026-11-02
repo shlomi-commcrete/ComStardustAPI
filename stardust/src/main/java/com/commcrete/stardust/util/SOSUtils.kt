@@ -185,7 +185,7 @@ object SOSUtils {
      * Returns null when no SOS destination is configured, in which case the SOS is sent but
      * not recorded — there is no conversation to record it in.
      */
-    private suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
+    internal suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
         val destination = resolvePrimarySosDestination()
         if (destination == null) {
             StardustLog.w(LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")

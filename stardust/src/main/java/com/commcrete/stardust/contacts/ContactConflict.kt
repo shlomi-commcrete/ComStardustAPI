@@ -20,6 +20,11 @@ data class ContactConflicts(
     val callsignOwner: ContactDraft? = null,
     val appIdOwner: ContactDraft? = null,
     val deviceIdOwner: ContactDraft? = null,
+    /**
+     * Fields whose value is the operator's own (registration). Not in [fields]: the operator
+     * has no contact, so nothing can Keep or Swap it — each caller refuses or strips the value.
+     */
+    val heldBySelf: Set<ConflictField> = emptySet(),
 ) {
     val fields: Set<ConflictField> = buildSet {
         if (callsignOwner != null) add(ConflictField.CALLSIGN)

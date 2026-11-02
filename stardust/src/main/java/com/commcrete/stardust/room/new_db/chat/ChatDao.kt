@@ -119,6 +119,10 @@ interface ChatDao {
     @Query("UPDATE chats SET name = :name WHERE id = :chatId")
     suspend fun renameChatById(chatId: String, name: String): Int
 
+    /** Whether a chat already has exactly [name]: `chats.name` is UNIQUE, so a new chat cannot take it. */
+    @Query("SELECT EXISTS(SELECT 1 FROM chats WHERE name = :name)")
+    suspend fun isChatNameTaken(name: String): Boolean
+
     /** Private ↔ group in place, when its contact's App ID changes between user and group. */
     @Query("UPDATE chats SET type = :type WHERE id = :chatId")
     suspend fun setChatType(chatId: String, type: ChatType): Int

@@ -1,5 +1,6 @@
 package com.commcrete.stardust.room.new_db.internal
 
+import com.commcrete.stardust.contacts.ContactConflictEngine
 import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.AppRepository
 import com.commcrete.stardust.room.new_db.chat.ChatDao
@@ -240,11 +241,31 @@ internal class MessagesRepository(
         caches.getContactId(normalizedId)?.let { return it }
         contactsDao.findContactIdByMainCommunicationId(normalizedId)?.let { return it }
 
-        FullContactData.createUserContact(name = id, image = null, userId = normalizedId)
+        FullContactData.createUserContact(name = freeAutoName(id), image = null, userId = normalizedId)
             ?.let { insertContactWithChat(it) }
 
         return caches.getContactId(normalizedId)
             ?: contactsDao.findContactIdByMainCommunicationId(normalizedId)
+    }
+
+    /**
+     * A callsign for a contact created from traffic: its id, suffixed "(2)", "(3)"… — the
+     * import's scheme — while a contact or the operator already has it (ignoring case), or a chat
+     * has it exactly (`chats.name` is UNIQUE, and a taken chat name leaves the contact without a
+     * chat). Gives up after [MAX_AUTO_NAME_TRIES] and returns the last try: as before, the
+     * insert then reports its own clash.
+     */
+    private suspend fun freeAutoName(id: String): String {
+        val mine = RegisteredUserUtils.currentUserFlow.value?.displayName?.trim()
+        var name = id
+        repeat(MAX_AUTO_NAME_TRIES) {
+            val taken = name.equals(mine, ignoreCase = true) ||
+                contactsDao.isCallsignTaken(name) ||
+                chatsDao.isChatNameTaken(name)
+            if (!taken) return name
+            name = ContactConflictEngine.appendSuffix(name)
+        }
+        return name
     }
 
     private suspend fun resolvePrivateChatId(contactId: Int): String? =
@@ -296,7 +317,7 @@ internal class MessagesRepository(
         normalizedGroupId: String,
         groupId: String,
     ): String? {
-        FullContactData.createGroupContact(name = groupId, image = null, groupId = normalizedGroupId)
+        FullContactData.createGroupContact(name = freeAutoName(groupId), image = null, groupId = normalizedGroupId)
             ?.let { insertContactWithChat(it) }
         caches.addGroupId(normalizedGroupId)
 
@@ -430,7 +451,7 @@ internal class MessagesRepository(
      * or both routes at once, a no-op.
      */
     private suspend fun recordCancel(me: String, cancelledBy: String, kind: SosAckKind, atMs: Long): Boolean {
-        val row = messagesDao.findLatestSosSent(mySosSenderIds(me), MessageType.SOS) ?: return false
+        val row = latestOwnSos() ?: return false
         val sos = row.extraData as? MessageExtraData.Sos ?: return false
         if (sos.acks.isNotEmpty()) return false
         return messagesDao.recordSosAck(
@@ -440,12 +461,16 @@ internal class MessagesRepository(
     }
 
     /**
-     * Every sender id this user's own SOS rows carry: [me] (raised from the app) and the paired
-     * radio's Device ID (raised from the radio's button, saved by handleRealSOS under the radio).
-     * Without the second, a radio-raised SOS never received its ack or cancel line.
+     * This user's newest SOS under every sender id their own SOS rows carry: the App ID (raised
+     * from the app) and the paired radio's Device ID (raised from the radio's button, saved by
+     * handleRealSOS under the radio). Without the radio, a radio-raised SOS never received its
+     * ack or cancel line. Former ids too, each within the period it was theirs, so an App ID or
+     * radio change does not orphan an SOS raised before it.
      */
-    private fun mySosSenderIds(me: String): List<String> =
-        listOfNotNull(me, normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.deviceId))
+    private suspend fun latestOwnSos(): MessageEntity? =
+        RegisteredUserUtils.selfIdentity().periods
+            .mapNotNull { messagesDao.findLatestSosSentBetween(it.id, it.fromMs, it.toMs, MessageType.SOS) }
+            .maxWithOrNull(compareBy<MessageEntity>({ it.epochTimeMs }, { it.id }))
 
     /**
      * The SOS row an incoming ack belongs to.
@@ -466,7 +491,7 @@ internal class MessagesRepository(
         ackerId: String,
         me: String,
     ): MessageEntity? {
-        messagesDao.findLatestSosSent(mySosSenderIds(me), MessageType.SOS)?.let { latest ->
+        latestOwnSos()?.let { latest ->
             val stoodDown = (latest.extraData as? MessageExtraData.Sos)?.acks
                 ?.any { it.kind != SosAckKind.CONFIRMED } == true
             if (!stoodDown) return latest
@@ -927,5 +952,8 @@ internal class MessagesRepository(
 
         /** A WAV of exactly this length is a header and no audio. */
         private const val WAV_HEADER_BYTES = 44L
+
+        /** Suffixes tried for an auto-created callsign before giving up — see freeAutoName. */
+        private const val MAX_AUTO_NAME_TRIES = 20
     }
 }

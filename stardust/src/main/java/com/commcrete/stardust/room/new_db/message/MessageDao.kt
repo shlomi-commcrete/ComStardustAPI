@@ -574,6 +574,23 @@ interface MessageDao {
     suspend fun findLatestSosSent(senderIds: List<String>, type: MessageType): MessageEntity?
 
     /**
+     * As [findLatestSosSent] for one id, sent within [fromMs] until [toMs] (exclusive): the
+     * period the operator held [senderId]. Bounded so an id the operator took over from a
+     * contact never matches that contact's earlier SOS.
+     */
+    @Query("""
+        SELECT * FROM messages
+        WHERE sender_id = :senderId
+          AND type = :type
+          AND state != 5
+          AND epoch_time_ms >= :fromMs
+          AND epoch_time_ms < :toMs
+        ORDER BY epoch_time_ms DESC, id DESC
+        LIMIT 1
+    """)
+    suspend fun findLatestSosSentBetween(senderId: String, fromMs: Long, toMs: Long, type: MessageType): MessageEntity?
+
+    /**
      * The newest SOS [senderId] sent into ANY chat that [participantContactId] belongs
      * to, or null when there is none.
      *

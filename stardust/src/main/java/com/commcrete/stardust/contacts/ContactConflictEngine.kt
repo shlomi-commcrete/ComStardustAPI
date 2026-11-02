@@ -16,8 +16,17 @@ object ContactConflictEngine {
      * [candidates] is the set to compare against — callers decide what goes in
      * it (all contacts, minus self on edit, plus the other incoming rows on a
      * bulk import, etc.).
+     *
+     * [self] is the operator (RegisteredUserUtils.currentUserDraft): every
+     * contact path passes it, so a value the operator holds is reported in
+     * [ContactConflicts.heldBySelf] the same way everywhere. Callers apply the
+     * type rules (a group holds no device) — as they do for owners.
      */
-    fun detect(incoming: ContactDraft, candidates: List<ContactDraft>): ContactConflicts =
+    fun detect(
+        incoming: ContactDraft,
+        candidates: List<ContactDraft>,
+        self: ContactDraft? = null,
+    ): ContactConflicts =
         ContactConflicts(
             callsignOwner = incoming.name.takeIf { it.isNotBlank() }
                 ?.let { n -> candidates.firstOrNull { it.name.equals(n, ignoreCase = true) } },
@@ -25,7 +34,16 @@ object ContactConflictEngine {
                 ?.let { id -> candidates.firstOrNull { it.appId.equals(id, ignoreCase = true) } },
             deviceIdOwner = incoming.deviceId.takeIf { it.isNotBlank() }
                 ?.let { id -> candidates.firstOrNull { it.deviceId.equals(id, ignoreCase = true) } },
+            heldBySelf = self?.let { heldBySelf(incoming, it) }.orEmpty(),
         )
+
+    /** The fields of [incoming] whose value is [self]'s. Callsigns trimmed; all ignoring case; blank never. */
+    private fun heldBySelf(incoming: ContactDraft, self: ContactDraft): Set<ConflictField> = buildSet {
+        fun same(a: String, b: String) = a.isNotBlank() && a.trim().equals(b.trim(), ignoreCase = true)
+        if (same(incoming.name, self.name)) add(ConflictField.CALLSIGN)
+        if (same(incoming.appId, self.appId)) add(ConflictField.APP_ID)
+        if (same(incoming.deviceId, self.deviceId)) add(ConflictField.DEVICE_ID)
+    }
 
     /**
      * If [applied] has the same identity (type + appId + deviceId) as one of

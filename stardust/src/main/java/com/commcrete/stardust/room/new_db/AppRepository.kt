@@ -1086,13 +1086,39 @@ class AppRepository(
                         identityLog.recordAssign(strip.idKind, id, contactId, name, IdentityLogSource.REPAIR, batchId)
                         any = true
                     }
-                    if (any) restored++
+                    if (any) {
+                        restored++
+                        retypeFromIds(contactId)
+                    }
                 }
             }
             // A count, never names or ids: they must not reach a log line (§28).
             StardustLog.i(TAG, "Restored contacts left without ids: $restored of ${orphans.size}")
             restored
         }
+    }
+
+    /**
+     * Sets a restored contact's type from the ids it got back, as ContactDraft.effectiveType
+     * does: a USER whose App ID stayed with another contact holds only its device, and a USER
+     * without an App ID is dropped by the mapper — restored, yet still invisible. Never across
+     * group and non-group: that chat's kind would be wrong, so it is left and counted.
+     */
+    private suspend fun retypeFromIds(contactId: Int) {
+        val kinds = contactsDao.getOwnedIdRows(listOf(contactId)).map { it.kind }.toSet()
+        val derived = when {
+            "GROUP_ID" in kinds -> ContactType.GROUP
+            "USER_ID" in kinds -> ContactType.USER
+            "DEVICE_ID" in kinds -> ContactType.DEVICE
+            else -> return
+        }
+        val current = contactsDao.getContactById(contactId)?.type ?: return
+        if (current == derived) return
+        if ((current == ContactType.GROUP) != (derived == ContactType.GROUP)) {
+            StardustLog.w(TAG, "Restored contact left as its kind: ids are of the other kind")
+            return
+        }
+        contactsDao.setContactType(contactId, derived)
     }
 
     companion object {

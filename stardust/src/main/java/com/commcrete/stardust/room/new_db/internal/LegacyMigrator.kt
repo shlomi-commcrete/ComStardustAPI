@@ -14,6 +14,7 @@ import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.RegisteredUserUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -77,6 +78,14 @@ internal class LegacyMigrator(
 ) {
 
     /**
+     * The operator's App ID. Normalized here: 2.3.x wrote it in the same prefs key, and Gson
+     * sets the field without the setter that normalizes it. Null when the registration lives
+     * elsewhere or is gone — the migration then copies everything, as it did before.
+     */
+    private val selfAppId: String?
+        get() = normalizeIdOrNull(RegisteredUserUtils.currentUserFlow.value?.appId)
+
+    /**
      * Copies every row from the three legacy databases into the unified
      * [AppDatabase], then deletes the old database files.
      *
@@ -122,10 +131,13 @@ internal class LegacyMigrator(
                 }
             }.orEmpty()
             if (contacts.isNotEmpty()) {
+                // 2.3.x saved the operator as an ordinary contact. Self is not a contact now:
+                // their row is left behind, and the chat with themselves is not re-created.
                 val parsed: List<FullContactData> =
                     contacts.mapNotNull { it.toFullContactData() }
+                        .filterNot { (it as? FullContactData.User)?.userId?.let(::normalizeIdOrNull) == selfAppId }
                 insertContacts(parsed)
-                Timber.d("Migration: copied ${contacts.size} contact(s)")
+                Timber.d("Migration: copied ${parsed.size} of ${contacts.size} contact(s)")
             }
 
             // ── Chats ─────────────────────────────────────────────────────
@@ -229,8 +241,10 @@ internal class LegacyMigrator(
         legacyChatsById: Map<String, ChatItem>,
     ) {
         val entities: List<MessageEntity> = messages.map { it.toAppMessageEntity() }
+        // The chat with themselves is not re-created (see migrate): no placeholder for it.
+        val self = selfAppId
         val legacyChatIds: List<String> =
-            entities.mapNotNull { normalizeIdOrNull(it.chatId) }.distinct()
+            entities.mapNotNull { normalizeIdOrNull(it.chatId) }.distinct().filterNot { it == self }
 
         var resolved: Map<String, String> = resolveChatIds(legacyChatIds)
 
@@ -270,8 +284,9 @@ internal class LegacyMigrator(
             val legacyChatId = normalizeIdOrNull(entity.chatId)
             when {
                 // A message that never belonged to a chat stays chat-less:
-                // the foreign key is satisfied by NULL.
-                legacyChatId == null -> entity.copy(chatId = null)
+                // the foreign key is satisfied by NULL. So does one from the chat with
+                // themselves — kept, not dropped.
+                legacyChatId == null || legacyChatId == self -> entity.copy(chatId = null)
                 else -> resolved[legacyChatId]?.let { entity.copy(chatId = it) }
             }
         }
