@@ -91,7 +91,16 @@ object WavHelper {
     }
 
     fun createWavFile(pcmData: ShortArray, sampleRate: Int, file: File) {
-        try {
+        writeWavFile(pcmData, sampleRate, file)
+    }
+
+    /**
+     * [createWavFile] that says whether the file was written. Public [createWavFile] keeps its
+     * Unit signature (§1); SDK callers use this so a failed write is not followed by a history
+     * row pointing at a broken file.
+     */
+    internal fun writeWavFile(pcmData: ShortArray, sampleRate: Int, file: File): Boolean {
+        return try {
             FileOutputStream(file).use { fos ->
                 val dataSize = pcmData.size * 2 // 16-bit samples
                 val header = createWavHeader(
@@ -110,8 +119,10 @@ object WavHelper {
                 fos.write(bb.array())
                 StardustLog.i(LogType.PTT, "WavHelper", "Finish Writeing WAV file")
             }
+            true
         } catch (e: IOException) {
             StardustLog.e("WavHelper", "Error creating WAV file", e)
+            false
         }
     }
 

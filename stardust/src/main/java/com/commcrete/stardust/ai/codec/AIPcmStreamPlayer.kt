@@ -200,7 +200,9 @@ object AIPcmStreamPlayer {
         }
         StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
         val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
-        WavHelper.createWavFile(sampleArray, currentSampleRate, file)
+        if (!WavHelper.writeWavFile(sampleArray, currentSampleRate, file)) {
+            StardustLog.e("PcmStreamPlayer", "Received PTT not saved: WAV write failed")
+        }
         frameBuffer.clear()
         isRecoded = false
     }

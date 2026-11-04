@@ -3,6 +3,7 @@ package com.commcrete.stardust.audio.v2.framework
 import com.commcrete.stardust.ai.codec.WavHelper
 import com.commcrete.stardust.audio.v2.application.port.LocalMirror
 import com.commcrete.stardust.audio.v2.domain.PcmChunk
+import com.commcrete.stardust.util.StardustLog
 import java.io.File
 
 /**
@@ -14,9 +15,13 @@ import java.io.File
  * decode of the transmitted frames, so the file is what the receiver reconstructs — matching the
  * legacy AI (`PttSendManager`) and CODEC2 (`AudioRecorderCodec2`) local files. Unlike legacy CODEC2,
  * which wrote headerless raw PCM into a `.pcm` file, this always writes a real RIFF/WAVE header via
- * [WavHelper.createWavFile], at the decoder's own rate (CODEC2 8 kHz, WavTokenizer 24 kHz).
+ * [WavHelper.writeWavFile], at the decoder's own rate (CODEC2 8 kHz, WavTokenizer 24 kHz).
  */
 class WavLocalMirror(private val file: File) : LocalMirror {
+
+    private companion object {
+        const val TAG = "WavLocalMirror"
+    }
 
     private val samples = ArrayList<Short>()
     private var sampleRateHz = 0
@@ -30,8 +35,8 @@ class WavLocalMirror(private val file: File) : LocalMirror {
         if (samples.isEmpty() || sampleRateHz == 0) return
         runCatching {
             file.parentFile?.mkdirs()
-            WavHelper.createWavFile(ShortArray(samples.size) { samples[it] }, sampleRateHz, file)
-        }
+            WavHelper.writeWavFile(ShortArray(samples.size) { samples[it] }, sampleRateHz, file)
+        }.onFailure { StardustLog.e(TAG, "Local PTT mirror not written", it) }
         samples.clear()
     }
 }

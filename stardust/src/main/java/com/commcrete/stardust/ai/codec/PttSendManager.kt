@@ -883,7 +883,11 @@ object PttSendManager {
         }
         try {
             val sampleArray = session.frameBuffer.flatMap { it.asIterable() }.toShortArray()
-            WavHelper.createWavFile(sampleArray, 24000, file)
+            if (!WavHelper.writeWavFile(sampleArray, 24000, file)) {
+                // writeWavFile has logged the cause; a row pointing at a broken file is worse than none.
+                StardustLog.e(TAG, "Session ${session.id}: WAV not written — PTT history row not saved")
+                return
+            }
 
             StardustLog.d(LogType.PTT, TAG, "Session ${session.id}: WAV created")
             runCatching {
