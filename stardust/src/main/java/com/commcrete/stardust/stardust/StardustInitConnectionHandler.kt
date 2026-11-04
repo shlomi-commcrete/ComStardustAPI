@@ -342,8 +342,12 @@ object StardustInitConnectionHandler {
         StardustLog.d(LogType.CONFIG, "ConfigDebug", "RECEIVED GET_ADDRESSES dataNull=${p.data == null} dataSize=${p.data?.size}")
         val addresses = StardustAddressesParser().parseAddresses(p)
         if (addresses == null) {
-            StardustLog.e("ConfigDebug", "parseAddresses returned NULL — cannot proceed to UPDATE_ADDRESS")
-            return
+            StardustLog.e("ConfigDebug", "parseAddresses returned NULL — cannot proceed to UPDATE_ADDRESS; retrying REQUEST_ADDRESS")
+            // The radio can answer with an address block that does not parse. onIncoming has
+            // already cancelled this step's timeout, so returning here stalled the handshake:
+            // take the path a REQUESTING_ADDRESSES timeout takes — ask again, or fail after
+            // MAX_ATTEMPTS — as handleConfiguration does for a config that does not parse.
+            return retryOrFail { sendGetAddresses() }
         }
         StardustLog.i(LogType.CONFIG, "ConfigDebug", "Parsed addresses")
         lastAddresses = addresses
