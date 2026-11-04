@@ -292,8 +292,9 @@ class ReedSolomon(
     ): List<Packet> {
         val Ntotal = Ktotal + Ptotal
         require(receivedPackets.size >= Ntotal) {
-            "decode expects an array of length $Ntotal (got ${receivedPackets.size})"
+            // The message must be the lambda's last expression: it becomes the exception's text.
             StardustLog.d(LogType.FILES, "ReedSolomon", "decode expects an array of length $Ntotal (got ${receivedPackets.size})")
+            "decode expects an array of length $Ntotal (got ${receivedPackets.size})"
         }
 
         // infer pktLen from any non-null
