@@ -1,6 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.filter.PyTorchInitGate
 import com.commcrete.stardust.util.Scopes
@@ -74,7 +75,7 @@ object AIModuleInitializer {
             initPttManagers()
 
             initialized = true
-            StardustLog.d(TAG, "AI modules initialized.")
+            StardustLog.i(LogType.PTT, TAG, "AI modules initialized.")
         } catch (t: Throwable) {
             // Leave `initialized` false so a later call retries the whole
             // pipeline instead of getting permanently stuck behind this
@@ -88,7 +89,7 @@ object AIModuleInitializer {
     private fun resolveAiEnabled(): Boolean {
         aiEnabled = PyTorchInitGate.isPrimaryInitializer()
         if (!aiEnabled) {
-            StardustLog.d(TAG, "AI Codec not enabled for this process.")
+            StardustLog.d(LogType.PTT, TAG, "AI Codec not enabled for this process.")
         }
         return aiEnabled
     }
@@ -119,7 +120,7 @@ object AIModuleInitializer {
             decoderJob.join()
         }
         if (joined == null) {
-            StardustLog.w(TAG, "joinModelLoad: timed out after ${MODEL_LOAD_TIMEOUT_MS}ms — proceeding anyway")
+            StardustLog.w(LogType.PTT, TAG, "joinModelLoad: timed out after ${MODEL_LOAD_TIMEOUT_MS}ms — proceeding anyway")
         }
     }
 

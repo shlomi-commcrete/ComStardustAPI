@@ -16,7 +16,6 @@ import com.commcrete.stardust.stardust.StardustInitConnectionHandler.requireLoca
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustControlByte.StardustDeliveryType
-import timber.log.Timber
 
 object SOSUtils {
 
@@ -169,7 +168,7 @@ object SOSUtils {
      */
     internal suspend fun recordSentSos(location: Location) {
         val (src, _) = requireLocalSrcDst() ?: run {
-            StardustLog.w(LOG_TAG, "SOS transmitted but not recorded: local identity cleared")
+            StardustLog.w(LogType.SOS, LOG_TAG, "SOS transmitted but not recorded: local identity cleared")
             return
         }
         buildSosMessagePackage(src)?.let { saveSOSMessage(null, it, location) }
@@ -188,7 +187,7 @@ object SOSUtils {
     internal suspend fun buildSosMessagePackage(senderId: String): StardustAPIPackage? {
         val destination = resolvePrimarySosDestination()
         if (destination == null) {
-            StardustLog.w(LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")
+            StardustLog.w(LogType.SOS, LOG_TAG, "SOS sent but not saved: no SOS destination in the configuration")
             return null
         }
 

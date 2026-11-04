@@ -4,7 +4,9 @@ import android.content.Context
 import com.commcrete.stardust.ai.codec.PttSendManager
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.audio.tester.AudioFileLoader
 import com.commcrete.stardust.util.audio.tester.AudioTestFeeder
 import com.commcrete.stardust.util.audio.tester.Source
@@ -13,7 +15,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 import java.io.File
 
 /**
@@ -72,7 +73,7 @@ internal object AudioFeederEngine {
         enableNoiseCancellation: Boolean = false,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
-            Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
+            StardustLog.w(LogType.PTT, TAG, "Skipping unreadable file: ${source.file.absolutePath}")
             return@withContext
         }
         RecorderUtils.dirToSaveFile = artifactDir
@@ -206,11 +207,10 @@ internal object AudioFeederEngine {
                 runCatching { codecInputWriter?.stop() }
             }
         }
-        Timber.tag(TAG).i(
-            "  ✓ Finished %s: %d chunks, %d samples @ %d Hz (%d ms audio) in %d ms wall-clock",
-            source.label, emission.chunkCount, emission.samplesProcessed, nativeRate,
-            (emission.samplesProcessed * 1000L) / nativeRate,
-            emission.elapsedMs,
+        StardustLog.i(
+            LogType.PTT, TAG,
+            "  ✓ Finished ${source.label}: ${emission.chunkCount} chunks, ${emission.samplesProcessed} samples @ $nativeRate Hz " +
+                "(${(emission.samplesProcessed * 1000L) / nativeRate} ms audio) in ${emission.elapsedMs} ms wall-clock",
         )
     }
 
@@ -227,14 +227,14 @@ internal object AudioFeederEngine {
         artifactDir: File,
     ) = withContext(Dispatchers.IO) {
         if (!source.file.exists() || !source.file.canRead()) {
-            Timber.tag(TAG).w("Skipping unreadable file: %s", source.file.absolutePath)
+            StardustLog.w(LogType.PTT, TAG, "Skipping unreadable file: ${source.file.absolutePath}")
             return@withContext
         }
 
         artifactDir.mkdirs()
         persistOriginalSourceFile(source, artifactDir)
 
-        Timber.tag(TAG).i("  ✓ saveOnly %s → %s", source.label, artifactDir.absolutePath)
+        StardustLog.i(LogType.PTT, TAG, "  ✓ saveOnly ${source.label} → ${artifactDir.absolutePath}")
     }
 
     // ─── feedSingle phases ───────────────────────────────────────────────────
@@ -297,12 +297,11 @@ internal object AudioFeederEngine {
         } else {
             Codec2SendPipeline.TARGET_SAMPLE_RATE
         }
-        Timber.tag(TAG).i(
-            "  → Emitting %d full chunk(s) of %d samples (%d ms each) @ %d Hz%s — filtered at native rate, resampled to %d Hz before %s",
-            fullChunks, samplesPerChunk, AudioTestFeeder.CHUNK_DURATION_MS, sampleRate,
-            if (tailSamples > 0) " + 1 partial/final chunk of $tailSamples samples (${tailMs} ms)" else "",
-            targetRate,
-            codeType.name,
+        StardustLog.i(
+            LogType.PTT, TAG,
+            "  → Emitting $fullChunks full chunk(s) of $samplesPerChunk samples (${AudioTestFeeder.CHUNK_DURATION_MS} ms each) @ $sampleRate Hz" +
+                (if (tailSamples > 0) " + 1 partial/final chunk of $tailSamples samples (${tailMs} ms)" else "") +
+                " — filtered at native rate, resampled to $targetRate Hz before ${codeType.name}",
         )
     }
 
@@ -442,14 +441,14 @@ internal object AudioFeederEngine {
             source.file.inputStream().use { input ->
                 out.outputStream().use { output -> input.copyTo(output) }
             }
-            Timber.tag(TAG).i(
-                "  💾 Wrote original SOURCE file (pre-normalize, %d bytes): %s",
-                out.length(), out.absolutePath,
+            StardustLog.i(
+                LogType.PTT, TAG,
+                "  💾 Wrote original SOURCE file (pre-normalize, ${out.length()} bytes): ${out.absolutePath}",
             )
         } catch (t: Throwable) {
-            Timber.tag(TAG).e(
-                t, "Failed to copy original source file for %s (path=%s)",
-                source.label, source.file.absolutePath,
+            StardustLog.e(
+                TAG, "Failed to copy original source file for ${source.label} (path=${source.file.absolutePath})",
+                t,
             )
         }
     }

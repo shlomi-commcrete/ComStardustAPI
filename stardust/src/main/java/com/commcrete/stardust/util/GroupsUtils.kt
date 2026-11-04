@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import timber.log.Timber
 
 object GroupsUtils {
 
@@ -110,7 +109,7 @@ object GroupsUtils {
                 StardustOpCode.REQUEST_ADD_GROUPS,
                 encodeGroupsPayload(ids, padIfEmpty)
             )
-            Timber.tag("InitHandler").d("Sent ADD_GROUPS (${ids.size} ids)")
+            StardustLog.d(LogType.CONFIG, "InitHandler", "Sent ADD_GROUPS (${ids.size} ids)")
         }
     }
 

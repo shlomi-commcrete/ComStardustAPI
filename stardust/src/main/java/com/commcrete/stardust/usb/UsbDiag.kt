@@ -8,6 +8,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.SystemClock
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import java.util.Locale
 import com.commcrete.stardust.util.StardustLog
 
@@ -19,7 +20,8 @@ import com.commcrete.stardust.util.StardustLog
  * adb logcat -s UsbDiag
  * ```
  *
- * Deliberately uses [StardustLog] (and logcat only for the per-chunk [log]) rather than
+ * Deliberately uses [StardustLog] (the per-chunk [log] at `d` under [LogType.USB], so it reaches
+ * logcat and the log file only when that type's switch is set to debug) rather than
  * Timber: `Timber.plant()` is never called
  * anywhere in this library, so every `Timber.tag(...)` line in the USB stack
  * (`SerialInOutputManager`, `UsbPermission`, …) prints NOTHING unless the host app happened to
@@ -38,8 +40,9 @@ internal object UsbDiag {
     private var seq = 0
 
     /** Sequence number + ms since first diag call — makes ordering and dead gaps obvious. */
+    @PublishedApi
     @Synchronized
-    private fun stamp(): String {
+    internal fun stamp(): String {
         seq += 1
         val ms = SystemClock.elapsedRealtime() - t0
         return "#" + seq.toString().padStart(3, '0') + " +" + ms.toString().padStart(6, ' ') + "ms"
@@ -47,10 +50,18 @@ internal object UsbDiag {
 
     // Explicit Unit returns: Log.* returns Int, which would make `return warn(...)` a type error
     // in the Unit-returning helpers below.
-    // logcat only: per-chunk (RX/TX call sites in BittelUsbManager2), would flood the log file
-    fun log(where: String, msg: String) { android.util.Log.d(TAG, "${stamp()} [$where] $msg") }
-    fun warn(where: String, msg: String) { StardustLog.w(TAG, "${stamp()} [$where] $msg") }
+    // Per-chunk (RX/TX call sites in BittelUsbManager2): keep at d.
+    fun log(where: String, msg: String) { StardustLog.d(LogType.USB, TAG, "${stamp()} [$where] $msg") }
+    fun warn(where: String, msg: String) { StardustLog.w(LogType.USB, TAG,"${stamp()} [$where] $msg") }
     fun error(where: String, msg: String, e: Throwable? = null) { StardustLog.e(TAG, "${stamp()} [$where] $msg", e) }
+
+    /**
+     * Lazy forms: the stamp and [msg] are built only when the line is enabled, and a [msg] that
+     * throws is dropped. Use these per chunk, per packet, per tick, and wherever the message calls
+     * [describe] or [hasPermission] (binder calls).
+     */
+    inline fun log(where: String, msg: () -> String) { StardustLog.d(LogType.USB, TAG) { "${stamp()} [$where] ${msg()}" } }
+    inline fun warn(where: String, msg: () -> String) { StardustLog.w(LogType.USB, TAG) { "${stamp()} [$where] ${msg()}" } }
 
     /** Loud marker for a conclusion the log itself can prove. */
     fun verdict(msg: String) { StardustLog.e(TAG, "${stamp()} [VERDICT] $msg") }
@@ -178,7 +189,7 @@ internal object UsbDiag {
         }
         log(where, "dumpAttachedDevices: count=${devices.size}")
         devices.values.forEachIndexed { i, d ->
-            log(where, "  [$i] ${describe(d)} hasPermission=${hasPermission(d)}")
+            log(where) { "  [$i] ${describe(d)} hasPermission=${hasPermission(d)}" }
             match("$where[$i]", d)
         }
         if (devices.isEmpty()) {

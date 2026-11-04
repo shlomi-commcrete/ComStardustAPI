@@ -22,7 +22,10 @@ import com.commcrete.stardust.room.new_db.message.SosAckKind
 import com.commcrete.stardust.room.new_db.message.settlementForInterruptedSend
 import com.commcrete.stardust.room.new_db.message.settlementForStaleInFlight
 import com.commcrete.stardust.util.FileReceiver
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.conflate
@@ -33,7 +36,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 import java.io.File
 
 /**
@@ -418,7 +420,7 @@ internal class MessagesRepository(
         }
 
         val row = findSosRowForAck(chatId, ackerId, me) ?: run {
-            Timber.d("SOS ack from $ackerId matched no SOS sent by this user")
+            StardustLog.d(LogType.SOS, TAG, "SOS ack from $ackerId matched no SOS sent by this user")
             return@withContext false
         }
         val sos = row.extraData as? MessageExtraData.Sos ?: return@withContext false
@@ -729,11 +731,13 @@ internal class MessagesRepository(
      */
     suspend fun sweepStaleInFlight(cutoffMs: Long): Int = withContext(Dispatchers.IO) {
         val rows = runCatching { messagesDao.getStaleInFlight(cutoffMs) }
-            .onFailure { Timber.e(it, "Stale sweep: could not read in-flight rows") }
+            .onFailure { StardustLog.e(TAG, "Stale sweep: could not read in-flight rows", it) }
             .getOrNull()
             ?: return@withContext 0
 
         var settled = 0
+        // Per row: a broken database fails every row, so its line logs once per sweep.
+        val logOnce = LogOnce()
         rows.forEach { row ->
             // The row's own state is the guard: it was read in flight a moment ago, and if
             // anything has settled it since, that outcome stands. Never null — the query
@@ -743,12 +747,19 @@ internal class MessagesRepository(
             val written = runCatching {
                 messagesDao.settleStaleInFlight(row.id, fromState, settlement.state, settlement.extraData)
             }
-                .onFailure { Timber.w(it, "Stale sweep: could not settle message ${row.id}") }
+                .onFailure {
+                    if (logOnce.first("settle-failed")) {
+                        StardustLog.w(LogType.STORAGE, TAG, "Stale sweep: could not settle message ${row.id}", it)
+                    }
+                }
                 .getOrDefault(0)
             settled += written
         }
 
-        if (settled > 0) Timber.d("Stale sweep: settled $settled interrupted transfer(s)")
+        logOnce.reset()["settle-failed"]?.let {
+            StardustLog.w(LogType.STORAGE, TAG, "Stale sweep: $it more message(s) could not be settled")
+        }
+        if (settled > 0) StardustLog.i(LogType.STORAGE, TAG,"Stale sweep: settled $settled interrupted transfer(s)")
         settled
     }
 
@@ -782,20 +793,29 @@ internal class MessagesRepository(
      */
     suspend fun rewriteRelocatedMediaPaths(): Int = withContext(Dispatchers.IO) {
         val rows = runCatching { messagesDao.getMessagesByTypes(MEDIA_PATH_TYPES) }
-            .onFailure { Timber.e(it, "Media relocation: could not read message rows") }
+            .onFailure { StardustLog.e(TAG, "Media relocation: could not read message rows", it) }
             .getOrNull()
             ?: return@withContext 0
 
         var rewritten = 0
+        // Per row: a broken database fails every row, so its line logs once per run.
+        val logOnce = LogOnce()
         rows.forEach { row ->
             val relocated = row.extraData?.relocated() ?: return@forEach
             val updated = runCatching { messagesDao.updateExtraData(row.id, relocated) }
-                .onFailure { Timber.w(it, "Media relocation: could not rewrite message ${row.id}") }
+                .onFailure {
+                    if (logOnce.first("rewrite-failed")) {
+                        StardustLog.w(LogType.STORAGE, TAG, "Media relocation: could not rewrite message ${row.id}", it)
+                    }
+                }
                 .getOrDefault(0)
             rewritten += updated
         }
 
-        if (rewritten > 0) Timber.d("Media relocation: re-pointed $rewritten message row(s)")
+        logOnce.reset()["rewrite-failed"]?.let {
+            StardustLog.w(LogType.STORAGE, TAG, "Media relocation: $it more message(s) could not be rewritten")
+        }
+        if (rewritten > 0) StardustLog.i(LogType.STORAGE, TAG,"Media relocation: re-pointed $rewritten message row(s)")
         rewritten
     }
 
@@ -947,6 +967,8 @@ internal class MessagesRepository(
     }
 
     private companion object {
+        private const val TAG = "MessagesRepository"
+
         /** The message types whose extra data carries a file path. */
         private val MEDIA_PATH_TYPES = listOf(MessageType.ATTACHMENT, MessageType.PTT)
 

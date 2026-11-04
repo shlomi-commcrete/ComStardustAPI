@@ -6,7 +6,7 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.util.DataManager
@@ -53,9 +53,9 @@ object AIPcmStreamPlayer {
     private val handler: Handler = Handler(Looper.getMainLooper())
     private val runnable: Runnable = Runnable {
         CoroutineScope(Dispatchers.IO).launch {
-            StardustLog.d("PcmStreamPlayer", "Stopping file write due to inactivity.")
+            StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Stopping file write due to inactivity.")
             val file = fileToWrite
-            StardustLog.d("PcmStreamPlayer", "File to write present: ${file != null}")
+            StardustLog.d(LogType.PTT, "PcmStreamPlayer", "File to write present: ${file != null}")
             file?.let { saveFramesToWav(it) }
 
             isFileInit = false
@@ -135,11 +135,11 @@ object AIPcmStreamPlayer {
                 measureCounterSilence++
                 if (measureMinTime == 0L || actualGap < measureMinTime) measureMinTime = actualGap
                 if (actualGap > measureMaxTime) measureMaxTime = actualGap
-                // logcat only: per-frame, would flood the log file
-                Log.d("PcmStreamPlayer", "actualGap: $actualGap, average: ${measureTotalSilenceTime / measureCounterSilence}, minTime: $measureMinTime, maxTime: $measureMaxTime")
+                // Per-frame: keep at d.
+                StardustLog.d(LogType.PTT, "PcmStreamPlayer") { "actualGap: $actualGap, average: ${measureTotalSilenceTime / measureCounterSilence}, minTime: $measureMinTime, maxTime: $measureMaxTime" }
             } else if (actualGap < 1200) { // 1.2 seconds
-                // logcat only: per-frame, would flood the log file
-                Log.d("PcmStreamPlayer", "Frame dropped")
+                // Per-frame: keep at d.
+                StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Frame dropped")
             }
         }
 
@@ -183,13 +183,13 @@ object AIPcmStreamPlayer {
     private var startRecored = 0L
 
     private suspend fun saveFramesToWav(file: File) {
-        StardustLog.d("PcmStreamPlayer", "saveFramesToWav called.")
-        StardustLog.d("PcmStreamPlayer", "Number of buffered frames: ${frameBuffer.size}")
-        StardustLog.d("PcmStreamPlayer", "isRecoded: $isRecoded")
+        StardustLog.d(LogType.PTT, "PcmStreamPlayer", "saveFramesToWav called.")
+        StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Number of buffered frames: ${frameBuffer.size}")
+        StardustLog.d(LogType.PTT, "PcmStreamPlayer", "isRecoded: $isRecoded")
         if (frameBuffer.isEmpty() || isRecoded) return
 
         if (isFirst) {
-            StardustLog.d("PcmStreamPlayer", "Starting recording timer.")
+            StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Starting recording timer.")
             isFirst = false
             startRecored = System.currentTimeMillis()
         }
@@ -198,7 +198,7 @@ object AIPcmStreamPlayer {
         if (System.currentTimeMillis() - startRecored > 1500) {
 
         }
-        StardustLog.d("PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
+        StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Saving buffered frames to WAV file after 1.5 seconds.")
         val sampleArray = frameBuffer.flatMap { it.asIterable() }.toShortArray()
         WavHelper.createWavFile(sampleArray, currentSampleRate, file)
         frameBuffer.clear()

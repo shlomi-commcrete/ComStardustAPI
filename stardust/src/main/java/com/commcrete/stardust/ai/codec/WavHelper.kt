@@ -1,5 +1,6 @@
 package com.commcrete.stardust.ai.codec
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import java.io.File
 import java.io.FileOutputStream
@@ -107,7 +108,7 @@ object WavHelper {
                     bb.putShort(sample)
                 }
                 fos.write(bb.array())
-                StardustLog.e("WavHelper", "Finish Writeing WAV file" )
+                StardustLog.i(LogType.PTT, "WavHelper", "Finish Writeing WAV file")
             }
         } catch (e: IOException) {
             StardustLog.e("WavHelper", "Error creating WAV file", e)
@@ -132,7 +133,7 @@ object WavHelper {
                     bb.put(sample)
                 }
                 fos.write(bb.array())
-                StardustLog.e("WavHelper", "Finish Writeing WAV file" )
+                StardustLog.i(LogType.PTT, "WavHelper", "Finish Writeing WAV file")
             }
         } catch (e: IOException) {
             StardustLog.e("WavHelper", "Error creating WAV file", e)

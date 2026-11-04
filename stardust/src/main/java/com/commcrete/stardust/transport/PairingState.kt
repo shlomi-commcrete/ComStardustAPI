@@ -1,5 +1,6 @@
 package com.commcrete.stardust.transport
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,8 +115,14 @@ internal object PairingTracker {
     }
 
     private fun publish(next: PairingState) {
-        StardustLog.d(TAG, "pairing: ${_state.value.javaClass.simpleName} -> ${next.javaClass.simpleName}" +
-            ((next as? PairingState.Failed)?.let { " reason=${it.reason}" } ?: ""))
+        val line = "pairing: ${_state.value.javaClass.simpleName} -> ${next.javaClass.simpleName}" +
+            ((next as? PairingState.Failed)?.let { " reason=${it.reason}" } ?: "")
+        // Results are timeline (i); the steps on the way are trace (d). No address either way.
+        if (next is PairingState.Paired || next is PairingState.Failed) {
+            StardustLog.i(LogType.CONNECTION, TAG, line)
+        } else {
+            StardustLog.d(LogType.CONNECTION, TAG, line)
+        }
         _state.value = next
     }
 }

@@ -1,7 +1,8 @@
 package com.commcrete.stardust.ai.codec.testing
 
 import android.media.AudioDeviceInfo
-import timber.log.Timber
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
@@ -118,17 +119,18 @@ class StreamingAudioStatsLogger(
         this.deviceRates = deviceRates
         startTimeMs = System.currentTimeMillis()
 
-        Timber.Forest.tag(TAG).i(
-            "▶ Stream started → device='%s' (type=%s), configured=%d Hz mono(%d) %d-bit",
-            this.deviceName, deviceTypeName(deviceType), sampleRate, channels, bitsPerSample
+        // d: the device name is an audio device's product name, which may appear only at d.
+        StardustLog.d(
+            LogType.PTT, TAG,
+            "▶ Stream started → device='${this.deviceName}' (type=${deviceTypeName(deviceType)}), configured=$sampleRate Hz mono($channels) $bitsPerSample-bit"
         )
         if (deviceRates.isNotEmpty()) {
-            Timber.Forest.tag(TAG).i(
-                "  device native rates=%s, configured rate=%d Hz%s",
-                deviceRates, sampleRate,
-                if (deviceRates.isNotEmpty() && sampleRate !in deviceRates)
-                    " (Android HAL will resample)"
-                else ""
+            StardustLog.i(
+                LogType.PTT, TAG,
+                "  device native rates=$deviceRates, configured rate=$sampleRate Hz" +
+                    if (deviceRates.isNotEmpty() && sampleRate !in deviceRates)
+                        " (Android HAL will resample)"
+                    else ""
             )
         }
     }
@@ -208,11 +210,14 @@ class StreamingAudioStatsLogger(
         val silentPct = chunkSilent * 100.0 / chunkSamples
         val elapsedSec = totalSamples.toDouble() / sampleRate
 
-        Timber.Forest.tag(TAG).i(
-            "chunk=%-3d t=%6.1fs peak=%+6.1fdBFS rms=%+6.1fdBFS clip=%5.2f%% silent=%5.1f%%%s",
-            chunkIndex, elapsedSec, peakDb, rmsDb, clipPct, silentPct,
-            chunkWarnings(peakDb, rmsDb, clipPct, silentPct)
-        )
+        // Per-chunk diagnostic: d, built only when d is on.
+        StardustLog.d(LogType.PTT, TAG) {
+            "chunk=%-3d t=%6.1fs peak=%+6.1fdBFS rms=%+6.1fdBFS clip=%5.2f%% silent=%5.1f%%%s".format(
+                Locale.US,
+                chunkIndex, elapsedSec, peakDb, rmsDb, clipPct, silentPct,
+                chunkWarnings(peakDb, rmsDb, clipPct, silentPct)
+            )
+        }
 
         // Periodic spectral snapshot (every 5 s by default).
         if (chunkIndex > 0 && chunkIndex != lastChunkIndexLogged &&
@@ -254,6 +259,9 @@ class StreamingAudioStatsLogger(
     }
 
     private fun logSpectralSnapshot(chunkIndex: Int) {
+        // Per-chunk diagnostic, so d; the FFT and the formatting exist only for this line, so skip both
+        // when d is off.
+        if (!StardustLog.isEnabled(LogType.PTT, android.util.Log.DEBUG)) return
         val pcm = snapshotPcm() ?: return
         val a = analyseSpectrum(pcm)
         val sb = StringBuilder()
@@ -271,13 +279,13 @@ class StreamingAudioStatsLogger(
             .append(String.format(Locale.US, "%.2f", a.flatness))
             .append(')')
         if (a.toneAlert != null) sb.append("  ⚠ ").append(a.toneAlert)
-        Timber.Forest.tag(TAG).i(sb.toString())
+        StardustLog.d(LogType.PTT, TAG, sb.toString())
     }
 
     private fun logFinalSummary() {
         val durationMs = System.currentTimeMillis() - startTimeMs
         if (totalSamples == 0L) {
-            Timber.Forest.tag(TAG).w("⏹ Stream stopped: no samples captured (duration=%d ms)", durationMs)
+            StardustLog.w(LogType.PTT, TAG, "⏹ Stream stopped: no samples captured (duration=$durationMs ms)")
             return
         }
         val rms = sqrt(sumSq / totalSamples)
@@ -355,7 +363,7 @@ class StreamingAudioStatsLogger(
 
         sb.append("│ WavTokenizer      : ").append(verdict).append('\n')
         sb.append("╰─────────────────────────────────────────────────")
-        Timber.Forest.tag(TAG).i(sb.toString())
+        StardustLog.i(LogType.PTT, TAG, sb.toString())
     }
 
     private fun bar(pct: Double, width: Int = 20): String {

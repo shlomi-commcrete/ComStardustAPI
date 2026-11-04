@@ -1,6 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
-import android.util.Log
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.util.DataManager
@@ -20,8 +21,25 @@ class WavTokenizerEncoder() {
     private val TOKENS_PER_SECOND = 40  // 40 tokens for 1 second of audio
     private val SAMPLES_PER_TOKEN = SAMPLE_RATE / TOKENS_PER_SECOND // 600 samples per token
 
+    /** Per-chunk failure lines log once per recording; [startLogRun] summarises and resets them. */
+    private val logOnce = LogOnce()
+
+    /** The one [logOnce] key whose first line is an e; the other is w. */
+    private val KEY_ENCODE_FAILED = "encode failed"
+
+    /**
+     * Starts a new log run where a recording starts: summarises the per-chunk failures repeated since
+     * the last run, each at its first line's level, then forgets them. Recordings share this encoder.
+     */
+    internal fun startLogRun() {
+        for ((key, repeats) in logOnce.reset()) {
+            if (key == KEY_ENCODE_FAILED) StardustLog.e(TAG, "$key x$repeats more")
+            else StardustLog.w(LogType.PTT, TAG, "$key x$repeats more")
+        }
+    }
+
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        StardustLog.d(TAG, "Loading WavTokenizerEncoder model")
+        StardustLog.d(LogType.PTT, TAG, "Loading WavTokenizerEncoder model")
         val modelAssetName = "wav_to_codes_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
@@ -72,16 +90,18 @@ class WavTokenizerEncoder() {
     fun encode(audioSamples: ShortArray): LongArray {
         val safeInput = when {
             audioSamples.size > EXPECTED_SAMPLES -> {
-                // logcat only: per-chunk, would flood the log file
-                Log.w(TAG, "encode input larger than expected (${audioSamples.size} > $EXPECTED_SAMPLES); trimming")
+                // Logs once per recording; summarised at the next recording's startLogRun().
+                if (logOnce.first("encode input larger than expected")) {
+                    StardustLog.w(LogType.PTT, TAG, "encode input larger than expected (${audioSamples.size} > $EXPECTED_SAMPLES); trimming")
+                }
                 audioSamples.copyOf(EXPECTED_SAMPLES)
             }
             else -> audioSamples
         }
 
         return runCatching {
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Encoding ${safeInput.size} audio samples")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Encoding ${safeInput.size} audio samples" }
             val selectedModule = getSelectedModule()
 
             // Convert ShortArray to FloatArray in range [-1.0, 1.0]
@@ -90,22 +110,24 @@ class WavTokenizerEncoder() {
             // Ensure exactly 12,000 samples by padding with zeros or trimming
             val paddedSamples = padOrTrim(floatSamples)
             val inputTensor = Tensor.fromBlob(paddedSamples, longArrayOf(1, paddedSamples.size.toLong()))
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Input tensor shape: ${inputTensor.shape().joinToString(",")}")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Input tensor shape: ${inputTensor.shape().joinToString(",")}" }
 
             val moduleOutputTensor: Tensor
             val duration = measureTime {
                 moduleOutputTensor = selectedModule.forward(IValue.from(inputTensor)).toTensor()
             }
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Encoding took $duration")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Encoding took $duration" }
 
             val outputData = moduleOutputTensor.dataAsLongArray
             val tokens = trimToExpectedTokens(outputData, safeInput.size)
             if (tokens.isNotEmpty()) tokens else fallbackTokens(safeInput.size)
         }.getOrElse { t ->
-            // logcat only: per-chunk, would flood the log file
-            Log.e(TAG, "encode failed; returning fallback tokens", t)
+            // Logs once per recording; summarised at the next recording's startLogRun().
+            if (logOnce.first(KEY_ENCODE_FAILED)) {
+                StardustLog.e(TAG, "encode failed; returning fallback tokens", t)
+            }
             fallbackTokens(safeInput.size)
         }
     }
@@ -130,8 +152,8 @@ class WavTokenizerEncoder() {
     fun trimToExpectedTokens(outputData: LongArray, audioSamplesSize: Int): LongArray {
         val expectedTokens = audioSamplesSize / SAMPLES_PER_TOKEN
         return if (outputData.size > expectedTokens) {
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Trimming output from ${outputData.size} tokens to $expectedTokens tokens")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Trimming output from ${outputData.size} tokens to $expectedTokens tokens" }
             outputData.dropLast(outputData.size - expectedTokens).toLongArray()
         } else {
             outputData
@@ -157,7 +179,7 @@ class WavTokenizerEncoder() {
                 input.copyTo(output)
             }
         }
-        StardustLog.d(TAG, "Model file path: ${outFile.absolutePath}")
+        StardustLog.d(LogType.PTT, TAG, "Model file path: ${outFile.absolutePath}")
         return outFile.absolutePath
     }
 
@@ -190,9 +212,9 @@ class WavTokenizerEncoder() {
      */
     private val initJob: Job by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Scopes.getDefaultCoroutine().launch {
-            StardustLog.d(TAG, "WavTokenizerEncoder module initializing")
+            StardustLog.d(LogType.PTT, TAG, "WavTokenizerEncoder module initializing")
             module
-            StardustLog.d(TAG, "WavTokenizerEncoder model loaded successfully")
+            StardustLog.i(LogType.PTT, TAG, "WavTokenizerEncoder model loaded successfully")
         }
     }
 }

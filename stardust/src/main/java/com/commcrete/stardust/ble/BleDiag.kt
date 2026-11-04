@@ -7,7 +7,9 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanResult
 import android.content.Context
 import android.os.SystemClock
+import android.util.Log
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.delay
@@ -43,15 +45,26 @@ internal object BleDiag {
     private val t0 = SystemClock.elapsedRealtime()
     private var seq = 0
 
+    @PublishedApi
     @Synchronized
-    private fun stamp(): String {
+    internal fun stamp(): String {
         seq += 1
         val ms = SystemClock.elapsedRealtime() - t0
         return "#" + seq.toString().padStart(4, '0') + " +" + ms.toString().padStart(7, ' ') + "ms"
     }
 
-    fun log(where: String, msg: String) { StardustLog.d(TAG, "${stamp()} [$where] $msg") }
-    fun warn(where: String, msg: String) { StardustLog.w(TAG, "${stamp()} [$where] $msg") }
+    fun log(where: String, msg: String) { StardustLog.d(LogType.BLE, TAG, "${stamp()} [$where] $msg") }
+    fun warn(where: String, msg: String) { StardustLog.w(LogType.BLE, TAG, "${stamp()} [$where] $msg") }
+
+    /**
+     * Lazy forms: the stamp and [msg] are built only when the line is enabled, and a [msg] that
+     * throws is dropped. Use these wherever the message is costly or the call is per packet.
+     */
+    inline fun log(where: String, msg: () -> String) { StardustLog.d(LogType.BLE, TAG) { "${stamp()} [$where] ${msg()}" } }
+    inline fun warn(where: String, msg: () -> String) { StardustLog.w(LogType.BLE, TAG) { "${stamp()} [$where] ${msg()}" } }
+
+    /** Whether [log] lines are on. Gates diagnostics whose bookkeeping itself costs a binder call. */
+    fun debugEnabled(): Boolean = StardustLog.isEnabled(LogType.BLE, Log.DEBUG)
     fun verdict(msg: String) { StardustLog.e(TAG, "${stamp()} [VERDICT] $msg") }
 
     /** Identity of a GATT client object; distinguishes clients without printing the device. */
@@ -86,6 +99,8 @@ internal object BleDiag {
      * advertising and no scan can find it.
      */
     fun osLinkToRadio(where: String) {
+        // Only ever logs at d, and getConnectedDevices is a binder call made on every scan start.
+        if (!debugEnabled()) return
         val address = radioAddress ?: return log(where, "osLink: radio unknown (nothing connected or unpaired yet)")
         val result = runCatching {
             val manager = DataManager.appContext.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
@@ -174,18 +189,22 @@ internal object BleDiag {
         rawResults += 1
         val address = runCatching { result.device.address }.getOrNull() ?: return
         val firstSighting = seenAddresses.add(address)
-        val advName = result.scanRecord?.deviceName
+        // The names feed only d lines, and `device.name` is a binder call per result: read them
+        // only when those lines are on. The counts and the radio check stay, as scanStop's
+        // verdicts depend on them.
+        val namesWanted = debugEnabled()
+        val advName = if (namesWanted) result.scanRecord?.deviceName else null
         @Suppress("MissingPermission")
-        val cachedName = runCatching { result.device.name }.getOrNull()
+        val cachedName = if (namesWanted) runCatching { result.device.name }.getOrNull() else null
         if (firstSighting) {
-            if (advName == null && cachedName == null) unnamed += 1
+            if (namesWanted && advName == null && cachedName == null) unnamed += 1
             if (matchedAsRadio) matched += 1
         }
         if (!radioSeen && address.equals(radioAddress, ignoreCase = true)) {
             radioSeen = true
-            log("scan", "THE RADIO is advertising: nameInAdvert=${advName != null} cachedName=${cachedName != null} " +
+            log("scan") { "THE RADIO is advertising: nameInAdvert=${advName != null} cachedName=${cachedName != null} " +
                 "matchedByNameFilter=$matchedAsRadio rssi=${result.rssi} " +
-                "after=${SystemClock.elapsedRealtime() - scanStartedAtMs}ms")
+                "after=${SystemClock.elapsedRealtime() - scanStartedAtMs}ms" }
             if (!matchedAsRadio) {
                 verdict("the radio IS advertising but the name filter rejected it (no matching name in " +
                     "the advert or the cache) — it is dropped before the host ever sees it.")

@@ -293,7 +293,7 @@ class ReedSolomon(
         val Ntotal = Ktotal + Ptotal
         require(receivedPackets.size >= Ntotal) {
             "decode expects an array of length $Ntotal (got ${receivedPackets.size})"
-            StardustLog.d("ReedSolomon", "decode expects an array of length $Ntotal (got ${receivedPackets.size})")
+            StardustLog.d(LogType.FILES, "ReedSolomon", "decode expects an array of length $Ntotal (got ${receivedPackets.size})")
         }
 
         // infer pktLen from any non-null
@@ -317,7 +317,7 @@ class ReedSolomon(
                 val pk = blockSlice[i]
                 if (pk != null) {
                     require(pk.size == pktLen) {
-                        StardustLog.d("ReedSolomon", "inconsistent packet lengths")
+                        StardustLog.d(LogType.FILES, "ReedSolomon", "inconsistent packet lengths")
                         "inconsistent packet lengths"
                     }
                     availableIdx.add(i)
@@ -325,7 +325,7 @@ class ReedSolomon(
                 }
             }
             require(availablePackets.size >= k) {
-                StardustLog.d("ReedSolomon", "Not enough packets to decode block $b (need $k, got ${availablePackets.size})")
+                StardustLog.d(LogType.FILES, "ReedSolomon", "Not enough packets to decode block $b (need $k, got ${availablePackets.size})")
                 "Not enough packets to decode block $b (need $k, got ${availablePackets.size})"
 
             }

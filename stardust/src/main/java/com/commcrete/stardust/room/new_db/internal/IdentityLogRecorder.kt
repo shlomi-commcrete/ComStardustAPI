@@ -8,6 +8,7 @@ import com.commcrete.stardust.room.new_db.audit.IdentityLogSource
 import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.FullContactData
 import java.util.concurrent.atomic.AtomicLong
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -332,6 +333,6 @@ internal class IdentityLogRecorder(
      */
     private suspend inline fun safely(op: String, crossinline block: suspend () -> Unit) {
         runCatching { withContext(Dispatchers.IO) { block() } }
-            .onFailure { StardustLog.w(TAG, "$op: identity log write failed", it) }
+            .onFailure { StardustLog.w(LogType.STORAGE, TAG, "$op: identity log write failed", it) }
     }
 }

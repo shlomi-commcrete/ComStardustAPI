@@ -7,6 +7,7 @@ import android.content.Context.AUDIO_SERVICE
 import android.content.Intent
 import android.media.AudioManager
 import android.support.v4.media.session.MediaSessionCompat
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import android.view.KeyEvent
 import androidx.lifecycle.MutableLiveData
@@ -23,7 +24,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.io.File
 import java.util.concurrent.Executors
 
@@ -85,7 +85,7 @@ object ButtonListener {
      */
     private suspend fun resolveTarget(): PttTarget? {
         val senderId = RegisteredUserUtils.currentUserFlow.value?.appId?.takeIf { it.isNotBlank() }
-            ?: return null.also { StardustLog.w(TAG, "no registered user") }
+            ?: return null.also { StardustLog.w(LogType.PTT, TAG, "no registered user") }
 
         var chatId = DataManager.getChatId()
         var receiverId = DataManager.getDestination()
@@ -93,7 +93,7 @@ object ButtonListener {
             val group = firstGroupChat() ?: return null
             chatId = group.first
             receiverId = group.second
-            StardustLog.d(TAG, "no PTT target set — falling back to the first group chat")
+            StardustLog.d(LogType.PTT, TAG, "no PTT target set — falling back to the first group chat")
         }
         return PttTarget(chatId, StardustAPIPackage(senderId = senderId, receiverId = receiverId, chatId = chatId, isLast = false))
     }
@@ -119,7 +119,7 @@ object ButtonListener {
     private var pendingRelease: Job? = null
 
     fun notifyData(isClicked: Boolean) {
-        StardustLog.d(TAG, "CTS ${if (isClicked) "PRESSED" else "RELEASED"}")
+        StardustLog.d(LogType.PTT, TAG, "CTS ${if (isClicked) "PRESSED" else "RELEASED"}")
 
         // Everything runs on one background thread, so a quick tap's release can never overtake its
         // press (separate Dispatchers.IO launches carry no ordering), and pendingRelease needs no lock.
@@ -130,7 +130,7 @@ object ButtonListener {
                 pendingRelease?.cancel()
                 pendingRelease = null
                 if (bounced && activeTarget != null) {
-                    StardustLog.d(TAG, "release cancelled — CTS came back within ${RELEASE_DEBOUNCE_MS}ms, still transmitting")
+                    StardustLog.d(LogType.PTT, TAG, "release cancelled — CTS came back within ${RELEASE_DEBOUNCE_MS}ms, still transmitting")
                     return@launch
                 }
                 onPress()
@@ -147,12 +147,12 @@ object ButtonListener {
 
     private suspend fun onPress() {
         if (activeTarget != null) {
-            StardustLog.w(TAG, "press ignored — a button recording is already open")
+            StardustLog.w(LogType.PTT, TAG, "press ignored — a button recording is already open")
             return
         }
         if (RecorderUtils.isRecordingInProgress()) {
             // e.g. on-screen PTT is held: RecorderUtils would reject the start anyway.
-            StardustLog.w(TAG, "press ignored — another recording is in progress")
+            StardustLog.w(LogType.PTT, TAG, "press ignored — another recording is in progress")
             publishPlayPtt(false)
             return
         }
@@ -160,7 +160,7 @@ object ButtonListener {
         if (target == null) {
             // Nowhere to send: no target set and no group chat. The stop beep tells the user the
             // press did nothing.
-            StardustLog.w(TAG, "press ignored — no PTT target and no group chat to fall back to")
+            StardustLog.w(LogType.PTT, TAG, "press ignored — no PTT target and no group chat to fall back to")
             runCatching {
                 SoundPlayer.play(DataManager.appContext, R.raw.ptt_finished_beep, channel = SoundChannel.SYSTEM)
             }
@@ -173,25 +173,25 @@ object ButtonListener {
             .onFailure { StardustLog.e(TAG, "startRecording threw", it) }
             .getOrNull()
         if (!RecorderUtils.isRecordingInProgress()) {
-            StardustLog.w(TAG, "recording did not start")
+            StardustLog.w(LogType.PTT, TAG, "recording did not start")
             currentFile = null
             publishPlayPtt(false)
             return
         }
         activeTarget = target
         publishPlayPtt(true)
-        StardustLog.d(TAG, "startRecording file=${currentFile != null}")
+        StardustLog.d(LogType.PTT, TAG, "startRecording file=${currentFile != null}")
     }
 
     private fun onRelease() {
         publishPlayPtt(false)
         val target = activeTarget
         if (target == null) {
-            StardustLog.d(TAG, "release ignored — no button recording is open")
+            StardustLog.d(LogType.PTT, TAG, "release ignored — no button recording is open")
             return
         }
         dismissPttRecording(target.chatId, target.pttPackage.copy(isLast = true), currentFile)
-        StardustLog.d(TAG, "stopRecording")
+        StardustLog.d(LogType.PTT, TAG, "stopRecording")
         activeTarget = null
         currentFile = null
     }
@@ -229,17 +229,17 @@ object ButtonListener {
                         when (keyEvent.keyCode) {
                             KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                                 // Handle play/pause button press
-                                Timber.d("Play/Pause button pressed")
+                                StardustLog.d(LogType.PTT, TAG, "Play/Pause button pressed")
                                 return true
                             }
                             KeyEvent.KEYCODE_VOLUME_UP -> {
                                 // Handle volume up button press
-                                Timber.d("Volume Up button pressed")
+                                StardustLog.d(LogType.PTT, TAG, "Volume Up button pressed")
                                 return true
                             }
                             KeyEvent.KEYCODE_VOLUME_DOWN -> {
                                 // Handle volume down button press
-                                Timber.d("Volume Down button pressed")
+                                StardustLog.d(LogType.PTT, TAG, "Volume Down button pressed")
                                 return true
                             }
                         }
@@ -263,7 +263,7 @@ object ButtonListener {
         )
 
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
-            Timber.d("Audio focus granted")
+            StardustLog.d(LogType.PTT, TAG, "Audio focus granted")
         }
     }
 
@@ -272,16 +272,16 @@ object ButtonListener {
 class MediaButtonReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
         if (Intent.ACTION_MEDIA_BUTTON == intent?.action) {
-            Timber.tag("MediaButtonReceiver").d("Headset button pressed")
+            StardustLog.d(LogType.PTT, "MediaButtonReceiver", "Headset button pressed")
 //            Toast.makeText(context, "Headset button pressed", Toast.LENGTH_SHORT).show()
 //            ButtonListener.updateMediaClick()
             val keyEvent = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT)
             if (keyEvent?.action == KeyEvent.ACTION_DOWN) {
                 when (keyEvent.keyCode) {
                     KeyEvent.KEYCODE_HEADSETHOOK,
-                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { Timber.tag("MediaButtonReceiver").d("${keyEvent.keyCode}") }
-                    KeyEvent.KEYCODE_VOLUME_UP -> {Timber.tag("MediaButtonReceiver").d("KEYCODE_VOLUME_UP")}
-                    KeyEvent.KEYCODE_VOLUME_DOWN -> {Timber.tag("MediaButtonReceiver").d("KEYCODE_VOLUME_DOWN")}
+                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { StardustLog.d(LogType.PTT, "MediaButtonReceiver", "${keyEvent.keyCode}") }
+                    KeyEvent.KEYCODE_VOLUME_UP -> {StardustLog.d(LogType.PTT, "MediaButtonReceiver", "KEYCODE_VOLUME_UP")}
+                    KeyEvent.KEYCODE_VOLUME_DOWN -> {StardustLog.d(LogType.PTT, "MediaButtonReceiver", "KEYCODE_VOLUME_DOWN")}
                 }
             }
         }

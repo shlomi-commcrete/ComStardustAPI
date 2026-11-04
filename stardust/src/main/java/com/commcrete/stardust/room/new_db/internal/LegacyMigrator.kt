@@ -14,10 +14,11 @@ import com.commcrete.stardust.room.new_db.contact.FullContactData
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import timber.log.Timber
 
 /**
  * One-shot bridge from the three legacy Room databases (`chats_database`,
@@ -112,7 +113,7 @@ internal class LegacyMigrator(
         // three generic-named databases in the host's shared directory.
         if (LEGACY_DATABASE_NAMES.none { context.getDatabasePath(it).exists() }) {
             prefs.edit { putBoolean(KEY_MIGRATION_DONE, true) }
-            Timber.d("Migration: no legacy database present — nothing to do")
+            StardustLog.d(LogType.STORAGE, TAG, "Migration: no legacy database present — nothing to do")
             return@withContext
         }
 
@@ -137,7 +138,7 @@ internal class LegacyMigrator(
                     contacts.mapNotNull { it.toFullContactData() }
                         .filterNot { (it as? FullContactData.User)?.userId?.let(::normalizeIdOrNull) == selfAppId }
                 insertContacts(parsed)
-                Timber.d("Migration: copied ${parsed.size} of ${contacts.size} contact(s)")
+                StardustLog.i(LogType.STORAGE, TAG, "Migration: copied ${parsed.size} of ${contacts.size} contact(s)")
             }
 
             // ── Chats ─────────────────────────────────────────────────────
@@ -175,9 +176,9 @@ internal class LegacyMigrator(
 
             // ── Mark done ────────────────────────────────────────────────
             prefs.edit { putBoolean(KEY_MIGRATION_DONE, true) }
-            Timber.d("Migration: completed successfully")
+            StardustLog.i(LogType.STORAGE, TAG, "Migration: completed successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Migration: failed — legacy data retained, will retry on next launch")
+            StardustLog.e(TAG, "Migration: failed — legacy data retained, will retry on next launch", e)
             // Do NOT set the flag — retry on next launch.
         }
     }
@@ -202,7 +203,7 @@ internal class LegacyMigrator(
         }
         return runCatching { read() }
             .onSuccess { consumed += name }
-            .onFailure { Timber.e(it, "Migration: cannot read $name — leaving the file untouched") }
+            .onFailure { StardustLog.e(TAG, "Migration: cannot read $name — leaving the file untouched", it) }
             .getOrNull()
     }
 
@@ -217,10 +218,10 @@ internal class LegacyMigrator(
             }.getOrDefault(false)
             if (!gone) {
                 allGone = false
-                Timber.w("Migration: could not delete legacy database $dbName")
+                StardustLog.w(LogType.STORAGE, TAG, "Migration: could not delete legacy database $dbName")
             }
         }
-        if (allGone) Timber.d("Migration: legacy databases deleted")
+        if (allGone) StardustLog.d(LogType.STORAGE, TAG,"Migration: legacy databases deleted")
         return allGone
     }
 
@@ -262,7 +263,7 @@ internal class LegacyMigrator(
             }
             if (placeholders.isNotEmpty()) {
                 insertContacts(placeholders)
-                Timber.d("Migration: created ${placeholders.size} placeholder contact(s)")
+                StardustLog.i(LogType.STORAGE, TAG, "Migration: created ${placeholders.size} placeholder contact(s)")
                 resolved = resolveChatIds(legacyChatIds)
             }
         }
@@ -293,11 +294,11 @@ internal class LegacyMigrator(
 
         val dropped = entities.size - mapped.size
         if (dropped > 0) {
-            Timber.w("Migration: dropped $dropped message(s) — chat id could not be resolved")
+            StardustLog.w(LogType.STORAGE, TAG, "Migration: dropped $dropped message(s) — chat id could not be resolved")
         }
 
         mapped.chunked(MESSAGE_INSERT_CHUNK).forEach { messagesDao.addMessages(it) }
-        Timber.d("Migration: copied ${mapped.size} message(s)")
+        StardustLog.i(LogType.STORAGE, TAG, "Migration: copied ${mapped.size} message(s)")
     }
 
     /**
@@ -355,21 +356,21 @@ internal class LegacyMigrator(
         if (appContext.getDatabasePath(CHATS_DB).exists()) {
             runCatching {
                 ChatsDatabase.getDatabase().chatsDao().clearData()
-            }.onFailure { Timber.w(it, "clearLegacy: could not empty $CHATS_DB") }
+            }.onFailure { StardustLog.w(LogType.STORAGE, TAG, "clearLegacy: could not empty $CHATS_DB", it) }
             ChatsDatabase.closeAndClear()
         }
 
         if (appContext.getDatabasePath(CONTACTS_DB).exists()) {
             runCatching {
                 ContactsDatabase.getDatabase().contactsDao().clearData()
-            }.onFailure { Timber.w(it, "clearLegacy: could not empty $CONTACTS_DB") }
+            }.onFailure { StardustLog.w(LogType.STORAGE, TAG, "clearLegacy: could not empty $CONTACTS_DB", it) }
             ContactsDatabase.closeAndClear()
         }
 
         if (appContext.getDatabasePath(MESSAGES_DB).exists()) {
             runCatching {
                 MessagesDatabase.getDatabase().messagesDao().clearData()
-            }.onFailure { Timber.w(it, "clearLegacy: could not empty $MESSAGES_DB") }
+            }.onFailure { StardustLog.w(LogType.STORAGE, TAG, "clearLegacy: could not empty $MESSAGES_DB", it) }
             MessagesDatabase.closeAndClear()
         }
 
@@ -385,6 +386,7 @@ internal class LegacyMigrator(
     }
 
     companion object {
+        private const val TAG = "LegacyMigrator"
         private const val PREFS_NAME = "app_db_prefs"
         private const val KEY_MIGRATION_DONE = "migration_done"
 

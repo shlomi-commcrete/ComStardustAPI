@@ -11,13 +11,14 @@ import com.commcrete.stardust.room.new_db.message.MessageState
 import com.commcrete.stardust.util.Carrier
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.RegisteredUserUtils
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.commcrete.stardust.room.StardustStorage
-import timber.log.Timber
 import java.io.File
 
 /**
@@ -59,9 +60,15 @@ class PttSendStore(private val context: Context) {
         // the lesser evil: the send is recorded, and playback fails visibly instead of the message
         // never existing.
         if (!file.exists()) {
-            Timber.tag(TAG).w("mirror WAV missing for recording ${id.value} — saving row anyway: ${file.absolutePath}")
+            StardustLog.w(LogType.PTT, TAG, "mirror WAV missing for recording ${id.value} — saving row anyway")
+            // The path is under the chat's directory; it stays out of release logs (CLAUDE.md §8).
+            StardustLog.d(LogType.PTT, TAG) { "missing mirror path: ${file.absolutePath}" }
         }
-        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
+        val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: run {
+            // Nothing here returns a typed failure, so the lost row is logged.
+            StardustLog.e(TAG, "no logged-in user — PTT history row not saved for recording ${id.value}")
+            return
+        }
         val encoderType = if (codecId == CodecId.CODEC2) EncoderType.CODEC2 else EncoderType.AI
         scope.launch {
             runCatching {

@@ -6,6 +6,7 @@ import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.util.CoordinatesUtil
 import com.commcrete.stardust.util.SOSUtils
 import java.util.Date
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 
 class StardustLocationParser : StardustParser() {
@@ -44,7 +45,7 @@ class StardustLocationParser : StardustParser() {
      */
     fun parseSOS(stardustPackage: StardustPackage): SOSPackage? {
         val intArray = stardustPackage.data ?: run {
-            StardustLog.w(LOG_TAG, "parseSOS: no data on ${stardustPackage.stardustOpCode}")
+            StardustLog.w(LogType.SOS, LOG_TAG, "parseSOS: no data on ${stardustPackage.stardustOpCode}")
             return null
         }
         val byteArray = intArrayToByteArray(intArray.toMutableList())
@@ -52,7 +53,7 @@ class StardustLocationParser : StardustParser() {
         val sosTypeOffset = 3
         val locationOffset = sosTypeOffset + sosTypeLength
         if (byteArray.size < locationOffset + locationLength) {
-            StardustLog.w(LOG_TAG,
+            StardustLog.w(LogType.SOS, LOG_TAG,
                 "parseSOS: payload too short on ${stardustPackage.stardustOpCode} — " +
                     "${byteArray.size} bytes, needs ${locationOffset + locationLength}"
             )
@@ -83,7 +84,7 @@ class StardustLocationParser : StardustParser() {
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             val offset = 0
             if (byteArray.size < offset + locationLength) {
-                StardustLog.w(LOG_TAG,
+                StardustLog.w(LogType.SOS, LOG_TAG,
                     "parseSOSReal: payload too short on ${stardustPackage.stardustOpCode} — " +
                         "${byteArray.size} bytes, needs $locationLength"
                 )

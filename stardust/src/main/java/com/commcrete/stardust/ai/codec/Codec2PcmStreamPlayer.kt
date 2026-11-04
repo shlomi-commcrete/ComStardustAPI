@@ -12,7 +12,8 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.LoudnessEnhancer
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.audio.BleMediaConnector
@@ -39,13 +40,20 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
     private var enhancer: LoudnessEnhancer? = null
     private var equalizer: Equalizer? = null
 
+    /**
+     * Per-packet failures log once per track; reset when [ensureTrack] creates a track and
+     * summarised by [releaseTrack].
+     */
+    private val logOnce = LogOnce()
+
     @SuppressLint("NewApi")
     fun ensureTrack(bufferSizeInBytes: Int, speedFactor: Float) {
         try {
             if (track == null) {
                 track = buildTrack(bufferSizeInBytes, speedFactor)
                 syncBleDevice()
-                StardustLog.d(TAG, "ensureTrack created track=${track?.hashCode()} buffer=$bufferSizeInBytes")
+                logRepeats()
+                StardustLog.i(LogType.PTT, TAG, "Codec2 playback started: track=${track?.hashCode()} buffer=$bufferSizeInBytes")
             }
             attachEnhancer(track)
             Handler(Looper.getMainLooper()).postDelayed({ track?.play() }, 150)
@@ -56,11 +64,15 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
 
     fun playStream(audioData: ByteArray, bufferSizeInBytes: Int, receivedPkgs: Int, playFromSdk: Boolean) {
         val current = track
-        // logcat only: per-packet, would flood the log file
-        Log.d(TAG, "playStream track=${current?.hashCode()} dataSize=${audioData.size} buffer=$bufferSizeInBytes receivedPkgs=$receivedPkgs flag=$playFromSdk")
+        // Per-packet: keep at d.
+        StardustLog.d(LogType.PTT, TAG) {
+            "playStream track=${current?.hashCode()} dataSize=${audioData.size} buffer=$bufferSizeInBytes receivedPkgs=$receivedPkgs flag=$playFromSdk"
+        }
         if (current == null) {
-            // logcat only: per-packet, would flood the log file
-            Log.d(TAG, "playStream skipped because track is null")
+            // An inbound packet dropped: logs once per track, summarised by releaseTrack().
+            if (logOnce.first("inbound packet dropped (no track)")) {
+                StardustLog.e(TAG, "playStream: no track — inbound packet dropped")
+            }
             return
         }
 
@@ -68,8 +80,8 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             current.notificationMarkerPosition = bufferSizeInBytes / 2
             scope.launch {
                 if (!playFromSdk) {
-                    // logcat only: per-packet, would flood the log file
-                    Log.d(TAG, "playStream skipped because isPlayPttFromSdk=false track=${current.hashCode()}")
+                    // Per-packet: keep at d.
+                    StardustLog.d(LogType.PTT, TAG) { "playStream skipped because isPlayPttFromSdk=false track=${current.hashCode()}" }
                     return@launch
                 }
                 writeFrame(current, audioData)
@@ -81,6 +93,7 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
     }
 
     fun releaseTrack() {
+        val hadTrack = track != null
         try {
             track?.flush()
             track?.release()
@@ -93,11 +106,20 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             enhancer = null
             equalizer = null
         }
+        if (hadTrack) StardustLog.i(LogType.PTT, TAG, "Codec2 playback stopped")
+        logRepeats()
+    }
+
+    /** Summarises the once-logged per-packet failures; every one of them is an e. */
+    private fun logRepeats() {
+        for ((key, repeats) in logOnce.reset()) {
+            StardustLog.e(TAG, "$key x$repeats more")
+        }
     }
 
     fun writeMinimumSilenceAndPlay(byteArray: ByteArray, onPlaybackComplete: () -> Unit) {
         val tempTrack = buildTempTrack()
-        StardustLog.d(TAG, "writeMinimumSilenceAndPlay size=${byteArray.size} tempTrack=${tempTrack.hashCode()}")
+        StardustLog.d(LogType.PTT, TAG, "writeMinimumSilenceAndPlay size=${byteArray.size} tempTrack=${tempTrack.hashCode()}")
         tempTrack.play()
         tempTrack.write(byteArray, 0, byteArray.size)
 
@@ -162,13 +184,15 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
     }
 
     private fun writeFrame(track: AudioTrack, audioData: ByteArray) {
-        synchronized(track) {
+        synchronized<Unit>(track) {
             if (track.playState != AudioTrack.PLAYSTATE_PLAYING) {
                 try {
                     track.play()
                 } catch (e: IllegalStateException) {
-                    // logcat only: per-frame, would flood the log file
-                    Log.e(TAG, "Failed to start playback: ${e.message}")
+                    // Logs once per track; summarised by releaseTrack().
+                    if (logOnce.first("play() failed")) {
+                        StardustLog.e(TAG, "Failed to start playback: ${e.message}")
+                    }
                     return
                 }
             }
@@ -178,8 +202,10 @@ object Codec2PcmStreamPlayer : BleMediaConnector() {
             try {
                 track.write(audioData, 0, audioData.size)
             } catch (e: IllegalStateException) {
-                // logcat only: per-frame, would flood the log file
-                Log.e(TAG, "AudioTrack write failed: ${e.message}")
+                // Logs once per track; summarised by releaseTrack().
+                if (logOnce.first("AudioTrack write failed")) {
+                    StardustLog.e(TAG, "AudioTrack write failed: ${e.message}")
+                }
             }
         }
     }

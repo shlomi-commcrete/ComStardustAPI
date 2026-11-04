@@ -85,16 +85,18 @@ object RegisteredUserUtils {
             val roster = runCatching { DataManager.getAppRepo().getAllContactDrafts() }.getOrElse {
                 // Class only: a SQLite message can quote a callsign or id. No answer is not "no holder":
                 // the previous value stands until the next link-up asks again.
-                StardustLog.w(TAG, "Radio holder check failed: ${it.javaClass.simpleName}")
+                StardustLog.w(LogType.STORAGE, TAG, "Radio holder check failed: ${it.javaClass.simpleName}")
                 return@launch
             }
             val holder = roster.firstOrNull { it.type != ContactType.GROUP && it.deviceId.equals(radio, ignoreCase = true) }
-            if (holder != null) StardustLog.w(TAG, "Radio Device ID held by a contact")
+            if (holder != null) StardustLog.w(LogType.STORAGE, TAG, "Radio Device ID held by a contact")
             _radioHeldByContact.value = holder?.let { RadioHeldByContact(it.name, radio) }
         }
     }
 
     suspend fun logout(): Boolean = withContext(Dispatchers.IO) {
+        // Logcat keeps this one; the log files are deleted below.
+        StardustLog.i(LogType.STORAGE, TAG, "Logout started")
         coroutineScope {
             // Stop the port-mode assertion and the keepalive ping BEFORE tearing the link down.
             // Both are `while(isActive)` loops that otherwise run for the life of the process, and
@@ -120,6 +122,9 @@ object RegisteredUserUtils {
                     appUser.await() &&
                     user.await() &&
                     logs.await()
+        }.also { cleared ->
+            // The first line of the next log file: the logout finished, and whether everything went.
+            StardustLog.i(LogType.STORAGE, TAG, "Logout finished: all data cleared=$cleared")
         }
     }
 

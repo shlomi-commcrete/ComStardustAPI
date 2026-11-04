@@ -16,6 +16,7 @@ import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.getClientConnection
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.NetworkConnectivityObserver
 import kotlinx.coroutines.flow.collectLatest
@@ -84,9 +85,10 @@ object BleManager {
             else -> null
         }
 
-        StardustLog.d("StardustDataManager", "updateStatus: newStatus -> $newStatus")
-
         if(lastConnectionStatus == newStatus) return
+        // After the early return: USB calls updateStatus() per RX chunk, so logging before it
+        // logged per chunk. A change is logged once.
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "updateStatus: newStatus -> $newStatus")
         connectionStatus = newStatus
 
         when(newStatus) {

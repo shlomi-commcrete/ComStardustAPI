@@ -2,6 +2,7 @@ package com.commcrete.stardust.util.audio
 
 import android.Manifest.permission.RECORD_AUDIO
 import android.os.Environment
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import androidx.annotation.RequiresPermission
 import androidx.lifecycle.MutableLiveData
@@ -23,7 +24,6 @@ import com.ustadmobile.codec2.Codec2
 import com.commcrete.stardust.room.new_db.message.EncoderType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.io.File
 
 
@@ -105,7 +105,7 @@ object RecorderUtils {
         carrier: Carrier?,
         codeType: CODE_TYPE?
     ): File? {
-        StardustLog.d("AudioRecorder", "Start recording")
+        StardustLog.d(LogType.PTT, "AudioRecorder", "Start recording")
 
         // Minted before the guard so a REJECTED key-down is still reportable: the host asked for a
         // recording and gets a self-describing ERROR event for it, with its own id.
@@ -120,19 +120,19 @@ object RecorderUtils {
         // Before the guard, so a refused press leaves it free. Otherwise the mic opens and the first
         // encode fails ~0.6 s in, as a generic ERROR.
         if (!CodecAvailability.isAvailable(codeType)) {
-            StardustLog.w("AudioRecorder", "startRecording refused: $codeType codec unavailable in this process")
-            StardustLog.d(PTT_TRACE, "start ${recording.id} rejected: codec $codeType unavailable")
+            StardustLog.w(LogType.PTT, "AudioRecorder", "startRecording refused: $codeType codec unavailable in this process")
+            StardustLog.d(LogType.PTT, PTT_TRACE, "start ${recording.id} rejected: codec $codeType unavailable")
             notifyPttRecordingError(PttRecordingError.ENCODER_UNAVAILABLE, recording.id)
             return null
         }
 
         if (!recordingInProgress.compareAndSet(false, true)) {
-            StardustLog.w("AudioRecorder", "startRecording ignored: a recording session is already in progress")
-            StardustLog.d(PTT_TRACE, "start ${recording.id} rejected: guard held, mic owner=$currentRecordingId")
+            StardustLog.w(LogType.PTT, "AudioRecorder", "startRecording ignored: a recording session is already in progress")
+            StardustLog.d(LogType.PTT, PTT_TRACE, "start ${recording.id} rejected: guard held, mic owner=$currentRecordingId")
             notifyPttRecordingError(PttRecordingError.ALREADY_RECORDING, recording.id)
             return null
         }
-        StardustLog.d(PTT_TRACE, "start ${recording.id} accepted, previous owner=$currentRecordingId")
+        StardustLog.d(LogType.PTT, PTT_TRACE, "start ${recording.id} accepted, previous owner=$currentRecordingId")
         currentRecordingId = recording.id
 
         try {
@@ -261,9 +261,10 @@ object RecorderUtils {
      * not cost the others or the recording being stopped.
      */
     internal fun notifyPttMaxTimeoutReached() {
-        StardustLog.d(LOG_TAG, "PTT max timeout reached")
+        // i, not w: the cap is the radio's transmit ceiling doing its job, not a fault.
+        StardustLog.i(LogType.PTT, LOG_TAG, "PTT max timeout reached")
         runCatching { DataManager.getCallbacks()?.pttMaxTimeoutReached() }
-            .onFailure { Timber.tag(LOG_TAG).w(it, "pttMaxTimeoutReached threw") }
+            .onFailure { StardustLog.w(LogType.PTT, LOG_TAG, "pttMaxTimeoutReached threw", it) }
         // Dispatches to the main thread itself and self-releases, so it is safe from here.
         runCatching {
             SoundPlayer.play(
@@ -273,7 +274,7 @@ object RecorderUtils {
             )
         }
         runCatching { pttInterface?.maxPTTTimeoutReached() }
-            .onFailure { Timber.tag(LOG_TAG).w(it, "maxPTTTimeoutReached threw") }
+            .onFailure { StardustLog.w(LogType.PTT, LOG_TAG, "maxPTTTimeoutReached threw", it) }
     }
 
     /**
@@ -299,12 +300,12 @@ object RecorderUtils {
         terminal: Boolean = false,
     ) {
         val info = id?.let { recordings[it] } ?: run {
-            StardustLog.d(PTT_TRACE, "event $state dropped: recording $id unknown or already terminal")
+            StardustLog.d(LogType.PTT, PTT_TRACE, "event $state dropped: recording $id unknown or already terminal")
             return
         }
         synchronized(info) {
             if (!info.emitted.add(state)) {
-                StardustLog.d(PTT_TRACE, "event $state dropped: already sent for ${info.id}")
+                StardustLog.d(LogType.PTT, PTT_TRACE, "event $state dropped: already sent for ${info.id}")
                 return
             }
             if (terminal) {
@@ -322,13 +323,14 @@ object RecorderUtils {
             codeType = info.codeType,
             error = error,
         )
-        StardustLog.d(PTT_TRACE, "event $state for ${info.id}${error?.let { " ($it)" }.orEmpty()}")
+        // i: once per state per recording, so the field log reads as the PTT timeline.
+        StardustLog.i(LogType.PTT, PTT_TRACE, "event $state for ${info.id}, codec ${info.codeType}${error?.let { " ($it)" }.orEmpty()}")
         runCatching { DataManager.getCallbacks()?.onPttRecordingStateChanged(event) }
-            .onFailure { Timber.tag(LOG_TAG).w(it, "onPttRecordingStateChanged threw for $event") }
+            .onFailure { StardustLog.w(LogType.PTT, LOG_TAG, "onPttRecordingStateChanged threw for ${info.id} $state", it) }
     }
 
     private fun startAIRecording(chatId: String, receiverId: String, carrier: Carrier?): File? {
-        StardustLog.d("AudioRecorder", "NAE Recording Started")
+        StardustLog.d(LogType.PTT, "AudioRecorder", "NAE Recording Started")
         PttSendManager.init(pttInterface)
 
         // Determine which file to use
@@ -353,7 +355,7 @@ object RecorderUtils {
     private fun setupAIRecorder(file: File, receiverId: String, chatId: String, carrier: Carrier?) {
         val session = PttSendManager.restart(
             onMaxTimeoutReached = {
-                StardustLog.d(LOG_TAG, "AI session: max PTT timeout reached — stopping recorder")
+                StardustLog.d(LogType.PTT, LOG_TAG, "AI session: max PTT timeout reached — stopping recorder")
                 aiRecorder?.stop()
             }
         )
@@ -388,13 +390,13 @@ object RecorderUtils {
                 )
             }
             onError = { throwable ->
-                Timber.w(throwable, "AudioRecorderAI error")
+                StardustLog.w(LogType.PTT, LOG_TAG, "AudioRecorderAI error", throwable)
                 // Covers "AudioRecord initialization failed" (mic held elsewhere) as well as any capture
                 // or encode failure; ERROR is terminal, so it suppresses the SENT that would follow.
                 notifyPttRecordingError(PttRecordingError.MIC_UNAVAILABLE)
             }
             onStateChanged = { recording ->
-                StardustLog.d(LOG_TAG, "Recording state changed: $recording (session ${session.id})")
+                StardustLog.d(LogType.PTT, LOG_TAG, "Recording state changed: $recording (session ${session.id})")
                 // AudioRecorderAI.start() only launches a coroutine, so this is the first point at which
                 // the AI path is genuinely recording — notifying from startRecording would be too early.
                 // The false branch is the mic actually being released.
@@ -409,7 +411,7 @@ object RecorderUtils {
 
         aiRecorder?.start()
 
-        Timber.d("AudioRecorderAI started for session ${session.id}")
+        StardustLog.d(LogType.PTT, LOG_TAG, "AudioRecorderAI started for session ${session.id}")
     }
 
     /**
@@ -488,8 +490,8 @@ object RecorderUtils {
         codeType: CODE_TYPE?,
         file: File?
     ) {
-        StardustLog.d("AudioRecorder", "Stop recording")
-        StardustLog.d(PTT_TRACE, "stop requested, mic owner=$currentRecordingId guard=${recordingInProgress.get()}")
+        StardustLog.d(LogType.PTT, "AudioRecorder", "Stop recording")
+        StardustLog.d(LogType.PTT, PTT_TRACE, "stop requested, mic owner=$currentRecordingId guard=${recordingInProgress.get()}")
 
         if (PttPipelineFeatureFlag.isEnabled(DataManager.appContext)) {
             // init() is idempotent — guards against a stop arriving before any start ever wired the
@@ -506,7 +508,7 @@ object RecorderUtils {
             delay(300)
             canRecord.value = true
             recordingInProgress.set(false)
-            StardustLog.d(PTT_TRACE, "guard cleared, mic owner=$currentRecordingId")
+            StardustLog.d(LogType.PTT, PTT_TRACE, "guard cleared, mic owner=$currentRecordingId")
         }
     }
 
@@ -533,7 +535,7 @@ object RecorderUtils {
     }
 
     private fun stopAIRecording() {
-        StardustLog.d("AudioRecorder", "Stop AI Recording")
+        StardustLog.d(LogType.PTT, "AudioRecorder", "Stop AI Recording")
         aiRecorder?.stop()
         Scopes.getDefaultCoroutine().launch {
             delay(50)

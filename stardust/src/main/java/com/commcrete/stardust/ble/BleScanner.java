@@ -24,6 +24,7 @@ import com.commcrete.stardust.StardustAPICallbacks;
 import com.commcrete.stardust.enums.ScanFailure;
 import com.commcrete.stardust.transport.DeviceDiscovery;
 import com.commcrete.stardust.util.DataManager;
+import com.commcrete.stardust.util.LogType;
 import com.commcrete.stardust.util.PermissionTracking;
 
 import java.util.ArrayList;
@@ -169,22 +170,22 @@ public class BleScanner {
      */
     private boolean checkScanPreconditions() {
         if (!checkBlePermissions()) {
-            StardustLog.w(TAG, "cannot scan: required permissions not granted");
+            StardustLog.w(LogType.BLE, TAG, "cannot scan: required permissions not granted");
             reportFailure(ScanFailure.MISSING_PERMISSIONS);
             return false;
         }
         if (bluetoothAdapter == null) {
-            StardustLog.w(TAG, "cannot scan: no Bluetooth adapter");
+            StardustLog.w(LogType.BLE, TAG, "cannot scan: no Bluetooth adapter");
             reportFailure(ScanFailure.BLUETOOTH_UNAVAILABLE);
             return false;
         }
         if (!bluetoothAdapter.isEnabled()) {
-            StardustLog.w(TAG, "cannot scan: Bluetooth is off");
+            StardustLog.w(LogType.BLE, TAG, "cannot scan: Bluetooth is off");
             reportFailure(ScanFailure.BLUETOOTH_DISABLED);
             return false;
         }
         if (!isLocationServicesEnabled()) {
-            StardustLog.w(TAG, "cannot scan: location services are off");
+            StardustLog.w(LogType.BLE, TAG, "cannot scan: location services are off");
             reportFailure(ScanFailure.LOCATION_SERVICES_DISABLED);
             return false;
         }
@@ -222,7 +223,7 @@ public class BleScanner {
         if (scanner == null) {
             // The adapter can report enabled while the LE scanner is still unavailable, e.g. mid
             // adapter-restart.
-            StardustLog.w(TAG, "cannot scan: LE scanner unavailable");
+            StardustLog.w(LogType.BLE, TAG, "cannot scan: LE scanner unavailable");
             reportFailure(ScanFailure.BLUETOOTH_UNAVAILABLE);
             return false;
         }
@@ -243,14 +244,14 @@ public class BleScanner {
         BleDiag.INSTANCE.scanStart(bluetoothLeScanner != null);
         bluetoothLeScanner = scanner;
         bluetoothLeScanner.startScan(scanFilters, scanSettingsBuilder.build(), scanCallback);
-        StardustLog.i(TAG, "scanning started");
+        StardustLog.i(LogType.BLE, TAG, "scanning started");
 
         // Bound battery use: stop scanning automatically after a timeout instead of running forever.
         scanTimeoutHandler.removeCallbacksAndMessages(null);
         scanTimeoutHandler.postDelayed(() -> {
             // Logged because it is otherwise indistinguishable from "nothing nearby": a radio
             // powered on after this point is never reported until the host scans again.
-            StardustLog.i(TAG, "scan window of " + SCAN_TIMEOUT_MS + "ms elapsed, stopping scan");
+            StardustLog.i(LogType.BLE, TAG, "scan window of " + SCAN_TIMEOUT_MS + "ms elapsed, stopping scan");
             stopScan();
         }, SCAN_TIMEOUT_MS);
         return true;
@@ -271,7 +272,7 @@ public class BleScanner {
                 bluetoothLeScanner.stopScan(scanCallback);
             } catch (SecurityException | IllegalStateException e) {
                 // IllegalStateException: adapter turned off underneath us - the scan is gone either way.
-                StardustLog.w(TAG, "stopScan failed, dropping scanner reference", e);
+                StardustLog.w(LogType.BLE, TAG, "stopScan failed, dropping scanner reference", e);
             } finally {
                 bluetoothLeScanner = null;
             }

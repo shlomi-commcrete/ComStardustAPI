@@ -56,7 +56,11 @@ class WavTokenizerEncoderSession(
     }
 
     private suspend fun encoder(): WavTokenizerEncoder =
-        encoder ?: AIModuleInitializer.awaitEncoder().also { encoder = it }
+        encoder ?: AIModuleInitializer.awaitEncoder().also {
+            encoder = it
+            // First use in this recording: a new log run for the shared encoder's once-per-run lines.
+            it.startLogRun()
+        }
 
     override fun close() {
         pending.clear()

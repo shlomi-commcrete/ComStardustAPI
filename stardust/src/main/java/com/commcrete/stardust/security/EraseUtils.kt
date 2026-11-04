@@ -6,11 +6,13 @@ import com.commcrete.stardust.crypto.SecureKeyUtils
 import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.room.new_db.AppDatabase
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import timber.log.Timber
+import com.commcrete.stardust.util.StardustLog
 
 object EraseUtils {
 
+    private const val TAG = "EraseUtils"
     private var isArmed = false
     private val armHandler : Handler = Handler(Looper.getMainLooper())
     private val armRunnable : Runnable = kotlinx.coroutines.Runnable {
@@ -19,20 +21,20 @@ object EraseUtils {
     fun handleArm () {
         isArmed = true
         resetArmTimer()
-        Timber.i("EraseUtils: Device is ARMED for data wipe in 1 minute")
+        StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: Device is ARMED for data wipe in 1 minute")
     }
 
     fun handleDelete () {
-        Timber.i("EraseUtils: handleDelete called, isArmed = $isArmed")
+        StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: handleDelete called, isArmed = $isArmed")
         if(isArmed) {
             removeArmTimer()
-            Timber.i("EraseUtils: Device is being WIPED NOW")
+            StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: Device is being WIPED NOW")
             SecureKeyUtils.setSecuredKeyDefault()
-            Timber.i("EraseUtils: Secure key reset to default")
+            StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: Secure key reset to default")
             SharedPreferencesUtil.setIsErased(true)
-            Timber.i("EraseUtils: isErased flag set to true")
+            StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: isErased flag set to true")
             DataManager.logout()
-            Timber.i("EraseUtils: User logged out")
+            StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: User logged out")
             // logout() empties the tables; this removes the files themselves.
             // Everything the SDK persists lives under one root, so the wipe is
             // a single recursive delete rather than a list of database names
@@ -40,7 +42,12 @@ object EraseUtils {
             // handle rewrites its journal as the process winds down.
             AppDatabase.closeAndClear()
             val storageWiped = StardustStorage.deleteAll()
-            Timber.i("EraseUtils: Stardust storage wiped = $storageWiped")
+            // A wipe that left files behind is a failure, not a step.
+            if (storageWiped) {
+                StardustLog.i(LogType.GENERAL, TAG, "EraseUtils: Stardust storage wiped = $storageWiped")
+            } else {
+                StardustLog.e(TAG, "EraseUtils: Stardust storage wiped = $storageWiped")
+            }
             val device = DataManager.getPairedDevices()
             DataManager.getClientConnection().mDevice = device
             // Security wipe: destroy the local pairing record unconditionally, even if the OS

@@ -23,7 +23,8 @@ import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.message.MessageEntity
 import com.commcrete.stardust.room.new_db.message.MessageDao
 import com.commcrete.stardust.util.DataManager
-import timber.log.Timber
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
 
 /**
@@ -78,6 +79,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appContactIdentityLogDao(): ContactIdentityLogDao
 
     companion object {
+
+        private const val TAG = "AppDatabase"
 
         /**
          * The name this database used while it lived in the host's shared
@@ -146,10 +149,10 @@ abstract class AppDatabase : RoomDatabase() {
                 if (path.exists() &&
                     DataManager.appContext.deleteDatabase(ORPHANED_DATABASE_NAME)
                 ) {
-                    Timber.d("Removed orphaned database $ORPHANED_DATABASE_NAME")
+                    StardustLog.d(LogType.STORAGE, TAG, "Removed orphaned database $ORPHANED_DATABASE_NAME")
                 }
             }.onFailure {
-                Timber.w(it, "Could not remove orphaned database $ORPHANED_DATABASE_NAME")
+                StardustLog.w(LogType.STORAGE, TAG, "Could not remove orphaned database $ORPHANED_DATABASE_NAME", it)
             }
         }
     }
@@ -195,8 +198,12 @@ private class DirectoryCreatingOpenHelper(
 
     private fun ensureDirectory() {
         if (!StardustStorage.ensureDatabaseDirectory()) {
-            Timber.w("Could not create the Stardust database directory before opening $databaseName")
+            StardustLog.w(LogType.STORAGE, TAG, "Could not create the Stardust database directory before opening the database")
         }
+    }
+
+    private companion object {
+        const val TAG = "DirectoryCreatingOpenHelper"
     }
 
     class Factory(

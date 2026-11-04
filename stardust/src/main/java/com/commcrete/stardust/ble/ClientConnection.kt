@@ -39,6 +39,8 @@ import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.CarriersUtils
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.RegisteredUserUtils
@@ -50,7 +52,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import no.nordicsemi.andorid.ble.test.spec.Characteristics
-import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -130,6 +131,18 @@ internal class ClientConnection(): BittelProtocol {
     }
     private val TAG = ClientConnection::class.java.simpleName
 
+    /**
+     * Failures that repeat per packet, per write retry or per poll log once per link. A run ends
+     * when the GATT link comes up or goes down; each end logs one summary of the repeats.
+     */
+    private val logOnce = LogOnce()
+
+    /** Ends a log run: one line with how often each once-logged failure repeated, if any did. */
+    private fun endLogRun(why: String) {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) StardustLog.i(LogType.BLE, TAG, "$why; repeats not logged: $repeats")
+    }
+
     // Formerly provided by the Nordic BleManager base class. The connection is driven entirely by
     // the raw BluetoothGatt path below, so the Nordic FSM was dead weight; this replaces its only
     // still-used member.
@@ -201,7 +214,8 @@ internal class ClientConnection(): BittelProtocol {
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
         bittelPackage = null
-        if (acks.isNotEmpty()) StardustLog.d(LOG_TAG, "link lost — dropped ${acks.size} ACK wait(s) and the send queue")
+        // i: these messages lose their delivery outcome here, and a field log must show it.
+        if (acks.isNotEmpty()) StardustLog.i(LogType.PACKETS, LOG_TAG, "link lost — dropped ${acks.size} ACK wait(s) and the send queue")
     }
 
     private fun addAwaitingAck(ack: AckSystem) = synchronized(queueLock) { mutableAckAwaitingList.add(ack) }
@@ -268,7 +282,7 @@ internal class ClientConnection(): BittelProtocol {
         } else {
             PairingFailure.NotReachable
         }
-        StardustLog.w(LOG_TAG, "pairing timed out: $reason")
+        StardustLog.w(LogType.CONNECTION, LOG_TAG, "pairing timed out: $reason")
         PairingTracker.failed(address, reason)
         abortBondAttempt(address, cancelOsBond = true)
     }
@@ -365,7 +379,7 @@ internal class ClientConnection(): BittelProtocol {
     }
 
     private fun gettCallback () : BluetoothGattCallback{
-        StardustLog.d("StardustDataManager", " gettCallback")
+        StardustLog.d(LogType.BLE, "StardustDataManager", " gettCallback")
 
         if (bluetoothGattCallback == null) {
             bluetoothGattCallback = object : BluetoothGattCallback(){
@@ -394,24 +408,25 @@ internal class ClientConnection(): BittelProtocol {
                     // off; a background reconnect's handshake likewise must not stall between steps.
                     InboundWakeLock.onInbound(context)
 
-                    StardustLog.d("StardustDataManager", " onConnectionStateChange")
-                    StardustLog.d("ConfigDebug", "onConnectionStateChange status=$status newState=$newState hasCallback=$hasCallback hasDevice=${mDevice != null}")
+                    StardustLog.d(LogType.BLE, "StardustDataManager", " onConnectionStateChange")
+                    // Timeline: GATT link up/down with its status.
+                    StardustLog.i(LogType.BLE, TAG, "GATT ${if (status == 0 && newState == 2) "link up" else "link down"}: status=$status newState=$newState hasCallback=$hasCallback hasDevice=${mDevice != null}")
                     val isCurrentClient = gatt != null && (gatt === pendingGatt || gatt === gattConnection)
-                    BleDiag.log("gattState", "${BleDiag.id(gatt)} status=$status newState=$newState current=$isCurrentClient " +
+                    BleDiag.log("gattState") { "${BleDiag.id(gatt)} status=$status newState=$newState current=$isCurrentClient " +
                         "pending=${BleDiag.id(pendingGatt)} established=${BleDiag.id(gattConnection)} linkUp=${linkUp.get()} " +
-                        "directPending=${directConnectPending.get()} hasCallback=$hasCallback init=${BleDiag.initState}")
+                        "directPending=${directConnectPending.get()} hasCallback=$hasCallback init=${BleDiag.initState}" }
                     if (!isCurrentClient) {
                         BleDiag.verdict("GATT event from ${BleDiag.id(gatt)}, which is neither the pending nor the " +
                             "established client — an orphaned client is still alive and its events are being " +
                             "applied to the current connection's state.")
                     }
-                    Timber.tag(LOG_TAG).d("status : $status\nnewState : $newState")
+                    StardustLog.d(LogType.BLE, LOG_TAG, "status : $status\nnewState : $newState")
                     if(status == 0 && newState == 2){
                         // If the user disconnected (or logged out) while this reconnect's connectGatt
                         // was in flight, disconnectFromBLEDevice already cleared hasCallback. The
                         // connection is unwanted, so tear it down instead of resurrecting the link.
                         if (!hasCallback || !RegisteredUserUtils.isUserLoggedIn()) {
-                            Timber.tag(LOG_TAG).d("Connected but no active intent (user disconnected) — closing stray GATT")
+                            StardustLog.d(LogType.BLE, LOG_TAG, "Connected but no active intent (user disconnected) — closing stray GATT")
                             gatt?.disconnect()
                             gatt?.close()
                             connectInFlight.set(false)
@@ -426,6 +441,7 @@ internal class ClientConnection(): BittelProtocol {
                         patientConnectJob?.cancel()
                         patientConnectJob = null
                         linkUp.set(true)
+                        endLogRun("GATT link up")
                         // A connect() to an already-bonded radio is answered here: the radio is
                         // reachable, the handshake continues on connectionState().
                         gatt?.device?.address?.let { addr ->
@@ -438,13 +454,14 @@ internal class ClientConnection(): BittelProtocol {
 
                         if (mtuRequested.compareAndSet(false, true)) {
                             val requested = gatt?.requestMtu(200)
-                            Timber.tag("SetMtu").d("requestMtu(200) initiated=$requested")
+                            StardustLog.d(LogType.BLE, "SetMtu", "requestMtu(200) initiated=$requested")
                         }
                         // Normally superseded by onMtuChanged, which schedules discovery as soon as
                         // the exchange answers instead of waiting out a fixed delay.
                         scheduleServiceDiscovery(gatt, SERVICE_DISCOVERY_MTU_TIMEOUT_MS, "MTU callback timeout")
                     } else {
                         val wasLinkUp = linkUp.getAndSet(false)
+                        if (wasLinkUp) endLogRun("GATT link down")
                         resetDiscoveryState()
                         // The link is down. Release the connect gate so a later reconnect can run —
                         // a drop that doesn't route through disconnectFromBLEDevice would otherwise
@@ -459,10 +476,10 @@ internal class ClientConnection(): BittelProtocol {
                             mDevice?.let { escalateToBackgroundConnect(it, "direct connect failed (status=$status)") }
                         }
                         Scopes.getMainCoroutine().launch {
-                            Timber.tag("Bittel Disconnected").d("Status Changed")
-                            Timber.tag(LOG_TAG).d("Bittel Disconnected")
+                            StardustLog.d(LogType.BLE, "Bittel Disconnected", "Status Changed")
+                            StardustLog.d(LogType.BLE, LOG_TAG, "Bittel Disconnected")
 
-                            StardustLog.d("StardustDataManager", "BleManager.isBleConnected = false")
+                            StardustLog.d(LogType.CONNECTION, "StardustDataManager", "BleManager.isBleConnected = false")
                             BleManager.isBleConnected = false
                             BleManager.bleConnectionStatus.value = false
                             // BEFORE updateStatus, which publishes the new state: the flags above
@@ -478,7 +495,7 @@ internal class ClientConnection(): BittelProtocol {
                                 // it): retry under the normal backoff, without treating it as a
                                 // fresh outage. An escalated attempt is already being retried by
                                 // the background connect, which a reconnect would tear down.
-                                StardustLog.d("ConfigDebug", "connect attempt failed (status=$status) — link was never up")
+                                StardustLog.d(LogType.CONNECTION, "ConfigDebug", "connect attempt failed (status=$status) — link was never up")
                                 ConnectionManager.onConnectAttemptFailed(TransportId.BLE, "connect attempt failed (status=$status)")
                             }
                             BleManager.updateStatus()
@@ -490,10 +507,10 @@ internal class ClientConnection(): BittelProtocol {
                 override fun onServicesDiscovered(gatt: BluetoothGatt?, status: Int) {
                     super.onServicesDiscovered(gatt, status)
                     InboundWakeLock.onInbound(context)
-                    StardustLog.d("StardustDataManager", " onServicesDiscovered")
+                    StardustLog.d(LogType.BLE, "StardustDataManager", " onServicesDiscovered")
                     if (!isServicesDiscoveredHandleable(status)) return
 
-                    StardustLog.d("StardustDataManager", " isServicesDiscoveredHandleable")
+                    StardustLog.d(LogType.BLE, "StardustDataManager", " isServicesDiscoveredHandleable")
                     Scopes.getDefaultCoroutine().launch {
                         handleServicesDiscovered(gatt)
                     }
@@ -526,7 +543,7 @@ internal class ClientConnection(): BittelProtocol {
                     characteristic: BluetoothGattCharacteristic
                 ) {
                     val randomID = fastRandomId()
-                    Timber.tag(LOG_TAG).d("onCharacteristicChanged id=$randomID")
+                    StardustLog.d(LogType.PACKETS, LOG_TAG) { "onCharacteristicChanged id=$randomID" }
                     characteristic.value?.let {
                         StardustPackageUtils.handlePackageReceived(it, randomID)
                         clearTimer()
@@ -539,7 +556,7 @@ internal class ClientConnection(): BittelProtocol {
                     value: ByteArray
                 ) {
                     super.onCharacteristicChanged(gatt, characteristic, value)
-                    Timber.tag(LOG_TAG).d("onCharacteristicChanged (value overload)")
+                    StardustLog.d(LogType.PACKETS, LOG_TAG, "onCharacteristicChanged (value overload)")
 //                    Timber.tag("onCharacteristicChanged").d("onCharacteristicChanged3")
                 }
 
@@ -549,14 +566,17 @@ internal class ClientConnection(): BittelProtocol {
                     status: Int
                 ) {
                     super.onDescriptorWrite(gatt, descriptor, status)
-                    StardustLog.d("ConfigDebug", "onDescriptorWrite status=$status characteristic=${descriptor?.characteristic?.uuid} — notifications ${if (status == BluetoothGatt.GATT_SUCCESS) "ENABLED" else "FAILED"}")
+                    StardustLog.d(LogType.BLE, "ConfigDebug", "onDescriptorWrite status=$status characteristic=${descriptor?.characteristic?.uuid} — notifications ${if (status == BluetoothGatt.GATT_SUCCESS) "ENABLED" else "FAILED"}")
                     if (status == BluetoothGatt.GATT_SUCCESS) {
-                        Timber.tag("NotificationSetup").d("Notification successfully enabled for ${descriptor?.characteristic?.uuid}")
+                        StardustLog.d(LogType.BLE, "NotificationSetup", "Notification successfully enabled for ${descriptor?.characteristic?.uuid}")
                         // Notifications are live, which is the only thing the init flow was waiting
                         // for — start now instead of sitting out the fallback delay.
                         Scopes.getDefaultCoroutine().launch { startInitIfReady("CCCD write complete") }
                     } else {
-                        Timber.tag("NotificationSetup").e("Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
+                        // Once per link: a reconnect loop against a misbehaving radio repeats it per attempt.
+                        if (logOnce.first("cccd-failed")) {
+                            StardustLog.e("NotificationSetup", "Failed to enable notification for ${descriptor?.characteristic?.uuid}, status: $status")
+                        }
                     }
                     completeGattOp()
                 }
@@ -604,9 +624,9 @@ internal class ClientConnection(): BittelProtocol {
                     super.onMtuChanged(gatt, mtu, status)
                     InboundWakeLock.onInbound(context)
                     if (status == BluetoothGatt.GATT_SUCCESS) {
-                        Timber.tag("SetMtu").d("MTU negotiated: $mtu")
+                        StardustLog.d(LogType.BLE, "SetMtu", "MTU negotiated: $mtu")
                     } else {
-                        Timber.tag("SetMtu").w("MTU change failed, status=$status")
+                        StardustLog.w(LogType.BLE, "SetMtu", "MTU change failed, status=$status")
                     }
                     // The exchange is done either way — discovery only had to wait for it to stop
                     // competing, not to succeed.
@@ -658,7 +678,7 @@ internal class ClientConnection(): BittelProtocol {
         if (gatt == null || SharedPreferencesUtil.getBittelDeviceName().isNotBlank()) return
         val characteristic = gatt.getService(GAP_SERVICE_UUID)?.getCharacteristic(DEVICE_NAME_CHAR_UUID)
         if (characteristic == null) {
-            StardustLog.d(LOG_TAG, "Device Name characteristic not exposed; name stays unknown for now")
+            StardustLog.d(LogType.BLE, LOG_TAG, "Device Name characteristic not exposed; name stays unknown for now")
             return
         }
         enqueueGattOp(GattOp("read:device-name") { gatt.readCharacteristic(characteristic) })
@@ -667,12 +687,12 @@ internal class ClientConnection(): BittelProtocol {
     private fun onDeviceNameRead(uuid: UUID?, value: ByteArray?, status: Int) {
         if (uuid != DEVICE_NAME_CHAR_UUID) return
         if (status != BluetoothGatt.GATT_SUCCESS || value == null) {
-            StardustLog.w(LOG_TAG, "Device Name read failed, status=$status")
+            StardustLog.w(LogType.BLE, LOG_TAG, "Device Name read failed, status=$status")
             return
         }
         val name = String(value, Charsets.UTF_8).trim { it.isWhitespace() || it == '\u0000' }
         if (name.isEmpty()) return
-        StardustLog.d(LOG_TAG, "Device Name read from radio, blank=${name.isBlank()}")
+        StardustLog.d(LogType.BLE, LOG_TAG, "Device Name read from radio, blank=${name.isBlank()}")
         if (deviceName.isNullOrBlank()) deviceName = name
         // Fill only — a name already saved (scan name or user alias) wins.
         if (SharedPreferencesUtil.getBittelDeviceName().isBlank()) SharedPreferencesUtil.setBittelDeviceName(name)
@@ -695,16 +715,16 @@ internal class ClientConnection(): BittelProtocol {
         // A disconnect (or logout) after discoverServices() was already issued clears hasCallback —
         // don't proceed to init on a connection the user no longer wants.
         if (!hasCallback || !RegisteredUserUtils.isUserLoggedIn()) {
-            Timber.tag(LOG_TAG).d("onServicesDiscovered ignored (no active connect intent)")
+            StardustLog.d(LogType.BLE, LOG_TAG, "onServicesDiscovered ignored (no active connect intent)")
             return false
         }
         if (StardustInitConnectionHandler.isConnectedSuccessfully() || StardustInitConnectionHandler.isSyncing()) return false
         if (status != BluetoothGatt.GATT_SUCCESS) {
-            Timber.tag(LOG_TAG).w("onServicesDiscovered failed with status=$status")
+            StardustLog.w(LogType.BLE, LOG_TAG, "onServicesDiscovered failed with status=$status")
             return false
         }
         if (!servicesDiscoveredHandled.compareAndSet(false, true)) {
-            Timber.tag(LOG_TAG).d("onServicesDiscovered ignored (already handled)")
+            StardustLog.d(LogType.BLE, LOG_TAG, "onServicesDiscovered ignored (already handled)")
             return false
         }
         return true
@@ -716,33 +736,33 @@ internal class ClientConnection(): BittelProtocol {
      */
     @SuppressLint("MissingPermission")
     private fun handleServicesDiscovered(gatt: BluetoothGatt?) {
-        StardustLog.d("ConfigDebug", "handleServicesDiscovered ENTER — services=${gatt?.services?.size ?: 0} lastDigit=$deviceLastDigit isPaired=${BleManager.isPaired.value}")
+        StardustLog.d(LogType.BLE, "ConfigDebug", "handleServicesDiscovered ENTER — services=${gatt?.services?.size ?: 0} lastDigit=$deviceLastDigit isPaired=${BleManager.isPaired.value}")
         setDevice()
         updateConnectionState(gatt)
         enableNotifications(gatt)
         readDeviceNameIfUnknown(gatt)
         if(bluetoothStateObserver == null) initBleStatus()
-        StardustLog.d("StardustDataManager", "isDisconnected() ${isDisconnected() }")
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "isDisconnected() ${isDisconnected() }")
         val shouldTrigger = isDisconnected() || StardustInitConnectionHandler.isSearchingToConnect()
         BleDiag.log("services", "discovered on ${BleDiag.id(gatt)} init=${BleDiag.initState} willStartInit=$shouldTrigger")
         if (!shouldTrigger) {
             BleDiag.verdict("services discovered but init will NOT start: handshake state is ${BleDiag.initState} " +
                 "(left over from the previous link), so this link is never synced.")
         }
-        StardustLog.d("ConfigDebug", "handleServicesDiscovered done — willTriggerInit=$shouldTrigger isDisconnected=${isDisconnected()} isSearching=${StardustInitConnectionHandler.isSearchingToConnect()}")
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "handleServicesDiscovered done — willTriggerInit=$shouldTrigger isDisconnected=${isDisconnected()} isSearching=${StardustInitConnectionHandler.isSearchingToConnect()}")
         if(shouldTrigger) triggerInitSequence(gatt)
     }
 
     /** Updates BLE connection state and RSSI polling when the device is paired. */
     private fun updateConnectionState(gatt: BluetoothGatt?) {
-        StardustLog.d("StardustDataManager", "BleManager.isPaired.value ${BleManager.isPaired.value}")
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "BleManager.isPaired.value ${BleManager.isPaired.value}")
         if (BleManager.isPaired.value != true) {
             BleDiag.verdict("services discovered on ${BleDiag.id(gatt)} but isPaired=${BleManager.isPaired.value} — " +
                 "the link is up yet never marked connected, so the SDK keeps reporting no transport.")
             return
         }
         Scopes.getMainCoroutine().launch {
-            Timber.tag(LOG_TAG).d("gattConnection")
+            StardustLog.d(LogType.BLE, LOG_TAG, "gattConnection")
             gattConnection = gatt
             BleManager.isBleConnected = true
             BleManager.bleConnectionStatus.value = true
@@ -759,28 +779,28 @@ internal class ClientConnection(): BittelProtocol {
         val id = deviceLastDigit
         val service = gatt?.getService(Characteristics.getConnectChar(id))
         val readChar = service?.getCharacteristic(Characteristics.getReadChar(id))
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.BLE, "ConfigDebug",
             "enableNotifications lastDigit=$id serviceFound=${service != null} readCharFound=${readChar != null} " +
                 "descriptorCount=${readChar?.descriptors?.size ?: 0}"
         )
         if (readChar == null) {
-            StardustLog.w("ConfigDebug", "enableNotifications ABORT — read characteristic not found")
+            StardustLog.w(LogType.BLE, "ConfigDebug", "enableNotifications ABORT — read characteristic not found")
             return
         }
 
-        Timber.tag(LOG_TAG).d("has Char")
+        StardustLog.d(LogType.BLE, LOG_TAG, "has Char")
         val notifSet = gatt.setCharacteristicNotification(readChar, true)
-        StardustLog.d("ConfigDebug", "setCharacteristicNotification(true) returned=$notifSet")
+        StardustLog.d(LogType.BLE, "ConfigDebug", "setCharacteristicNotification(true) returned=$notifSet")
         val desc = readChar.descriptors?.get(0)
         if (desc == null) {
-            StardustLog.w("ConfigDebug", "enableNotifications ABORT — CCCD descriptor missing")
+            StardustLog.w(LogType.BLE, "ConfigDebug", "enableNotifications ABORT — CCCD descriptor missing")
             return
         }
         // Serialised through the same GATT queue as data writes — a descriptor write and a
         // characteristic write are both single-outstanding GATT operations and must not overlap.
         enqueueGattOp(GattOp("descriptor:notif:${readChar.uuid}") {
             val initiated = writeNotificationDescriptor(gatt, desc)
-            StardustLog.d("ConfigDebug", "CCCD writeDescriptor initiated=$initiated for ${readChar.uuid}")
+            StardustLog.d(LogType.BLE, "ConfigDebug", "CCCD writeDescriptor initiated=$initiated for ${readChar.uuid}")
             initiated
         })
     }
@@ -805,8 +825,8 @@ internal class ClientConnection(): BittelProtocol {
      */
     @SuppressLint("MissingPermission")
     private fun triggerInitSequence(gatt: BluetoothGatt?) {
-        StardustLog.d("StardustDataManager", "onServicesDiscovered")
-        StardustLog.d("ConfigDebug", "triggerInitSequence — state SEARCHING; init starts on the CCCD write, " +
+        StardustLog.d(LogType.BLE, "StardustDataManager", "onServicesDiscovered")
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "triggerInitSequence — state SEARCHING; init starts on the CCCD write, " +
             "fallback in ${INIT_START_FALLBACK_MS}ms")
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
 
@@ -824,13 +844,13 @@ internal class ClientConnection(): BittelProtocol {
      */
     private fun startInitIfReady(source: String) {
         if (!canStartInit()) {
-            StardustLog.w("ConfigDebug", "init start SKIPPED ($source) — canStartInit() false (see prior canStartInit log)")
+            StardustLog.w(LogType.CONNECTION, "ConfigDebug", "init start SKIPPED ($source) — canStartInit() false (see prior canStartInit log)")
             return
         }
         initStartJob?.cancel()
         initStartJob = null
 
-        StardustLog.d("ConfigDebug", "init start ($source) → StardustInitConnectionHandler.start()")
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "init start ($source) → StardustInitConnectionHandler.start()")
         StardustInitConnectionHandler.listener = object : StardustInitConnectionHandler.InitConnectionListener {}
         StardustInitConnectionHandler.start()
 
@@ -850,7 +870,7 @@ internal class ClientConnection(): BittelProtocol {
             delay(delayMs)
             if (!discoveryRequested.compareAndSet(false, true)) return@launch
             val started = gatt?.discoverServices()
-            StardustLog.d("ConfigDebug", "discoverServices() initiated=$started after ${delayMs}ms ($reason)")
+            StardustLog.d(LogType.BLE, "ConfigDebug", "discoverServices() initiated=$started after ${delayMs}ms ($reason)")
         }
     }
 
@@ -860,7 +880,7 @@ internal class ClientConnection(): BittelProtocol {
         val paired = getBlePairedStardustDevice()
         val searching = StardustInitConnectionHandler.isSearchingToConnect()
         val armed = initStartTriggered.get()
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug",
             "canStartInit hasAppId=${user?.appId != null} hasDeviceId=${user?.deviceId != null} " +
                 "hasPaired=${paired != null} isSearching=$searching alreadyTriggered=$armed"
         )
@@ -889,7 +909,7 @@ internal class ClientConnection(): BittelProtocol {
 
             val observer = object : Observer<Boolean> {
                 override fun onChanged(value: Boolean) {
-                    StardustLog.d("StardustDataManager", "Bluetooth state changed: $value, isUSBConnected: $isUSBConnected")
+                    StardustLog.i(LogType.BLE, TAG, "Bluetooth adapter ${if (value) "on" else "off"}, isUSBConnected: $isUSBConnected")
                     if (isUSBConnected) {
                         removeBluetoothStateObserver()
                         return
@@ -901,7 +921,7 @@ internal class ClientConnection(): BittelProtocol {
                         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.BLUETOOTH_OFF)
                     } else if(!isUSBConnected && !BleManager.isBleConnected) {
                         mDevice?.let {
-                            StardustLog.d("StardustDataManager", "hasCallback $hasCallback, isUSBConnected: $isUSBConnected")
+                            StardustLog.d(LogType.CONNECTION, "StardustDataManager", "hasCallback $hasCallback, isUSBConnected: $isUSBConnected")
 
                             if (hasCallback) { return@let }
                             // An intentional disconnect/unpair must not be undone from here.
@@ -910,7 +930,7 @@ internal class ClientConnection(): BittelProtocol {
                             // user disconnected silently reconnects — and publishes SEARCHING while
                             // doing it, which is what shows as "searching" after an unpair.
                             if (ConnectionManager.isAutoConnectSuppressed()) {
-                                StardustLog.d("ConfigDebug", "BT-on reconnect suppressed — user disconnected intentionally")
+                                StardustLog.d(LogType.CONNECTION, "ConfigDebug", "BT-on reconnect suppressed — user disconnected intentionally")
                                 return@let
                             }
                             // Case 2c (BT off → on with saved device): normalize per-session
@@ -963,7 +983,7 @@ internal class ClientConnection(): BittelProtocol {
     /** @return true when a `connectGatt` was actually issued, false when a guard refused it. */
     @SuppressLint("MissingPermission")
     fun connectDevice(device: BluetoothDevice, autoConnect: Boolean = false): Boolean {
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug",
             "connectDevice autoConnect=$autoConnect hasCallback=$hasCallback " +
                 "loggedIn=${RegisteredUserUtils.isUserLoggedIn()} hasDevice=${mDevice != null}"
         )
@@ -971,18 +991,18 @@ internal class ClientConnection(): BittelProtocol {
         // the Bluetooth-on observer all funnel through here, so this one gate suppresses every
         // automatic BLE connect attempt when logged out.
         if (!RegisteredUserUtils.isUserLoggedIn()) {
-            Timber.tag(LOG_TAG).d("Skipping connect to ${device.address}: no user logged in")
+            StardustLog.d(LogType.CONNECTION, LOG_TAG, "Skipping connect to ${device.address}: no user logged in")
             return false
         }
         bleConnectBlockReason()?.let { reason ->
-            Timber.tag(LOG_TAG).e("Cannot connect to ${device.address}: $reason")
+            StardustLog.e(LOG_TAG, "Cannot connect: $reason")
             // Unified stream first (what hosts should collect), then the deprecated callback.
             ConnectionManager.reportBlocked(reason.toBlocker())
             @Suppress("DEPRECATION")
             DataManager.getCallbacks()?.onConnectionUnavailable(reason, deviceName ?: device.address)
             return false
         }
-        StardustLog.d("StardustDataManager", "connectDevice: hasCallback: $hasCallback, autoConnect=$autoConnect")
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "connectDevice: hasCallback: $hasCallback, autoConnect=$autoConnect")
         // ATOMIC connect gate. The old `if (!hasCallback)` was a non-atomic check-then-act:
         // hasCallback is only set inside getBleGattCallback(), which is evaluated as the 3rd
         // ARGUMENT of connectGatt — so two callers (e.g. bondOnStartup + the BT-state observer,
@@ -992,7 +1012,7 @@ internal class ClientConnection(): BittelProtocol {
         // onConnectionStateChange / handleServicesDiscovered / CCCD writes, and every protocol
         // reply arriving twice with the second dropped by the duplicate filter.
         if (!connectInFlight.compareAndSet(false, true)) {
-            StardustLog.w("ConfigDebug", "connectDevice SKIPPED — a connectGatt is already in flight/active")
+            StardustLog.w(LogType.CONNECTION, "ConfigDebug", "connectDevice SKIPPED — a connectGatt is already in flight/active")
             BleDiag.log("connect", "SKIPPED autoConnect=$autoConnect — gate held by ${BleDiag.id(pendingGatt)} " +
                 "for ${SystemClock.elapsedRealtime() - connectStartedAtMs}ms")
             return false
@@ -1021,7 +1041,7 @@ internal class ClientConnection(): BittelProtocol {
         if (!connectInFlight.get()) return false
         val age = SystemClock.elapsedRealtime() - connectStartedAtMs
         if (age >= CONNECT_ATTEMPT_STALE_MS) {
-            StardustLog.d("ConfigDebug", "connect attempt is ${age}ms old — stale, allowing it to be superseded")
+            StardustLog.d(LogType.CONNECTION, "ConfigDebug", "connect attempt is ${age}ms old — stale, allowing it to be superseded")
             return false
         }
         return true
@@ -1067,7 +1087,7 @@ internal class ClientConnection(): BittelProtocol {
         patientConnectJob?.cancel()
         patientConnectJob = null
 
-        StardustLog.d("ConfigDebug", "escalating to background connect — $reason")
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "escalating to background connect — $reason")
         BleDiag.log("escalate", "direct ${BleDiag.id(pendingGatt)} -> background connect ($reason)")
         closePendingGatt()
         connectInFlight.set(false)
@@ -1147,15 +1167,15 @@ internal class ClientConnection(): BittelProtocol {
 
         // ── Shared session state: belongs to whichever transport is active ──
         if (usbOwnsSession) {
-            StardustLog.d("ConfigDebug", "disconnectFromBLEDevice: USB is active — keeping configuration, carriers and init state")
+            StardustLog.d(LogType.CONNECTION, "ConfigDebug", "disconnectFromBLEDevice: USB is active — keeping configuration, carriers and init state")
         } else {
             ConfigurationUtils.reset()
             CarriersUtils.reset()
         }
 
         Scopes.getMainCoroutine().launch {
-            Timber.tag("Bittel Disconnected").d("Called Function")
-            Timber.tag(LOG_TAG).d("Bittel Disconnected")
+            StardustLog.d(LogType.CONNECTION, "Bittel Disconnected", "Called Function")
+            StardustLog.d(LogType.CONNECTION, LOG_TAG, "Bittel Disconnected")
 //            com.commcrete.stardust.ble.BleManager.isBleConnected = false
 //            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             BleManager.updateStatus()
@@ -1222,7 +1242,8 @@ internal class ClientConnection(): BittelProtocol {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
 
         if (bluetoothAdapter == null) {
-            Timber.tag(LOG_TAG).e("Bluetooth is not supported on this device")
+            // Once: PortUtils polls this getter every 20s, and the hardware will not change.
+            if (logOnce.first("bt-unsupported")) StardustLog.e(LOG_TAG, "Bluetooth is not supported on this device")
             return false
         }
 
@@ -1247,7 +1268,7 @@ internal class ClientConnection(): BittelProtocol {
         // companion-device path, which calls in here directly.
         if (!PairingTracker.isActive(address)) PairingTracker.begin(address)
         if (!RegisteredUserUtils.isUserLoggedIn()) {
-            StardustLog.d(LOG_TAG, "Skipping bond: no user logged in")
+            StardustLog.d(LogType.BLE, LOG_TAG, "Skipping bond: no user logged in")
             PairingTracker.failed(address, PairingFailure.NotLoggedIn)
             return
         }
@@ -1284,11 +1305,11 @@ internal class ClientConnection(): BittelProtocol {
                 // then pages over BR/EDR, the BLE-only radio never answers, and the bond fails with
                 // HCI_ERR_PAGE_TIMEOUT → REMOTE_DEVICE_DOWN → NotReachable. With an LE ACL up the
                 // stack bonds over that link.
-                StardustLog.d(LOG_TAG, "bondToBleDevice opening LE link type=${device.type}")
+                StardustLog.d(LogType.BLE, LOG_TAG, "bondToBleDevice opening LE link type=${device.type}")
                 bondGatt = device.connectGatt(context, false,
                     bondGattCallback(address), BluetoothDevice.TRANSPORT_LE)
                 if (bondGatt == null) {
-                    StardustLog.w(LOG_TAG, "bondToBleDevice: connectGatt returned null")
+                    StardustLog.w(LogType.BLE, LOG_TAG, "bondToBleDevice: connectGatt returned null")
                     PairingTracker.failed(address, PairingFailure.Unknown)
                     abortBondAttempt(address, cancelOsBond = false)
                 }
@@ -1320,7 +1341,7 @@ internal class ClientConnection(): BittelProtocol {
     fun cancelPairing(): Boolean {
         val address = PairingTracker.activeAddress ?: return false
         if (!PairingTracker.cancel()) return false
-        StardustLog.d(LOG_TAG, "pairing canceled by host")
+        StardustLog.d(LogType.CONNECTION, LOG_TAG, "pairing canceled by host")
         abortBondAttempt(address, cancelOsBond = true)
         return true
     }
@@ -1351,7 +1372,7 @@ internal class ClientConnection(): BittelProtocol {
                     // receiver because the attempt is no longer active.
                     device.javaClass.getMethod("cancelBondProcess").invoke(device)
                 }
-            }.onFailure { StardustLog.w(LOG_TAG, "cancelBondProcess failed", it) }
+            }.onFailure { StardustLog.w(LogType.BLE, LOG_TAG, "cancelBondProcess failed", it) }
         }
         // Only undo our own SEARCHING: e.g. BLUETOOTH_OFF set by the adapter observer must survive,
         // so the host sees Blocked rather than Disconnected.
@@ -1395,7 +1416,7 @@ internal class ClientConnection(): BittelProtocol {
                     }
                     // Don't createBond() yet: the radio may be sending its own Security Request
                     // right now, and colliding with it wedges the stack (see BOND_KICK_DELAY_MS).
-                    StardustLog.d(LOG_TAG, "pairing LE link up, bondState=" +
+                    StardustLog.d(LogType.BLE, LOG_TAG, "pairing LE link up, bondState=" +
                             "${device.bondState.toBondStateDescription()}, createBond in ${BOND_KICK_DELAY_MS}ms if still needed")
                     bondKickHandler.removeCallbacksAndMessages(null)
                     bondKickHandler.postDelayed({ kickBond(gatt, address) }, BOND_KICK_DELAY_MS)
@@ -1404,7 +1425,7 @@ internal class ClientConnection(): BittelProtocol {
 
                 // The link failed to come up or dropped. Release the client now; a dead client
                 // still counts against the per-process limit.
-                StardustLog.w(LOG_TAG, "pairing LE link down status=$status state=$newState " +
+                StardustLog.w(LogType.BLE, LOG_TAG, "pairing LE link down status=$status state=$newState " +
                         "bondState=${device.bondState.toBondStateDescription()}")
                 runCatching { gatt.close() }
                 bondGatt = null
@@ -1429,13 +1450,13 @@ internal class ClientConnection(): BittelProtocol {
         if (gatt !== bondGatt || !PairingTracker.isActive(address)) return
         val device = gatt.device
         if (device.bondState != BluetoothDevice.BOND_NONE) {
-            StardustLog.d(LOG_TAG, "pairing started by the radio, bondState=${device.bondState.toBondStateDescription()}")
+            StardustLog.d(LogType.BLE, LOG_TAG, "pairing started by the radio, bondState=${device.bondState.toBondStateDescription()}")
             return
         }
         createBondAddress = address
         createBondAtMs = SystemClock.elapsedRealtime()
         val started = device.createBond()
-        StardustLog.d(LOG_TAG, "pairing createBond=$started")
+        StardustLog.d(LogType.BLE, LOG_TAG, "pairing createBond=$started")
     }
 
     /**
@@ -1473,9 +1494,9 @@ internal class ClientConnection(): BittelProtocol {
 
     @SuppressLint("MissingPermission")
     fun bondToBleDeviceStartup(connectedDevice: BluetoothDevice) {
-        StardustLog.d("StardustDataManager", "bondToBleDeviceStartup")
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "bondToBleDeviceStartup")
         val user = RegisteredUserUtils.currentUserFlow.value
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug",
             "bondToBleDeviceStartup " +
                 "hasCallback=$hasCallback isBleConnected=${BleManager.isBleConnected} isPaired=${BleManager.isPaired.value} " +
                 "hasAppId=${user?.appId != null} hasDeviceId=${user?.deviceId != null}"
@@ -1504,7 +1525,7 @@ internal class ClientConnection(): BittelProtocol {
             val saved = SharedPreferencesUtil.getBittelDevice()
             if (!device.address.equals(saved, ignoreCase = true)) return
             val name = intent.getStringExtra(BluetoothDevice.EXTRA_NAME)?.takeIf { it.isNotBlank() } ?: return
-            StardustLog.d(LOG_TAG, "name resolved for saved radio")
+            StardustLog.d(LogType.BLE, LOG_TAG, "name resolved for saved radio")
             if (deviceName.isNullOrBlank()) deviceName = name
             SharedPreferencesUtil.setBittelDeviceName(name)
         }
@@ -1518,18 +1539,18 @@ internal class ClientConnection(): BittelProtocol {
             } else {
                 context.applicationContext.registerReceiver(nameChangeReceiver, filter)
             }
-        }.onFailure { StardustLog.w(LOG_TAG, "name-change receiver not registered", it) }
+        }.onFailure { StardustLog.w(LogType.BLE, LOG_TAG, "name-change receiver not registered", it) }
     }
 
     private val broadcastReceiver = object : BroadcastReceiver() {
         @SuppressLint("MissingPermission")
         override fun onReceive(context: Context, intent: Intent) {
             with(intent) {
-                Timber.tag(LOG_TAG).d(" broadcastReceiver onReceive")
+                StardustLog.d(LogType.BLE, LOG_TAG, " broadcastReceiver onReceive")
                 if (action == BluetoothDevice.ACTION_PAIRING_REQUEST) {
                     val address = getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)?.address
                     if (address != null && PairingTracker.isActive(address)) {
-                        StardustLog.d(LOG_TAG, "pairing request — system dialog showing")
+                        StardustLog.d(LogType.BLE, LOG_TAG, "pairing request — system dialog showing")
                         PairingTracker.awaitingConfirmation(address)
                         resetBondTimer(bondConfirmTimeout)
                     }
@@ -1541,7 +1562,7 @@ internal class ClientConnection(): BittelProtocol {
                     val bondState = getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1)
                     val bondTransition = "${previousBondState.toBondStateDescription()} to " +
                             bondState.toBondStateDescription()
-                    Timber.tag(LOG_TAG).w("${device?.address} bond state changed | $bondTransition")
+                    StardustLog.w(LogType.BLE, LOG_TAG, "bond state changed | $bondTransition")
 
                     // Only act on OUR device. ACTION_BOND_STATE_CHANGED is a system-wide broadcast,
                     // so without this filter a bond change on ANY device (e.g. the user pairing a
@@ -1553,7 +1574,7 @@ internal class ClientConnection(): BittelProtocol {
                         eventAddress.equals(mDevice?.address, ignoreCase = true) ||
                             eventAddress.equals(pendingBondAddress, ignoreCase = true))
                     if (!isTarget) {
-                        Timber.tag(LOG_TAG).d("Ignoring bond change for $eventAddress (mDevice=${mDevice?.address} pending=$pendingBondAddress)")
+                        StardustLog.d(LogType.BLE, LOG_TAG, "Ignoring bond change for $eventAddress (mDevice=${mDevice?.address} pending=$pendingBondAddress)")
                         return
                     }
 
@@ -1593,7 +1614,7 @@ internal class ClientConnection(): BittelProtocol {
                                 if (createBondAddress.equals(eventAddress, ignoreCase = true))
                                     "${SystemClock.elapsedRealtime() - createBondAtMs}ms after createBond"
                                 else "radio-initiated"
-                            StardustLog.w(LOG_TAG, "pairing failed: $bondTransition " +
+                            StardustLog.w(LogType.BLE, LOG_TAG, "pairing failed: $bondTransition " +
                                     "rawReason=$rawReason ($sinceCreateBond) -> $reason")
                             PairingTracker.failed(eventAddress, reason)
                             abortBondAttempt(eventAddress, cancelOsBond = false)
@@ -1625,7 +1646,7 @@ internal class ClientConnection(): BittelProtocol {
             val method = device.javaClass.getMethod("removeBond")
             (method.invoke(device) as? Boolean) == true
         }.onFailure {
-            Timber.tag(LOG_TAG).e(it, "Failed to request unbond for ${device.address}")
+            StardustLog.e(LOG_TAG, "Failed to request unbond", it)
         }.getOrDefault(false)
     }
 
@@ -1676,7 +1697,7 @@ internal class ClientConnection(): BittelProtocol {
         val unbondStarted = requestUnbond(deviceToUnbond)
         // StardustLog, not Timber: this library never plants a tree, so Timber output is
         // invisible in the host and this result could not be seen in a capture.
-        StardustLog.d("ConfigDebug",
+        StardustLog.i(LogType.CONNECTION, TAG,
             "removeBittelBond: osUnbondStarted=$unbondStarted force=$forceClearLocal")
         BleDiag.log("unpair", "osUnbondStarted=$unbondStarted force=$forceClearLocal")
         disconnectFromBLEDevice(true)
@@ -1691,7 +1712,7 @@ internal class ClientConnection(): BittelProtocol {
             // branch is not rare. Keeping the local pairing is deliberate (app and OS agree), but
             // auto-connect stays suppressed either way — the user asked to unpair, and the SDK must
             // not reconnect just because the OS bond survived.
-            StardustLog.w("ConfigDebug",
+            StardustLog.w(LogType.CONNECTION, "ConfigDebug",
                 "OS unbond FAILED — local pairing kept; host should send the user to Bluetooth settings")
             UnpairResult.STILL_BONDED_KEPT
         }
@@ -1776,13 +1797,13 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     fun getBlePairedStardustDevice() : BluetoothDevice? {
         val savedAddress = SharedPreferencesUtil.getBittelDevice()
-        StardustLog.d("StardustDataManager", "DataManager.context ${DataManager.appContext} hasSavedAddress ${!savedAddress.isNullOrBlank()}")
+        StardustLog.d(LogType.CONNECTION, "StardustDataManager", "DataManager.context ${DataManager.appContext} hasSavedAddress ${!savedAddress.isNullOrBlank()}")
 
         if(savedAddress.isNullOrBlank()) { return null }
 
         for (device in getBondedDevices()) {
 
-            StardustLog.d("StardustDataManager", "device.address matchesSaved ${savedAddress == device.address}")
+            StardustLog.d(LogType.CONNECTION, "StardustDataManager", "device.address matchesSaved ${savedAddress == device.address}")
             if(savedAddress == device.address) {
                 return device
             }
@@ -1815,7 +1836,10 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     private fun getBondedDevices(): Set<BluetoothDevice> {
         if (!BlePermissions.hasConnectPermission(context)) {
-            Timber.tag(LOG_TAG).w("BLUETOOTH_CONNECT not granted; bonded devices unavailable")
+            // Once per run: read on every bonded-set lookup.
+            if (logOnce.first("no-connect-permission")) {
+                StardustLog.w(LogType.BLE, LOG_TAG, "BLUETOOTH_CONNECT not granted; bonded devices unavailable")
+            }
             return emptySet()
         }
         val btManager = context.getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager ?: return emptySet()
@@ -1825,7 +1849,7 @@ internal class ClientConnection(): BittelProtocol {
     @SuppressLint("MissingPermission")
     private fun logPairedDevice(device: BluetoothDevice) {
         val aliasing = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) device.alias else "Empty"
-        Timber.tag(LOG_TAG).d("paired device: ${device.name} at ${device.address} + $aliasing")
+        StardustLog.d(LogType.BLE, LOG_TAG, "paired device: ${device.name} at ${device.address} + $aliasing")
     }
 
     fun addMessageToQueue(bittelPackage: StardustPackage) {
@@ -1858,16 +1882,20 @@ internal class ClientConnection(): BittelProtocol {
         bittelPackage.stardustControlByte.stardustServer = StardustControlByte.StardustServer.NOT_SERVER
 //        bittelPackage.StardustControlByte.bittelServer = if(SharedPreferencesUtil.getIsStardustServerBitEnabled(DataManager.context))
 //            StardustControlByte.StardustServer.SERVER else StardustControlByte.StardustServer.NOT_SERVER
-        Timber.tag(LOG_TAG).d("checkXor $randomID sendMessage")
+        // Per packet: lazy forms, so nothing is built while d is off.
+        StardustLog.d(LogType.PACKETS, LOG_TAG) { "checkXor $randomID sendMessage" }
         bittelPackage.checkXor = StardustPackageUtils.getCheckXor(bittelPackage.getStardustPackageToCheckXor())
-        Timber.tag(LOG_TAG).d("checkXorfini $randomID sendMessage")
+        StardustLog.d(LogType.PACKETS, LOG_TAG) { "checkXorfini $randomID sendMessage" }
         if(bittelPackage.isAbleToSendAgain()){
             if(!BleManager.isBluetoothConnected() && !BleManager.isUSBConnected){
-                Timber.tag(LOG_TAG).d("Bluetooth not available, either settings or disconnected")
+                // A send into a dead link: e, as release never sees d. Once per run: it repeats per packet.
+                if (logOnce.first("send-no-link")) {
+                    StardustLog.e(LOG_TAG, "Bluetooth not available, either settings or disconnected")
+                }
             }
-            Timber.tag(LOG_TAG).d("isAbleToSendAgain $randomID sendMessage")
+            StardustLog.d(LogType.PACKETS, LOG_TAG) { "isAbleToSendAgain $randomID sendMessage" }
 
-            Timber.tag(LOG_TAG).d("Sending Package $randomID")
+            StardustLog.d(LogType.PACKETS, LOG_TAG) { "Sending Package $randomID" }
             if (isNeedAck(bittelPackage.stardustOpCode)) {
                 // The watchdog's only cancellation path is clearTimer(), fired from an
                 // incoming BLE response. Opcodes that never get one (PTT_AI) would have
@@ -1879,7 +1907,7 @@ internal class ClientConnection(): BittelProtocol {
                 }
             }
             SharedPreferencesUtil.getAppUser()?.let {
-                Timber.tag(LOG_TAG).d("getAppUser $randomID sendMessage")
+                StardustLog.d(LogType.PACKETS, LOG_TAG) { "getAppUser $randomID sendMessage" }
 
                 val id = deviceLastDigit
                 val uuid = Characteristics.getWriteChar(id)
@@ -1940,7 +1968,7 @@ internal class ClientConnection(): BittelProtocol {
         val initiated = try {
             op.execute()
         } catch (e: Exception) {
-            Timber.tag(LOG_TAG).e(e, "GATT op '${op.label}' threw")
+            StardustLog.e(LOG_TAG, "GATT op '${op.label}' threw", e)
             false
         }
         gattOpExpectsCallback = initiated
@@ -1961,7 +1989,7 @@ internal class ClientConnection(): BittelProtocol {
     @Synchronized
     private fun onGattOpTimeout(label: String) {
         if (!gattOpInFlight) return
-        Timber.tag(LOG_TAG).w("GATT op '$label' timed out; advancing queue")
+        StardustLog.w(LogType.BLE, LOG_TAG, "GATT op '$label' timed out; advancing queue")
         // The op was initiated, so its completion callback may still arrive late — ignore it.
         if (gattOpExpectsCallback) staleCallbacksToIgnore++
         advanceGattQueue()
@@ -1994,10 +2022,13 @@ internal class ClientConnection(): BittelProtocol {
         randomID: String = ""
     ) {
         if (count > MAX_WRITE_RETRIES) {
-            Timber.tag(LOG_TAG).w("Max write retries exceeded for ${bittelPackage.stardustOpCode}")
+            // Once per run: on a failing link every packet ends here.
+            if (logOnce.first("max-write-retries")) {
+                StardustLog.w(LogType.PACKETS, LOG_TAG, "Max write retries exceeded for ${bittelPackage.stardustOpCode}")
+            }
             return
         }
-        Timber.tag(LOG_TAG).d("writePackage enqueue attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}")
+        StardustLog.d(LogType.PACKETS, LOG_TAG) { "writePackage enqueue attempt $count/${MAX_WRITE_RETRIES} - opCode: ${bittelPackage.stardustOpCode}" }
         enqueueGattOp(GattOp("write:${bittelPackage.stardustOpCode}:$count") {
             performGattWrite(bluetoothGattCharacteristic, bittelPackage, count, randomID)
         })
@@ -2016,15 +2047,15 @@ internal class ClientConnection(): BittelProtocol {
         randomID: String
     ): Boolean {
         val gatt = gattConnection ?: run {
-            Timber.tag(LOG_TAG).e("gattConnection is null, cannot write")
+            // Once per run: every queued write ends here while the link is gone.
+            if (logOnce.first("write-no-gatt")) StardustLog.e(LOG_TAG, "gattConnection is null, cannot write")
             return false
         }
         // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
-        // logcat only: per-packet, would flood the log file
-        android.util.Log.d(
-            "AppEvent",
+        // Per-packet: keep at d.
+        StardustLog.d(LogType.PACKETS, "AppEvent") {
             "BLE write ${bittelPackage.stardustOpCode} part=${bittelPackage.stardustControlByte.stardustPartType} attempt=${count + 1}"
-        )
+        }
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when (val writeResult = gatt.writeCharacteristic(
                 bluetoothGattCharacteristic,
@@ -2032,17 +2063,19 @@ internal class ClientConnection(): BittelProtocol {
                 WRITE_TYPE_DEFAULT
             )) {
                 0 -> {
-                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    StardustLog.d(LogType.PACKETS, LOG_TAG) { "Write initiated on attempt ${count + 1}" }
                     checkIfPackageDemandsAck(bittelPackage)
                     true
                 }
                 WRITE_ERROR_CODE -> {
-                    Timber.tag(LOG_TAG).e("Write error code received, reconnecting...")
+                    // Once per run: fires per queued write until the reconnect lands.
+                    if (logOnce.first("write-error-code")) StardustLog.e(LOG_TAG, "Write error code received, reconnecting...")
                     reconnectToDevice()
                     false
                 }
                 else -> {
-                    Timber.tag(LOG_TAG).w("Write returned: $writeResult, scheduling retry...")
+                    // Once per run: per packet and per retry.
+                    if (logOnce.first("write-retry")) StardustLog.w(LogType.PACKETS, LOG_TAG, "Write returned: $writeResult, scheduling retry...")
                     scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
                     false
                 }
@@ -2052,11 +2085,12 @@ internal class ClientConnection(): BittelProtocol {
             run {
                 bluetoothGattCharacteristic.value = bittelPackage.getStardustPackageToSend()
                 if (gatt.writeCharacteristic(bluetoothGattCharacteristic)) {
-                    Timber.tag(LOG_TAG).d("Write initiated on attempt ${count + 1}")
+                    StardustLog.d(LogType.PACKETS, LOG_TAG) { "Write initiated on attempt ${count + 1}" }
                     checkIfPackageDemandsAck(bittelPackage)
                     true
                 } else {
-                    Timber.tag(LOG_TAG).w("Write failed, scheduling retry... (attempt ${count + 1})")
+                    // Once per run: per packet and per retry.
+                    if (logOnce.first("write-retry")) StardustLog.w(LogType.PACKETS, LOG_TAG, "Write failed, scheduling retry... (attempt ${count + 1})")
                     scheduleWriteRetry(bluetoothGattCharacteristic, bittelPackage, count, randomID)
                     false
                 }
@@ -2135,7 +2169,7 @@ internal class ClientConnection(): BittelProtocol {
         ackSystem.delayTS = DELAY_TS_LR
         ackSystem.start()
         addAwaitingAck(ackSystem)
-        Timber.tag(LOG_TAG).d("ACK tracking started for opCode: ${bittelPackage.stardustOpCode}")
+        StardustLog.d(LogType.PACKETS, LOG_TAG, "ACK tracking started for opCode: ${bittelPackage.stardustOpCode}")
     }
 
     /**
@@ -2151,9 +2185,9 @@ internal class ClientConnection(): BittelProtocol {
                 val ackSystem = removeFirstAwaitingAck()
                 if (ackSystem != null) {
                     syncMessageReceivedStatus(ackSystem)
-                    Timber.tag(LOG_TAG).d("ACK received and processed")
+                    StardustLog.d(LogType.PACKETS, LOG_TAG, "ACK received and processed")
                 } else {
-                    Timber.tag(LOG_TAG).w("ACK received but no pending ACK in queue")
+                    StardustLog.w(LogType.PACKETS, LOG_TAG, "ACK received but no pending ACK in queue")
                 }
             }
         }
@@ -2163,9 +2197,9 @@ internal class ClientConnection(): BittelProtocol {
      */
     private fun removeFirstAckFromQueue(reason: String) {
         if (removeFirstAwaitingAck() != null) {
-            Timber.tag(LOG_TAG).d("ACK removed from queue - reason: $reason")
+            StardustLog.d(LogType.PACKETS, LOG_TAG, "ACK removed from queue - reason: $reason")
         } else {
-            Timber.tag(LOG_TAG).w("Attempted to remove ACK but queue is empty - reason: $reason")
+            StardustLog.w(LogType.PACKETS, LOG_TAG, "Attempted to remove ACK but queue is empty - reason: $reason")
         }
     }
 
@@ -2293,7 +2327,7 @@ internal class ClientConnection(): BittelProtocol {
         // applied to reconnectToDeviceFast(), which is the host acting on the user's behalf and
         // should always win.
         if (isConnectAttemptOutstanding()) {
-            StardustLog.d("ConfigDebug", "reconnectToDevice SKIPPED — a connect attempt is still outstanding")
+            StardustLog.d(LogType.CONNECTION, "ConfigDebug", "reconnectToDevice SKIPPED — a connect attempt is still outstanding")
             BleDiag.log("reconnect", "SKIPPED — attempt ${BleDiag.id(pendingGatt)} outstanding for " +
                 "${SystemClock.elapsedRealtime() - connectStartedAtMs}ms linkUp=${linkUp.get()} init=${BleDiag.initState}")
             if (linkUp.get()) {
@@ -2334,8 +2368,8 @@ internal class ClientConnection(): BittelProtocol {
      */
     fun setBlePortModeOnRadio() {
         val (src, dst) = requireLocalSrcDst() ?: return
-        // logcat only: per-poll-tick (PortUtils, 20s), would flood the log file
-        android.util.Log.d("ConfigDebug", "ClientConnection.setBlePortModeOnRadio → BLUETOOTH_ENABLED_BLE (keep BLE) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
+        // Per-poll tick (PortUtils, 20s): keep at d.
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "ClientConnection.setBlePortModeOnRadio → BLUETOOTH_ENABLED_BLE (keep BLE) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
 
         val uartPort = (PortType.BLUETOOTH_ENABLED_BLE.type).intToByteArray().reversedArray()
         val data = StardustPackageUtils.byteArrayToIntArray(uartPort)

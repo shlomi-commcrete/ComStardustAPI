@@ -30,7 +30,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import timber.log.Timber
 import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.util.Locale
@@ -72,6 +71,12 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
      * only if that write itself failed.
      */
     @Volatile private var messageId: Long? = null
+
+    /**
+     * Per-package lines (a dropped package, a failed progress write) log once per transfer.
+     * Reset when [sendFile] starts; its repeats are summarised when the send settles.
+     */
+    private val logOnce = LogOnce()
 
     /** Packages that had no radio to go out on. Logged at [finishSending]; never confirmed. */
     private var packagesDropped = 0
@@ -290,7 +295,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    StardustLog.e(LOG_TAG, "Could not record send progress", e)
+                    if (logOnce.first("progress-write-failed")) StardustLog.e(LOG_TAG, "Could not record send progress", e)
                 }
             }
         }
@@ -339,10 +344,13 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         // never persisted — see its KDoc. Checked on the actual spare, not the resilience
         // setting: this is what would go on the wire.
         if (numOfPackages > MAX_TOTAL_PACKAGES) {
-            StardustLog.w(LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
+            StardustLog.w(LogType.FILES, LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
             failTransfer(FileReceiver.FileFailure.TOO_LARGE)
             return CompletableDeferred(false)
         }
+
+        logOnce.reset()
+        StardustLog.i(LogType.FILES, LOG_TAG, "send started: $numOfPackages package(s), ${data.stardustAPIPackage.spare} parity")
 
         this.onFileStatusChange?.startSending(data)
         return CoroutineScope(Dispatchers.IO).async {
@@ -371,7 +379,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             // on the next link — and the row, already written, is failed DISCONNECTED so the
             // attempt shows with its reason. Checked after the row exists so there is one.
             if (!DataManager.isLinkUp()) {
-                StardustLog.w(LOG_TAG, "file not sent: no radio connected")
+                StardustLog.w(LogType.FILES, LOG_TAG, "file not sent: no radio connected")
                 failTransfer(FileReceiver.FileFailure.DISCONNECTED)
                 return@async saved
             }
@@ -382,7 +390,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 // Nothing to send. Left to run, the timer walked past an empty map forever and
                 // the send never finished; failed here, the row says so.
                 if (packages.isEmpty()) {
-                    StardustLog.w(LOG_TAG, "file not sent: it is empty")
+                    StardustLog.w(LogType.FILES, LOG_TAG, "file not sent: it is empty")
                     failTransfer(FileReceiver.FileFailure.ERROR)
                     return@async saved
                 }
@@ -407,7 +415,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 }
                 startSent
             } catch (e: Exception) {
-                Timber.e(e, "Error preparing file send for ${data.file.name}")
+                StardustLog.e(LOG_TAG, "Error preparing file send", e)
+                StardustLog.d(LogType.FILES, LOG_TAG, "Error preparing file send for ${data.file.name}")
                 false
             }
 
@@ -477,7 +486,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         val id = messageId
         if (id == null) {
-            Timber.w("Send cancelled with no local message row to record it on")
+            StardustLog.w(LogType.FILES, LOG_TAG, "Send cancelled with no local message row to record it on")
             onFileStatusChange?.cancelledSending(data, cancellation)
             return
         }
@@ -486,7 +495,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             try {
                 DataManager.getAppRepo().markFileSendCancelled(id, cancellation)
             } catch (e: Exception) {
-                Timber.e(e, "Error recording send cancellation on message $id")
+                StardustLog.e(LOG_TAG, "Error recording send cancellation on message $id", e)
             }
             // After the write, for the same reason as failedSending.
             onFileStatusChange?.cancelledSending(data, cancellation)
@@ -530,17 +539,16 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         if (!claimed) {
             // Already finished or already failed — the cancel came too late to be the
             // outcome, so the row keeps what it has.
-            Timber.tag("FileUpload").d("cancel ignored: ${data.file.name} had already settled")
+            StardustLog.d(LogType.FILES, "FileUpload", "cancel ignored: ${data.file.name} had already settled")
             return
         }
 
-        Timber.tag("FileUpload").w(
-            "send cancelled: %s phase=%s data=%d/%d spare=%d/%d msgId=%s",
-            data.file.name,
-            cancellation.phase,
-            cancellation.dataPackagesSent, cancellation.dataPackages,
-            cancellation.sparePackagesSent, cancellation.sparePackages,
-            messageId,
+        logRepeats()
+        StardustLog.w(
+            LogType.FILES, "FileUpload",
+            "send cancelled: phase=${cancellation.phase} " +
+                "data=${cancellation.dataPackagesSent}/${cancellation.dataPackages} " +
+                "spare=${cancellation.sparePackagesSent}/${cancellation.sparePackages} msgId=$messageId",
         )
 
         if (!localRowSettled.get()) {
@@ -549,7 +557,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             // normally-sent file. Leave it to the send coroutine: it raises
             // localRowSettled and then reads `cancelled`, so having seen it unraised here
             // guarantees it sees the cancel and records it.
-            Timber.tag("FileUpload").d("cancel landed before the local row existed — the send coroutine will record it")
+            StardustLog.d(LogType.FILES, "FileUpload", "cancel landed before the local row existed — the send coroutine will record it")
             return
         }
 
@@ -599,7 +607,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
     private fun getRandomMisses(spare: Int, numOfPackages: Int): List<Int> {
         randomMisses = (0 until numOfPackages).shuffled().take(spare).toMutableSet()
-        Timber.d("randomMisses: $randomMisses")
+        StardustLog.d(LogType.FILES, LOG_TAG, "randomMisses: $randomMisses")
         return randomMisses.toList()
     }
 
@@ -711,7 +719,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             }
             true
         } catch (e: Exception) {
-            Timber.e(e, "Error copying source file locally: ${src.absolutePath}")
+            StardustLog.e(LOG_TAG, "Error copying source file locally", e)
+            StardustLog.d(LogType.FILES, LOG_TAG, "Error copying source file locally: ${src.absolutePath}")
             false
         }
     }
@@ -732,10 +741,10 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
     }
 
     private fun logUnreadableSource(src: File) {
-        Timber.w(
-            "Source file unreadable: path=%s exists=%s canRead=%s length=%d",
-            src.absolutePath, src.exists(), src.canRead(),
-            runCatching { src.length() }.getOrDefault(-1L)
+        StardustLog.w(
+            LogType.FILES, LOG_TAG,
+            "Source file unreadable: exists=${src.exists()} canRead=${src.canRead()} " +
+                "length=${runCatching { src.length() }.getOrDefault(-1L)}"
         )
     }
 
@@ -767,7 +776,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         } catch (e: Exception) {
             // Not a send failure: the payload goes out regardless, and a broken gzip is the
             // receiver's to report when it decompresses. The start package says "unknown".
-            StardustLog.w(LOG_TAG, "original size unknown: ${e.javaClass.simpleName}")
+            StardustLog.w(LogType.FILES, LOG_TAG, "original size unknown: ${e.javaClass.simpleName}")
             return 0
         }
         return if (size in 0..StardustFileStartPackage.MAX_ORIGINAL_SIZE.toLong()) size.toInt() else 0
@@ -882,7 +891,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         for ((fileIndex, file) in files.withIndex()) {
             val fileBytes = file.readBytes()
-            Timber.tag("FileUpload").d("fileBytes: ${fileBytes.size}")
+            StardustLog.d(LogType.FILES, "FileUpload","fileBytes: ${fileBytes.size}")
 
             var offset = 0
             while (offset < fileBytes.size) {
@@ -894,14 +903,14 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                     data = chunk,
                     isLast = isLast
                 )
-                Timber.tag("FileUpload").d("chunk: ${chunk.size}, isLast: $isLast")
+                StardustLog.d(LogType.FILES, "FileUpload") { "chunk: ${chunk.size}, isLast: $isLast" }
 
                 offset += FILE_CHUNK_SIZE
                 packageIndex++
             }
         }
 
-        Timber.tag("FileUpload").d("Total packages created: ${bittelFileList.size}")
+        StardustLog.d(LogType.FILES, "FileUpload","Total packages created: ${bittelFileList.size}")
         return bittelFileList
     }
 
@@ -916,7 +925,11 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 // keeps walking, so count the loss and let finishSending() decide
                 // whether the parity packages can still cover it.
                 packagesDropped++
-                Timber.tag("FileUpload").w("no radio to send on — dropped package (total dropped: $packagesDropped)")
+                // Once per transfer: with no RD for the whole send this fired per package. The
+                // total is in finishSending's "send incomplete" line and the repeats summary.
+                if (logOnce.first("no-radio")) {
+                    StardustLog.w(LogType.FILES, "FileUpload","no radio to send on — dropped package (total dropped: $packagesDropped)")
+                }
                 // Nothing went out, so no TxEnd will come: the timer alone moves on, and
                 // there is no package for it to count.
                 pendingTicket = null
@@ -944,7 +957,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             packagesSent++
             if (stardustFilePackage.current in parityIndices) sparePackagesSent++
             else dataPackagesSent++
-            Timber.tag("FileUpload").d("send: $packagesSent")
+            StardustLog.d(LogType.FILES, "FileUpload") { "send: $packagesSent" }
             pendingPackageIndex = stardustFilePackage.current
             registerTxTicket(radio)
             it.addMessageToQueue(fileStartMessage)
@@ -986,7 +999,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         // budget covers. Decided from what really went out (isDelivered), which counts
         // dropped packages as missing — the same rule a disconnect is settled by.
         if (!isDelivered()) {
-            Timber.tag("FileUpload").w("send incomplete: $dropped package(s) never went out (parity budget ${data.stardustAPIPackage.spare})")
+            StardustLog.w(LogType.FILES, "FileUpload","send incomplete: $dropped package(s) never went out (parity budget ${data.stardustAPIPackage.spare})")
             failTransfer(FileReceiver.FileFailure.MISSING)
             return
         }
@@ -1007,6 +1020,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
         removeSendTimer()
         releaseTxTicket()
+        logRepeats()
+        StardustLog.i(LogType.FILES, LOG_TAG, "file sent: ${confirmedIndices.size} of $totalPackages package(s) confirmed")
         isComplete = true
         // Reuse existing handler — do NOT create a new Handler instance here
         handler.postDelayed({ isComplete = false }, 3000)
@@ -1040,7 +1055,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         // package while this decides.
         removeSendTimer()
         if (isDelivered()) {
-            Timber.tag("FileUpload").w("link lost after the file was delivered — settling as sent")
+            StardustLog.w(LogType.FILES, "FileUpload","link lost after the file was delivered — settling as sent")
             completeTransfer()
         } else {
             failTransfer(FileReceiver.FileFailure.DISCONNECTED)
@@ -1059,17 +1074,24 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         if (!terminalOutcomeClaimed.compareAndSet(false, true)) return
         removeSendTimer()
         releaseTxTicket()
-        Timber.tag("FileUpload").w("send failed: reason=$failure msgId=$messageId")
+        logRepeats()
+        StardustLog.w(LogType.FILES, "FileUpload","send failed: reason=$failure msgId=$messageId")
 
         // Written before localRowSettled is read — the other half is in sendFile.
         failureWithoutRow = failure
         if (messageId == null && !localRowSettled.get()) {
             // The row is still being written; the send coroutine records this on it as soon as
             // it exists, and tells the host then.
-            Timber.tag("FileUpload").d("failure landed before the local row existed — the send coroutine will record it")
+            StardustLog.d(LogType.FILES, "FileUpload","failure landed before the local row existed — the send coroutine will record it")
             return
         }
         recordFailure(failure)
+    }
+
+    /** One line for the per-package lines [logOnce] held back; called as the send settles. */
+    private fun logRepeats() {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) StardustLog.w(LogType.FILES, LOG_TAG, "package lines not repeated: $repeats")
     }
 
     /** Writes [failure] onto the row and tells the host — once, whoever gets here first. */
@@ -1077,7 +1099,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         if (!failureRecorded.compareAndSet(false, true)) return
         val id = messageId
         if (id == null) {
-            Timber.w("Send failed ($failure) with no local message row to record it on")
+            StardustLog.w(LogType.FILES, LOG_TAG, "Send failed ($failure) with no local message row to record it on")
             onFileStatusChange?.failedSending(data, failure)
             return
         }
@@ -1086,7 +1108,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             try {
                 DataManager.getAppRepo().markFileTransferFailed(id, failure)
             } catch (e: Exception) {
-                Timber.e(e, "Error recording send failure on message $id")
+                StardustLog.e(LOG_TAG, "Error recording send failure on message $id", e)
             }
             // Notified after the write, never beside it: a host that answers this by
             // re-reading the conversation would otherwise find the row still unfailed

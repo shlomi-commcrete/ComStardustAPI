@@ -47,6 +47,7 @@ import com.commcrete.stardust.room.new_db.message.MessageType
 import com.commcrete.stardust.room.new_db.message.toMessageType
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -170,7 +171,7 @@ class AppRepository(
         RepositoryProvider.AppScopes.applicationScope.launch {
             contactsDao.observeIdentityTables()
                 // Cause only: a database error message can quote the row it failed on.
-                .catch { StardustLog.w(TAG, "Id lookup sync stopped: ${it.javaClass.simpleName}") }
+                .catch { StardustLog.w(LogType.STORAGE, TAG, "Id lookup sync stopped: ${it.javaClass.simpleName}") }
                 .collect { caches.invalidateIdentity() }
         }
     }
@@ -1043,7 +1044,7 @@ class AppRepository(
                 }
             }
             // A count, never names: a callsign must not reach a log line (§28).
-            StardustLog.i(TAG, "Merged duplicate private chats: removed $removed")
+            StardustLog.i(LogType.STORAGE, TAG, "Merged duplicate private chats: removed $removed")
             removed
         }
     }
@@ -1093,7 +1094,7 @@ class AppRepository(
                 }
             }
             // A count, never names or ids: they must not reach a log line (§28).
-            StardustLog.i(TAG, "Restored contacts left without ids: $restored of ${orphans.size}")
+            StardustLog.i(LogType.STORAGE, TAG, "Restored contacts left without ids: $restored of ${orphans.size}")
             restored
         }
     }
@@ -1115,7 +1116,7 @@ class AppRepository(
         val current = contactsDao.getContactById(contactId)?.type ?: return
         if (current == derived) return
         if ((current == ContactType.GROUP) != (derived == ContactType.GROUP)) {
-            StardustLog.w(TAG, "Restored contact left as its kind: ids are of the other kind")
+            StardustLog.w(LogType.STORAGE, TAG, "Restored contact left as its kind: ids are of the other kind")
             return
         }
         contactsDao.setContactType(contactId, derived)

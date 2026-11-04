@@ -4,7 +4,6 @@ package com.commcrete.stardust.util.audio
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import com.commcrete.stardust.ai.codec.WavTokenizerDecoder
 import com.commcrete.stardust.ai.codec.Codec2PcmStreamPlayer
 import com.commcrete.stardust.StardustAPIPackage
@@ -19,10 +18,12 @@ import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.DataManager.appContext
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.StardustLog
 import com.ustadmobile.codec2.Codec2Decoder
 import kotlinx.coroutines.*
-import timber.log.Timber
 import java.io.*
 
 
@@ -45,7 +46,14 @@ object PlayerUtils : BleMediaConnector() {
     var numOfPackagesRecieved = 0
 
     private val pttScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** Per-packet failures log once per inbound transmission; summarised and reset by [runnable]. */
+    private val logOnce = LogOnce()
+
     private val runnable : Runnable = Runnable {
+        for ((key, repeats) in logOnce.reset()) {
+            StardustLog.e("splitByteArray2", "$key x$repeats more")
+        }
         Scopes.getMainCoroutine().launch {
             CoroutineScope(Dispatchers.IO).launch {
                 val file = fileToWrite
@@ -73,7 +81,7 @@ object PlayerUtils : BleMediaConnector() {
             isPlaying = false
             if(numOfPackagesRecieved == 1) {
                 Codec2PcmStreamPlayer.writeMinimumSilenceAndPlay(byteArrayOutputStream.toByteArray().copyOf()) {
-                    Timber.tag("WavRecorder.TAG_PTT_DEBUG").d("bufferSizeInFrames")
+                    StardustLog.d(LogType.PTT, "WavRecorder.TAG_PTT_DEBUG", "bufferSizeInFrames")
                 }
                 byteArrayOutputStream.reset()
             }
@@ -99,8 +107,8 @@ object PlayerUtils : BleMediaConnector() {
                 val selectedModule = getModel(model[0].toInt())
                 val withoutFirstByte = byteArray.copyOfRange(1, byteArray.size)
 
-                // logcat only: per-PTT-packet, would flood the log file
-                Log.d("PlayerUtils", "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}")
+                // Per-PTT-packet: keep at d.
+                StardustLog.d(LogType.PTT, "PlayerUtils") { "Received PTT AI data size withoutFirstByte: ${withoutFirstByte.size}" }
 
                 return ParsedAiData(
                     decodedBytes = byteArray,
@@ -122,7 +130,7 @@ object PlayerUtils : BleMediaConnector() {
         val bytesListToPlay : MutableList<ByteArray> = mutableListOf()
 
         for(mByte in bytes) {
-            Timber.tag("decodedBytes").d("decodedBytes : ${parsedData.size}")
+            StardustLog.d(LogType.PTT, "decodedBytes") { "decodedBytes : ${parsedData.size}" }
             val decodedBytes = handleBittelAudioMessage(mByte)
 
             if(!mByte.contentEquals(embpyByte)) {
@@ -298,7 +306,7 @@ object PlayerUtils : BleMediaConnector() {
     }
 
     private fun splitByteArray(input: ByteArray, chunkSize: Int): List<ByteArray> {
-        Timber.tag("receiveBeforeSplit").d("input : ${input.toHex()}")
+        StardustLog.d(LogType.PTT, "receiveBeforeSplit") { "input : ${input.toHex()}" }
         val splits = mutableListOf<ByteArray>()
         var startIndex = 0
 
@@ -315,7 +323,7 @@ object PlayerUtils : BleMediaConnector() {
 
         val result = mutableListOf<ByteArray>()
         for (split in splits) {
-            Timber.tag("receiveAfterSplit").d("split : ${split.toHex()}")
+            StardustLog.d(LogType.PTT, "receiveAfterSplit") { "split : ${split.toHex()}" }
             result.addAll(splitByteArray2(split))
         }
         return result
@@ -323,8 +331,9 @@ object PlayerUtils : BleMediaConnector() {
 
     private fun splitByteArray2(combined: ByteArray): List<ByteArray> {
         return try {
-            Timber.tag("concatenateByteArraysWithIgnoring")
-                .d("byteArray origin : ${combined.toHex()}")
+            StardustLog.d(LogType.PTT, "concatenateByteArraysWithIgnoring") {
+                "byteArray origin : ${combined.toHex()}"
+            }
 
             val byteArray1 = ByteArray(4)
             val byteArray2 = ByteArray(4)
@@ -341,13 +350,16 @@ object PlayerUtils : BleMediaConnector() {
             byteArray2[2] = ((combined[5].toUByte().toInt() shl 4) or (combined[6].toUByte().toInt() shr 4)).toByte()
             byteArray2[3] = (combined[6].toUByte().toInt() shl 4).toByte()
 
-            Timber.tag("receiveAfterSplit").d("byteArray 1 : ${byteArray1.toHex()}")
-            Timber.tag("receiveAfterSplit").d("byteArray 2 : ${byteArray2.toHex()}")
+            StardustLog.d(LogType.PTT, "receiveAfterSplit") { "byteArray 1 : ${byteArray1.toHex()}" }
+            StardustLog.d(LogType.PTT, "receiveAfterSplit") { "byteArray 2 : ${byteArray2.toHex()}" }
 
             listOf(byteArray1, byteArray2)
 
         } catch (e: Exception) {
-            Timber.tag("splitByteArray2").e(e, "Error while splitting byte array")
+            // Logs once per inbound transmission; summarised when the transmission ends (runnable).
+            if (logOnce.first("Error while splitting byte array")) {
+                StardustLog.e("splitByteArray2", "Error while splitting byte array", e)
+            }
             // Return safe default
             listOf(ByteArray(4), ByteArray(4))
         }

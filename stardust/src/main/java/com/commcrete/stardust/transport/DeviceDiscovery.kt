@@ -6,10 +6,11 @@ import com.commcrete.stardust.ble.BlePermissions
 import com.commcrete.stardust.ble.PairingRepository
 import com.commcrete.stardust.enums.ScanFailure
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import timber.log.Timber
 
 /**
  * One radio the user could pair with, whether it was just seen advertising or is already bonded to
@@ -130,7 +131,7 @@ object DeviceDiscovery {
     /** Called by `BleScanner` when the platform or a precondition rejects the scan. */
     fun onScanFailure(failure: ScanFailure) {
         val reason = refine(failure)
-        Timber.tag(TAG).w("scan failed: $failure -> $reason")
+        StardustLog.w(LogType.BLE, TAG, "scan failed: $failure -> $reason")
         _scanState.value = ScanState.Failed(reason, snapshot())
     }
 

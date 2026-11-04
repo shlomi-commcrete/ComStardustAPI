@@ -1,5 +1,6 @@
 package com.commcrete.rnnoise
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 
 /**
@@ -42,10 +43,10 @@ class RnNoise {
             try {
                 System.loadLibrary(LIB_NAME)
                 loaded = true
-                StardustLog.i(TAG, "lib$LIB_NAME.so loaded")
+                StardustLog.i(LogType.PTT, TAG, "lib$LIB_NAME.so loaded")
             } catch (t: Throwable) {
                 loadError = t
-                StardustLog.w(TAG, "Failed to load lib$LIB_NAME.so: ${t.message}")
+                StardustLog.w(LogType.PTT, TAG, "Failed to load lib$LIB_NAME.so: ${t.message}")
             }
         }
 

@@ -1,8 +1,10 @@
 package com.commcrete.stardust.util.audio.filters
 
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.audio.AudioDsp
 import com.commcrete.stardust.util.audio.filters.configs.NotchConfig
-import timber.log.Timber
+import java.util.Locale
 import kotlin.math.log10
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -158,14 +160,16 @@ internal class AdaptiveNotchDetector(
         if (changed) {
             lastAppliedBuckets = finalBuckets
             lastAppliedBands = newBands
-            Timber.Forest.tag(TAG).d(
-                "      ↳ adaptive notch (chunk #%03d, rms=%.1f dBFS%s): %d band(s) @ Q=%.0f → %s",
-                chunkIndex, rmsDb,
-                if (isSilence) " SILENCE" else "",
-                newBands.size, settings.notchQ,
-                if (newBands.isEmpty()) "(none)"
-                else newBands.joinToString(",") { "${it.frequencyHz.toInt()}Hz" }
-            )
+            StardustLog.d(LogType.PTT, TAG) {
+                "      ↳ adaptive notch (chunk #%03d, rms=%.1f dBFS%s): %d band(s) @ Q=%.0f → %s".format(
+                    Locale.US,
+                    chunkIndex, rmsDb,
+                    if (isSilence) " SILENCE" else "",
+                    newBands.size, settings.notchQ,
+                    if (newBands.isEmpty()) "(none)"
+                    else newBands.joinToString(",") { "${it.frequencyHz.toInt()}Hz" }
+                )
+            }
         }
         return if (changed) newBands else null
     }

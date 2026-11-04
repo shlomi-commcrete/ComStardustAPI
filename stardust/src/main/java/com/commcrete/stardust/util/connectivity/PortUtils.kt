@@ -6,6 +6,8 @@ import android.os.Looper
 import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.transport.ConnectionManager
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.transport.TransportRegistry
 import com.commcrete.stardust.usb.BittelUsbManager2
@@ -15,7 +17,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
 
 object PortUtils {
     private var job: Job? = null
@@ -28,6 +29,12 @@ object PortUtils {
      * incoming package at all, reset by [onTrafficReceived].
      */
     private var silentWindows = 0
+
+    /** Port-mode loop lines that repeat per 20s tick log once per run (see [portModeSent]). */
+    private val logOnce = LogOnce()
+
+    /** The transport whose port mode was last sent; only a change is logged at `i`. Main thread only. */
+    private var lastPortMode: String? = null
 
     /**
      * How many unanswered keepalive pings make the radio dead, on EITHER transport.
@@ -76,7 +83,7 @@ object PortUtils {
         // Nothing is connected — there is no link to probe or restore, and the entry points for a
         // fresh connection (host action / attach event / startup) own that case.
         val transport = TransportRegistry.active()?.id ?: run {
-            Timber.tag("PortUtils").d("ping timeout with no active transport — nothing to reconnect")
+            StardustLog.d(LogType.CONNECTION, "PortUtils", "ping timeout with no active transport — nothing to reconnect")
             silentWindows = 0
             return@Runnable
         }
@@ -84,12 +91,12 @@ object PortUtils {
 
         // A terminal error is not fixed by reconnecting; retrying every 10s would just loop.
         if (StardustInitConnectionHandler.hasUnsyncableError()) {
-            Timber.tag("PortUtils").d("ping timeout ignored — terminal handshake error, reconnect would loop")
+            StardustLog.d(LogType.CONNECTION, "PortUtils", "ping timeout ignored — terminal handshake error, reconnect would loop")
             return@Runnable
         }
 
         if (silentWindows < DEAD_AFTER_UNANSWERED_PINGS) {
-            Timber.tag("PortUtils").d(
+            StardustLog.d(LogType.CONNECTION, "PortUtils",
                 "unanswered ping $silentWindows/$DEAD_AFTER_UNANSWERED_PINGS over $transport"
             )
             return@Runnable
@@ -105,10 +112,10 @@ object PortUtils {
         // noticed; the counter is what makes that safe, since any incoming package — handshake
         // traffic included — resets it, so a slow-but-alive sync cannot reach this line.
         val silenceMs = silentWindows * connectionTimeout
-        Timber.tag("PortUtils").w(
+        StardustLog.w(LogType.CONNECTION, "PortUtils",
             "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings over $transport (${silenceMs}ms of silence) — declaring the link dead"
         )
-        StardustLog.w("ConfigDebug",
+        StardustLog.w(LogType.CONNECTION, "ConfigDebug",
             "$transport link declared dead after ${silenceMs}ms of silence — disconnecting and retrying")
         silentWindows = 0
         ConnectionManager.onKeepaliveLost(transport, "$DEAD_AFTER_UNANSWERED_PINGS unanswered pings (${silenceMs}ms)")
@@ -138,20 +145,27 @@ object PortUtils {
                 when {
                     BleManager.isUsbEnabled() -> {
                         BittelUsbManager2.setUsbPortModeOnRadio()
-                        Timber.tag("startUpdatingPort").d("USB active → setUsbPortModeOnRadio")
+                        StardustLog.d(LogType.CONNECTION, "startUpdatingPort", "USB active → setUsbPortModeOnRadio")
+                        portModeSent("USB")
                     }
                     BleManager.isBluetoothConnected() -> {
                         DataManager.getClientConnection().setBlePortModeOnRadio()
-                        Timber.tag("startUpdatingPort").d("BLE active → setBlePortModeOnRadio")
+                        StardustLog.d(LogType.CONNECTION, "startUpdatingPort", "BLE active → setBlePortModeOnRadio")
+                        portModeSent("BLE")
                     }
                     // Must not be silent while the handshake says a radio is connected: a session
                     // that is Ready over BLE while isBleConnected / isBluetoothEnabled() reads false
                     // lands here and never sets the port mode (seen in the 2026-10-04 capture).
-                    // Plain disconnected ticks stay quiet.
-                    StardustInitConnectionHandler.isConnected() -> StardustLog.w("ConfigDebug",
-                        "startUpdatingPort tick: init connected but no transport matched, port mode NOT sent — " +
-                            "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
-                            "isBluetoothEnabled=${DataManager.getClientConnection().isBluetoothEnabled()}")
+                    // Plain disconnected ticks stay quiet. Once per run: it persists across ticks;
+                    // the run ends when a port mode is sent again.
+                    StardustInitConnectionHandler.isConnected() -> if (logOnce.first("port-mode-no-transport")) {
+                        StardustLog.w(LogType.CONNECTION, "ConfigDebug",
+                            "startUpdatingPort tick: init connected but no transport matched, port mode NOT sent — " +
+                                "isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected} " +
+                                "isBluetoothEnabled=${DataManager.getClientConnection().isBluetoothEnabled()}")
+                    }
+                    // No link: forget the mode, so the next link's first port mode is logged again.
+                    else -> lastPortMode = null
                 }
                 delay(20000)
             }
@@ -176,6 +190,18 @@ object PortUtils {
                 delay(connectionTimeout)
             }
         }
+    }
+
+    /**
+     * Logs the port mode at `i` only when it changes, not on every 20s tick, and ends the run of
+     * the once-logged "no transport" warning.
+     */
+    private fun portModeSent(transport: String) {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) StardustLog.i(LogType.CONNECTION, "PortUtils", "port mode sent again; repeats not logged: $repeats")
+        if (lastPortMode == transport) return
+        lastPortMode = transport
+        StardustLog.i(LogType.CONNECTION, "PortUtils", "port mode changed: radio set to $transport mode")
     }
 
     fun onPingReceived () {

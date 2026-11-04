@@ -1,5 +1,6 @@
 package com.commcrete.stardust.ai.codec.filter
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import java.io.File
 import java.io.RandomAccessFile
@@ -52,7 +53,7 @@ object PyTorchInitGate {
     private fun refused(reason: String, cause: Throwable? = null) {
         if (refusalLogged) return
         refusalLogged = true
-        StardustLog.w(TAG, "AI codec refused for this process: $reason", cause)
+        StardustLog.w(LogType.PTT, TAG, "AI codec refused for this process: $reason", cause)
     }
 
     private data class Holder(val raf: RandomAccessFile, val ch: FileChannel, val lk: FileLock)

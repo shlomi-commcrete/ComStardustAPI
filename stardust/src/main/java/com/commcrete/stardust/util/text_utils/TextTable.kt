@@ -1,7 +1,8 @@
 package com.commcrete.bittell.util.text_utils
 
 import com.commcrete.stardust.stardust.model.StardustControlByte
-import timber.log.Timber
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import kotlin.math.min
 
 
@@ -198,7 +199,7 @@ fun testConversions () {
     val newString = "$string וואלה אני לא יודע מה קורה פה בוא נבדוק :( حرف\n "
     newString.forEach { char ->
         val hexValue = NewAsciiTable.getHexByChar(char)
-        Timber.tag("testConversions").d("Char: $char, Hex: ${hexValue?.let { "0x" + it.toString(16).uppercase() } ?: "Not found"}")
+        StardustLog.d(LogType.TEXT, "testConversions", "Char: $char, Hex: ${hexValue?.let { "0x" + it.toString(16).uppercase() } ?: "Not found"}")
     }
 }
 

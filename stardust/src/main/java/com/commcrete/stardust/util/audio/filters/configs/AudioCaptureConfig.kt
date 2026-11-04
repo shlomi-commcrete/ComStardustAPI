@@ -6,8 +6,9 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.os.Build
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.SharedPreferencesUtil
-import timber.log.Timber
+import com.commcrete.stardust.util.StardustLog
 
 /**
  * Shared capture planning and routing for AI/CODEC2 recorders.
@@ -46,14 +47,10 @@ internal object AudioCaptureConfig {
         val captureRate = pickCaptureRate(selected, requestedRate)
 
 
-        Timber.Forest.tag(TAG).d(
-            "capturePlan: requested=%d selectedRate=%d source=%d usb=%b deviceType=%s device=%s",
-            requestedRate,
-            captureRate,
-            defaultAudioSource,
-            useUsb,
-            selected?.type?.toString() ?: "none",
-            selected?.productName?.toString() ?: "none",
+        StardustLog.d(
+            LogType.PTT, TAG,
+            "capturePlan: requested=$requestedRate selectedRate=$captureRate source=$defaultAudioSource usb=$useUsb " +
+                "deviceType=${selected?.type?.toString() ?: "none"} device=${selected?.productName?.toString() ?: "none"}",
         )
 
         return CapturePlan(

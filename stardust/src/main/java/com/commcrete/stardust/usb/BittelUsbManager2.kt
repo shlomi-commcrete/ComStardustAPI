@@ -17,6 +17,8 @@ import com.commcrete.stardust.stardust.model.toHex
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.HandlerObject
@@ -32,11 +34,27 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.Locale
 
 @SuppressLint("StaticFieldLeak")
 object BittelUsbManager2 : BittelProtocol {
+
+    private const val TAG = "BittelUsbManager2"
+
+    /**
+     * Data-link failures that repeat per packet or per recovery tick log once per run. A run ends
+     * at USB up, at a data teardown and at a recovery start or stop; each end logs one summary.
+     */
+    private val logOnce = LogOnce()
+
+    /** Same, for the audio (J-box) link: a run is one audio connect. */
+    private val audioLogOnce = LogOnce()
+
+    /** Ends a log run: one line with how often each once-logged failure repeated, if any did. */
+    private fun endLogRun(run: LogOnce, why: String) {
+        val repeats = run.reset()
+        if (repeats.isNotEmpty()) StardustLog.i(LogType.USB, TAG, "$why; repeats not logged: $repeats")
+    }
 
     var usbManager : UsbManager? = null
 
@@ -66,7 +84,7 @@ object BittelUsbManager2 : BittelProtocol {
     private val mDeviceList: MutableSet<UsbDevice> = mutableSetOf()
 
     fun init() {
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.USB, "ConfigDebug",
             "BittelUsbManager2 init ${DataManager.appContext}"
         )
         UsbDiag.log("init", "ENTER — resolving USB_SERVICE")
@@ -121,11 +139,11 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun connectToUnknownDevice (device: UsbDevice) {
-        StardustLog.d("ConfigDebug",
+        StardustLog.d(LogType.USB, "ConfigDebug",
             "connectToUnknownDevice deviceId=${device.deviceId} " +
                 "isJboxAudio=${isJboxAudioDevice(device)} isStardustData=${isStardustDataDevice(device)}"
         )
-        UsbDiag.log("connectToUnknownDevice", "ENTER ${UsbDiag.describe(device)} hasPermission=${UsbDiag.hasPermission(device)}")
+        UsbDiag.log("connectToUnknownDevice") { "ENTER ${UsbDiag.describe(device)} hasPermission=${UsbDiag.hasPermission(device)}" }
         UsbDiag.match("connectToUnknownDevice", device)
         if (isJboxAudioDevice(device)) {
             UsbDiag.log("connectToUnknownDevice", "→ AUDIO role (checked first; a name containing 'ft231x usb uart ptt' NEVER reaches the data branch)")
@@ -136,12 +154,11 @@ object BittelUsbManager2 : BittelProtocol {
             connectToDevice(device)
         } else {
             UsbDiag.verdict(
-                "connectToUnknownDevice reached with NO matching role for " +
-                    "${UsbDiag.describe(device)} — permission was granted and is now discarded."
+                "connectToUnknownDevice reached with NO matching role — permission was granted and is now discarded."
             )
             // Previously silent: the permission filter (contains) is looser than these matchers, so
             // a granted device could land here and simply be ignored.
-            StardustLog.w("ConfigDebug",
+            StardustLog.w(LogType.USB, "ConfigDebug",
                 "connectToUnknownDevice NO MATCH — permission was " +
                     "granted but neither the audio nor the data matcher accepted it; nothing will connect"
             )
@@ -152,7 +169,7 @@ object BittelUsbManager2 : BittelProtocol {
         // Tear down only the role that actually detached. Previously this unconditionally called
         // both disconnect() and disconnectAudio(), so unplugging the audio J-box also killed the
         // data link (and vice-versa). The per-type branches were also swapped.
-        UsbDiag.log("disconnectToUnknownDevice", "ENTER ${UsbDiag.describe(device)}")
+        UsbDiag.log("disconnectToUnknownDevice") { "ENTER ${UsbDiag.describe(device)}" }
         when {
             isJboxAudioDevice(device) -> {
                 UsbDiag.log("disconnectToUnknownDevice", "→ tearing down AUDIO only (data link untouched)")
@@ -204,7 +221,7 @@ object BittelUsbManager2 : BittelProtocol {
                 "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
         )
         if (user == null) {
-            StardustLog.w("ConfigDebug", "initDataToUsb ABORT — no logged-in user; USB link is open but the init handshake will NOT run")
+            StardustLog.w(LogType.CONNECTION, "ConfigDebug", "initDataToUsb ABORT — no logged-in user; USB link is open but the init handshake will NOT run")
             UsbDiag.verdict("USB port is OPEN but the handshake will not run: no logged-in user. The link will look connected and stay silent.")
             return
         }
@@ -216,7 +233,7 @@ object BittelUsbManager2 : BittelProtocol {
         // connected cable permanently reported as not connected. A real error is re-derived by the
         // handshake we now run; it no longer has to be inherited to be reported.
         if(!BleManager.isUSBConnected || (!freshLink && StardustInitConnectionHandler.hasUnsyncableError())) {
-            StardustLog.w("ConfigDebug",
+            StardustLog.w(LogType.CONNECTION, "ConfigDebug",
                 "initDataToUsb ABORT — isUSBConnected=${BleManager.isUSBConnected} " +
                     "hasUnsyncableError=${StardustInitConnectionHandler.hasUnsyncableError()}"
             )
@@ -262,7 +279,7 @@ object BittelUsbManager2 : BittelProtocol {
             )
             return
         }
-        StardustLog.d("ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "initDataToUsb → StardustInitConnectionHandler.start() (USB)")
 
         CoroutineScope(Dispatchers.Default).launch {
             // USB is another fresh-session entry — normalise singleton state exactly like the BLE
@@ -351,6 +368,7 @@ object BittelUsbManager2 : BittelProtocol {
     private fun startUsbRecovery(reason: String) {
         val device = attachedStardustDataDevice()
         if (device == null) {
+            StardustLog.i(LogType.USB, TAG, "USB recovery not starting ($reason): no data device on the bus")
             UsbDiag.log(
                 "recovery",
                 "NOT starting ($reason) — no data device on the bus; the device is gone, so an " +
@@ -363,11 +381,12 @@ object BittelUsbManager2 : BittelProtocol {
             return
         }
         recoveryPermissionRequested = false
-        UsbDiag.log(
-            "recovery",
+        endLogRun(logOnce, "USB recovery starting")
+        StardustLog.i(LogType.USB, TAG, "USB recovery START ($reason): data device still enumerated, re-probing it")
+        UsbDiag.log("recovery") {
             "START ($reason) — ${UsbDiag.describe(device)} is STILL enumerated, so no re-attach event " +
                 "will ever come; re-probing it instead"
-        )
+        }
         // The Disconnected that disconnect() just published STANDS. The verdict that got us here is
         // three unanswered pings — ~30s with nothing on the other end — so the user is told the link
         // is down, truthfully, and these re-probes run behind that. Publishing "searching" for as
@@ -381,11 +400,14 @@ object BittelUsbManager2 : BittelProtocol {
                 delay(backoff)
 
                 if (BleManager.isUSBConnected) {
+                    StardustLog.i(LogType.USB, TAG, "USB recovery STOP after $attempt ticks: data link up again")
                     UsbDiag.log("recovery", "STOP — the USB data link is up again")
                     break
                 }
                 val target = attachedStardustDataDevice()
                 if (target == null) {
+                    StardustLog.i(LogType.USB, TAG, "USB recovery STOP after $attempt ticks: data device left the bus")
+                    endLogRun(logOnce, "USB recovery stopped")
                     UsbDiag.log(
                         "recovery",
                         "STOP — the data device left the bus; an unplug is the user's decision, the " +
@@ -410,7 +432,7 @@ object BittelUsbManager2 : BittelProtocol {
                     recoveryPermissionRequested = true
                     UsbDiag.warn(
                         "recovery",
-                        "permission for ${UsbDiag.describe(target)} is no longer held — requesting it " +
+                        "permission for the data device is no longer held — requesting it " +
                             "ONCE (a request per tick would be a dialog storm)"
                     )
                     Scopes.getMainCoroutine().launch {
@@ -418,7 +440,7 @@ object BittelUsbManager2 : BittelProtocol {
                     }
                     continue
                 }
-                UsbDiag.log("recovery", "re-probe #$attempt — reopening the port for ${UsbDiag.describe(target)}")
+                UsbDiag.log("recovery") { "re-probe #$attempt — reopening the port for ${UsbDiag.describe(target)}" }
                 // connectToDevice directly, not connectToUnknownDevice: the role was already decided
                 // by attachedStardustDataDevice(). Main thread, matching the ATTACHED path.
                 Scopes.getMainCoroutine().launch { connectToDevice(target) }
@@ -430,6 +452,7 @@ object BittelUsbManager2 : BittelProtocol {
     @Synchronized
     private fun stopUsbRecovery(reason: String) {
         if (recoveryJob?.isActive != true) return
+        StardustLog.i(LogType.USB, TAG, "USB recovery cancelled ($reason)")
         UsbDiag.log("recovery", "CANCELLED — $reason")
         recoveryJob?.cancel()
         recoveryJob = null
@@ -452,6 +475,11 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     fun disconnect () {
+        StardustLog.i(LogType.USB, TAG,
+            "USB data teardown: port ${if (uartManager == null) "not open" else "open"}, " +
+                "isUSBConnected(before)=${BleManager.isUSBConnected}"
+        )
+        endLogRun(logOnce, "USB data teardown")
         UsbDiag.log(
             "disconnect",
             "DATA teardown — uartManager=${if (uartManager == null) "null (nothing open)" else "open"} " +
@@ -515,11 +543,14 @@ object BittelUsbManager2 : BittelProtocol {
         // the flags say USB is up but no port is open.
         val manager = uartManager
         if (manager == null) {
-            UsbDiag.warn(
-                "sendDataToUart",
-                "DROPPED ${bittelPackage.stardustOpCode} — uartManager is NULL while " +
-                    "isUSBConnected=${BleManager.isUSBConnected}"
-            )
+            // Per packet while the port is down: once per run.
+            if (logOnce.first("tx-dropped-no-port")) {
+                UsbDiag.warn(
+                    "sendDataToUart",
+                    "DROPPED ${bittelPackage.stardustOpCode} — uartManager is NULL while " +
+                        "isUSBConnected=${BleManager.isUSBConnected}"
+                )
+            }
             return
         }
         // Built here, on the caller's thread: the bytes are the packet as it was handed over
@@ -532,14 +563,14 @@ object BittelUsbManager2 : BittelProtocol {
     private fun writeToUart(manager: UARTManager, bittelPackage: StardustPackage, bytes: ByteArray) {
         val sent = manager.send(bytes)
         if (sent) {
-            UsbDiag.log("sendDataToUart", "TX ${bittelPackage.stardustOpCode}")
+            UsbDiag.log("sendDataToUart") { "TX ${bittelPackage.stardustOpCode}" }
             // Same tag as the radio's TX/RX events, so one filter lines writes up against them.
-            // logcat only: per-packet, would flood the log file
-            android.util.Log.d(
-                "AppEvent",
+            // Per-packet: keep at d.
+            StardustLog.d(LogType.PACKETS, "AppEvent") {
                 "USB write ${bittelPackage.stardustOpCode} part=${bittelPackage.stardustControlByte.stardustPartType}"
-            )
-        } else {
+            }
+        } else if (logOnce.first("tx-failed")) {
+            // Per packet on a dead port: once per run.
             UsbDiag.warn(
                 "sendDataToUart",
                 "TX FAILED ${bittelPackage.stardustOpCode} — the port rejected the write. If this " +
@@ -550,31 +581,33 @@ object BittelUsbManager2 : BittelProtocol {
 
 
     private fun connectToAudioDevice(device: UsbDevice) {
-        UsbDiag.log("connectToAudioDevice", "ENTER isConnectedAudio=$isConnectedAudio ${UsbDiag.describe(device)}")
+        UsbDiag.log("connectToAudioDevice") { "ENTER isConnectedAudio=$isConnectedAudio ${UsbDiag.describe(device)}" }
         if (isConnectedAudio) {
             UsbDiag.warn("connectToAudioDevice", "SKIPPED — isConnectedAudio is already true")
         }
         if(!isConnectedAudio) {
-            Timber.tag("SerialInOutputManager").d("connectToAudioDevice : ${device.productName}")
+            StardustLog.d(LogType.USB, "SerialInOutputManager", "connectToAudioDevice : ${device.productName}")
             UsbDiag.log(
                 "connectToAudioDevice",
                 "opening audio UART; previousAudioManager=${if (uartManagerAudio == null) "null" else "REPLACED (leak)"} " +
                     "— isConnectedAudio only flips true once an echo frame arrives"
             )
+            endLogRun(audioLogOnce, "USB audio connect")
             uartManagerAudio = UARTManager()
             val connectionStatus = uartManagerAudio?.connectDevice(
                 object : SerialInputOutputManager.Listener {
                 override fun onNewData(data: ByteArray) {
-                    UsbDiag.log("connectToAudioDevice.onNewData", "RX ${data.size} bytes isEcho=${data.toHex() == echoPackage.toHex()}")
+                    // Per audio chunk: lazy, so the two toHex() calls run only when the line is on.
+                    UsbDiag.log("connectToAudioDevice.onNewData") { "RX ${data.size} bytes isEcho=${data.toHex() == echoPackage.toHex()}" }
                     if (data.toHex() == echoPackage.toHex()) {
 //                        removeConnectionTimer()
-                        Timber.tag("SerialInOutputManager").d("uartManagerAudio : Found PTT Device")
+                        StardustLog.d(LogType.USB, "SerialInOutputManager", "uartManagerAudio : Found PTT Device")
                         audioDevice = device
                         tempDevice = null
                         isConnectedAudio = true
 //                        continueConnectingDevices ()
                     } else {
-                        Timber.tag("SerialInOutputManager").d("uartManagerAudio : Not PTT Device")
+                        StardustLog.d(LogType.USB, "SerialInOutputManager", "uartManagerAudio : Not PTT Device")
 //                        connectToDevice(context, device)
                     }
                     // Handle incoming data
@@ -582,9 +615,11 @@ object BittelUsbManager2 : BittelProtocol {
 
                 override fun onRunError(e: Exception) {
                     InboundWakeLock.onInbound(DataManager.appContext)
-                    Timber.tag("SerialInOutputManager").d("onRunError uartManagerAudio")
-                    Timber.tag("SerialInOutputManager").d(e.message)
-                    UsbDiag.error("connectToAudioDevice.onRunError", "audio serial IO thread died — tearing the audio link down", e)
+                    StardustLog.d(LogType.USB, "SerialInOutputManager", "onRunError uartManagerAudio")
+                    StardustLog.d(LogType.USB, "SerialInOutputManager", e.message.orEmpty())
+                    if (audioLogOnce.first("audio-io-died")) {
+                        UsbDiag.error("connectToAudioDevice.onRunError", "audio serial IO thread died — tearing the audio link down", e)
+                    }
                     // Same gap as the data link: without this, isConnectedAudio / isJboxAudioPresent
                     // stay true after the port dies, so isJboxAudioConnected() lies and the
                     // !isConnectedAudio guard blocks a genuine re-connect. Off the IO thread for the
@@ -606,19 +641,19 @@ object BittelUsbManager2 : BittelProtocol {
     }
 
     private fun connectToDevice(device: UsbDevice) {
-        Timber.tag("SerialInOutputManager").d("connectToDevice : ${device.productName}")
-        UsbDiag.log(
-            "connectToDevice",
+        StardustLog.d(LogType.USB, "SerialInOutputManager", "connectToDevice : ${device.productName}")
+        UsbDiag.log("connectToDevice") {
             "ENTER ${UsbDiag.describe(device)} previousUartManager=${if (uartManager == null) "null" else "REPLACED (old one leaks unless disconnected)"}"
-        )
+        }
         UsbDiag.linkState("connectToDevice.before")
         uartManager = UARTManager()
         val connectionStatus = uartManager?.connectDevice(object : SerialInputOutputManager.Listener {
             override fun onNewData(data: ByteArray) {
-                Timber.tag("SerialInOutputManager").d("onNewData : ${device.productName}")
-                UsbDiag.log("connectToDevice.onNewData", "RX ${data.size} bytes — the data link is genuinely alive")
+                // Per RX chunk: lazy forms, so nothing is built while the lines are off.
+                StardustLog.d(LogType.USB, "SerialInOutputManager") { "onNewData : ${device.productName}" }
+                UsbDiag.log("connectToDevice.onNewData") { "RX ${data.size} bytes — the data link is genuinely alive" }
 
-                Timber.tag("SerialInOutputManager").d("onNewData uartManager")
+                StardustLog.d(LogType.USB, "SerialInOutputManager", "onNewData uartManager")
 //                Timber.tag("SerialInputOutputManager").d(data.toHex())
                 // Handle incoming data
                 processReceivedData(data)
@@ -631,9 +666,12 @@ object BittelUsbManager2 : BittelProtocol {
             }
             override fun onRunError(e: Exception) {
                 InboundWakeLock.onInbound(DataManager.appContext)
-                Timber.tag("SerialInOutputManager").d("onRunError uartManager")
-                Timber.tag("SerialInOutputManager").d(e.message)
-                UsbDiag.error("connectToDevice.onRunError", "serial IO thread died — tearing the USB data link down", e)
+                StardustLog.d(LogType.USB, "SerialInOutputManager", "onRunError uartManager")
+                StardustLog.d(LogType.USB, "SerialInOutputManager", e.message.orEmpty())
+                // Once per run: a re-probed port on a dead radio can die again every recovery tick.
+                if (logOnce.first("data-io-died")) {
+                    UsbDiag.error("connectToDevice.onRunError", "serial IO thread died — tearing the USB data link down", e)
+                }
                 // The SerialInputOutputManager thread has exited: the port is dead (observed live as
                 // `IOException: USB get_status request failed` from CommonUsbSerialPort.testConnection).
                 // This used to only log, so isUSBConnected stayed true, uartManager stayed non-null
@@ -653,8 +691,8 @@ object BittelUsbManager2 : BittelProtocol {
                 }
             }
         }, device.deviceId)
-        Timber.tag("SerialInOutputManager").d("connectionStatus : $connectionStatus")
-        StardustLog.d("ConfigDebug", "connectToDevice UART open result=$connectionStatus")
+        StardustLog.d(LogType.USB, "SerialInOutputManager", "connectionStatus : $connectionStatus")
+        StardustLog.d(LogType.USB, "ConfigDebug", "connectToDevice UART open result=$connectionStatus")
         UsbDiag.log("connectToDevice", "UART open result=$connectionStatus")
         if(connectionStatus == true) {
             stardustDevice = device
@@ -662,7 +700,8 @@ object BittelUsbManager2 : BittelProtocol {
             // tick to notice (a tick that would otherwise open a SECOND UARTManager).
             stopUsbRecovery("port reopened")
             Scopes.getMainCoroutine().launch {
-                StardustLog.d("ConfigDebug", "USB up → isUSBConnected=true, initDataToUsb(), updateStatus() (this is what disconnects BLE)")
+                StardustLog.i(LogType.CONNECTION, TAG, "USB up → isUSBConnected=true, initDataToUsb(), updateStatus() (this is what disconnects BLE)")
+                endLogRun(logOnce, "USB up")
                 UsbDiag.log("connectToDevice", "USB UP — setting isUSBConnected=true; note initDataToUsb() runs BEFORE the BLE teardown in updateStatus()")
                 BleManager.isUSBConnected = true
                 BleManager.usbConnectionStatus.value = true
@@ -679,12 +718,15 @@ object BittelUsbManager2 : BittelProtocol {
                 )
             }
         }else {
-            Timber.tag("SerialInOutputManager").d("cant connect")
-            StardustLog.w("ConfigDebug", "connectToDevice FAILED — UART did not open; isUSBConnected stays false so BLE is NOT handed over")
-            UsbDiag.verdict(
-                "UART did not open for ${UsbDiag.describe(device)} — permission was granted but the " +
-                    "serial port could not be opened. See the UsbDiag 'UART' lines above for which step failed."
-            )
+            StardustLog.d(LogType.USB, "SerialInOutputManager", "cant connect")
+            // Once per run: the recovery loop re-probes a dead port every tick.
+            if (logOnce.first("uart-open-failed")) {
+                StardustLog.w(LogType.USB, "ConfigDebug", "connectToDevice FAILED — UART did not open; isUSBConnected stays false so BLE is NOT handed over")
+                UsbDiag.verdict(
+                    "UART did not open — permission was granted but the " +
+                        "serial port could not be opened. See the UsbDiag 'UART' lines above for which step failed."
+                )
+            }
         }
     }
 
@@ -726,8 +768,8 @@ object BittelUsbManager2 : BittelProtocol {
      */
     fun setUsbPortModeOnRadio() {
         val (src, dst) = requireLocalSrcDst() ?: return
-        // logcat only: per-poll-tick (PortUtils, 20s), would flood the log file
-        android.util.Log.d("ConfigDebug", "BittelUsbManager2.setUsbPortModeOnRadio → ${getUartPortType()} (radio to USB mode) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
+        // Per-poll tick (PortUtils, 20s): keep at d.
+        StardustLog.d(LogType.CONNECTION, "ConfigDebug", "BittelUsbManager2.setUsbPortModeOnRadio → ${getUartPortType()} (radio to USB mode) isUSBConnected=${BleManager.isUSBConnected} isBleConnected=${BleManager.isBleConnected}")
 
         val uartPort = getUartPortType().type.intToByteArray().reversedArray()
         val data = StardustPackageUtils.byteArrayToIntArray(uartPort)

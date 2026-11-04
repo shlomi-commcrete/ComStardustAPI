@@ -101,13 +101,18 @@ object OwnSosSender {
             }
         }
     }
-    internal var log: (String, Throwable?) -> Unit = { msg, e -> StardustLog.i(LOG_TAG, msg, e) }
+    internal var log: (String, Throwable?) -> Unit = { msg, e -> StardustLog.i(LogType.SOS, LOG_TAG, msg, e) }
+    /** The failures: a Nack, an unconfirmed transmission, a failed write or record. */
+    internal var logError: (String, Throwable?) -> Unit = { msg, e -> StardustLog.e(LOG_TAG, msg, e) }
     internal var dispatcher: CoroutineDispatcher = Dispatchers.Default
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
     private val lock = Any()
+
+    /** The retry loop runs every ~5 s while the radio is silent: its lines log once per SOS. */
+    private val logOnce = LogOnce()
     private var job: Job? = null
 
     /** An attempt was written, so the radio may hold this SOS even if it never answered. */
@@ -161,6 +166,7 @@ object OwnSosSender {
     private fun launch(write: () -> Boolean, record: suspend () -> Unit) {
         last = write to record
         written = false
+        logOnce.reset()
         drain()
         _state.value = State.Pending(Waiting.RADIO, attempts = 0)
         job = CoroutineScope(SupervisorJob() + dispatcher).launch { run(write, record) }
@@ -175,7 +181,9 @@ object OwnSosSender {
     /** RECEIVE_SOS 0x85 from the local radio: its answer to the SOS written to it. */
     internal fun onRadioReply(data: Array<Int>?) {
         // The byte only: an unobserved refusal shows up in the log the first time it happens.
-        log("radio SOS reply first byte=${data?.firstOrNull()}", null)
+        // Once per distinct byte per SOS: a radio answering garbage would otherwise log every attempt.
+        val first = data?.firstOrNull()
+        if (logOnce.first("reply-$first")) log("radio SOS reply first byte=$first", null)
         replies.trySend(data)
     }
 
@@ -190,6 +198,7 @@ object OwnSosSender {
     }
 
     private fun stop() {
+        logRepeats()
         job?.cancel()
         job = null
         written = false
@@ -208,18 +217,20 @@ object OwnSosSender {
                 Answer.ACCEPTED -> break
                 Answer.REFUSED -> {
                     _state.value = State.Refused
-                    log("SOS refused by the radio (Nack) after $attempts attempt(s)", null)
+                    logRepeats()
+                    logError("SOS refused by the radio (Nack) after $attempts attempt(s)", null)
                     return
                 }
                 Answer.NONE -> delay(RETRY_DELAY_MS)
             }
         }
         _state.value = State.Accepted
+        logRepeats()
         log("SOS accepted by the radio after $attempts attempt(s)", null)
 
         if (withTimeoutOrNull(TX_CONFIRM_MS) { awaitTransmission() } == null) {
             _state.value = State.AcceptedUnconfirmed
-            log("SOS accepted, transmission not reported within ${TX_CONFIRM_MS}ms", null)
+            logError("SOS accepted, transmission not reported within ${TX_CONFIRM_MS}ms", null)
             awaitTransmission()
         }
         _state.value = State.Sent
@@ -231,7 +242,7 @@ object OwnSosSender {
         } catch (e: Exception) {
             // The SOS is out; only its chat row is missing, and nothing depends on it to show the
             // SOS live.
-            log("SOS transmitted but could not be recorded", e)
+            logError("SOS transmitted but could not be recorded", e)
         }
     }
 
@@ -250,7 +261,7 @@ object OwnSosSender {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            log("SOS attempt $attempt failed to write; retrying", e)
+            if (logOnce.first("write-failed")) logError("SOS attempt $attempt failed to write; retrying", e)
             return Answer.NONE
         }
         return when (reply?.firstOrNull()) {
@@ -258,8 +269,10 @@ object OwnSosSender {
             REFUSED -> Answer.REFUSED
             else -> {
                 // Neither Ack nor Nack (or nothing): not an answer, so it is asked again.
-                log("SOS attempt $attempt unanswered (" +
-                    (if (reply == null) "no reply" else "reply ${reply.firstOrNull()}") + "); retrying", null)
+                if (logOnce.first("unanswered")) {
+                    log("SOS attempt $attempt unanswered (" +
+                        (if (reply == null) "no reply" else "reply ${reply.firstOrNull()}") + "); retrying", null)
+                }
                 Answer.NONE
             }
         }
@@ -287,6 +300,12 @@ object OwnSosSender {
                 event.type != StardustAppEventType.TXStart && xcvr != null && event.xcvr == xcvr -> return
             }
         }
+    }
+
+    /** One line for the retry lines [logOnce] held back, now this SOS has stopped retrying. */
+    private fun logRepeats() {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) log("SOS lines not repeated: $repeats", null)
     }
 
     private fun drain() {

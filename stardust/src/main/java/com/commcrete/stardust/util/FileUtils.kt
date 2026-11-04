@@ -161,7 +161,7 @@ object FileUtils {
             try {
                 file.copyTo(File(exportDir, file.name), overwrite = true)
             } catch (e: IOException) {
-                StardustLog.w(TAG, "Logs export: could not copy ${file.name}", e)
+                StardustLog.w(LogType.FILES, TAG, "Logs export: could not copy ${file.name}", e)
                 problems += "${file.name} could not be copied: ${e.javaClass.simpleName}"
                 null
             }
@@ -174,7 +174,7 @@ object FileUtils {
         val problemsFile = if (problems.isEmpty()) null else try {
             File(exportDir, "export_problems.txt").apply { writeText(problems.joinToString("\n", postfix = "\n")) }
         } catch (e: IOException) {
-            StardustLog.w(TAG, "Logs export: could not write the problems list", e)
+            StardustLog.w(LogType.FILES, TAG, "Logs export: could not write the problems list", e)
             null
         }
 
@@ -208,12 +208,12 @@ object FileUtils {
                 null
             }
         } catch (e: IOException) {
-            StardustLog.w(TAG, "logcat could not be started", e)
+            StardustLog.w(LogType.FILES, TAG, "logcat could not be started", e)
             null
         }
 
         if (exitCode != 0 || logFile.length() == 0L) {
-            StardustLog.w(TAG, "logcat dump empty or failed, exit code $exitCode")
+            StardustLog.w(LogType.FILES, TAG, "logcat dump empty or failed, exit code $exitCode")
             logFile.delete()
             return null
         }

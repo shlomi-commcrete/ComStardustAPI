@@ -4,8 +4,9 @@ import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.audio.AudioDsp
-import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.File
@@ -317,10 +318,10 @@ internal object AudioFileLoader {
             else -> bytesToShortsLe(pcmBytes)
         }
 
-        Timber.Forest.tag(TAG).d(
-            "Decoded '%s' via MediaCodec (%s): %d Hz, %d ch, %d samples (%d ms)",
-            file.name, mime, sampleRate, channels, samples.size / max(channels, 1),
-            if (sampleRate > 0) (samples.size / max(channels, 1)) * 1000L / sampleRate else 0L
+        StardustLog.d(
+            LogType.PTT, TAG,
+            "Decoded '${file.name}' via MediaCodec ($mime): $sampleRate Hz, $channels ch, ${samples.size / max(channels, 1)} samples " +
+                "(${if (sampleRate > 0) (samples.size / max(channels, 1)) * 1000L / sampleRate else 0L} ms)"
         )
 
         return ParsedWav(

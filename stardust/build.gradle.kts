@@ -104,9 +104,6 @@ dependencies {
     //Location
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
-    //Logging
-    implementation ("com.jakewharton.timber:timber:5.0.1")
-
     //Data
     implementation ("com.squareup.retrofit2:converter-gson:2.9.0")
 

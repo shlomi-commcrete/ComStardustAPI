@@ -54,6 +54,9 @@ class FileReceiver(
     private var lastReportedProgress: Int = 0
     private val lostPackagesIndex: MutableSet<Int> = mutableSetOf()
 
+    /** Per-package lines log once per transfer; one receiver is one transfer, so it never resets mid-run. */
+    private val logOnce = LogOnce()
+
     /** Written by [start] on an IO thread, read by the progress callbacks on the main one. */
     @Volatile var data: FileUtils.FileTransferData.Receive
 
@@ -127,6 +130,7 @@ class FileReceiver(
      */
     fun start() {
         val appId = RegisteredUserUtils.currentUserFlow.value?.appId ?: return
+        StardustLog.i(LogType.FILES, "FileReceiver", "receiving file: ${firstPackage.total} package(s), ${firstPackage.spare} parity")
         CoroutineScope(Dispatchers.IO).launch {
             rowMutex.withLock {
                 if (outcome.get() != Outcome.NONE || isDisposed) return@launch
@@ -166,7 +170,9 @@ class FileReceiver(
             // Outside the codeword the start announced: not a package of this transfer. Counting
             // it would push progress to 100% with real packages still missing.
             if (index !in 0 until firstPackage.total) {
-                StardustLog.w("FileReceiver", "package $index outside 0..${firstPackage.total - 1}; dropped")
+                if (logOnce.first("out-of-range")) {
+                    StardustLog.w(LogType.FILES, "FileReceiver", "package $index outside 0..${firstPackage.total - 1}; dropped")
+                }
                 return@launch
             }
             // A repeat (the radio delivers some twice) adds nothing, and counting it would end the
@@ -200,7 +206,7 @@ class FileReceiver(
         lateWindow = lane.launch {
             delay(LATE_WINDOW_MS)
             if (isDisposed) return@launch
-            StardustLog.d("FileReceiver", "late window closed")
+            StardustLog.d(LogType.FILES, "FileReceiver", "late window closed")
             removeReceiveTimer()
             dataList.clear()
             receivedIndices.clear()
@@ -215,7 +221,8 @@ class FileReceiver(
      */
     private fun reopen() {
         if (!outcome.compareAndSet(Outcome.FAILED, Outcome.NONE)) return
-        StardustLog.d("FileReceiver", "transfer resumed")
+        // The recovery from a logged failure, so it belongs on the same timeline.
+        StardustLog.i(LogType.FILES, "FileReceiver", "transfer resumed after a failure: ${receivedIndices.size} of ${firstPackage.total} package(s) in")
         lateWindow?.cancel()
         lateWindow = null
         CoroutineScope(Dispatchers.IO).launch {
@@ -229,7 +236,7 @@ class FileReceiver(
                     if (!DataManager.getAppRepo().reopenIncomingTransfer(id)) {
                         // The failure write had not landed yet and now never will (it checks
                         // the outcome), so the row is still RECEIVING.
-                        StardustLog.d("FileReceiver", "row $id not reopened; it was not failed")
+                        StardustLog.d(LogType.FILES, "FileReceiver", "row $id not reopened; it was not failed")
                     }
                 } catch (e: Exception) {
                     StardustLog.e("FileReceiver", "Error reopening in-flight row $id", e)
@@ -258,6 +265,7 @@ class FileReceiver(
     private fun removeReceiveTimer() {
         if (isDisposed) return
         isDisposed = true
+        logRepeats()
         gapTimer?.cancel()
         gapTimer = null
         // Also when called from the window's own job: cancelling takes effect at its next
@@ -289,6 +297,7 @@ class FileReceiver(
     fun dispose() {
         lane.launch {
             val settled = outcome.get() != Outcome.NONE
+            if (!isDisposed) logRepeats()
             isDisposed = true
             gapTimer?.cancel()
             gapTimer = null
@@ -426,7 +435,7 @@ class FileReceiver(
      */
     private fun updateFailure(failure: FileFailure) {
         if (!outcome.compareAndSet(Outcome.NONE, Outcome.FAILED)) return
-        StardustLog.w("FileReceiver", "transfer failed: reason=$failure")
+        StardustLog.w(LogType.FILES, "FileReceiver", "transfer failed: reason=$failure")
         val lateCanUndo = failure == FileFailure.MISSING || failure == FileFailure.DISCONNECTED
         if (lateCanUndo && !isDisposed) enterLateWindow() else removeReceiveTimer()
         val snapshot = data
@@ -480,7 +489,7 @@ class FileReceiver(
      */
     fun failInvalidStart() {
         StardustLog.w(
-            "FileReceiver",
+            LogType.FILES, "FileReceiver",
             "invalid file start: total=${firstPackage.total} spare=${firstPackage.spare} " +
                 "spareData=${firstPackage.spareData}",
         )
@@ -519,7 +528,7 @@ class FileReceiver(
                     writeDataToFile(outputStream)
                 }
             }
-            StardustLog.d("FileReceiver", "File saved successfully")
+            StardustLog.i(LogType.FILES, "FileReceiver", "file received: ${receivedIndices.size} of ${firstPackage.total} package(s)")
             saveToMessages(targetFile)
             // The file is built on [lane]; the host has always heard of it on main.
             val snapshot = data
@@ -572,8 +581,15 @@ class FileReceiver(
         }
 
         if (lostPackagesIndex.isNotEmpty()) {
-            StardustLog.d("FileReceiver", "Missing packages: $lostPackagesIndex")
+            // Lazy: called per package, and the set grows with the transfer.
+            StardustLog.d(LogType.FILES, "FileReceiver") { "Missing packages: $lostPackagesIndex" }
         }
+    }
+
+    /** One line for the per-package lines [logOnce] held back; called as the receiver is sealed. */
+    private fun logRepeats() {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) StardustLog.w(LogType.FILES, "FileReceiver", "package lines not repeated: $repeats")
     }
 
     /** The start package's original size for the row: its 0 ("unknown") is the row's null. */
@@ -589,7 +605,7 @@ class FileReceiver(
         val announced = originalSizeOrNull()
         // Sizes only, never the name: worth seeing in Dev Logs when a sender's figure is off.
         if (announced != null && announced != landed) {
-            StardustLog.w("FileReceiver", "received size differs from announced: $landed vs $announced")
+            StardustLog.w(LogType.FILES, "FileReceiver", "received size differs from announced: $landed vs $announced")
         }
         return landed
     }
@@ -618,7 +634,7 @@ class FileReceiver(
                     if (DataManager.getAppRepo().markIncomingTransferFailed(id, failure)) return
                     // Refused: the row settled by another path already, so it is not ours to
                     // overwrite and a second row would contradict it.
-                    StardustLog.d("FileReceiver", "failure not recorded on $id; row already settled")
+                    StardustLog.d(LogType.FILES, "FileReceiver", "failure not recorded on $id; row already settled")
                     return
                 } catch (e: Exception) {
                     StardustLog.e("FileReceiver", "Error failing in-flight row $id; inserting instead", e)
@@ -680,7 +696,7 @@ class FileReceiver(
                         if (DataManager.getAppRepo()
                                 .markIncomingTransferReceived(id, file.absolutePath, summary, landedSize)
                         ) return@launch
-                        StardustLog.d("FileReceiver", "arrival not recorded on $id; row already settled")
+                        StardustLog.d(LogType.FILES, "FileReceiver", "arrival not recorded on $id; row already settled")
                         return@launch
                     } catch (e: Exception) {
                         StardustLog.e("FileReceiver", "Error settling in-flight row $id; inserting instead", e)

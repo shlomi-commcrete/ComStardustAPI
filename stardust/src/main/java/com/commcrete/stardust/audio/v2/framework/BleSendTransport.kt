@@ -1,10 +1,12 @@
 package com.commcrete.stardust.audio.v2.framework
 
-import android.util.Log
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.codec.CodecRegistry
 import com.commcrete.stardust.audio.v2.application.port.SendTransport
 import com.commcrete.stardust.audio.v2.domain.EncodedFrame
+import com.commcrete.stardust.audio.v2.domain.RecordingId
 import com.commcrete.stardust.enums.FunctionalityType
 import com.commcrete.stardust.stardust.StardustPackageUtils
 import com.commcrete.stardust.stardust.model.StardustControlByte
@@ -31,20 +33,44 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
     /** Plain var: the transmit gate is this class's only caller, one frame at a time. */
     private var lastLoggedRadio: Pair<Long, Int>? = null
 
+    /**
+     * Per-frame drops log once per recording. A frame from a new owner starts a new run: the previous
+     * run's repeats are summarised then, so the last recording's summary waits for the next one.
+     * Plain var for the same single-caller reason as [lastLoggedRadio].
+     */
+    private val logOnce = LogOnce()
+    private var logOnceOwner: RecordingId? = null
+
     override suspend fun send(frame: EncodedFrame) {
+        if (frame.owner != null && frame.owner != logOnceOwner) {
+            logOnceOwner = frame.owner
+            for ((key, repeats) in logOnce.reset()) {
+                if (key == KEY_NO_OPCODE) {
+                    StardustLog.e(AppEvents.TX_RX_TRACE, "ptt frame DROPPED x$repeats more: $key")
+                } else {
+                    StardustLog.w(LogType.PTT, AppEvents.TX_RX_TRACE, "ptt frame DROPPED x$repeats more: $key")
+                }
+            }
+        }
         val owner = frame.owner ?: run {
-            // logcat only: per-frame, would flood the log file
-            Log.w(AppEvents.TX_RX_TRACE, "ptt frame DROPPED: no owner")
+            // Logs once per recording; summarised when the next recording's first frame arrives.
+            if (logOnce.first("no owner")) {
+                StardustLog.w(LogType.PTT, AppEvents.TX_RX_TRACE, "ptt frame DROPPED: no owner")
+            }
             return
         }
         val route = routing.get(owner) ?: run {
-            // logcat only: per-frame, would flood the log file
-            Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: route released")
+            // Logs once per recording; summarised when the next recording's first frame arrives.
+            if (logOnce.first("route released")) {
+                StardustLog.w(LogType.PTT, AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: route released")
+            }
             return
         }
         val radio = CarriersUtils.getRadioToSend(route.carrier, functionalityType = FunctionalityType.PTT) ?: run {
-            // logcat only: per-frame, would flood the log file
-            Log.w(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: no PTT radio for carrier ${route.carrier?.index}")
+            // Logs once per recording; summarised when the next recording's first frame arrives.
+            if (logOnce.first("no PTT radio")) {
+                StardustLog.w(LogType.PTT, AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: no PTT radio for RD ${route.carrier?.index}")
+            }
             return
         }
         // Once per recording, and again if Auto resolves to a different radio mid-recording.
@@ -52,6 +78,7 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
         if (resolved != lastLoggedRadio) {
             lastLoggedRadio = resolved
             StardustLog.d(
+                LogType.PTT,
                 AppEvents.TX_RX_TRACE,
                 "ptt v2 ${owner.value} sends on carrier ${radio.index} (${radio.deliveryType}), requested ${route.carrier?.index ?: "auto"}",
             )
@@ -59,7 +86,14 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
 
         // Resolve the wire opcode from the frame's codec (CODEC2 → SEND_PTT 0x15, WavTokenizer → SEND_PTT_AI 0x3A).
         val opcode = CodecRegistry.byCodecId(frame.codecId).sendOpcode
-        val stardustOpCode = pttOpCodeFor(opcode) ?: return
+        val stardustOpCode = pttOpCodeFor(opcode) ?: run {
+            // The port returns nothing, so the drop is logged: once per recording, summarised when
+            // the next recording's first frame arrives.
+            if (logOnce.first(KEY_NO_OPCODE)) {
+                StardustLog.e(AppEvents.TX_RX_TRACE, "ptt frame of v2 ${owner.value} DROPPED: no PTT opcode for codec ${frame.codecId}")
+            }
+            return
+        }
 
         val audioIntArray = StardustPackageUtils.byteArrayToIntArray(frame.payload)
         // SUFFIX-collision randomization is a SEND_PTT (CODEC2) concern only — never mutate AI token payloads.
@@ -112,6 +146,9 @@ class BleSendTransport(private val routing: PttSendRouting) : SendTransport {
     }
 
     private companion object {
+        /** The one [logOnce] key whose first line is an e; the others are w. */
+        const val KEY_NO_OPCODE = "no PTT opcode for codec"
+
         // Same tail-collision sentinel as legacy Codec2SendPipeline.SUFFIX — kept identical for wire compat.
         val SUFFIX = arrayOf(-50, -10, -128, -4, -17, 104, 0, 0)
     }

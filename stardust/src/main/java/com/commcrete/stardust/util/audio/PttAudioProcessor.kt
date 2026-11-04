@@ -1,6 +1,6 @@
 package com.commcrete.stardust.util.audio
 
-import android.util.Log
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.filter.RnNoiseProcessor
 import com.commcrete.stardust.util.audio.filters.AGCFilter
@@ -175,8 +175,8 @@ object PttAudioProcessor {
         val filterChainMs = System.currentTimeMillis() - startMs
 
         if (nativeRate == targetRate) {
-            // logcat only: per-buffer, would flood the log file
-            Log.d(TAG_LATENCY, "process(): ${pcmArray.size} samples, filterChain ${filterChainMs}ms, no resample needed")
+            // Per-buffer: keep at d.
+            StardustLog.d(LogType.PTT, TAG_LATENCY) { "process(): ${pcmArray.size} samples, filterChain ${filterChainMs}ms, no resample needed" }
             return filtered
         }
 
@@ -189,12 +189,11 @@ object PttAudioProcessor {
         }
         val resampleMs = System.currentTimeMillis() - resampleStartMs
         val totalMs = System.currentTimeMillis() - startMs
-        // logcat only: per-buffer, would flood the log file
-        Log.d(
-            TAG_LATENCY,
+        // Per-buffer: keep at d.
+        StardustLog.d(LogType.PTT, TAG_LATENCY) {
             "process(): ${pcmArray.size} samples $nativeRate->$targetRate, total ${totalMs}ms " +
                 "(filterChain ${filterChainMs}ms incl. RNNoise, resample ${resampleMs}ms)"
-        )
+        }
         return result
     }
 
@@ -226,7 +225,7 @@ object PttAudioProcessor {
      */
     fun reset() = synchronized(this) {
         runCatching { rnNoiseProcessor?.release() }
-            .onFailure { StardustLog.w(TAG, "RnNoise release failed", it) }
+            .onFailure { StardustLog.w(LogType.PTT, TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
         notchFilter = null
@@ -398,7 +397,7 @@ object PttAudioProcessor {
      */
     private fun releaseFiltersInternal() {
         runCatching { rnNoiseProcessor?.release() }
-            .onFailure { StardustLog.w(TAG, "RnNoise release failed", it) }
+            .onFailure { StardustLog.w(LogType.PTT, TAG, "RnNoise release failed", it) }
         rnNoiseProcessor = null
         hpf = null
         notchFilter = null

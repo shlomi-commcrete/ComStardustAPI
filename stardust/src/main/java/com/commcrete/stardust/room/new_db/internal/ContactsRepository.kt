@@ -12,6 +12,8 @@ import com.commcrete.stardust.room.new_db.contact.ContactType
 import com.commcrete.stardust.room.new_db.contact.ContactsDao
 import com.commcrete.stardust.room.new_db.contact.DeviceEntity
 import com.commcrete.stardust.room.new_db.contact.FullContactData
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -100,6 +102,8 @@ internal class ContactsRepository(
             val inserted = contactsDao.addContacts(contacts)
             val existingGroupChatIds = chatsDao.getAllGroupChatIds()
             val allMemberIds = contactsDao.getAllMemberContactIds()
+            // Per contact: an import can skip many, so the skip logs once per batch.
+            val logOnce = LogOnce()
 
             inserted.forEach { (data, contactId) ->
                 // addContact returns null when the entry had no resolvable
@@ -107,7 +111,9 @@ internal class ContactsRepository(
                 // creating a chat/participant referencing it would trip
                 // the chat_participants.contact_id foreign key.
                 if (contactId == null) {
-                    StardustLog.w(TAG, "insertContactsWithChats: skipping chat creation — unresolvable primary ID")
+                    if (logOnce.first("no-primary-id")) {
+                        StardustLog.w(LogType.STORAGE, TAG, "insertContactsWithChats: skipping chat creation — unresolvable primary ID")
+                    }
                     return@forEach
                 }
 
@@ -132,6 +138,11 @@ internal class ContactsRepository(
                 syncChatImage(data.contact.type, contactId, data.contact.image)
 
                 recordInsert(data, contactId, priorOwners, priorHoldings, source, batchId)
+            }
+            // An if, not ?.let: this is the lambda's value, and it must stay Unit.
+            val skipped = logOnce.reset()["no-primary-id"]
+            if (skipped != null) {
+                StardustLog.w(LogType.STORAGE, TAG, "insertContactsWithChats: skipped chat creation for $skipped more contact(s)")
             }
         }
 
@@ -163,7 +174,7 @@ internal class ContactsRepository(
 
             val contactId = contactsDao.addContact(contact)
             if (contactId == null) {
-                StardustLog.w(TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID")
+                StardustLog.w(LogType.STORAGE, TAG, "insertContactWithChat: skipping chat creation — unresolvable primary ID")
                 return@withContext
             }
             forgetDisplacedIds(contact, contactId, priorOwners, priorHoldings)

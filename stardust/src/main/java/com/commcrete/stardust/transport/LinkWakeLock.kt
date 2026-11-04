@@ -4,6 +4,7 @@ import android.os.PowerManager
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -76,10 +77,10 @@ internal object LinkWakeLock {
         } catch (e: RuntimeException) {
             // Not returned to anyone: the link works without the lock, it only stalls with the
             // screen off. SecurityException if the host process lacks WAKE_LOCK.
-            StardustLog.w(TAG, "Link wake lock unavailable; screen-off keepalive will stall", e)
+            StardustLog.w(LogType.CONNECTION, TAG, "Link wake lock unavailable; screen-off keepalive will stall", e)
             return
         }
-        StardustLog.d(TAG, "Link wake lock held")
+        StardustLog.d(LogType.CONNECTION, TAG, "Link wake lock held")
         renewJob?.cancel()
         renewJob = Scopes.getDefaultCoroutine().launch {
             while (isActive) {
@@ -106,7 +107,7 @@ internal object LinkWakeLock {
         wakeLock?.let {
             if (it.isHeld) {
                 runCatching { it.release() }
-                StardustLog.d(TAG, "Link wake lock released")
+                StardustLog.d(LogType.CONNECTION, TAG, "Link wake lock released")
             }
         }
     }

@@ -7,10 +7,10 @@ import com.commcrete.stardust.stardust.model.StardustControlByte
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.StardustPackageParser
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.connectivity.InboundWakeLock
 import com.commcrete.stardust.util.connectivity.PortUtils
-import timber.log.Timber
 
 object StardustPackageUtils {
 
@@ -39,7 +39,7 @@ object StardustPackageUtils {
     init {
         try {
 
-            StardustLog.d("ConfigDebug","StardustPackageUtils init")
+            StardustLog.d(LogType.PACKETS, "ConfigDebug","StardustPackageUtils init")
             bittelPackageHandler = DataManager.getStardustPackageHandler()
         }catch (e : Exception) {
             e.printStackTrace()
@@ -763,8 +763,8 @@ object StardustPackageUtils {
         lastByteArray = byteArray
 //            lastByteArray?.let { logByteArray("handlePackageReceivedlastByteArray $randomID", it) }
 //            logByteArray("handlePackageReceivedbyteArray $randomID", byteArray)
-        // logcat only: per-chunk, would flood the log file
-        android.util.Log.d("handlePackageReceived $randomID", "handlePackageReceived")
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PACKETS, "handlePackageReceived") { "handlePackageReceived $randomID" }
 
         // Parse under the lock; extract what to hand off. All packagesList access is confined here.
         var bittelPackage: StardustPackage? = null
@@ -797,14 +797,14 @@ object StardustPackageUtils {
         // behind slow package handling (ANR). Spare bytes are re-fed first (unchanged ordering).
         spareData?.let {
             if(it.isNotEmpty()){
-                // logcat only: per-chunk, would flood the log file
-                android.util.Log.d("ConfigDebug", "reassembly: spare bytes present size=${it.size} — recursing")
+                // Per-chunk: keep at d.
+                StardustLog.d(LogType.PACKETS, "ConfigDebug") { "reassembly: spare bytes present size=${it.size} — recursing" }
                 handlePackageReceived(it, randomID)
             }
         }
         bittelPackage?.let {
-            // logcat only: per-packet, would flood the log file
-            android.util.Log.d("ConfigDebug", "reassembly COMPLETE opCode=${it.stardustOpCode} dataNull=${it.data == null} dataSize=${it.data?.size} — dispatching")
+            // Per-packet: keep at d.
+            StardustLog.d(LogType.PACKETS, "ConfigDebug") { "reassembly COMPLETE opCode=${it.stardustOpCode} dataNull=${it.data == null} dataSize=${it.data?.size} — dispatching" }
             bittelPackageHandler?.handleStardustPackage( it, randomID)
         }
 
@@ -817,7 +817,7 @@ object StardustPackageUtils {
         for (element in bDataCodec) {
             stringBuilder.append("${element},")
         }
-        Timber.tag(tagTitle).d(stringBuilder.toString())
+        StardustLog.d(LogType.PACKETS, tagTitle, stringBuilder.toString())
     }
 
     // Both reassembly timeouts below must stay shorter than InboundWakeLock.HOLD_MS, or a partial

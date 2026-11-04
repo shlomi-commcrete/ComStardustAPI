@@ -6,6 +6,7 @@ import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.LicenseLimitationsUtil
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
 import com.commcrete.stardust.util.StardustLog
@@ -22,6 +23,7 @@ internal object StardustIncomingConfigurationHandler {
         val cfg = StardustConfigurationParser().parseConfiguration(packet, ConfigurationUtils.firmwareVersion)
         if (cfg == null) {
             StardustLog.w(
+                LogType.CONFIG,
                 "ConfigDebug",
                 "parseConfiguration returned NULL opCode=${packet.stardustOpCode} " +
                     "dataLen=${packet.getDataSizeLength()} dataSize=${packet.data?.size}"
@@ -40,6 +42,9 @@ internal object StardustIncomingConfigurationHandler {
         // After setDefaults: the preset check reads the RD selection it just saved.
         ConnectionManager.refreshConfigWarnings()
 
+        // The failure is the w line above; together they are the config-read outcome, for the
+        // handshake and for every later re-read (preset change, UPDATE_PRESET_DATA).
+        StardustLog.i(LogType.CONFIG, "ConfigDebug", "configuration read and applied")
         return ApplyResult(
             applied = true,
             hasPresetsWithoutConfig = cfg.presetsWithoutConfig().isNotEmpty()

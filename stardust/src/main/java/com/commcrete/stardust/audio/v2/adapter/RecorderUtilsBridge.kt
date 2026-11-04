@@ -1,5 +1,6 @@
 package com.commcrete.stardust.audio.v2.adapter
 
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.audio.v2.application.send.PttSendCoordinator
@@ -16,7 +17,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
-import timber.log.Timber
 
 /**
  * Adapter ring — the seam `RecorderUtils` calls when the feature flag is on, in place of the legacy
@@ -65,8 +65,8 @@ class RecorderUtilsBridge(
                 // loaded) must not kill the loop and take PTT down for the rest of the process.
                 runCatching { handle(cmd) }
                     .onFailure {
-                        Timber.tag(TAG).e(it, "PTT v2 command failed: ${cmd::class.simpleName}")
-                        StardustLog.w(RecorderUtils.PTT_TRACE, "bridge ${cmd::class.simpleName} failed: ${it.javaClass.simpleName}")
+                        StardustLog.e(TAG, "PTT v2 command failed: ${cmd::class.simpleName}", it)
+                        StardustLog.w(LogType.PTT, RecorderUtils.PTT_TRACE, "bridge ${cmd::class.simpleName} failed: ${it.javaClass.simpleName}")
                         if (cmd is Start) {
                             RecorderUtils.notifyPttRecordingError(errorFor(it), cmd.recordingId)
                         }
@@ -108,7 +108,7 @@ class RecorderUtilsBridge(
         val id = send.restart(cmd.codecId, StreamKey(cmd.destination)) { newId ->
             routing.register(newId, SendRoute(cmd.source, cmd.destination, cmd.carrier))
         }
-        StardustLog.d(RecorderUtils.PTT_TRACE, "bridge start ${cmd.recordingId} -> v2 ${id.value}, replaced v2 ${currentId?.value}")
+        StardustLog.i(LogType.PTT, RecorderUtils.PTT_TRACE, "PTT v2 session started: ${cmd.recordingId} -> v2 ${id.value}, codec ${cmd.codecId}, replaced v2 ${currentId?.value}")
         currentId = id
         // After the recording finalizes (incl. its post-key-up drain + mirror WAV) AND the transmit gate
         // has committed every frame: release routing and persist the SENT history row. Routing must
@@ -126,7 +126,7 @@ class RecorderUtilsBridge(
                 sealedAs
             }
             if (reason == null) {
-                Timber.tag(TAG).w("recording $id never finished within ${finalizeTimeoutMs}ms; releasing anyway")
+                StardustLog.w(LogType.PTT, TAG, "recording $id never finished within ${finalizeTimeoutMs}ms; releasing anyway")
             }
             routing.release(id)
             sendStore.onFinalized(id, cmd.chatId, cmd.destination, cmd.codecId, cmd.startedAtMs, cmd.carrier)
@@ -134,7 +134,12 @@ class RecorderUtilsBridge(
             // watchdog discarded the tail; ERROR/CANCELLED mean the pipeline gave up; null means it
             // never finished at all — none of those are "sent". A more specific error (e.g.
             // MIC_UNAVAILABLE) already reported wins over this one.
-            StardustLog.d(RecorderUtils.PTT_TRACE, "bridge v2 ${id.value} (${cmd.recordingId}) finished: $reason")
+            val durationMs = System.currentTimeMillis() - cmd.startedAtMs
+            if (reason == TerminalReason.LAST) {
+                StardustLog.i(LogType.PTT, RecorderUtils.PTT_TRACE, "PTT v2 session ended: v2 ${id.value} (${cmd.recordingId}) $reason, codec ${cmd.codecId}, ${durationMs}ms key-down to sent")
+            } else {
+                StardustLog.e(RecorderUtils.PTT_TRACE, "PTT v2 session failed: v2 ${id.value} (${cmd.recordingId}) $reason, codec ${cmd.codecId}, after ${durationMs}ms")
+            }
             if (reason == TerminalReason.LAST) {
                 RecorderUtils.notifyPttRecordingSent(cmd.recordingId)
             } else {
@@ -153,10 +158,10 @@ class RecorderUtilsBridge(
 
     private suspend fun handleStop() {
         val id = currentId ?: run {
-            StardustLog.d(RecorderUtils.PTT_TRACE, "bridge stop ignored: no current recording")
+            StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "bridge stop ignored: no current recording")
             return
         }
-        StardustLog.d(RecorderUtils.PTT_TRACE, "bridge stop v2 ${id.value}")
+        StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "bridge stop v2 ${id.value}")
         currentId = null
         send.finish(id)
     }

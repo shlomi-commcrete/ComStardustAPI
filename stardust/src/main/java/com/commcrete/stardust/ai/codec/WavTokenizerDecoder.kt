@@ -1,7 +1,8 @@
 package com.commcrete.stardust.ai.codec
 
 
-import android.util.Log
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.room.StardustStorage
 import com.commcrete.stardust.util.DataManager
@@ -33,9 +34,27 @@ class WavTokenizerDecoder() {
     val outFile = File(DataManager.appContext.cacheDir, "decoded_data.txt")
     val listEnergy = mutableListOf<String>()
 
+    /** Per-chunk failure lines log once per stream; [startLogRun] summarises and resets them. */
+    private val logOnce = LogOnce()
+
+    /** The one [logOnce] key whose first line is an e; the others are w. */
+    private val KEY_DECODE_FAILED = "decode failed"
+
+    /**
+     * Starts a new log run where a stream starts: summarises the per-chunk failures repeated since the
+     * last run, each at its first line's level, then forgets them. Streams share this decoder, so a run
+     * can also cover an interleaved stream's chunks.
+     */
+    internal fun startLogRun() {
+        for ((key, repeats) in logOnce.reset()) {
+            if (key == KEY_DECODE_FAILED) StardustLog.e(TAG, "$key x$repeats more")
+            else StardustLog.w(LogType.PTT, TAG, "$key x$repeats more")
+        }
+    }
+
 
     private val module: Module by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        StardustLog.d(TAG, "Loading WavTokenizerDecoder model")
+        StardustLog.d(LogType.PTT, TAG, "Loading WavTokenizerDecoder model")
         val modelAssetName = "codes_to_wav_large_android.ptl"
         LiteModuleLoader.load(assetFilePath(modelAssetName))
     }
@@ -106,8 +125,8 @@ class WavTokenizerDecoder() {
             val duration = measureTime {
                 output = selectedModule.forward(IValue.from(codes)).toTensor()
             }
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Decoding took $duration")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Decoding took $duration" }
 
             val modelOut = output.dataAsFloatArray
             // Decoder normally appends ~2400 tail samples we trim off. If a
@@ -128,8 +147,10 @@ class WavTokenizerDecoder() {
                 audioData = runCatching {
                     handleSmart(previousTokens, audioData, fixedData, output)
                 }.getOrElse { t ->
-                    // logcat only: per-chunk, would flood the log file
-                    Log.w(TAG, "handleSmart failed; using untrimmed audio", t)
+                    // Logs once per stream; summarised at the next stream's startLogRun().
+                    if (logOnce.first("handleSmart failed")) {
+                        StardustLog.w(LogType.PTT, TAG, "handleSmart failed; using untrimmed audio", t)
+                    }
                     audioData
                 }
             }
@@ -140,8 +161,10 @@ class WavTokenizerDecoder() {
                     runCatching {
                         fixAudioAlignment2(shortArrayToFloatArray(previousSamples), audioData)
                     }.getOrElse { t ->
-                        // logcat only: per-chunk, would flood the log file
-                        Log.w(TAG, "fixAudioAlignment2 failed; using unaligned audio", t)
+                        // Logs once per stream; summarised at the next stream's startLogRun().
+                        if (logOnce.first("fixAudioAlignment2 failed")) {
+                            StardustLog.w(LogType.PTT, TAG, "fixAudioAlignment2 failed; using unaligned audio", t)
+                        }
                         audioData
                     }
                 } else {
@@ -152,13 +175,15 @@ class WavTokenizerDecoder() {
                 floatArrayToPcm(audioData)
             }
 
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "decode get size ${data.size} return ${unalignedAudio.size}")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "decode get size ${data.size} return ${unalignedAudio.size}" }
             loop++
             unalignedAudio
         }.getOrElse { t ->
-            // logcat only: per-chunk, would flood the log file
-            Log.e(TAG, "decode failed; returning fallback PCM", t)
+            // Logs once per stream; summarised at the next stream's startLogRun().
+            if (logOnce.first(KEY_DECODE_FAILED)) {
+                StardustLog.e(TAG, "decode failed; returning fallback PCM", t)
+            }
             fallbackPcm(previousSamples, data.size)
         }
     }
@@ -196,39 +221,41 @@ class WavTokenizerDecoder() {
         var trimmed = audioData   // <-- local mutable copy
 
         if (previousTokens != null) {
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "last Index $index")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "last Index $index" }
             val cutFrom = (20 - cutTokens) * 600
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "cutFrom $cutFrom")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "cutFrom $cutFrom" }
 
             if (cutFrom in 0 until trimmed.size) {
                 trimmed = trimmed.sliceArray(cutFrom until trimmed.size)
-                // logcat only: per-chunk, would flood the log file
-                Log.d(TAG, "Trimmed head → new size = ${trimmed.size}")
+                // Per-chunk: keep at d.
+                StardustLog.d(LogType.PTT, TAG) { "Trimmed head → new size = ${trimmed.size}" }
             } else {
-                // logcat only: per-chunk, would flood the log file
-                Log.w(TAG, "cutFrom out of range → no trimming")
+                // Logs once per stream; summarised at the next stream's startLogRun().
+                if (logOnce.first("cutFrom out of range")) {
+                    StardustLog.w(LogType.PTT, TAG, "cutFrom out of range → no trimming")
+                }
             }
         }
 
-        // logcat only: per-chunk, would flood the log file
-        Log.d(TAG, "audioData.size ${trimmed.size}")
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "audioData.size ${trimmed.size}" }
 
         val bestBoundaryToken = findLowestEnergyTokenBoundary(trimmed)
 
         index = bestBoundaryToken
         val totalTokens = trimmed.size / 600
         cutTokens = (totalTokens - index)
-        // logcat only: per-chunk, would flood the log file
-        Log.d(TAG, "cutTokens $cutTokens")
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "cutTokens $cutTokens" }
 
         // Trim AFTER boundary
         val cutoff = index * 600
         if (cutoff in 1 until trimmed.size) {
             trimmed = trimmed.sliceArray(0 until cutoff)
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Trimmed audioData to boundary → new size = ${trimmed.size}")
+            // Per-chunk: keep at d.
+            StardustLog.d(LogType.PTT, TAG) { "Trimmed audioData to boundary → new size = ${trimmed.size}" }
         }
 
         return trimmed
@@ -281,14 +308,17 @@ class WavTokenizerDecoder() {
         var tokensToCheck = minOf(numTokensToCheck, totalTokens - 1)
 
         if (tokensToCheck < 1) {
-            // logcat only: per-chunk, would flood the log file
-            Log.d(TAG, "Warning: Not enough tokens to check boundaries")
+            // w, not e: the boundary search is skipped and the chunk is still decoded. Logs once per
+            // stream; summarised at the next stream's startLogRun().
+            if (logOnce.first("not enough tokens to check boundaries")) {
+                StardustLog.w(LogType.PTT, TAG, "Not enough tokens to check boundaries ($totalTokens)")
+            }
             return max(0, totalTokens - 1)
         }
 
 //        Log.d(TAG, "\nAnalyzing $tokensToCheck token boundaries:")
-        // logcat only: per-chunk, would flood the log file
-        Log.d(TAG, "Total tokens in chunk: $totalTokens")
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "Total tokens in chunk: $totalTokens" }
 //        Log.d(TAG, "Checking last $tokensToCheck tokens\n")
 
         val energies = mutableListOf<Float>()
@@ -318,10 +348,10 @@ class WavTokenizerDecoder() {
 
             val text = "Token %3d boundary (samples %6d to %6d): Energy = %.6f"
                 .format(tokenIdx, startSample, endSample, energy)
-            // logcat only: per-token boundary, would flood the log file
-            Log.d(TAG,
+            // Per-token boundary: keep at d. `text` is built regardless, because listEnergy keeps it.
+            StardustLog.d(LogType.PTT, TAG) {
                 text
-            )
+            }
             listEnergy.add(text)
         }
 
@@ -331,8 +361,8 @@ class WavTokenizerDecoder() {
         val minIndex = energies.indexOf(minEnergy)
         val bestToken = tokenIndices[minIndex]
 
-        // logcat only: per-chunk, would flood the log file
-        Log.d(TAG, "\n✓ Lowest energy found at token $bestToken with energy %.6f".format(energies[minIndex]))
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "\n✓ Lowest energy found at token $bestToken with energy %.6f".format(energies[minIndex]) }
 
         return bestToken
     }
@@ -531,9 +561,9 @@ class WavTokenizerDecoder() {
      */
     private val initJob: Job by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Scopes.getDefaultCoroutine().launch {
-            StardustLog.d(TAG, "WavTokenizerDecoder module initializing")
+            StardustLog.d(LogType.PTT, TAG, "WavTokenizerDecoder module initializing")
             module
-            StardustLog.d(TAG, "WavTokenizerDecoder model loaded successfully")
+            StardustLog.i(LogType.PTT, TAG, "WavTokenizerDecoder model loaded successfully")
         }
     }
 }

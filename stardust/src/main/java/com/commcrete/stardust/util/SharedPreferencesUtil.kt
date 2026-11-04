@@ -336,7 +336,11 @@ object SharedPreferencesUtil {
         // The own-id history lives only here, so every write keeps it — see takeHistoryFrom.
         appUser.takeHistoryFrom(previous, System.currentTimeMillis())
         if ((appUser.formerIds?.size ?: 0) != (previous?.formerIds?.size ?: 0)) {
-            StardustLog.i("SharedPreferencesUtil", "Own id replaced; former ids=${appUser.formerIds?.size ?: 0}")
+            StardustLog.i(LogType.STORAGE, "SharedPreferencesUtil", "Own id replaced; former ids=${appUser.formerIds?.size ?: 0}")
+        }
+        // The login on the timeline. The handshake's rewrites find the user already there and log nothing.
+        if (previous?.appId.isNullOrBlank() && appUser.appId.isNotBlank()) {
+            StardustLog.i(LogType.STORAGE, "SharedPreferencesUtil", "User logged in")
         }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)

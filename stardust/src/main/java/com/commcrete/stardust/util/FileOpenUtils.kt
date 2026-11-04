@@ -106,7 +106,7 @@ object FileOpenUtils {
         val candidates = mimeTypeCandidates(fileName)
         val pm = context.packageManager
         val type = candidates.firstOrNull { pm.hasViewerFor(uri, it) } ?: candidates.first()
-        StardustLog.d(TAG, "open file as $type (candidates=$candidates)")
+        StardustLog.d(LogType.FILES, TAG, "open file as $type (candidates=$candidates)")
         return viewIntent(uri, type)
     }
 

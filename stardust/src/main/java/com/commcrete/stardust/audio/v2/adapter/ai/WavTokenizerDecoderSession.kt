@@ -37,7 +37,11 @@ class WavTokenizerDecoderSession : DecoderSession {
         val previousSamples = if (started) lastSamples else null
 
         val model = decoder()
-        if (!started) state = WavTokenizerDecoder.InternalState.INITIAL
+        if (!started) {
+            state = WavTokenizerDecoder.InternalState.INITIAL
+            // Stream start: a new log run for the shared decoder's once-per-run lines.
+            model.startLogRun()
+        }
         model.restoreInternalState(state)
         val pcm = model.decode(tokens, previousTokens, previousSamples, modelType)
         state = model.snapshotInternalState()

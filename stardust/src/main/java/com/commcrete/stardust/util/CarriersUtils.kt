@@ -17,11 +17,12 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
 import com.google.gson.JsonSerializer
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.lang.reflect.Type
 import kotlin.collections.forEach
 
 object CarriersUtils {
+
+    private const val TAG = "CarriersUtils"
 
     var carrierList : MutableLiveData<List<Carrier>> = MutableLiveData()
 
@@ -30,6 +31,7 @@ object CarriersUtils {
     fun setPresetsAfterChange(configPackage: StardustConfigurationPackage) {
         var index = 0
         carriersMap.clear()
+        resetLogOnce()
 
         for (preset in configPackage.presets) {
             val carriers = getCarriersByPreset(preset)
@@ -45,6 +47,7 @@ object CarriersUtils {
      */
     fun setPresetsWithoutChange(configPackage: StardustConfigurationPackage) {
         carriersMap.clear()
+        resetLogOnce()
         for (i in 0..2) {
             val localCarriers = getLocalCarriersByPreset(i) ?: continue
             val synced = configPackage.presets.getOrNull(i)?.let { withFRanges(localCarriers, it) } ?: localCarriers
@@ -144,10 +147,21 @@ object CarriersUtils {
         Scopes.getDefaultCoroutine().launch { ConnectionManager.refreshConfigWarnings() }
     }
 
+    /**
+     * [getCarrierByControl] runs per inbound text and file package, so its warnings log once per
+     * configuration; reset by [resetLogOnce] when a configuration arrives or the link resets.
+     */
+    private val logOnce = LogOnce()
+
+    private fun resetLogOnce() {
+        val repeats = logOnce.reset()
+        if (repeats.isNotEmpty()) StardustLog.w(LogType.CONFIG, TAG, "carrier lookups failed again since first logged: $repeats")
+    }
+
     fun getCarrierByControl(deliveryType: StardustDeliveryType): Carrier? {
         val carriers = carrierList.value
         if (carriers.isNullOrEmpty()) {
-            Timber.w("Carrier list is empty or null")
+            if (logOnce.first("empty")) StardustLog.w(LogType.CONFIG, TAG, "Carrier list is empty or null")
             return null
         }
 
@@ -160,12 +174,11 @@ object CarriersUtils {
 
         val carrier = carriers.getOrNull(index)
 
-        if (carrier == null) {
-            Timber.w(
-                "No carrier found for deliveryType=%s (index=%d, carriersSize=%d)",
-                deliveryType,
-                index,
-                carriers.size
+        if (carrier == null && logOnce.first("no-carrier-$deliveryType")) {
+            StardustLog.w(
+                LogType.CONFIG,
+                TAG,
+                "No carrier found for deliveryType=$deliveryType (index=$index, carriersSize=${carriers.size})"
             )
         }
 
@@ -192,6 +205,7 @@ object CarriersUtils {
 
     fun reset() {
         carriersMap.clear()
+        resetLogOnce()
         carrierList.postValue(listOf())
     }
 }

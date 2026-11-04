@@ -14,8 +14,8 @@ import com.commcrete.stardust.usb.BittelUsbManager2.connectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.disconnectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.usbManager
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
-import timber.log.Timber
 import java.util.LinkedList
 import java.util.Queue
 
@@ -28,13 +28,13 @@ object UsbDevicePermissionHandler {
 
     private val handler = Handler(Looper.getMainLooper())
     private val permissionTimeoutRunnable = Runnable {
-        Timber.tag("UsbPermission").d("Permission request timeout.")
+        StardustLog.d(LogType.USB, "UsbPermission", "Permission request timeout.")
         // A timeout means the ACTION_USB_PERMISSION broadcast never came back within 10s. Either
         // the user ignored the dialog, or the broadcast was never delivered (fix #1 defect B).
         // Compare with Receiver.onReceive: if that never logged, delivery is the problem.
         UsbDiag.warn(
             "timeout",
-            "PERMISSION TIMEOUT after 10s for ${UsbDiag.describe(currentDevice)} " +
+            "PERMISSION TIMEOUT after 10s " +
                 "hasPermissionNow=${UsbDiag.hasPermission(currentDevice)}"
         )
         if (UsbDiag.hasPermission(currentDevice) == true) {
@@ -60,7 +60,7 @@ object UsbDevicePermissionHandler {
                 "isRequestingPermission=$isRequestingPermission"
         )
         devices.forEachIndexed { i, d ->
-            UsbDiag.log("requestPermissionsForDevices", "  incoming[$i] ${UsbDiag.describe(d)} hasPermission=${UsbDiag.hasPermission(d)}")
+            UsbDiag.log("requestPermissionsForDevices") { "  incoming[$i] ${UsbDiag.describe(d)} hasPermission=${UsbDiag.hasPermission(d)}" }
             UsbDiag.match("requestPermissionsForDevices[$i]", d)
         }
         devicesQueue.addAll(devices)
@@ -77,7 +77,7 @@ object UsbDevicePermissionHandler {
         if (devicesQueue.isNotEmpty()) {
             isRequestingPermission = true
             currentDevice = devicesQueue.poll()
-            UsbDiag.log("requestNextPermission", "polled ${UsbDiag.describe(currentDevice)}")
+            UsbDiag.log("requestNextPermission") { "polled ${UsbDiag.describe(currentDevice)}" }
             UsbDiag.match("requestNextPermission", currentDevice)
 
             val productName = currentDevice?.productName?.lowercase()
@@ -85,16 +85,15 @@ object UsbDevicePermissionHandler {
                 || productName?.contains("j-box") == true
                 || productName?.contains("jbox") == true) {
 
-                Timber.tag("SerialInputOutputManager").d("Requesting permission for device: ${currentDevice?.productName}")
+                StardustLog.d(LogType.USB, "SerialInputOutputManager", "Requesting permission for device: ${currentDevice?.productName}")
 
                 // If the grant is already persisted ("always allow for this device"), the whole
                 // broadcast round-trip is unnecessary — and the fact that we still go through it
                 // is why a broken broadcast blocks even a previously-authorised device.
-                UsbDiag.log(
-                    "requestNextPermission",
+                UsbDiag.log("requestNextPermission") {
                     "about to requestPermission: hasPermissionAlready=${UsbDiag.hasPermission(currentDevice)} " +
                         "usbManagerNull=${usbManager == null}"
-                )
+                }
                 if (usbManager == null) {
                     UsbDiag.verdict(
                         "BittelUsbManager2.usbManager is NULL — requestPermission() will silently " +
@@ -139,8 +138,7 @@ object UsbDevicePermissionHandler {
                 // If the device is null or does not match the condition, continue with the next device
                 UsbDiag.warn(
                     "requestNextPermission",
-                    "SKIPPED by the name filter — no permission will be requested for " +
-                        "${UsbDiag.describe(currentDevice)}"
+                    "SKIPPED by the name filter — no permission will be requested for this device"
                 )
                 requestNextPermission()
             }
@@ -156,8 +154,10 @@ object UsbDevicePermissionHandler {
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)?.let { device ->
-                    Timber.tag("UsbPermission").d("Device attached: ${device.productName}")
-                    UsbDiag.log("ATTACHED", UsbDiag.describe(device))
+                    // Timeline: vendor and product ids name the hardware model only, never the unit.
+                    StardustLog.i(LogType.USB, "UsbPermission", "USB device attached (vid=0x%04X pid=0x%04X)".format(device.vendorId, device.productId))
+                    StardustLog.d(LogType.USB, "UsbPermission", "Device attached: ${device.productName}")
+                    UsbDiag.log("ATTACHED") { UsbDiag.describe(device) }
                     UsbDiag.match("ATTACHED", device)
                     UsbDiag.linkState("ATTACHED")
                     devicesQueue.add(device)
@@ -172,8 +172,9 @@ object UsbDevicePermissionHandler {
             UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                 @Suppress("DEPRECATION")
                 intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)?.let { device ->
-                    Timber.tag("UsbPermission").d("Device detached: ${device.productName}")
-                    UsbDiag.log("DETACHED", UsbDiag.describe(device))
+                    StardustLog.i(LogType.USB, "UsbPermission", "USB device detached (vid=0x%04X pid=0x%04X)".format(device.vendorId, device.productId))
+                    StardustLog.d(LogType.USB, "UsbPermission", "Device detached: ${device.productName}")
+                    UsbDiag.log("DETACHED") { UsbDiag.describe(device) }
                     UsbDiag.match("DETACHED", device)
                     UsbDiag.log(
                         "DETACHED",
@@ -193,7 +194,7 @@ object UsbDevicePermissionHandler {
                     // unconditionally, so a DENIED result looked identical to a granted one and
                     // then failed opaquely inside openDevice().
                     val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                    StardustLog.d("ConfigDebug",
+                    StardustLog.d(LogType.USB, "ConfigDebug",
                         "ACTION_USB_PERMISSION granted=$granted hasCurrentDevice=${currentDevice != null}"
                     )
                     // Cross-checks `granted` against UsbManager.hasPermission() — the single most
@@ -201,7 +202,7 @@ object UsbDevicePermissionHandler {
                     UsbDiag.permissionResult("PERMISSION_RESULT", intent, granted, currentDevice)
 
                     if (currentDevice == null) {
-                        StardustLog.w("ConfigDebug",
+                        StardustLog.w(LogType.USB, "ConfigDebug",
                             "ACTION_USB_PERMISSION but currentDevice is NULL (timed out / already drained) — nothing to connect"
                         )
                         UsbDiag.verdict(
@@ -212,11 +213,11 @@ object UsbDevicePermissionHandler {
                     }
                     currentDevice?.let { device ->
                         if (granted) {
-                            Timber.tag("UsbPermission").d("Permission granted for device: ${device.productName}")
-                            UsbDiag.log("PERMISSION_RESULT", "→ connectToUnknownDevice ${UsbDiag.describe(device)}")
+                            StardustLog.d(LogType.USB, "UsbPermission", "Permission granted for device: ${device.productName}")
+                            UsbDiag.log("PERMISSION_RESULT") { "→ connectToUnknownDevice ${UsbDiag.describe(device)}" }
                             connectToUnknownDevice(device)
                         } else {
-                            StardustLog.w("ConfigDebug", "USB permission DENIED — not connecting")
+                            StardustLog.w(LogType.USB, "ConfigDebug", "USB permission DENIED — not connecting")
                             UsbDiag.warn("PERMISSION_RESULT", "NOT connecting — code read the result as denied")
                         }
                     }
@@ -279,7 +280,7 @@ object UsbDevicePermissionHandler {
             DataManager.appContext.unregisterReceiver(usbPermissionReceiver)
             UsbDiag.log("unregister", "receiver unregistered — USB events will NO LONGER arrive")
         } catch (e: Exception) {
-            Timber.tag("UsbPermission").w(e, "unregister receiver failed")
+            StardustLog.w(LogType.USB, "UsbPermission", "unregister receiver failed", e)
             UsbDiag.error("unregister", "unregisterReceiver failed", e)
         }
         receiverRegistered = false

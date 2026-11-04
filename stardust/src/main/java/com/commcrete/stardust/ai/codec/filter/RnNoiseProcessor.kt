@@ -1,6 +1,6 @@
 package com.commcrete.stardust.ai.codec.filter
 
-import android.util.Log
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.audio.StreamingPolyphaseResampler
 import java.lang.reflect.Method
@@ -55,7 +55,7 @@ class RnNoiseProcessor : NoiseProcessor {
         try {
             val klass = resolveClass()
             if (klass == null) {
-                StardustLog.i(TAG, "RNNoise wrapper not on classpath; pass-through mode")
+                StardustLog.w(LogType.PTT, TAG, "RNNoise wrapper not on classpath; pass-through mode")
                 return
             }
 
@@ -82,7 +82,7 @@ class RnNoiseProcessor : NoiseProcessor {
                 }
             }
             if (proc == null) {
-                StardustLog.w(TAG, "No compatible process(short[]) on ${klass.name}; pass-through")
+                StardustLog.w(LogType.PTT, TAG, "No compatible process(short[]) on ${klass.name}; pass-through")
                 return
             }
 
@@ -99,9 +99,9 @@ class RnNoiseProcessor : NoiseProcessor {
             nativeInstance = instance
             processMethod = proc
             releaseMethod = rel
-            StardustLog.d(TAG, "init: ready via ${klass.name}#${proc.name} (sampleRate=$sampleRate)")
+            StardustLog.d(LogType.PTT, TAG, "init: ready via ${klass.name}#${proc.name} (sampleRate=$sampleRate)")
         } catch (t: Throwable) {
-            StardustLog.w(TAG, "Failed to initialize RNNoise; falling back to pass-through", t)
+            StardustLog.w(LogType.PTT, TAG, "Failed to initialize RNNoise; falling back to pass-through", t)
             nativeInstance = null
             processMethod = null
             releaseMethod = null
@@ -150,7 +150,7 @@ class RnNoiseProcessor : NoiseProcessor {
                     System.arraycopy(cleaned, 0, combined, off, FRAME_SIZE)
                 }
             } catch (t: Throwable) {
-                StardustLog.w(TAG, "RNNoise frame call failed; disabling for this session", t)
+                StardustLog.w(LogType.PTT, TAG, "RNNoise frame call failed; disabling for this session", t)
                 runCatching { releaseMethod?.invoke(instance) }
                 nativeInstance = null
                 processMethod = null
@@ -175,12 +175,11 @@ class RnNoiseProcessor : NoiseProcessor {
         // (sub-frame shortfall); they get denoised on the next call.
 
         val totalMs = System.currentTimeMillis() - processStartMs
-        // logcat only: per-chunk, would flood the log file
-        Log.d(
-            TAG_LATENCY,
+        // Per-chunk: keep at d.
+        StardustLog.d(LogType.PTT, TAG_LATENCY) {
             "process(): $frameCount frame(s) of $FRAME_SIZE, total ${totalMs}ms " +
                 "(native RNNoise calls ${nativeCallMs}ms, resample+overhead ${totalMs - nativeCallMs}ms)"
-        )
+        }
     }
 
     override fun release() {

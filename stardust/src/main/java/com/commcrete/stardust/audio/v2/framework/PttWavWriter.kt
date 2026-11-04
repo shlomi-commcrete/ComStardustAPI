@@ -1,6 +1,7 @@
 package com.commcrete.stardust.audio.v2.framework
 
-import android.util.Log
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.ai.codec.WavHelper
 import java.io.File
@@ -45,6 +46,9 @@ internal class PttWavWriter(private val file: File) {
     /** The rate the header was written with — the first chunk's, kept for the whole stream. */
     private var headerRateHz = 0
 
+    /** One writer per stream, so the per-chunk lines log once per stream; [close] summarises them. */
+    private val logOnce = LogOnce()
+
     /** Whether any PCM actually reached the file. Safe to read from another thread. */
     val hasAudio: Boolean get() = dataBytes > 0
 
@@ -59,8 +63,10 @@ internal class PttWavWriter(private val file: File) {
         try {
             val out = raf ?: open(rateHz) ?: return
             if (rateHz != headerRateHz) {
-                // logcat only: per-frame, would flood the log file
-                Log.w(TAG, "rate changed mid-stream ($headerRateHz -> $rateHz); keeping header rate")
+                // Logs once per stream; summarised by close().
+                if (logOnce.first("rate changed mid-stream")) {
+                    StardustLog.w(LogType.PTT, TAG, "rate changed mid-stream ($headerRateHz -> $rateHz); keeping header rate")
+                }
             }
             out.seek(HEADER_BYTES.toLong() + dataBytes)
             out.write(shortsToLePcm16(samples))
@@ -78,12 +84,15 @@ internal class PttWavWriter(private val file: File) {
      */
     fun close() {
         finished = true
+        for ((key, repeats) in logOnce.reset()) {
+            StardustLog.w(LogType.PTT, TAG, "$key x$repeats more")
+        }
         val out = raf ?: return
         raf = null
         try {
             patchSizes(out)
         } catch (e: IOException) {
-            StardustLog.w(TAG, "Could not finalize WAV header", e)
+            StardustLog.w(LogType.PTT, TAG, "Could not finalize WAV header", e)
         } finally {
             runCatching { out.close() }
         }

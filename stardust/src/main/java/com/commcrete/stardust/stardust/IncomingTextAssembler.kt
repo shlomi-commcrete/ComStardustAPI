@@ -2,6 +2,7 @@ package com.commcrete.stardust.stardust
 
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.util.FileReceiver
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.util.TextPartPacing
 import kotlinx.coroutines.CancellationException
@@ -38,6 +39,8 @@ internal class IncomingTextAssembler(
         { TextPartPacing.continuationWindowMs(it.carrier) },
     /** Injected so the class runs in plain JVM tests, where android.util.Log is not available. */
     private val log: (message: String, error: Throwable?) -> Unit = ::logToStardustLog,
+    /** A text lost without a throwable (no LAST): an error, which release logs. Never throws. */
+    private val logFailure: (message: String) -> Unit = { StardustLog.e(TAG, it) },
 ) {
 
     /** What makes two parts belong to the same message. */
@@ -128,7 +131,7 @@ internal class IncomingTextAssembler(
                 val open = pending[event.key] ?: return
                 if (open.generation != event.generation) return
                 pending.remove(event.key)
-                log("text ended without LAST after ${continuationWindowMs(open.pkg)}ms", null)
+                logFailure("text ended without LAST after ${continuationWindowMs(open.pkg)}ms")
                 sink.abandon(open.messageId, open.pkg, open.text.toString(), FileReceiver.FileFailure.MISSING)
             }
             Event.SettleAll -> {
@@ -182,7 +185,7 @@ internal class IncomingTextAssembler(
         private const val TAG = "IncomingTextAssembler"
 
         private fun logToStardustLog(message: String, error: Throwable?) {
-            if (error != null) StardustLog.e(TAG, message, error) else StardustLog.d(TAG, message)
+            if (error != null) StardustLog.e(TAG, message, error) else StardustLog.d(LogType.TEXT, TAG, message)
         }
     }
 }

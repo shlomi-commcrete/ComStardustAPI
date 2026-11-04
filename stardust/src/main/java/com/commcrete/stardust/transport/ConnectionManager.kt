@@ -10,8 +10,11 @@ import com.commcrete.stardust.stardust.model.config.activePresetProblem
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler.State
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -19,7 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -94,6 +96,12 @@ object ConnectionManager {
     private var reconnectJob: Job? = null
     private val attempt = AtomicInteger(0)
 
+    /**
+     * One run is one outage: the first scheduled reconnect is logged at `i`, the rest at `d`, and
+     * the count is summarised when a connected state is reached or auto-reconnect is disabled.
+     */
+    private val reconnectLogOnce = LogOnce()
+
     // Whether the app WANTS a BLE link kept alive. Set once a BLE link is established; cleared only
     // on an intentional teardown (manual disconnect / unpair via [disableAutoReconnect]). This is
     // what distinguishes an unexpected drop (device died / out of range → reconnect) from a
@@ -125,7 +133,7 @@ object ConnectionManager {
      * their behalf) asking to connect: startup bonding, connect/adopt, manual reconnect.
      */
     fun allowAutoConnect() {
-        if (autoConnectSuppressed) Timber.tag(TAG).d("auto-connect suppression lifted")
+        if (autoConnectSuppressed) StardustLog.d(LogType.CONNECTION, TAG, "auto-connect suppression lifted")
         autoConnectSuppressed = false
     }
 
@@ -185,9 +193,11 @@ object ConnectionManager {
      * wanted (manual disconnect, unpair, USB takeover), because those clear [autoReconnectDesired].
      */
     fun onLinkLost(transport: TransportId) {
-        BleDiag.log("linkLost", "$transport ${autoReconnectBlockers()}")
+        // Lazy: autoReconnectBlockers() reads the OS bond set (a binder call).
+        BleDiag.log("linkLost") { "$transport ${autoReconnectBlockers()}" }
+        StardustLog.i(LogType.CONNECTION, TAG) { "link lost over $transport, ${autoReconnectBlockers()}" }
         if (!autoReconnectDesired) {
-            Timber.tag(TAG).d("link lost over $transport — auto-reconnect not desired, staying down")
+            StardustLog.d(LogType.CONNECTION, TAG, "link lost over $transport — auto-reconnect not desired, staying down")
             return
         }
         // Anchored to the FIRST loss of an outage, same rule as requestReconnect: the window is only
@@ -206,7 +216,7 @@ object ConnectionManager {
      * the state keeps the Searching → Disconnected course set by the original drop.
      */
     fun onConnectAttemptFailed(transport: TransportId, reason: String) {
-        BleDiag.log("attemptFailed", "$transport ($reason) ${autoReconnectBlockers()}")
+        BleDiag.log("attemptFailed") { "$transport ($reason) ${autoReconnectBlockers()}" }
         if (autoReconnectDesired && !shouldAutoReconnect()) {
             BleDiag.verdict("a failed $transport connect attempt is NOT retried (${autoReconnectBlockers()}) — " +
                 "only a still-registered background connect can recover it now.")
@@ -232,14 +242,14 @@ object ConnectionManager {
      */
     @Synchronized
     fun onKeepaliveLost(transport: TransportId, reason: String) {
-        Timber.tag(TAG).w("keepalive lost over $transport — $reason")
-        BleDiag.log("keepaliveLost", "$transport ($reason) ${autoReconnectBlockers()}")
+        StardustLog.w(LogType.CONNECTION, TAG, "keepalive lost over $transport — $reason")
+        BleDiag.log("keepaliveLost") { "$transport ($reason) ${autoReconnectBlockers()}" }
         // Each transport tears itself down and arms its own recovery (USB re-probes a device that
         // is still attached; BLE has none and is retried just below).
         try {
             TransportRegistry.of(transport).onKeepaliveLost(reason)
         } catch (e: Exception) {
-            Timber.tag(TAG).e(e, "keepalive teardown over $transport failed")
+            StardustLog.e(TAG, "keepalive teardown over $transport failed", e)
         }
         // BLE only. A USB link that went silent is restored by re-probing the attached device, and
         // if the cable is out there is deliberately nothing to fall back to: a USB unplug stays the
@@ -255,7 +265,10 @@ object ConnectionManager {
         val previous = _connectionState.value
         val next = derive(active, lastInitState, inReconnectGrace())
         _connectionState.value = next
-        if (next != previous) BleDiag.log("state", "$previous -> $next (transport=$active init=$lastInitState)")
+        if (next != previous) {
+            StardustLog.i(LogType.CONNECTION, TAG, "connection state $previous -> $next (transport=$active)")
+            BleDiag.log("state", "$previous -> $next (transport=$active init=$lastInitState)")
+        }
         // After the publish: the lock reads the state just set.
         LinkWakeLock.refresh()
 
@@ -266,6 +279,8 @@ object ConnectionManager {
             attempt.set(0)
             clearReconnectGrace()
             attemptInFlightUntilMs = 0L
+            // On the edge only: this branch also runs on every recompute of an established link.
+            if (next != previous) endReconnectLogRun("link up")
         }
 
         // Arm the auto-reconnect watchdog only on the EDGE INTO an established BLE link
@@ -305,7 +320,7 @@ object ConnectionManager {
     fun refresh() = recompute()
 
     fun reportBlocked(reason: Blocker) {
-        Timber.tag(TAG).w("connection blocked: $reason")
+        StardustLog.w(LogType.CONNECTION, TAG, "connection blocked: $reason")
         _connectionState.value = ConnectionState.Blocked(reason)
         // Published past recompute, so the lock must be told: a refused connect ends a Searching hold.
         LinkWakeLock.refresh()
@@ -364,12 +379,12 @@ object ConnectionManager {
         // BLE only: a USB ping-timeout reconnect must still work during a USB session, and entering
         // USB calls disableAutoReconnect() as part of the takeover.
         if (transport == TransportId.BLE && autoConnectSuppressed) {
-            Timber.tag(TAG).d("BLE reconnect suppressed by an intentional disconnect ($reason)")
+            StardustLog.d(LogType.CONNECTION, TAG, "BLE reconnect suppressed by an intentional disconnect ($reason)")
             BleDiag.log("requestReconnect", "REFUSED suppressed-by-unpair ($reason)")
             return
         }
         if (reconnectJob?.isActive == true) {
-            Timber.tag(TAG).d("reconnect already in progress; ignoring request ($reason)")
+            StardustLog.d(LogType.CONNECTION, TAG, "reconnect already in progress; ignoring request ($reason)")
             BleDiag.log("requestReconnect", "REFUSED job-active ($reason)")
             return
         }
@@ -379,7 +394,7 @@ object ConnectionManager {
         // it — the ping-timeout and connection watchdogs come straight in here.
         val now = SystemClock.elapsedRealtime()
         if (now < attemptInFlightUntilMs) {
-            Timber.tag(TAG).d("reconnect still in flight for ${attemptInFlightUntilMs - now}ms; ignoring request ($reason)")
+            StardustLog.d(LogType.CONNECTION, TAG, "reconnect still in flight for ${attemptInFlightUntilMs - now}ms; ignoring request ($reason)")
             BleDiag.log("requestReconnect", "REFUSED window-open ${attemptInFlightUntilMs - now}ms left ($reason)")
             return
         }
@@ -402,7 +417,12 @@ object ConnectionManager {
             recompute()
         }
         val delayMs = backoffDelay()
-        Timber.tag(TAG).d("scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
+        // Per retry: the first of an outage is the timeline line, the rest are trace.
+        if (reconnectLogOnce.first("scheduled")) {
+            StardustLog.i(LogType.CONNECTION, TAG, "scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
+        } else {
+            StardustLog.d(LogType.CONNECTION, TAG, "scheduling reconnect over $transport in ${delayMs}ms (attempt ${attempt.get() + 1}, reason=$reason)")
+        }
         BleDiag.log("requestReconnect", "ACCEPTED $transport in ${delayMs}ms attempt=${attempt.get() + 1} ($reason)")
 
         reconnectJob = Scopes.getDefaultCoroutine().launch {
@@ -411,9 +431,15 @@ object ConnectionManager {
             try {
                 TransportRegistry.of(transport).reconnect()
             } catch (e: Exception) {
-                Timber.tag(TAG).e(e, "reconnect over $transport failed")
+                StardustLog.e(TAG, "reconnect over $transport failed", e)
             }
         }
+    }
+
+    /** Ends a reconnect log run: one summary of the reconnects that were logged only at `d`. */
+    private fun endReconnectLogRun(why: String) {
+        val repeats = reconnectLogOnce.reset()["scheduled"] ?: return
+        StardustLog.i(LogType.CONNECTION, TAG, "reconnect run ended ($why): $repeats more reconnects scheduled after the first")
     }
 
     private fun backoffDelay(): Long {
@@ -450,7 +476,7 @@ object ConnectionManager {
                 // repairs the published BleManager.isPaired for the host UI. No-ops when the bond
                 // set is unreadable, so it can never wipe a valid pairing.
                 PairingRepository.reconcile()
-                BleDiag.log("watchdog60s", "tick state=${_connectionState.value} ${autoReconnectBlockers()}")
+                BleDiag.log("watchdog60s") { "tick state=${_connectionState.value} ${autoReconnectBlockers()}" }
                 if (shouldAutoReconnect()) {
                     requestReconnect(TransportId.BLE, "auto-reconnect watchdog")
                 }
@@ -528,12 +554,12 @@ object ConnectionManager {
     fun suppressAutoConnect() {
         disableAutoReconnect()
         autoConnectSuppressed = true
-        Timber.tag(TAG).d("auto-connect suppressed (unpair)")
+        StardustLog.d(LogType.CONNECTION, TAG, "auto-connect suppressed (unpair)")
     }
 
     @Synchronized
     fun disableAutoReconnect() {
-        BleDiag.log("autoReconnect", "DISABLED by ${Throwable().stackTrace.drop(1).take(3).joinToString(" <- ") { "${it.fileName}:${it.lineNumber}" }}")
+        BleDiag.log("autoReconnect") { "DISABLED by ${Throwable().stackTrace.drop(1).take(3).joinToString(" <- ") { "${it.fileName}:${it.lineNumber}" }}" }
         autoReconnectDesired = false
         watchdogJob?.cancel()
         watchdogJob = null
@@ -543,6 +569,7 @@ object ConnectionManager {
         // pretending a reconnect is under way.
         clearReconnectGrace()
         attemptInFlightUntilMs = 0L
+        endReconnectLogRun("auto-reconnect disabled")
         // Republish. The teardown that follows this call CANNOT be relied on to do it: when the
         // link is already down, `updateStatus()` computes the same transport it already had and
         // early-returns, and `updateConnectionState(DISCONNECTED)` finds the handshake state

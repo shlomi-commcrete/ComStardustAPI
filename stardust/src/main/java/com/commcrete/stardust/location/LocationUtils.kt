@@ -2,6 +2,7 @@ package com.commcrete.stardust.location
 
 import android.annotation.SuppressLint
 import android.location.Location
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.StardustAPIPackage
 import com.commcrete.stardust.ble.ClientConnection
@@ -20,7 +21,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.Date
 
 @SuppressLint("StaticFieldLeak")
@@ -71,13 +71,14 @@ object LocationUtils  {
             destinationBytes = temp
         }
 
-        StardustLog.d("LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
+        StardustLog.d(LogType.LOCATION, "LocationRequest $randomID", "getLocation ${System.currentTimeMillis()}")
         val location = location
         if(location == null) {
-            StardustLog.d("LocationRequest $randomID", "send Missing ${System.currentTimeMillis()}")
+            // An error, not a trace: the requester gets an empty location, which a release log must show.
+            StardustLog.e(LOG_TAG, "Location requested with no own fix: sending an empty location")
             sendMissingLocation(packageForResponse, clientConnection, isDemandAck, isHR, opCode)
         } else {
-            StardustLog.d("LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
+            StardustLog.d(LogType.LOCATION, "LocationRequest $randomID", "send Location ${System.currentTimeMillis()}")
             sendLocation(mPackage.chatId,packageForResponse, location, clientConnection, isDemandAck, isHR, opCode, randomID)
         }
     }
@@ -105,7 +106,7 @@ object LocationUtils  {
 
             dataPackage.stardustControlByte.stardustAcknowledgeType = if(isDemandAck) StardustControlByte.StardustAcknowledgeType.DEMAND_ACK else StardustControlByte.StardustAcknowledgeType.NO_DEMAND_ACK
             dataPackage.stardustControlByte.stardustDeliveryType = isHR
-            StardustLog.d("LocationRequest", "send to ble ${System.currentTimeMillis()}")
+            StardustLog.d(LogType.LOCATION, "LocationRequest", "send to ble ${System.currentTimeMillis()}")
             try {
                 clientConnection.sendMessage(dataPackage)
             } catch (e: Exception) {
@@ -170,7 +171,7 @@ object LocationUtils  {
             dataPackage.idNumber = id
             dataPackage.stardustControlByte.stardustDeliveryType = isHR
 
-            StardustLog.d("LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
+            StardustLog.d(LogType.LOCATION, "LocationRequest $randomID", "send to ble ${System.currentTimeMillis()}")
 
             try {
                 clientConnection.sendMessage(dataPackage, randomID)

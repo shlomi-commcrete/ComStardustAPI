@@ -17,7 +17,6 @@ import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
-import timber.log.Timber
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -78,7 +77,7 @@ object FolderReader {
                     demoList.add(excelDeviceUser)
                 }
                 // Process rowData as needed
-                Timber.tag("readExcelFile").d(rowData.toString())
+                StardustLog.d(LogType.STORAGE, "readExcelFile") { rowData.toString() }
 
             }
 
@@ -182,7 +181,7 @@ object FolderReader {
             try {
                 processExcelFile(excel, onExcelFilesSelected)
             } catch (e: Exception) {
-                Timber.tag("processFolder").e(e, "Failed to process contacts file")
+                StardustLog.e("processFolder", "Failed to process contacts file", e)
                 withContext(Dispatchers.Main) { onExcelFilesSelected.onError() }
             }
         }

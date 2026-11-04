@@ -14,9 +14,10 @@ import android.os.Build
 import android.os.Parcelable
 import androidx.annotation.RequiresApi
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.Scopes
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.regex.Pattern
 
 /**
@@ -84,7 +85,7 @@ object CompanionDeviceHelper {
             }
 
             override fun onFailure(error: CharSequence?) {
-                Timber.tag(TAG).w("CDM association failed: $error")
+                StardustLog.w(LogType.BLE, TAG, "CDM association failed: $error")
                 onError(error ?: "association failed")
             }
         }
@@ -101,10 +102,10 @@ object CompanionDeviceHelper {
     @SuppressLint("MissingPermission")
     fun handleAssociationResult(data: Intent?): Boolean {
         val device = extractDevice(data) ?: run {
-            Timber.tag(TAG).w("No device in CDM association result")
+            StardustLog.w(LogType.BLE, TAG, "No device in CDM association result")
             return false
         }
-        Timber.tag(TAG).d("CDM associated ${device.address}; routing into bond flow")
+        StardustLog.d(LogType.BLE, TAG, "CDM associated ${device.address}; routing into bond flow")
         Scopes.getMainCoroutine().launch {
             DataManager.getClientConnection().bondToBleDevice(device, device.name)
         }
@@ -133,7 +134,7 @@ object CompanionDeviceHelper {
                 cdm.associations
             }
         } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "Failed to read CDM associations")
+            StardustLog.w(LogType.BLE, TAG, "Failed to read CDM associations", e)
             emptyList()
         }
     }
@@ -153,7 +154,7 @@ object CompanionDeviceHelper {
             @Suppress("DEPRECATION")
             cdm.startObservingDevicePresence(address)
         } catch (e: Exception) {
-            Timber.tag(TAG).w(e, "startObservingDevicePresence failed for $address")
+            StardustLog.w(LogType.BLE, TAG, "startObservingDevicePresence failed", e)
         }
     }
 }

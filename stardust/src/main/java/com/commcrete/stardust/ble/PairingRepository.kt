@@ -8,10 +8,12 @@ import android.os.Build
 import com.commcrete.stardust.AdoptableDevice
 import com.commcrete.stardust.stardust.StardustInitConnectionHandler
 import com.commcrete.stardust.util.DataManager
+import com.commcrete.stardust.util.LogOnce
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.Scopes
 import com.commcrete.stardust.util.SharedPreferencesUtil
+import com.commcrete.stardust.util.StardustLog
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import java.util.Locale
 
 /**
@@ -30,6 +32,9 @@ import java.util.Locale
 object PairingRepository {
 
     private val TAG = PairingRepository::class.java.simpleName
+
+    /** The missing-permission line repeats per poll: once per run, a run ending at the next good read. */
+    private val logOnce = LogOnce()
 
     /** Name/alias tokens that identify one of our radios. Unified across scan + bond matching. */
     private val STARDUST_TOKENS = listOf("bittle", "bittel", "stardust")
@@ -67,9 +72,16 @@ object PairingRepository {
         return try {
             adapter.bondedDevices.orEmpty().filter {
                 isStardust(it) || it.address.equals(saved, ignoreCase = true)
+            }.also {
+                // A readable bond set ends the run of missing-permission lines.
+                val repeats = logOnce.reset()
+                if (repeats.isNotEmpty()) StardustLog.i(LogType.BLE, TAG, "bonded devices readable again; repeats not logged: $repeats")
             }
         } catch (e: SecurityException) {
-            Timber.tag(TAG).w(e, "Missing BLUETOOTH_CONNECT; cannot read bonded devices")
+            // Once per run: read every 60s by reconcile() and on every auto-reconnect check.
+            if (logOnce.first("no-connect-permission")) {
+                StardustLog.w(LogType.BLE, TAG, "Missing BLUETOOTH_CONNECT; cannot read bonded devices", e)
+            }
             null
         }
     }
@@ -92,7 +104,7 @@ object PairingRepository {
     @SuppressLint("MissingPermission")
     fun reconcile() {
         val bonded = bondedStardustDevices() ?: run {
-            Timber.tag(TAG).d("reconcile skipped: bonded set unreadable (BT off / no permission)")
+            StardustLog.d(LogType.CONNECTION, TAG, "reconcile skipped: bonded set unreadable (BT off / no permission)")
             return
         }
         val saved = savedAddress()
@@ -100,7 +112,7 @@ object PairingRepository {
             saved == null -> setPaired(false)
             bonded.any { it.address.equals(saved, ignoreCase = true) } -> setPaired(true)
             else -> {
-                Timber.tag(TAG).w("Saved device $saved is no longer OS-bonded; clearing stale pairing")
+                StardustLog.w(LogType.CONNECTION, TAG, "Saved device is no longer OS-bonded; clearing stale pairing")
                 clearSavedIdentity()
                 setPaired(false)
             }
@@ -144,7 +156,7 @@ object PairingRepository {
     fun adopt(address: String): Boolean {
         val device = bondedStardustDevices()?.firstOrNull { it.address.equals(address, ignoreCase = true) }
             ?: run {
-                Timber.tag(TAG).w("adopt($address) failed: not a bonded Stardust device")
+                StardustLog.w(LogType.CONNECTION, TAG, "adopt failed: not a bonded Stardust device")
                 return false
             }
         val display = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) device.alias else null)
@@ -159,7 +171,7 @@ object PairingRepository {
         DataManager.getClientConnection().resetForNewSession()
         StardustInitConnectionHandler.updateConnectionState(StardustInitConnectionHandler.State.SEARCHING)
         DataManager.getClientConnection().bondToBleDeviceStartup(device)
-        Timber.tag(TAG).d("Adopted pre-paired device ${device.address}")
+        StardustLog.d(LogType.CONNECTION, TAG, "Adopted pre-paired device ${device.address}")
         return true
     }
 

@@ -63,8 +63,13 @@ internal object TxEndGate {
 
     /** Injected in tests. */
     internal var clock: () -> Long = System::currentTimeMillis
-    // logcat only: per-packet TxEnd, would flood the log file
-    internal var log: (String) -> Unit = { Log.d(TAG, it) }
+    // Per-packet TxEnd: keep at d.
+    internal var log: (String) -> Unit = { StardustLog.d(LogType.PACKETS, TAG, it) }
+
+    /** Builds the message only when the d line is on, so a TxEnd costs no string when it is off. */
+    private inline fun trace(msg: () -> String) {
+        if (StardustLog.isEnabled(LogType.PACKETS, Log.DEBUG)) log(msg())
+    }
 
     /**
      * Registers the package just handed to the radio on [carrier]. [onTxEnd] runs — on the
@@ -93,7 +98,7 @@ internal object TxEndGate {
      */
     fun onTxEnd(carrierIndex: Int?, event: String = "TxEnd") {
         if (carrierIndex == null) {
-            log("$event without a transceiver ignored")
+            trace { "$event without a transceiver ignored" }
             return
         }
         val ticket = synchronized(tickets) {
@@ -104,10 +109,10 @@ internal object TxEndGate {
         // Still consumed, so FIFO stays aligned with the radio's queue; not claimed, so the
         // sender's timer moves on.
         if (event == FINISH_EVENT && !ticket.releasedByFinish) {
-            log("$event on carrier $carrierIndex retired a ticket that waits for TxEnd")
+            trace { "$event on carrier $carrierIndex retired a ticket that waits for TxEnd" }
             return
         }
-        if (ticket.fireTxEnd()) log("$event on carrier $carrierIndex released the next package")
+        if (ticket.fireTxEnd()) trace { "$event on carrier $carrierIndex released the next package" }
     }
 
     /** The link is gone: nothing still queued will be answered. */

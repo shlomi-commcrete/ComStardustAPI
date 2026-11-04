@@ -3,6 +3,7 @@ package com.commcrete.stardust.util.connectivity
 import android.content.Context
 import android.os.PowerManager
 import android.os.SystemClock
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 
 /**
@@ -60,7 +61,7 @@ internal object InboundWakeLock {
             // is called per packet. SecurityException if the host process lacks WAKE_LOCK.
             if (!failureLogged) {
                 failureLogged = true
-                StardustLog.w(TAG, "Inbound wake lock unavailable; screen-off receive may stall", e)
+                StardustLog.w(LogType.CONNECTION, TAG, "Inbound wake lock unavailable; screen-off receive may stall", e)
             }
         }
     }

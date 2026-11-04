@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.LoudnessEnhancer
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.PlaybackSink
 import com.commcrete.stardust.audio.v2.domain.Gain
@@ -63,6 +64,7 @@ class Codec2PlaybackSink : PlaybackSink {
         attachEnhancer(built)
         applyGain(built, gainRef.get())
         built.play()
+        StardustLog.i(LogType.PTT, TAG, "Codec2 playback started: ${sampleRateHz}Hz")
     }
 
     override suspend fun write(pcm: PcmChunk) {
@@ -90,6 +92,9 @@ class Codec2PlaybackSink : PlaybackSink {
         get() = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: -1
 
     override fun close() {
+        if (track != null && sampleRateHz > 0) {
+            StardustLog.i(LogType.PTT, TAG, "Codec2 playback stopped: $framesWritten frame(s) (~${framesWritten * 1000 / sampleRateHz}ms)")
+        }
         runCatching { track?.stop() }
         runCatching { track?.release() }
         runCatching { enhancer?.release() }
@@ -101,7 +106,7 @@ class Codec2PlaybackSink : PlaybackSink {
         runCatching { t.setVolume(g.value.coerceIn(0f, 1f)) }
         enhancer?.let { fx ->
             runCatching { fx.setTargetGain(BASE_GAIN_MB + g.boostMb()) }
-                .onFailure { StardustLog.w(TAG, "LoudnessEnhancer gain not applied", it) }
+                .onFailure { StardustLog.w(LogType.PTT, TAG, "LoudnessEnhancer gain not applied", it) }
         }
     }
 
@@ -111,7 +116,7 @@ class Codec2PlaybackSink : PlaybackSink {
                 setTargetGain(BASE_GAIN_MB)
                 enabled = true
             }
-        }.onFailure { StardustLog.w(TAG, "LoudnessEnhancer unavailable", it) }
+        }.onFailure { StardustLog.w(LogType.PTT, TAG, "LoudnessEnhancer unavailable", it) }
     }
 
     private companion object {

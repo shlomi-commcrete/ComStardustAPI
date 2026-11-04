@@ -1,7 +1,7 @@
 package com.commcrete.stardust.ai.codec
 
 import android.media.MediaCodec
-import android.util.Log
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.aiaudio.codecs.BitPacking12
 import com.commcrete.stardust.ai.codec.AIPcmStreamPlayer.initPttInputFile
@@ -129,8 +129,8 @@ object PttReceiveManager {
                     val chunk = toDecodeQueue.tryReceive().getOrNull()
 
                     if (chunk != null) {
-                        // logcat only: per-packet, would flood the log file
-                        Log.d(TAG, "Data received of size: ${chunk.decodedBytes.size}")
+                        // Per-packet: keep at d.
+                        StardustLog.d(LogType.PTT, TAG) { "Data received of size: ${chunk.decodedBytes.size}" }
                         handleTokenizerChunk(chunk)
                     }
 
@@ -145,7 +145,7 @@ object PttReceiveManager {
                 // Small delay to prevent a tight loop from consuming too much CPU if no buffers are available
                 delay(1) // Adjust delay as needed
             }
-            StardustLog.d(TAG, "Decoding job finished.")
+            StardustLog.d(LogType.PTT, TAG, "Decoding job finished.")
         }
     }
 
@@ -153,8 +153,8 @@ object PttReceiveManager {
         val pkg = StardustPackageApiMapper.toStardustAPIPackage(chunk.dataPackage) ?: return
 
         val decodedData = chunk.decodedBytes.sliceArray(1 until chunk.decodedBytes.size)
-        // logcat only: per-packet, would flood the log file
-        Log.d(TAG, "Received data: ${decodedData.size} bytes")
+        // Per-packet: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "Received data: ${decodedData.size} bytes" }
         val unpack = BitPacking12.unpack12(decodedData)
 
         val key = streamKey(chunk.dataPackage)
@@ -185,14 +185,15 @@ object PttReceiveManager {
             if (!isContinuation) {
                 // Fresh stream → start from a clean slate.
                 stream.decoderState = WavTokenizerDecoder.InternalState.INITIAL
+                wavTokenizerDecoder.startLogRun()
             }
             wavTokenizerDecoder.restoreInternalState(stream.decoderState)
             val pcm = wavTokenizerDecoder.decode(unpack, previousUnpack, previousSample, chunk.modelType)
             stream.decoderState = wavTokenizerDecoder.snapshotInternalState()
             pcm
         }
-        // logcat only: per-packet, would flood the log file
-        Log.d(TAG, "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples (continuation=$isContinuation)")
+        // Per-packet: keep at d.
+        StardustLog.d(LogType.PTT, TAG) { "Decoded tokenizer unpack size ${unpack.size} , PCM data: ${finalPcmData.size} samples (continuation=$isContinuation)" }
 
         // Per-stream continuity for the next chunk on THIS channel.
         stream.lastUnpack = unpack
@@ -204,7 +205,7 @@ object PttReceiveManager {
             delay(BUFFERING_TIME_MS)
 
         if (!isFileInit) {
-            StardustLog.d("PcmStreamPlayer", "Initializing PTT input file...")
+            StardustLog.d(LogType.PTT, "PcmStreamPlayer", "Initializing PTT input file...")
             val file = initPttInputFile(pkg) ?: return
 
             DataManager.getAppRepo().saveMessage(
@@ -235,7 +236,7 @@ object PttReceiveManager {
         while (it.hasNext()) {
             val entry = it.next()
             if ((now - entry.value.lastUnpackTime) > STREAM_IDLE_EVICT_MS) {
-                StardustLog.d(TAG, "Evicting idle receive stream")
+                StardustLog.d(LogType.PTT, TAG, "Evicting idle receive stream")
                 it.remove()
             }
         }

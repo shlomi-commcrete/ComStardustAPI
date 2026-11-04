@@ -36,6 +36,7 @@ class OwnSosSenderTest {
         OwnSosSender.cancel()
         OwnSosSender.sendable = { ready }
         OwnSosSender.log = { _, _ -> }
+        OwnSosSender.logError = { _, _ -> }
     }
 
     @After

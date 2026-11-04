@@ -13,6 +13,7 @@ import com.commcrete.stardust.stardust.model.config.StardustBatteryCharge
 import com.commcrete.stardust.stardust.model.config.StardustRDPLevel
 import com.commcrete.stardust.stardust.model.config.StardustType
 import com.commcrete.stardust.util.ByteReader
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 
 class StardustConfigurationParser : StardustParser() {
@@ -33,10 +34,11 @@ class StardustConfigurationParser : StardustParser() {
     fun parseConfiguration(pkg: StardustPackage, firmwareVersion: String? = null): StardustConfigurationPackage? {
         val intArray = pkg.data
         if (intArray == null) {
-            StardustLog.w("ConfigDebug", "parseConfiguration: pkg.data is NULL (opCode=${pkg.stardustOpCode}) -> returning null")
+            StardustLog.w(LogType.CONFIG, "ConfigDebug", "parseConfiguration: pkg.data is NULL (opCode=${pkg.stardustOpCode}) -> returning null")
             return null
         }
-        StardustLog.d("ConfigDebug", "parseConfiguration: parsing data size=${intArray.size} fw=$firmwareVersion")
+        // i: the firmware version picks the wire format (the 24.0.7 split), so field logs need it.
+        StardustLog.i(LogType.CONFIG, "ConfigDebug", "parseConfiguration: parsing data size=${intArray.size} fw=$firmwareVersion")
         try {
             val byteArray = intArrayToByteArray(intArray.toMutableList())
             val format = ConfigFormatRegistry.resolve(FirmwareVersion.parse(firmwareVersion))
@@ -119,7 +121,7 @@ class StardustConfigurationParser : StardustParser() {
                 sosDestinations = parseSosDestinations(sosBytes),
             )
         } catch (e: Exception) {
-            StardustLog.w("ConfigDebug", "parseConfiguration THREW while parsing (data size=${intArray.size}): ${e.message}", e)
+            StardustLog.w(LogType.CONFIG, "ConfigDebug", "parseConfiguration THREW while parsing (data size=${intArray.size}): ${e.message}", e)
             e.printStackTrace()
         }
         return null

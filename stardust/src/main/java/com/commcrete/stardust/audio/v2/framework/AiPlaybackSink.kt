@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
 import android.media.audiofx.LoudnessEnhancer
+import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.PlaybackSink
 import com.commcrete.stardust.audio.v2.domain.Gain
@@ -59,10 +60,11 @@ class AiPlaybackSink : PlaybackSink {
         // Here, not on the first boost: attaching an effect is a call into the audio server, and
         // setGain runs on the host's UI thread. Disabled until a gain above unity asks for it.
         enhancer = runCatching { LoudnessEnhancer(built.audioSessionId) }
-            .onFailure { StardustLog.w(TAG, "LoudnessEnhancer unavailable", it) }
+            .onFailure { StardustLog.w(LogType.PTT, TAG, "LoudnessEnhancer unavailable", it) }
             .getOrNull()
         applyGain(built, gainRef.get())
         built.play()
+        StardustLog.i(LogType.PTT, TAG, "AI playback started: ${sampleRateHz}Hz")
     }
 
     override suspend fun write(pcm: PcmChunk) {
@@ -90,6 +92,9 @@ class AiPlaybackSink : PlaybackSink {
         get() = track?.let { runCatching { it.underrunCount }.getOrNull() } ?: -1
 
     override fun close() {
+        if (track != null && sampleRateHz > 0) {
+            StardustLog.i(LogType.PTT, TAG, "AI playback stopped: $framesWritten frame(s) (~${framesWritten * 1000 / sampleRateHz}ms)")
+        }
         runCatching { track?.stop() }
         runCatching { track?.release() }
         runCatching { enhancer?.release() }
@@ -104,7 +109,7 @@ class AiPlaybackSink : PlaybackSink {
             runCatching {
                 fx.setTargetGain(boost)
                 fx.enabled = boost > 0
-            }.onFailure { StardustLog.w(TAG, "LoudnessEnhancer gain not applied", it) }
+            }.onFailure { StardustLog.w(LogType.PTT, TAG, "LoudnessEnhancer gain not applied", it) }
         }
     }
 

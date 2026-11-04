@@ -1,7 +1,8 @@
 package com.commcrete.stardust.room
 
 import com.commcrete.stardust.util.DataManager
-import timber.log.Timber
+import com.commcrete.stardust.util.LogType
+import com.commcrete.stardust.util.StardustLog
 import java.io.File
 
 /**
@@ -83,6 +84,7 @@ import java.io.File
  */
 internal object StardustStorage {
 
+    private const val TAG = "StardustStorage"
     private const val ROOT_DIR = "stardust"
     private const val DB_DIR = "db"
     private const val MEDIA_DIR = "media"
@@ -159,9 +161,10 @@ internal object StardustStorage {
         // media root that contains the database is one `clearMedia` away from
         // deleting it out from under an open connection. See the class comment.
         val candidate = if (requested.containsOrIs(databaseDir)) {
-            Timber.w(
-                "Media location $requested holds the Stardust database — " +
-                    "using $internalMediaRoot instead"
+            StardustLog.w(
+                LogType.STORAGE, TAG,
+                "Media location holds the Stardust database — " +
+                    "using the internal media root instead"
             )
             internalMediaRoot
         } else {
@@ -172,14 +175,14 @@ internal object StardustStorage {
         val resolved = if (usable) {
             candidate
         } else {
-            Timber.w("Media root $candidate is not usable — falling back to internal storage")
+            StardustLog.w(LogType.STORAGE, TAG, "Media root is not usable — falling back to internal storage")
             internalMediaRoot
         }
 
         resolvedMediaRoot = resolved
         ensureDirectories()
         if (resolved.isSameAs(internalMediaRoot)) relocateStrayMedia(resolved)
-        Timber.d("StardustStorage: media root = $resolved")
+        StardustLog.d(LogType.STORAGE, TAG, "StardustStorage: media root = $resolved")
         return resolved.absolutePath
     }
 
@@ -194,7 +197,7 @@ internal object StardustStorage {
     fun ensureDirectories() {
         listOf(root, databaseDir, mediaRoot).forEach { dir ->
             val ready = runCatching { dir.exists() || dir.mkdirs() }.getOrDefault(false)
-            if (!ready) Timber.w("StardustStorage: could not create $dir")
+            if (!ready) StardustLog.w(LogType.STORAGE, TAG, "StardustStorage: could not create ${dir.name}")
         }
     }
 
@@ -222,9 +225,9 @@ internal object StardustStorage {
             val moved = runCatching { !destination.exists() && stray.renameTo(destination) }
                 .getOrDefault(false)
             if (moved) {
-                Timber.d("StardustStorage: moved stray media $stray -> $destination")
+                StardustLog.d(LogType.STORAGE, TAG) { "StardustStorage: moved stray media $stray -> $destination" }
             } else {
-                Timber.w("StardustStorage: could not move stray media $stray -> $destination")
+                StardustLog.w(LogType.STORAGE, TAG, "StardustStorage: could not move a stray media entry")
             }
         }
     }
@@ -320,7 +323,7 @@ internal object StardustStorage {
         // database in the wrong place.
         val resolved = DataManager.appContext.getDatabasePath(path).absolutePath
         if (resolved != path) {
-            Timber.w("Database path resolved to $resolved, expected $path")
+            StardustLog.w(LogType.STORAGE, TAG, "Database path resolved elsewhere than expected")
         }
         return path
     }
@@ -358,16 +361,16 @@ internal object StardustStorage {
         var allGone = true
         dir.listFiles()?.forEach { child ->
             if (isInternal(child)) {
-                Timber.d("StardustStorage.clearMedia: keeping $child")
+                StardustLog.d(LogType.STORAGE, TAG) { "StardustStorage.clearMedia: keeping $child" }
                 return@forEach
             }
             val deleted = runCatching { child.deleteRecursively() }.getOrDefault(false)
             if (!deleted) {
                 allGone = false
-                Timber.w("StardustStorage.clearMedia: could not delete $child")
+                StardustLog.w(LogType.STORAGE, TAG, "StardustStorage.clearMedia: could not delete a media entry")
             }
         }
-        Timber.d("StardustStorage.clearMedia: $dir cleared=$allGone")
+        StardustLog.d(LogType.STORAGE, TAG, "StardustStorage.clearMedia: $dir cleared=$allGone")
         return allGone
     }
 
@@ -410,7 +413,7 @@ internal object StardustStorage {
         targets.forEach { dir ->
             val deleted = runCatching { !dir.exists() || dir.deleteRecursively() }
                 .getOrDefault(false)
-            Timber.d("StardustStorage.deleteAll: $dir deleted=$deleted")
+            StardustLog.d(LogType.STORAGE, TAG, "StardustStorage.deleteAll: $dir deleted=$deleted")
             if (!deleted) allGone = false
         }
         return allGone
