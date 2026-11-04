@@ -285,9 +285,27 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             opCode == StardustPackageUtils.StardustOpCode.SOS ||
             opCode == StardustPackageUtils.StardustOpCode.SOS_ACK
 
-    /** Returns true if [mPackage] is an exact duplicate of the last saved package. */
+    /**
+     * Returns true if [mPackage] is an exact duplicate of the last saved package, from the same
+     * source to the same destination. [StardustPackage.isEqual] ignores the addresses (and is
+     * public, so its meaning stays), which made the same text or audio frame from two senders
+     * within a second one message; the address check is made here instead.
+     */
     private fun isDuplicate(mPackage: StardustPackage): Boolean =
-        savedPackage?.let { mPackage.isEqual(it) } ?: false
+        savedPackage?.let {
+            mPackage.isEqual(it) &&
+                mPackage.sourceBytes.contentEquals(savedSourceBytes) &&
+                mPackage.destinationBytes.contentEquals(savedDestinationBytes)
+        } ?: false
+
+    /**
+     * [savedPackage]'s addresses as they arrived, copied when it is cached. Not read off
+     * savedPackage itself: [swapAddressesIfSendInGroup] later swaps that same object's source and
+     * destination for a group send, while the next packet is compared before its own swap.
+     * Always set together with savedPackage, under [packageProcessingLock].
+     */
+    private var savedSourceBytes: Array<Int>? = null
+    private var savedDestinationBytes: Array<Int>? = null
 
     /** Caches the package unless it is a high-frequency no-op opcode (ping / port update). */
     private fun cachePackageIfNeeded(mPackage: StardustPackage) {
@@ -295,6 +313,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.UPDATE_PORT_RESPONSE &&
             mPackage.stardustOpCode != StardustPackageUtils.StardustOpCode.RECEIVE_APP_EVENT) {
             savedPackage = mPackage
+            savedSourceBytes = mPackage.sourceBytes.copyOf()
+            savedDestinationBytes = mPackage.destinationBytes.copyOf()
         }
     }
 
