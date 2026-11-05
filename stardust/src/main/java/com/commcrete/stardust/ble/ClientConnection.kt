@@ -933,6 +933,12 @@ internal class ClientConnection(): BittelProtocol {
                                 StardustLog.d(LogType.CONNECTION, "ConfigDebug", "BT-on reconnect suppressed — user disconnected intentionally")
                                 return@let
                             }
+                            // Before SEARCHING is published: connectDevice would refuse anyway, but
+                            // too late to stop the state reading "searching" for a connect that never comes.
+                            if (!ConnectionManager.isConnectionPermitted()) {
+                                StardustLog.d(LogType.CONNECTION, "ConfigDebug", "BT-on reconnect skipped — connections withdrawn by the host")
+                                return@let
+                            }
                             // Case 2c (BT off → on with saved device): normalize per-session
                             // state the same way bondOnStartup / adopt do, so a session that was
                             // torn down by the BT-off branch above doesn't leave singleton state
@@ -992,6 +998,12 @@ internal class ClientConnection(): BittelProtocol {
         // automatic BLE connect attempt when logged out.
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             StardustLog.d(LogType.CONNECTION, LOG_TAG, "Skipping connect to ${device.address}: no user logged in")
+            return false
+        }
+        // The same funnel, so the host's withdrawn permit also stops every BLE connect —
+        // including the reconnect paths no entry point guards.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.d(LogType.CONNECTION, LOG_TAG, "Skipping connect: connections withdrawn by the host")
             return false
         }
         bleConnectBlockReason()?.let { reason ->
@@ -1270,6 +1282,12 @@ internal class ClientConnection(): BittelProtocol {
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             StardustLog.d(LogType.BLE, LOG_TAG, "Skipping bond: no user logged in")
             PairingTracker.failed(address, PairingFailure.NotLoggedIn)
+            return
+        }
+        // The companion-device path calls in here without passing DataManager.connect's check.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.w(LogType.BLE, LOG_TAG, "Skipping bond: connections withdrawn by the host")
+            PairingTracker.failed(address, PairingFailure.NotPermitted)
             return
         }
         bleConnectBlockReason()?.let { reason ->

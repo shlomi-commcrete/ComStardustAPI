@@ -28,6 +28,8 @@ sealed interface PairingFailure {
     data class BluetoothBusy(val retryAfterSeconds: Int) : PairingFailure
     /** No user is logged in, so the SDK refuses to connect. */
     data object NotLoggedIn : PairingFailure
+    /** The host has withdrawn permission to connect (`ConnectionManager.setConnectionPermitted(false)`). */
+    data object NotPermitted : PairingFailure
     /** Something on the phone stops the attempt; same vocabulary as [ConnectionState.Blocked]. */
     data class Blocked(val blocker: Blocker) : PairingFailure
     /** No more specific cause is available. */

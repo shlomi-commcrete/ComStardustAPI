@@ -9,6 +9,7 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.usb.BittelUsbManager2.ACTION_USB_PERMISSION
 import com.commcrete.stardust.usb.BittelUsbManager2.connectToUnknownDevice
 import com.commcrete.stardust.usb.BittelUsbManager2.disconnectToUnknownDevice
@@ -74,6 +75,18 @@ object UsbDevicePermissionHandler {
 
     private fun requestNextPermission() {
         UsbDiag.log("requestNextPermission", "ENTER queueSize=${devicesQueue.size}")
+        // The one pump every permission prompt goes through (attach, start-up, recovery): with the
+        // host's permit withdrawn, no system USB dialog is shown and nothing is left queued to
+        // connect later behind the host's back.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            if (devicesQueue.isNotEmpty()) {
+                StardustLog.i(LogType.USB, "UsbPermission", "USB permission requests dropped: connections withdrawn by the host")
+            }
+            devicesQueue.clear()
+            currentDevice = null
+            isRequestingPermission = false
+            return
+        }
         if (devicesQueue.isNotEmpty()) {
             isRequestingPermission = true
             currentDevice = devicesQueue.poll()

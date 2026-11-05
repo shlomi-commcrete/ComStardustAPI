@@ -137,6 +137,49 @@ object ConnectionManager {
         autoConnectSuppressed = false
     }
 
+    // ───────────────────────── Host connection permit ─────────────────────────
+
+    /**
+     * The host's permission to connect at all. Unlike [autoConnectSuppressed] — which is about the
+     * user's last disconnect and is lifted by any explicit connect — this one is lifted only by the
+     * host, and it covers USB as well as BLE. The ATAK plugin withdraws it until its own
+     * agreement and licence checks pass.
+     */
+    @Volatile
+    private var connectionPermitted = true
+
+    /**
+     * False while the host has withdrawn permission with [setConnectionPermitted]. Every connect
+     * path — BLE and USB, explicit and automatic — reads it before starting. Safe on any thread.
+     */
+    fun isConnectionPermitted(): Boolean = connectionPermitted
+
+    /**
+     * Grants or withdraws the host's permission for this SDK to connect to a radio, over BLE and
+     * USB alike. Default: granted. Not persisted — every process starts granted, so a host that
+     * gates connections withdraws it before its first connect call.
+     *
+     * Withdrawing refuses every connect that starts afterwards and stops the reconnect watchdog:
+     * - `connect(address)` ends in [PairingFailure.NotPermitted];
+     * - `bondOnStartup()`, `reconnectToCurrentDevice()`, the Bluetooth-on reconnect,
+     *   [requestReconnect], USB attach, USB start-up and USB recovery do nothing and log why;
+     * - no USB permission dialog is shown.
+     *
+     * It does **not** tear down a link that is already up, and it does not touch the bond: call
+     * `disconnectFromDevice(true)` and `BittelUsbManager2.disconnect()` for that. Granting only
+     * lifts the refusal; it does not connect — call `bondOnStartup()` and
+     * `BittelUsbManager2.getConnectedDevicesStartup()` for that.
+     *
+     * Safe on any thread; idempotent; publishes nothing and calls nothing back.
+     */
+    @Synchronized
+    fun setConnectionPermitted(permitted: Boolean) {
+        if (connectionPermitted == permitted) return
+        connectionPermitted = permitted
+        StardustLog.i(LogType.CONNECTION, TAG, if (permitted) "connections permitted by the host" else "connections withdrawn by the host")
+        if (!permitted) disableAutoReconnect()
+    }
+
     /** Deadline (elapsedRealtime) until which a link-down reads as [ConnectionState.Searching]. */
     @Volatile
     private var reconnectGraceUntilMs = 0L
@@ -376,6 +419,12 @@ object ConnectionManager {
      */
     @Synchronized
     fun requestReconnect(transport: TransportId, reason: String, withGrace: Boolean = true) {
+        // Both transports: the host has withdrawn permission to connect at all.
+        if (!connectionPermitted) {
+            StardustLog.d(LogType.CONNECTION, TAG, "reconnect over $transport refused: connections withdrawn by the host ($reason)")
+            BleDiag.log("requestReconnect", "REFUSED not-permitted ($reason)")
+            return
+        }
         // BLE only: a USB ping-timeout reconnect must still work during a USB session, and entering
         // USB calls disableAutoReconnect() as part of the takeover.
         if (transport == TransportId.BLE && autoConnectSuppressed) {

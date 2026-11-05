@@ -679,6 +679,11 @@ object DataManager : StardustAPI, PttInterface {
      * [com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect].
      */
     override fun reconnectToCurrentDevice() {
+        // No result type to carry a refusal; the host that withdrew the permit already knows why.
+        if (!com.commcrete.stardust.transport.ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.CONNECTION, LOG_TAG, "reconnectToCurrentDevice refused: connections withdrawn by the host")
+            return
+        }
         com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()
         checkInitialized()
         getClientConnection().reconnectToDeviceFast()
@@ -767,6 +772,11 @@ object DataManager : StardustAPI, PttInterface {
             "bondOnStartup ENTER hasUser=${user != null} " +
                 "isBluetoothEnabled=${getClientConnection().isBluetoothEnabled()}"
         )
+        // Before anything that publishes state or offers adoptable radios: the host gate is closed.
+        if (!com.commcrete.stardust.transport.ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.CONNECTION, LOG_TAG, "bondOnStartup skipped: connections withdrawn by the host")
+            return
+        }
         // Only attempt to (re)connect once a user is logged in.
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             StardustLog.w(LogType.CONNECTION, LOG_TAG, "bondOnStartup skipped: no user logged in")
@@ -911,6 +921,11 @@ object DataManager : StardustAPI, PttInterface {
         if (!RegisteredUserUtils.isUserLoggedIn()) {
             StardustLog.w(LogType.CONNECTION, LOG_TAG, "connect refused: no user logged in")
             PairingTracker.failed(address, PairingFailure.NotLoggedIn)
+            return PairingTracker.state
+        }
+        if (!com.commcrete.stardust.transport.ConnectionManager.isConnectionPermitted()) {
+            StardustLog.w(LogType.CONNECTION, LOG_TAG, "connect refused: connections withdrawn by the host")
+            PairingTracker.failed(address, PairingFailure.NotPermitted)
             return PairingTracker.state
         }
         com.commcrete.stardust.transport.ConnectionManager.allowAutoConnect()

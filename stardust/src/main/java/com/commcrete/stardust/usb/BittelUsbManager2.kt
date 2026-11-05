@@ -14,6 +14,7 @@ import com.commcrete.stardust.stardust.model.config.PortType
 import com.commcrete.stardust.stardust.model.StardustPackage
 import com.commcrete.stardust.stardust.model.intToByteArray
 import com.commcrete.stardust.stardust.model.toHex
+import com.commcrete.stardust.transport.ConnectionManager
 import com.commcrete.stardust.util.BittelProtocol
 import com.commcrete.stardust.util.ConfigurationUtils
 import com.commcrete.stardust.util.DataManager
@@ -145,6 +146,11 @@ object BittelUsbManager2 : BittelProtocol {
         )
         UsbDiag.log("connectToUnknownDevice") { "ENTER ${UsbDiag.describe(device)} hasPermission=${UsbDiag.hasPermission(device)}" }
         UsbDiag.match("connectToUnknownDevice", device)
+        // Both roles: a permission granted before the host withdrew the permit must not open a port.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.USB, TAG, "USB connect refused: connections withdrawn by the host")
+            return
+        }
         if (isJboxAudioDevice(device)) {
             UsbDiag.log("connectToUnknownDevice", "→ AUDIO role (checked first; a name containing 'ft231x usb uart ptt' NEVER reaches the data branch)")
             isJboxAudioPresent = true
@@ -202,6 +208,11 @@ object BittelUsbManager2 : BittelProtocol {
         val deviceList: HashMap<String, UsbDevice> = manager.deviceList
         UsbDiag.log("getConnectedDevicesStartup", "enumerated ${deviceList.size} attached device(s)")
         UsbDiag.dumpAttachedDevices("getConnectedDevicesStartup")
+        // After the teardown above, deliberately: a closed permit still leaves nothing open.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.USB, TAG, "USB start-up connect skipped: connections withdrawn by the host")
+            return
+        }
         usbDevicePermissionHandler.requestPermissionsForDevices(deviceList.values.toList())
     }
 
@@ -366,6 +377,10 @@ object BittelUsbManager2 : BittelProtocol {
      */
     @Synchronized
     private fun startUsbRecovery(reason: String) {
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.USB, TAG, "USB recovery not starting ($reason): connections withdrawn by the host")
+            return
+        }
         val device = attachedStardustDataDevice()
         if (device == null) {
             StardustLog.i(LogType.USB, TAG, "USB recovery not starting ($reason): no data device on the bus")
@@ -642,6 +657,11 @@ object BittelUsbManager2 : BittelProtocol {
 
     private fun connectToDevice(device: UsbDevice) {
         StardustLog.d(LogType.USB, "SerialInOutputManager", "connectToDevice : ${device.productName}")
+        // The recovery loop calls in here directly; a re-probe already scheduled must not reopen the port.
+        if (!ConnectionManager.isConnectionPermitted()) {
+            StardustLog.i(LogType.USB, TAG, "USB port not opened: connections withdrawn by the host")
+            return
+        }
         UsbDiag.log("connectToDevice") {
             "ENTER ${UsbDiag.describe(device)} previousUartManager=${if (uartManager == null) "null" else "REPLACED (old one leaks unless disconnected)"}"
         }
