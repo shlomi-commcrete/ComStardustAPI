@@ -1,5 +1,11 @@
 # AGENTS.md: ComStardustAPI Quick Navigation for AI Agents
 
+> **This file describes how the code works *today*. The rules for new
+> code are in [`CLAUDE.md`](CLAUDE.md), and they win wherever the two
+> disagree.** Sections marked **⚠️ Current state, not the convention**
+> document legacy patterns (Timber, `object` singletons, callback
+> interfaces) so you can navigate them; do not copy them into new code.
+
 ## Project Overview
 **ComStardustAPI** is an Android SDK library (`:stardust`) + demo app (`:app`) for communicating with Stardust field devices via **Bluetooth LE or USB UART**. The library manages device connections, messaging (text/PTT/location/SOS), file transfers, and local database sync.
 
@@ -89,9 +95,8 @@
 - **Room testing**: Use `@get:Rule val instantExecutorRule = InstantTaskExecutorRule()`
 
 ### Debugging
-- **Logging**: Uses **Timber** (not plain Log)
-  - Tags: `"InitHandler"`, `"stardust_tag"`, `"SerialInOutputManager"`, `"Ble write $randomID"`
-  - Called throughout; no setup found (Timber.plant() missing – callers must initialize in app)
+- **Logging**: New code uses **`android.util.Log`** with a per-class `private const val TAG` — never Timber (CLAUDE.md §8). Never log callsigns, coordinates, IDs, message content, keys or raw packets.
+  - ⚠️ **Current state, not the convention**: ~40 legacy files still use Timber (`com.jakewharton.timber:timber:5.0.1`), with shared tags such as `"InitHandler"`, `"stardust_tag"`, `"SerialInOutputManager"`, `"Ble write $randomID"`. Don't extend it; don't mass-migrate it as a side effect of an unrelated change.
 - **GATT**: Monitor `onConnectionStateChange()`, `onServicesDiscovered()` in `ClientConnection`
 - **USB**: Check `SerialInputOutputManager.Listener.onNewData()` and `onRunError()`
 - **Profiling**: Nordic BLE library handles low-level timing; USB UART has hardcoded delays
@@ -101,7 +106,7 @@
 ## Code Patterns & Conventions
 
 ### Singleton Pattern (Not Dependency Injection)
-All major services are `object` singletons, not injected:
+⚠️ **Current state, not the convention.** New code must not add singletons that can't be instantiated twice; pass dependencies in (CLAUDE.md §2, §12). Existing services are `object` singletons, not injected:
 ```kotlin
 object DataManager : StardustAPI { }
 object BleManager { var isBleConnected = false; ... }
@@ -122,7 +127,7 @@ object SharedPreferencesUtil { fun getAppUser(ctx: Context): RegisterUser? }
 - Encodes: Byte arrays, int arrays, hex strings
 
 ### Callbacks Over Kotlin Flows
-SDK uses callback interfaces, not reactive streams:
+⚠️ **Current state, not the convention.** New public API should expose `suspend` functions and `Flow` for Kotlin consumers, and every callback must document the thread it arrives on (CLAUDE.md §3). Changing existing callback interfaces is a breaking change (§1). The existing SDK uses callback interfaces, not reactive streams:
 ```kotlin
 interface StardustAPICallbacks {
     fun receiveMessage(pkg: StardustAPIPackage, text: String)
@@ -178,7 +183,7 @@ interface StardustAPICallbacks {
 ## Critical Gotchas & Future Work
 
 ### Known Limitations
-- **No proper Timber setup**: `Timber.plant()` call missing – set up in app's `Application.onCreate()`
+- **Legacy Timber logging**: `Timber.plant()` is never called by the SDK, so Timber output is silent unless the host plants a tree. New logging uses `android.util.Log` (CLAUDE.md §8); the SDK must not require `Application.onCreate` setup (§2)
 - **Empty documentation**: Most `.md` files in root are stubs (INDEX, ARCHITECTURE, USAGE_GUIDE etc.)
 - **Static context**: `DataManager.context` stored globally – potential memory leak in long-lived services
 - **Legacy DB migration**: Runs in background task; subsequent data edits might race before migration completes
@@ -188,7 +193,7 @@ interface StardustAPICallbacks {
 - [ ] Add opcode to `StardustPackageUtils.StardustOpCode` enum
 - [ ] Add handler method in `StardustPackageHandler.dispatchPackage()` when-branch
 - [ ] If new message type: add `MessageType` enum value + `MessageEntity` changes
-- [ ] Update `StardustAPICallbacks` interface for new callback
+- [ ] Update `StardustAPICallbacks` interface for new callback (document its callback thread; adding a member is a public API change — CLAUDE.md §1, §3)
 - [ ] Add Room entity if storing new data (inherit from `AppRepository`)
 - [ ] Test BLE + USB paths (dual transport)
 - [ ] Verify init handler doesn't intercept new packets unintentionally
@@ -214,7 +219,7 @@ interface StardustAPICallbacks {
 | **Location** | `location/LocationUtils.kt` |
 | **Security** | `crypto/SecureKeyUtils.kt`, `security/EraseUtils.kt` |
 | **SOS** | `util/SOSUtils.kt` |
-| **Logging** | Throughout via `timber.log.Timber` |
+| **Logging** | New code: `android.util.Log`. Legacy: `timber.log.Timber` |
 | **Gradle** | `build.gradle.kts` (root), `stardust/build.gradle.kts`, `settings.gradle.kts` |
 
 ---
@@ -246,5 +251,5 @@ interface StardustAPICallbacks {
 - **Trace `dispatchPackage()`** when understanding message flows
 - **Dual transport**: Check both `ClientConnection` (BLE) and `BittelUsbManager2` (USB) for transport-specific logic
 - **Room migrations**: Expect background task to run on first install; don't assume data is immediately available
-- **Timber required**: Set up logging in app before using SDK in production
+- **Rules live in `CLAUDE.md`**: this file maps the code; `CLAUDE.md` says how to change it. Log with `android.util.Log`, not Timber
 
