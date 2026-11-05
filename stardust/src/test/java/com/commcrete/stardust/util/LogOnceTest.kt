@@ -30,6 +30,20 @@ class LogOnceTest {
     }
 
     @Test
+    fun theMasterSwitchSkipsBuildingEvenErrorMessages() {
+        var built = false
+        StardustLog.enabled = false
+        try {
+            StardustLog.e("Test") { built = true; "never" }
+            StardustLog.w(LogType.PTT, "Test") { built = true; "never" }
+        } finally {
+            StardustLog.enabled = true
+        }
+
+        assertFalse(built)
+    }
+
+    @Test
     fun loggingWithoutAndroidNeverThrows() {
         // A JVM test has no logcat: every call must fail inside the logger, not in the caller.
         StardustLog.e("Test", "no logcat here", IllegalStateException())

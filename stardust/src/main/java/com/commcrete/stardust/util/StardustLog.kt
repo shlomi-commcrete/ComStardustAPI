@@ -47,6 +47,16 @@ internal enum class LogType {
     GENERAL,
 }
 
+/** Where [StardustLog] sends the lines it logs. */
+internal enum class LogOutput {
+    /** Logcat and the export file. */
+    BOTH,
+    /** The export file only: logcat stays quiet. */
+    FILE,
+    /** Logcat only: nothing reaches the export file, which keeps whatever it already holds. */
+    LOGCAT,
+}
+
 /**
  * Lets a line inside a loop — per frame, per packet, per poll — log once per run instead of
  * once per pass. The loop's owner holds one and calls [reset] when a new run starts (a PTT
@@ -78,10 +88,11 @@ internal class LogOnce {
  * Logcat alone loses them: its ring buffer is shared with every app on the device and
  * ATAK fills it within minutes, and a restart changes the pid the export filters by.
  *
- * Errors ([e]) are always logged. Every other line carries a [LogType] and is logged — to
- * logcat and the file alike — only when that type's switch reaches its level. Which switch
- * applies follows [isDebugBuild]: the host sets it from its own build type, because this SDK
- * ships as a release AAR and its own `BuildConfig.DEBUG` is always false.
+ * Errors ([e]) are always logged. Every other line carries a [LogType] and is logged only when
+ * that type's switch reaches its level. Which switch applies follows [isDebugBuild]: the host
+ * sets it from its own build type, because this SDK ships as a release AAR and its own
+ * `BuildConfig.DEBUG` is always false. [output] picks logcat, the file or both for every line,
+ * and [enabled] turns all logging off at once, errors included.
  *
  * Logging never throws and never blocks: a failure inside the logger drops the line and is
  * counted. A line is only formatted on the writer's thread, and the lambda overloads build
@@ -98,6 +109,21 @@ internal class LogOnce {
 object StardustLog {
 
     private const val TAG = "StardustLog"
+
+    /**
+     * Master switch, static for now. False turns every line off — errors too — and no message
+     * is built. For a build that must stay silent; the per-type [switches] are the usual tool.
+     */
+    @Volatile
+    internal var enabled: Boolean = true
+
+    /**
+     * Where every enabled line goes, errors included. Static for now. [LogOutput.LOGCAT] leaves
+     * the Logs export with only what the file held before; [LogOutput.FILE] keeps logcat clean
+     * for the host's own logs.
+     */
+    @Volatile
+    internal var output: LogOutput = LogOutput.BOTH
 
     /** The lowest level a [LogType] logs at, in a release and in a debug build. */
     internal class Switch(val release: Int, val debug: Int)
@@ -161,7 +187,10 @@ object StardustLog {
     /** Lines waiting for the writer. A burst past this is counted and reported in the file. */
     private const val QUEUE_CAPACITY = 2_000
 
-    /** After the file fails, lines go to logcat only for this long before the file is tried again. */
+    /**
+     * After the file fails, it is not tried again for this long. Lines meant for the file are
+     * counted as dropped meanwhile; with [LogOutput.BOTH], logcat still has them.
+     */
     private const val RETRY_MS = 30_000L
 
     /** How long [logFiles] and [deleteFiles] wait for the writer to reach them. */
@@ -227,6 +256,7 @@ object StardustLog {
      * `Log.INFO`, whatever the table says: debug lines may carry identities (see the class doc).
      */
     internal fun isEnabled(type: LogType, priority: Int): Boolean {
+        if (!enabled) return false
         val levels = if (isDebugBuild) debugLevels else releaseLevels
         return priority >= levels[type.ordinal]
     }
@@ -255,10 +285,11 @@ object StardustLog {
     @JvmName("w")
     internal fun w(type: LogType, tag: String, tr: Throwable): Int = w(type, tag, "", tr)
 
-    /** Always logged, to logcat and the file: an error is never switched off. */
+    /** Always logged, to [output]: no per-type switch turns an error off — only [enabled]. */
     @JvmStatic
     @JvmOverloads
-    fun e(tag: String, msg: String, tr: Throwable? = null): Int = emit(Log.ERROR, null, tag, msg, tr)
+    fun e(tag: String, msg: String, tr: Throwable? = null): Int =
+        if (enabled) emit(Log.ERROR, null, tag, msg, tr) else 0
 
     // Lambda forms: the message is built only when the line is enabled. A message that
     // throws while being built is dropped like any other logger failure.
@@ -273,7 +304,7 @@ object StardustLog {
         if (isEnabled(type, Log.WARN)) emitLazy(Log.WARN, type, tag, tr, msg) else 0
 
     internal inline fun e(tag: String, tr: Throwable? = null, msg: () -> String): Int =
-        emitLazy(Log.ERROR, null, tag, tr, msg)
+        if (enabled) emitLazy(Log.ERROR, null, tag, tr, msg) else 0
 
     internal inline fun emitLazy(priority: Int, type: LogType?, tag: String, tr: Throwable?, msg: () -> String): Int {
         val text = try {
@@ -286,22 +317,25 @@ object StardustLog {
         return emit(priority, type, tag, text, tr)
     }
 
-    /** Logcat plus the file queue. Never throws: whatever fails, the caller carries on. */
+    /** To logcat, the file queue or both, per [output]. Never throws: whatever fails, the caller carries on. */
     internal fun emit(priority: Int, type: LogType?, tag: String, msg: String, tr: Throwable?): Int {
         return try {
             if (priority > Log.DEBUG && !admit(tag, priority)) return 0
-            enqueue(priority, type, tag, msg, tr)
-            when (priority) {
-                Log.DEBUG -> Log.d(tag, msg, tr)
-                Log.INFO -> Log.i(tag, msg, tr)
-                Log.WARN -> Log.w(tag, msg, tr)
-                else -> Log.e(tag, msg, tr)
-            }
+            val to = output
+            if (to != LogOutput.LOGCAT) enqueue(priority, type, tag, msg, tr)
+            if (to == LogOutput.FILE) 0 else toLogcat(priority, tag, msg, tr)
         } catch (t: Throwable) {
             // Logcat or the queue failed (a JVM test without Android, a closed channel): drop the line.
             dropped.incrementAndGet()
             0
         }
+    }
+
+    private fun toLogcat(priority: Int, tag: String, msg: String, tr: Throwable?): Int = when (priority) {
+        Log.DEBUG -> Log.d(tag, msg, tr)
+        Log.INFO -> Log.i(tag, msg, tr)
+        Log.WARN -> Log.w(tag, msg, tr)
+        else -> Log.e(tag, msg, tr)
     }
 
     /**
@@ -331,8 +365,9 @@ object StardustLog {
         }
         if (suppressed > 0) {
             val note = "$suppressed lines from this tag held back in ${FLOOD_WINDOW_MS / 1000}s (flood guard)"
-            enqueue(Log.WARN, null, tag, note, null)
-            Log.w(tag, note)
+            val to = output
+            if (to != LogOutput.LOGCAT) enqueue(Log.WARN, null, tag, note, null)
+            if (to != LogOutput.FILE) Log.w(tag, note)
         }
         return true
     }
@@ -514,10 +549,11 @@ object StardustLog {
         }
     }
 
-    /** Any failure of the file must not stop the writer: logcat still has every line. */
+    /** Any failure of the file must not stop the writer; the file is tried again after [RETRY_MS]. */
     private fun fileFailed(e: Exception) {
         try {
-            Log.e(TAG, "Log file unavailable; logcat only for ${RETRY_MS / 1000}s", e)
+            // Always to logcat, whatever [output] says: with the file broken it is the only place left.
+            Log.e(TAG, "Log file unavailable; retrying in ${RETRY_MS / 1000}s", e)
         } catch (t: Throwable) {
             // No logcat (a JVM test): nothing else to report to.
         }

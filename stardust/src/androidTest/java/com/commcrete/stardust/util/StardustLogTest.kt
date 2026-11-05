@@ -38,6 +38,8 @@ class StardustLogTest {
 
     @After
     fun tearDown() {
+        StardustLog.enabled = true
+        StardustLog.output = LogOutput.BOTH
         StardustLog.isDebugBuild = false
         StardustLog.switches = defaultSwitches
         StardustLog.clock = System::currentTimeMillis
@@ -101,6 +103,34 @@ class StardustLogTest {
         assertFalse(text.contains("warn-line"))
         assertTrue(text.contains("E/Test: error-line"))
         assertTrue(text.contains("IllegalStateException: boom"))
+    }
+
+    @Test
+    fun theMasterSwitchTurnsOffEveryLineErrorsIncluded() {
+        StardustLog.enabled = false
+        var built = false
+        StardustLog.w(LogType.PTT, "Test", "warn-while-off")
+        StardustLog.e("Test", "error-while-off")
+        StardustLog.e("Test") { built = true; "lazy-while-off" }
+        StardustLog.enabled = true
+        StardustLog.e("Test", "error-after-on")
+
+        val text = fileText()
+        assertFalse(built)
+        assertFalse(text.contains("while-off"))
+        assertTrue(text.contains("error-after-on"))
+    }
+
+    @Test
+    fun logcatOutputKeepsLinesOutOfTheFile() {
+        StardustLog.output = LogOutput.LOGCAT
+        StardustLog.e("Test", "logcat-only")
+        StardustLog.output = LogOutput.FILE
+        StardustLog.e("Test", "file-only")
+
+        val text = fileText()
+        assertFalse(text.contains("logcat-only"))
+        assertTrue(text.contains("E/Test: file-only"))
     }
 
     @Test
