@@ -102,8 +102,12 @@ object LocationUtils  {
                         longitude = bittelLocationPackage.longitude.toDouble()
                         altitude = bittelLocationPackage.height.toDouble()
                     }
+                    val sourceId = bittelPackage.getSourceAsString()
+                    val connectedDeviceId = mRegisterUser?.bittelId
+                    if(connectedDeviceId != null && connectedDeviceId != sourceId) {
+                        PlayerUtils.playNotificationSound (context)
+                    }
 
-                    PlayerUtils.playNotificationSound (context)
                     DataManager.getCallbacks()?.receiveLocation(
                         StardustAPIPackage(bittelPackage.getSourceAsString(), bittelPackage.getDestAsString(), carrier = CarriersUtils.getCarrierByControl(bittelPackage.stardustControlByte.stardustDeliveryType)),
                         location)
