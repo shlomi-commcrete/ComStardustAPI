@@ -5,6 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -61,7 +62,7 @@ import com.commcrete.stardust.room.new_db.contact.ContactsDao as NewContactsDao
         ChatParticipantEntity::class,
         ContactIdentityLogEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 @TypeConverters(
@@ -91,6 +92,36 @@ abstract class AppDatabase : RoomDatabase() {
          */
         private const val ORPHANED_DATABASE_NAME = "app_database"
 
+        /**
+         * Drops `carrier_type`, `rd`, `freq_Mhz` and `carrier_range` from `messages`:
+         * the RD a message travelled on now lives in `extra_data` as
+         * [com.commcrete.stardust.room.new_db.message.MessageExtraData.deliveryRd].
+         * Rows written before that field existed are not backfilled, so they read
+         * "RD not recorded".
+         *
+         * Rebuilds the table rather than `ALTER TABLE … DROP COLUMN`, which needs
+         * SQLite 3.35 (API 34+). The CREATE and index statements must match what
+         * Room generates for [MessageEntity] — see `schemas/…/2.json`.
+         */
+        internal val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `messages_new` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`chat_id` TEXT, `sender_id` TEXT NOT NULL, `receiver_id` TEXT NOT NULL, " +
+                        "`extra_data` TEXT, `state` INTEGER, `type` TEXT NOT NULL, `epoch_time_ms` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`chat_id`) REFERENCES `chats`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )"
+                )
+                db.execSQL(
+                    "INSERT INTO `messages_new` (`id`, `chat_id`, `sender_id`, `receiver_id`, `extra_data`, `state`, `type`, `epoch_time_ms`) " +
+                        "SELECT `id`, `chat_id`, `sender_id`, `receiver_id`, `extra_data`, `state`, `type`, `epoch_time_ms` FROM `messages`"
+                )
+                db.execSQL("DROP TABLE `messages`")
+                db.execSQL("ALTER TABLE `messages_new` RENAME TO `messages`")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_chat_id_epoch_time_ms_id` ON `messages` (`chat_id`, `epoch_time_ms`, `id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_messages_chat_id_state_epoch_time_ms` ON `messages` (`chat_id`, `state`, `epoch_time_ms`)")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -117,6 +148,7 @@ abstract class AppDatabase : RoomDatabase() {
                         // device. Schemas are exported (see the room.schemaLocation
                         // kapt argument) so migrations can be written against
                         // them.
+                        .addMigrations(MIGRATION_1_2)
                         .build()
                         .also { INSTANCE = it }
                 }

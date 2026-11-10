@@ -51,18 +51,6 @@ data class MessageEntity(
 
     @ColumnInfo(name = "epoch_time_ms")
     val epochTimeMs: Long = System.currentTimeMillis(),
-
-    @ColumnInfo(name = "carrier_type")
-    val carrierType: Int? = null,
-
-    @ColumnInfo(name = "rd")
-    val rd: Int? = null,
-
-    @ColumnInfo(name = "freq_Mhz")
-    val freqMhz: Double? = null,
-
-    @ColumnInfo(name = "carrier_range")
-    val carrierRange: String = "",
 ) {
 
     /**
