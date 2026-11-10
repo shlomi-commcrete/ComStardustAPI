@@ -231,7 +231,15 @@ class AppRepository(
     suspend fun insertContactsWithChats(
         contactsToInsert: List<FullContactData>,
         source: String = IdentityLogSource.LOGIN_IMPORT,
-    ) = inTransaction { contacts.insertContactsWithChats(contactsToInsert, source) }
+    ) {
+        inTransaction { contacts.insertContactsWithChats(contactsToInsert, source) }
+        // The login import is where groups arrive after a logout wiped them. It used to tell the
+        // radio nothing, so an import landing after login (and after any group push it triggered,
+        // which read the still-empty table) left the radio with no groups. As in
+        // applyContactOperations: after the commit, and a no-op while logged out (the login push
+        // then reads the full table).
+        if (contactsToInsert.any { it is FullContactData.Group }) GroupsUtils.sendDeleteAllGroups()
+    }
 
     suspend fun insertContactWithChat(
         contact: FullContactData,
