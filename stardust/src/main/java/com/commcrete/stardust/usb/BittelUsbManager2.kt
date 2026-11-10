@@ -312,6 +312,17 @@ object BittelUsbManager2 : BittelProtocol {
     /** [com.commcrete.stardust.transport.UsbTransport.reconnect] — a re-entry, not a fresh port. */
     fun reconnectToDevice() { initDataToUsb(freshLink = false) }
 
+    /**
+     * A user logged in while the USB port stayed open. Treated as a fresh link: the handshake on
+     * this port either ran for the user who logged out, with their groups, or aborted because no
+     * one was logged in when the port opened — and nothing else would ever run it. Main thread,
+     * matching [connectToDevice].
+     */
+    internal fun onLoginWithUsbUp() {
+        StardustLog.i(LogType.CONNECTION, TAG, "Login over an open USB link → re-running the handshake")
+        Scopes.getMainCoroutine().launch { initDataToUsb(freshLink = true) }
+    }
+
     // ───────────────────────── Dead-link recovery ─────────────────────────
 
     /** First re-probe delay, doubled per attempt up to [RECOVERY_MAX_DELAY_MS]. */

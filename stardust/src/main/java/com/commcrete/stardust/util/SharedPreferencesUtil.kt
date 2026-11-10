@@ -10,7 +10,10 @@ import com.google.android.gms.location.LocationRequest
 import com.commcrete.stardust.R
 import com.commcrete.stardust.request_objects.RegisterUser
 import com.commcrete.stardust.request_objects.User
+import com.commcrete.stardust.ble.BleManager
 import com.commcrete.stardust.transport.LinkWakeLock
+import com.commcrete.stardust.usb.BittelUsbManager2
+import com.commcrete.stardust.util.connectivity.PortUtils
 import com.commcrete.stardust.request_objects.model.license.License
 import com.commcrete.stardust.request_objects.takeHistoryFrom
 import com.commcrete.stardust.request_objects.toJson
@@ -339,17 +342,27 @@ object SharedPreferencesUtil {
             StardustLog.i(LogType.STORAGE, "SharedPreferencesUtil", "Own id replaced; former ids=${appUser.formerIds?.size ?: 0}")
         }
         // The login on the timeline. The handshake's rewrites find the user already there and log nothing.
-        if (previous?.appId.isNullOrBlank() && appUser.appId.isNotBlank()) {
+        val isLogin = previous?.appId.isNullOrBlank() && appUser.appId.isNotBlank()
+        if (isLogin) {
             StardustLog.i(LogType.STORAGE, "SharedPreferencesUtil", "User logged in")
         }
         getPrefs().edit { putString(KEY_APP_USER, appUser.toJson()) }
         RegisteredUserUtils.updateRegisteredUser(appUser)
         // Login over a link that is already up changes no connection state, so recompute won't run.
         LinkWakeLock.refresh()
+        // Logout stops the keepalive ping and port-mode loops (RegisteredUserUtils.logout) and
+        // nothing else restarted them, so after a re-login the ping — and the group-status check
+        // its reply carries — stayed off. Idempotent; costs two timer wakeups while no link is up.
+        if (isLogin) PortUtils.startUpdatingPort()
         // The radio learned the old AppId in the handshake's UPDATE_ADDRESS; tell it the new one.
         // The handshake's own setAppUser calls keep the AppId, so they don't trigger this. With no
         // link up there is nothing to tell, and the next handshake sends it anyway.
-        if (appUser.appId.isNotBlank() && appUser.appId != previous?.appId && DataManager.isLinkUp()) {
+        if (isLogin && BleManager.isUSBConnected) {
+            // A USB link outlives logout (BLE does not: logout unpairs). Its last handshake ran for
+            // the previous user — or never ran at all, if the port opened while logged out — so
+            // the whole handshake runs again, groups included. It sends UPDATE_ADDRESS itself.
+            BittelUsbManager2.onLoginWithUsbUp()
+        } else if (appUser.appId.isNotBlank() && appUser.appId != previous?.appId && DataManager.isLinkUp()) {
             DataManager.getStardustPackageHandler().onRegisteredAppIdChanged()
         }
     }
