@@ -105,6 +105,15 @@ object RegisteredUserUtils {
             // DataManager.logout().
             PortUtils.stopUpdatingPort()
 
+            // TODO: if logout stops wiping the database (cleanAllDatabases below), clear the radio
+            //  too while a USB link is up — BLE needs nothing, unpairDeviceBLE drops it. A USB
+            //  link outlives logout, and the radio keeps the logged-out user's App ID (from the
+            //  handshake's UPDATE_ADDRESS) and their groups, so it goes on routing their traffic
+            //  to this phone. Send UPDATE_ADDRESS with a zero App ID, then REQUEST_DELETE_ALL_GROUPS
+            //  (GroupsUtils.sendDeleteAllGroups). Both BEFORE removeAppUser() below:
+            //  requireLocalSrcDst() needs the user, and GroupsUtils.sendOp no-ops silently without it.
+            //  The next login re-runs the full handshake (BittelUsbManager2.onLoginWithUsbUp).
+
             // BLE unpair first (side-effect, usually must complete)
             unpairDeviceBLE()
             val databases = async {
