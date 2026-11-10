@@ -857,13 +857,15 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
         if (BleManager.isBluetoothConnected() || BleManager.isUsbEnabled()) {
             deviceName.let { name ->
                 // Read and write in one step: a logout or App ID change in between must not be undone.
+                var previousDeviceId: String? = null
                 SharedPreferencesUtil.updateAppUser { user ->
+                    previousDeviceId = user.deviceId
                     RegisterUser(
                         displayName = user.displayName,
                         _deviceId = deviceId,
                         _appId = user.appId,
                     )
-                }?.let { RegisteredUserUtils.checkRadioHolder(deviceId) }
+                }?.let { RegisteredUserUtils.checkRadioHolder(deviceId, previousDeviceId) }
             }
         }
     }

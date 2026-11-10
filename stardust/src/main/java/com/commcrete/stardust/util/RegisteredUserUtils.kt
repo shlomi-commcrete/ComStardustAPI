@@ -64,8 +64,12 @@ object RegisteredUserUtils {
     /** Whether [id] was one of the operator's ids at [atMs]. One-off checks only; per row, take a [selfIdentity]. */
     fun wasRegisteredUser(id: String, atMs: Long): Boolean = selfIdentity().wasMine(id, atMs)
 
-    /** A stored contact that holds the connected radio's Device ID, as found at link-up. */
-    data class RadioHeldByContact(val contactName: String, val deviceId: String)
+    /**
+     * A stored contact that holds the connected radio's Device ID, as found at link-up. [newRadio]:
+     * this radio's Device ID differs from the one the user had saved before this link-up — the first
+     * link to it, over BLE or USB. The host warns only then, not on every reconnect or restart.
+     */
+    data class RadioHeldByContact(val contactName: String, val deviceId: String, val newRadio: Boolean)
 
     private val _radioHeldByContact = MutableStateFlow<RadioHeldByContact?>(null)
 
@@ -78,9 +82,20 @@ object RegisteredUserUtils {
 
     private val radioCheckScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** Looks for a contact holding [deviceId] (the radio just registered). Called by the link-up writers. */
-    internal fun checkRadioHolder(deviceId: String) {
+    /** The radio first linked in this process with a Device ID unlike the saved one; memory only. */
+    private var newRadioId: String? = null
+
+    /**
+     * Looks for a contact holding [deviceId] (the radio just registered). Called by the link-up
+     * writers, with [previousDeviceId] read from the saved user before they overwrote it.
+     */
+    internal fun checkRadioHolder(deviceId: String, previousDeviceId: String?) {
         val radio = normalizeIdOrNull(deviceId) ?: return
+        val newRadio = synchronized(this) {
+            if (!radio.equals(previousDeviceId?.let(::normalizeIdOrNull), ignoreCase = true)) newRadioId = radio
+            // Sticky: both link-up writers can run for one link, and the second already finds the id saved.
+            radio.equals(newRadioId, ignoreCase = true)
+        }
         radioCheckScope.launch {
             val roster = runCatching { DataManager.getAppRepo().getAllContactDrafts() }.getOrElse {
                 // Class only: a SQLite message can quote a callsign or id. No answer is not "no holder":
@@ -90,7 +105,7 @@ object RegisteredUserUtils {
             }
             val holder = roster.firstOrNull { it.type != ContactType.GROUP && it.deviceId.equals(radio, ignoreCase = true) }
             if (holder != null) StardustLog.w(LogType.STORAGE, TAG, "Radio Device ID held by a contact")
-            _radioHeldByContact.value = holder?.let { RadioHeldByContact(it.name, radio) }
+            _radioHeldByContact.value = holder?.let { RadioHeldByContact(it.name, radio, newRadio) }
         }
     }
 

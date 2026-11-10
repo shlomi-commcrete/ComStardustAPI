@@ -489,14 +489,16 @@ object StardustInitConnectionHandler {
 
     private fun registerBittel(bittelId: String) {
         // Read and write in one step: a logout or App ID change in between must not be undone.
+        var previousDeviceId: String? = null
         SharedPreferencesUtil.updateAppUser { savedUser ->
+            previousDeviceId = savedUser.deviceId
             RegisterUser(
                 displayName = savedUser.displayName,
                 _deviceId = bittelId,
                 _appId = savedUser.appId,
             )
         } ?: return
-        RegisteredUserUtils.checkRadioHolder(bittelId)
+        RegisteredUserUtils.checkRadioHolder(bittelId, previousDeviceId)
     }
 
     private fun handleVersion(p: StardustPackage) {
