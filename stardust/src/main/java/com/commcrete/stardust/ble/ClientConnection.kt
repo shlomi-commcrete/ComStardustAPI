@@ -238,7 +238,6 @@ internal class ClientConnection(): BittelProtocol {
     // connect() to an already-bonded radio: how long the link may take to come up (see
     // startConnectDeadline).
     private val connectReachTimeout : Long = 30_000
-    private val pingTimeout : Long = 10000
 
     private var bluetoothGattCallback: BluetoothGattCallback? = null
 
@@ -252,12 +251,8 @@ internal class ClientConnection(): BittelProtocol {
         }
     }
 
-    private val pingRunnable : Runnable = kotlinx.coroutines.Runnable {
-        sendPing ()
-        resetPingTimer()
-    }
-    private val pingHandler : Handler = Handler(Looper.getMainLooper())
-
+    // The one keepalive loop is PortUtils.jobPing, off the main thread for both transports. A second,
+    // BLE-only loop here on the main looper doubled every ping and its reply (two onBatteryChanged).
     fun sendPing() {
         if(!StardustInitConnectionHandler.isConnected()) return
         val (src, dst) = requireLocalSrcDst() ?: return
@@ -855,7 +850,6 @@ internal class ClientConnection(): BittelProtocol {
         StardustInitConnectionHandler.start()
 
         resetConnectionTimer()
-        resetPingTimer()
     }
 
     /**
@@ -1191,9 +1185,8 @@ internal class ClientConnection(): BittelProtocol {
 //            com.commcrete.stardust.ble.BleManager.isBleConnected = false
 //            com.commcrete.stardust.ble.BleManager.bleConnectionStatus.value = false
             BleManager.updateStatus()
-            // RSSI and the internal ping timer are BLE-only, so these are always correct to stop.
+            // RSSI is BLE-only, so it is always correct to stop.
             removeRSSITimer()
-            removePingTimer()
             // So is the 20s connection watchdog, and it was the one being left behind: it is armed
             // at init start and only cancelled when addresses arrive, so disconnecting mid-handshake
             // left it pending to fire requestReconnect(BLE) long after the user said stop.
@@ -2278,21 +2271,6 @@ internal class ClientConnection(): BittelProtocol {
     private fun removeRSSITimer() {
         handlerRSSI.removeCallbacks(readRssiRunnable)
         handlerRSSI.removeCallbacksAndMessages(null)
-    }
-
-    private fun resetPingTimer() {
-        pingHandler.removeCallbacks(pingRunnable)
-        pingHandler.removeCallbacksAndMessages(null)
-        pingHandler.postDelayed(pingRunnable, pingTimeout)
-    }
-
-    private fun removePingTimer() {
-        try {
-            pingHandler.removeCallbacks(pingRunnable)
-            pingHandler.removeCallbacksAndMessages(null)
-        }catch (e : Exception) {
-            e.printStackTrace()
-        }
     }
 
     private fun clearTimer(){
