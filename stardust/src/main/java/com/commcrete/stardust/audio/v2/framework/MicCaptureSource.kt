@@ -2,7 +2,6 @@ package com.commcrete.stardust.audio.v2.framework
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.media.AudioFormat
 import android.media.AudioRecord
 import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
@@ -68,12 +67,8 @@ class MicCaptureSource(
     /** Set by [stop] even before the record exists, so a key-up that beats the mic open still wins. */
     @Volatile private var stopRequested = false
 
-    /**
-     * The live record, published so [stop] can reach it from another thread. Guarded by [recordLock] for
-     * its stop/release transitions only — never held across the read loop, which is where the time goes.
-     */
-    @Volatile private var activeRecord: AudioRecord? = null
-    private val recordLock = Any()
+    /** The microphone, published so [stop] can reach it from another thread; see [MicCapture.stop]. */
+    @Volatile private var capture: MicCapture? = null
 
     /** For [stop]'s trace line only. */
     @Volatile private var traceId: Long? = null
@@ -100,19 +95,11 @@ class MicCaptureSource(
         )
         val rate = plan.captureRate
         val frameSamples = ((rate * FRAME_MS) / 1000).coerceAtLeast(160)
-        val minBuffer = AudioRecord.getMinBufferSize(rate, CHANNEL, ENCODING)
-        val bufferBytes = maxOf(minBuffer * 2, frameSamples * 2)
 
-        val recorder = AudioRecord(plan.audioSource, rate, CHANNEL, ENCODING, bufferBytes)
-        // Published before startRecording(), so a stop() racing the mic open can already reach it.
-        activeRecord = recorder
-        AudioCaptureConfig.applyInputRoute(context, recorder, plan.preferredInputDevice)
-        // Judged by the real device state rather than "startRecording() returned": a mic held by another
-        // app or an in-progress call surfaces as an uninitialized record or a non-RECORDING state, not as
-        // an exception. Announcing a recording that is not actually capturing is what this guards.
-        val capturing = recorder.state == AudioRecord.STATE_INITIALIZED &&
-            runCatching { recorder.startRecording() }.isSuccess &&
-            recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING
+        val mic = MicCapture(context, plan, frameSamples)
+        // Published before the open, so a stop() racing it can already reach the record.
+        capture = mic
+        val capturing = mic.open()
         // A stop() that landed while the mic was opening must not be overwritten back to `true` here —
         // that is the race that leaves the microphone live after a key-up the user already made.
         running = capturing && !stopRequested
@@ -124,7 +111,7 @@ class MicCaptureSource(
         var lastRead = 0
         try {
             while (running) {
-                val n = recorder.read(read, 0, read.size)
+                val n = mic.read(read)
                 lastRead = n
                 // A negative return is an error code (ERROR_DEAD_OBJECT when the device goes away,
                 // ERROR_INVALID_OPERATION on a stopped record), and it is returned immediately and
@@ -154,15 +141,9 @@ class MicCaptureSource(
                 StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} loop ended: running=$running lastRead=$lastRead")
             }
             running = false
-            synchronized(recordLock) {
-                activeRecord = null
-                runCatching { recorder.stop() }
-                runCatching { recorder.release() }
-            }
-            // Balances applyInputRoute above (setCommunicationDevice / startBluetoothSco). Legacy did
-            // this in AudioRecorderCodec2.stopRecordingNow's finally; without it the phone stays pinned
-            // to the PTT communication device and later capture/playback is silent or misrouted.
-            runCatching { AudioCaptureConfig.clearInputRoute(context) }
+            capture = null
+            // Stops and releases the record, then undoes the routing (MicCapture.release).
+            mic.release()
             // The mic is only now genuinely released — that is the host's "recording stopped". Skipped
             // when it never opened, since that recording was already reported as failed.
             StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} released")
@@ -173,22 +154,16 @@ class MicCaptureSource(
     /**
      * Stopping the record from here is what makes a read already blocked in native code return, so the
      * loop reaches its `finally` (release + route teardown) instead of waiting for audio that may never
-     * come. The flow's `finally` stops and releases again under the same lock; a second stop on an
-     * already-stopped record is a no-op, and nulling [activeRecord] there is what stops a late call
-     * here from touching a released one.
+     * come. See [MicCapture.stop].
      */
     override suspend fun stop() {
-        StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 $traceId stop(): record=${activeRecord != null} running=$running")
+        StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 $traceId stop(): record=${capture != null} running=$running")
         stopRequested = true
         running = false
-        synchronized(recordLock) {
-            runCatching { activeRecord?.stop() }
-        }
+        capture?.stop()
     }
 
     private companion object {
         const val FRAME_MS = 40
-        const val CHANNEL = AudioFormat.CHANNEL_IN_MONO
-        const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
     }
 }
