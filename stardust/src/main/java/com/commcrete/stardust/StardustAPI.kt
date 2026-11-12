@@ -83,6 +83,24 @@ enum class PttRecordingError {
     ENCODER_UNAVAILABLE,
     /** Anything else: the capture/encode/transmit pipeline failed or was cancelled. */
     UNKNOWN,
+
+    // The three below: the microphone opened, but Android delivered silence instead of audio
+    // (AudioRecordingConfiguration.isClientSilenced, API 29+). Reported at open, or mid-recording when the
+    // mute arrives later — then after STARTED/STOPPED, and the audio captured before the mute is still sent.
+    // Below API 29 a mute cannot be detected and the recording goes out silent.
+
+    /**
+     * Android muted the microphone because the app was not on screen and has no microphone foreground
+     * service — on a phone that locks, a few seconds after the screen goes off.
+     */
+    MIC_MUTED_IN_BACKGROUND,
+    /** A phone or VoIP call holds the microphone. Available again when the call ends. */
+    MIC_TAKEN_BY_CALL,
+    /**
+     * Muted while on screen and not in a call: the system "Microphone access" toggle is off, or another
+     * app has capture priority. Android does not let an app tell those two apart.
+     */
+    MIC_ACCESS_BLOCKED,
 }
 
 /**

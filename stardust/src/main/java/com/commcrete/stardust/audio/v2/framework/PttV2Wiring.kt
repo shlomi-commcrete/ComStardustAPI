@@ -207,7 +207,10 @@ object PttV2Wiring {
                     // stopRecording, which only enqueue. SENT comes later still, from the bridge.
                     onCaptureStarted = { RecorderUtils.notifyPttRecordingStarted() },
                     onCaptureStopped = { RecorderUtils.notifyPttRecordingStopped() },
-                    onCaptureFailed = { RecorderUtils.notifyPttRecordingError(PttRecordingError.MIC_UNAVAILABLE) },
+                    onCaptureFailed = { error -> RecorderUtils.notifyPttRecordingError(error) },
+                    // Right after onCaptureStopped on the same thread, so it resolves to the same owning
+                    // recording as STOPPED: the mute ended capture with no key-up, so nothing new can own the mic yet.
+                    onCaptureMuted = { error -> RecorderUtils.notifyPttRecordingError(error) },
                 )
             },
             dspFactory = { targetRate ->

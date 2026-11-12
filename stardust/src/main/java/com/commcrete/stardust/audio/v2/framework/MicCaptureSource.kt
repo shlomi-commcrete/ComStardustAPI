@@ -3,6 +3,7 @@ package com.commcrete.stardust.audio.v2.framework
 import android.annotation.SuppressLint
 import android.content.Context
 import android.media.AudioRecord
+import com.commcrete.stardust.PttRecordingError
 import com.commcrete.stardust.util.LogType
 import com.commcrete.stardust.util.StardustLog
 import com.commcrete.stardust.audio.v2.application.port.CaptureSource
@@ -58,9 +59,21 @@ class MicCaptureSource(
     private val onCaptureStarted: () -> Unit = {},
     /** Invoked once the microphone has actually been released (key-up, watchdog, or cancellation). */
     private val onCaptureStopped: () -> Unit = {},
-    /** Invoked instead of [onCaptureStarted] when the microphone could not be opened. */
-    private val onCaptureFailed: () -> Unit = {},
+    /**
+     * Invoked instead of [onCaptureStarted] when the microphone could not be opened
+     * ([PttRecordingError.MIC_UNAVAILABLE]) or opened already muted by Android (one of the MIC_MUTED /
+     * MIC_TAKEN / MIC_ACCESS reasons).
+     */
+    private val onCaptureFailed: (PttRecordingError) -> Unit = {},
+    /**
+     * Invoked once, after [onCaptureStopped], when Android muted the microphone mid-recording: capture was
+     * stopped there, and the audio captured before the mute still goes out.
+     */
+    private val onCaptureMuted: (PttRecordingError) -> Unit = {},
 ) : CaptureSource {
+
+    /** Set from [MicSilenceWatch]'s callback when Android muted this recording mid-way. */
+    @Volatile private var mutedBy: PttRecordingError? = null
 
     @Volatile private var running = false
 
@@ -100,11 +113,29 @@ class MicCaptureSource(
         // Published before the open, so a stop() racing it can already reach the record.
         capture = mic
         val capturing = mic.open()
+        // A record that opens RECORDING may still be fed silence; then the recording is a failure, not a start.
+        val silence = MicSilenceWatch(context, backgroundCanMute = true)
+        val mutedAtOpen = if (capturing) mic.audioSessionId?.let(silence::currentCause) else null
+        val started = capturing && mutedAtOpen == null
         // A stop() that landed while the mic was opening must not be overwritten back to `true` here —
         // that is the race that leaves the microphone live after a key-up the user already made.
-        running = capturing && !stopRequested
-        StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} opened: capturing=$capturing running=$running")
-        if (capturing) onCaptureStarted() else onCaptureFailed()
+        running = started && !stopRequested
+        StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} opened: capturing=$capturing muted=$mutedAtOpen running=$running")
+        when {
+            !capturing -> onCaptureFailed(PttRecordingError.MIC_UNAVAILABLE)
+            mutedAtOpen != null -> onCaptureFailed(mutedAtOpen)
+            else -> {
+                onCaptureStarted()
+                // A mute that arrives later (screen locks, a call starts) ends capture here, as a key-up would.
+                mic.audioSessionId?.let { sessionId ->
+                    silence.watch(sessionId) { cause ->
+                        mutedBy = cause
+                        running = false
+                        mic.stop()
+                    }
+                }
+            }
+        }
 
         val read = ShortArray(frameSamples)
         val framer = PcmFramer(frameSamples)
@@ -134,7 +165,11 @@ class MicCaptureSource(
             // [PcmFramer.drain] is single-shot, so this cannot re-send audio already emitted above.
             framer.drain()?.let { emit(PcmChunk(it, rate, id)) }
         } finally {
-            if (lastRead < 0 && !stopRequested) {
+            silence.stop()
+            val muted = mutedBy
+            if (muted != null) {
+                StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} muted mid-transmission: $muted")
+            } else if (lastRead < 0 && !stopRequested) {
                 // The read failed with no key-up behind it: the device went away mid-transmission.
                 StardustLog.e(RecorderUtils.PTT_TRACE, "mic v2 ${id.value} lost mid-transmission: read error $lastRead")
             } else {
@@ -145,9 +180,11 @@ class MicCaptureSource(
             // Stops and releases the record, then undoes the routing (MicCapture.release).
             mic.release()
             // The mic is only now genuinely released — that is the host's "recording stopped". Skipped
-            // when it never opened, since that recording was already reported as failed.
+            // when it never started, since that recording was already reported as failed.
             StardustLog.d(LogType.PTT, RecorderUtils.PTT_TRACE, "mic v2 ${id.value} released")
-            if (capturing) onCaptureStopped()
+            if (started) onCaptureStopped()
+            // After STOPPED, so the host sees why this recording ended early.
+            if (muted != null) onCaptureMuted(muted)
         }
     }.flowOn(Dispatchers.IO)
 
