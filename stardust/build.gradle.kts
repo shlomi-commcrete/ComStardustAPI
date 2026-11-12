@@ -36,6 +36,7 @@ android {
     compileSdk = 34
     buildFeatures {
         buildConfig = true // ✅ Enable BuildConfig for library module
+        aidl = true // IRemoteMic: the remote microphone's binder interface (audio/v2/framework/remote)
     }
     defaultConfig {
         minSdk = 26

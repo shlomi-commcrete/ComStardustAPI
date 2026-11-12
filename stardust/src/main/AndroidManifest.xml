@@ -71,6 +71,14 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!--
+      RemoteMicService below: a microphone foreground service in the consumer's package. FOREGROUND_SERVICE
+      for any foreground service, FOREGROUND_SERVICE_MICROPHONE for this type (API 34+, required or
+      startForeground throws).
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+
+    <!--
       Only the MediaStore insert in WavFileExporter.saveWavToPublicMusicFolder() needs this, and only
       on API 26-28: scoped storage ignores it from API 29 on, and getExternalFilesDir() never needed
       it.
@@ -91,5 +99,21 @@
     <uses-feature
         android:name="android.software.companion_device_setup"
         android:required="false" />
+
+    <application>
+        <!--
+          The remote microphone (audio/v2/framework/remote). Merged into the CONSUMER's APK, so it runs in the
+          consumer's own package and process - for an ATAK plugin, the plugin package, which unlike ATAK can
+          hold a microphone foreground service and so keeps a live microphone with the phone locked.
+
+          Exported because the host app (ATAK, another package) binds to it; RemoteMicService refuses any
+          caller that is not an ATAK package. A consumer that never calls RemoteMic.arm can remove it with
+          tools:node="remove".
+        -->
+        <service
+            android:name="com.commcrete.stardust.audio.v2.framework.remote.RemoteMicService"
+            android:exported="true"
+            android:foregroundServiceType="microphone" />
+    </application>
 
 </manifest>

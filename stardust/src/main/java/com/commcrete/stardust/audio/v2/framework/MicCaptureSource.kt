@@ -201,6 +201,7 @@ class MicCaptureSource(
     }
 
     private companion object {
+        /** Must match RemoteMicService's and RemoteCaptureSource's frame size. */
         const val FRAME_MS = 40
     }
 }

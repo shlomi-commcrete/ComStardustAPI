@@ -15,6 +15,8 @@ import com.commcrete.stardust.audio.v2.application.port.KeepAlive
 import com.commcrete.stardust.audio.v2.application.port.MaxPttTimeoutNotifier
 import com.commcrete.stardust.audio.v2.domain.CodecId
 import com.commcrete.stardust.audio.v2.domain.RecordingId
+import com.commcrete.stardust.audio.v2.framework.remote.RemoteCaptureSource
+import com.commcrete.stardust.audio.v2.framework.remote.RemoteMic
 import com.commcrete.stardust.util.audio.AudioRecordingKeepAlive
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.DataManager
@@ -197,21 +199,25 @@ object PttV2Wiring {
             // WavTokenizer needs 24 kHz (legacy AudioRecorderAI) and CODEC2 needs 8 kHz. A fixed 8 kHz
             // for both band-limits AI audio to 4 kHz and then upsamples it, which produces garbage tokens.
             captureProvider = { codecId, nativeRate ->
-                MicCaptureSource(
-                    context = context,
-                    requestedRateHz = nativeRate,
-                    audioSource = if (codecId == CodecId.CODEC2) SharedPreferencesUtil.getCodecAudioSource()
-                    else SharedPreferencesUtil.getAIAudioSource(),
-                    // The mic is opened and released asynchronously here, so the host-facing lifecycle is
-                    // reported from the capture thread rather than from RecorderUtils.startRecording /
-                    // stopRecording, which only enqueue. SENT comes later still, from the bridge.
-                    onCaptureStarted = { RecorderUtils.notifyPttRecordingStarted() },
-                    onCaptureStopped = { RecorderUtils.notifyPttRecordingStopped() },
-                    onCaptureFailed = { error -> RecorderUtils.notifyPttRecordingError(error) },
-                    // Right after onCaptureStopped on the same thread, so it resolves to the same owning
-                    // recording as STOPPED: the mute ended capture with no key-up, so nothing new can own the mic yet.
-                    onCaptureMuted = { error -> RecorderUtils.notifyPttRecordingError(error) },
-                )
+                val audioSource = if (codecId == CodecId.CODEC2) SharedPreferencesUtil.getCodecAudioSource()
+                else SharedPreferencesUtil.getAIAudioSource()
+                // The mic is opened and released asynchronously here, so the host-facing lifecycle is
+                // reported from the capture thread rather than from RecorderUtils.startRecording /
+                // stopRecording, which only enqueue. SENT comes later still, from the bridge.
+                val started = { RecorderUtils.notifyPttRecordingStarted() }
+                val stopped = { RecorderUtils.notifyPttRecordingStopped() }
+                val failed = { error: PttRecordingError -> RecorderUtils.notifyPttRecordingError(error) }
+                // Right after onCaptureStopped on the same thread, so it resolves to the same owning
+                // recording as STOPPED: the mute ended capture with no key-up, so nothing new can own the mic yet.
+                val muted = { error: PttRecordingError -> RecorderUtils.notifyPttRecordingError(error) }
+                // Chosen per recording: an armed remote microphone (RemoteMic) keeps working with the phone
+                // locked; otherwise the local one, exactly as before.
+                val remote = RemoteMic.service()
+                if (remote != null) {
+                    RemoteCaptureSource(context, remote, nativeRate, audioSource, started, stopped, failed, muted)
+                } else {
+                    MicCaptureSource(context, nativeRate, audioSource, started, stopped, failed, muted)
+                }
             },
             dspFactory = { targetRate ->
                 ResampleGainDsp(
