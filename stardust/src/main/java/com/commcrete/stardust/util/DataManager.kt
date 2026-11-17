@@ -51,6 +51,10 @@ import com.commcrete.stardust.util.audio.PttInterface
 import com.commcrete.stardust.util.audio.RecorderUtils
 import com.commcrete.stardust.util.connectivity.PortUtils
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -269,6 +273,99 @@ object DataManager : StardustAPI, PttInterface{
         Scopes.getDefaultCoroutine().launch {
             sendDataToBle(stardustPackage)
         }
+    }
+
+    /** Result of [activateCW] / [terminateCW]. */
+    sealed class CwCommandResult {
+        /** The command was queued to the connected radio. */
+        object Queued : CwCommandResult()
+        /** No registered app user, so the app/radio IDs needed to address the command are unknown. */
+        object NotConfigured : CwCommandResult()
+    }
+
+    /**
+     * Starts a continuous-wave transmission on [carrier]'s xcvr.
+     *
+     * The xcvr is carried in the control byte's delivery type, the same way
+     * text and PTT select it. No payload is sent.
+     *
+     * Non-blocking: the packet is queued on the SDK's default coroutine scope
+     * and this returns immediately. Safe to call twice; each call sends a new
+     * command. The radio's reply arrives on [cwResponses].
+     */
+    fun activateCW(context: Context, carrier: Carrier): CwCommandResult {
+        requireContext(context)
+        val pkg = buildCwPackage(context, StardustPackageUtils.StardustOpCode.ACTIVATE_CW)
+            ?: return CwCommandResult.NotConfigured
+        pkg.stardustControlByte.stardustDeliveryType = carrier.deliveryType
+        Scopes.getDefaultCoroutine().launch {
+            sendDataToBle(pkg)
+        }
+        return CwCommandResult.Queued
+    }
+
+    /**
+     * Stops a continuous-wave transmission started with [activateCW].
+     *
+     * Same threading and repeat-call behaviour as [activateCW].
+     */
+    fun terminateCW(context: Context): CwCommandResult {
+        requireContext(context)
+        val pkg = buildCwPackage(context, StardustPackageUtils.StardustOpCode.TERMINATE_CW)
+            ?: return CwCommandResult.NotConfigured
+        Scopes.getDefaultCoroutine().launch {
+            sendDataToBle(pkg)
+        }
+        return CwCommandResult.Queued
+    }
+
+    enum class CwCommand { ACTIVATE, TERMINATE }
+
+    /** The radio's reply to [activateCW] (0x88) or [terminateCW] (0x89). */
+    sealed class CwResponse {
+        abstract val command: CwCommand
+        data class Ack(override val command: CwCommand) : CwResponse()
+        data class Nack(override val command: CwCommand) : CwResponse()
+        /** First data byte was neither Ack nor Nack; [status] is that byte, or null if the response had no data. */
+        data class Unrecognised(override val command: CwCommand, val status: Int?) : CwResponse()
+    }
+
+    private val _cwResponses = MutableSharedFlow<CwResponse>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
+
+    /**
+     * Replies from the radio to [activateCW] and [terminateCW].
+     *
+     * Hot, no replay: only responses arriving while collected are seen. Collectors
+     * receive on their own coroutine context.
+     */
+    val cwResponses: SharedFlow<CwResponse> = _cwResponses.asSharedFlow()
+
+    internal fun onCwResponse(command: CwCommand, mPackage: StardustPackage) {
+        val status = mPackage.data?.firstOrNull()
+        val response = when (status) {
+            StardustPackageUtils.Ack -> CwResponse.Ack(command)
+            StardustPackageUtils.Nack -> CwResponse.Nack(command)
+            else -> CwResponse.Unrecognised(command, status)
+        }
+        _cwResponses.tryEmit(response)
+    }
+
+    private fun buildCwPackage(context: Context, opCode: StardustPackageUtils.StardustOpCode): StardustPackage? {
+        val user = SharedPreferencesUtil.getAppUser(context) ?: return null
+        val src = user.appId ?: return null
+        val dst = user.bittelId ?: return null
+        val pkg = StardustPackageUtils.getStardustPackage(
+            context = context,
+            source = src,
+            destenation = dst,
+            stardustOpCode = opCode)
+        // getStardustPackage hands back the opcode enum's own control byte; copy it so
+        // setting the delivery type here doesn't leak into later packages with this opcode.
+        pkg.stardustControlByte = pkg.stardustControlByte.copy()
+        return pkg
     }
 
     override fun sendSOS(context: Context, stardustAPIPackage: StardustAPIPackage, location: Location, type: Int) {

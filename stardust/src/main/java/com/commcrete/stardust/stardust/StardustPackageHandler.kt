@@ -161,6 +161,12 @@ internal class StardustPackageHandler(private val context: Context ,
                     StardustPackageUtils.StardustOpCode.SAVE_CONFIG_RESPONSE -> {
                         handleSaveConfigResponse(mPackage)
                     }
+                    StardustPackageUtils.StardustOpCode.ACTIVATE_CW_RESPONSE -> {
+                        DataManager.onCwResponse(DataManager.CwCommand.ACTIVATE, mPackage)
+                    }
+                    StardustPackageUtils.StardustOpCode.TERMINATE_CW_RESPONSE -> {
+                        DataManager.onCwResponse(DataManager.CwCommand.TERMINATE, mPackage)
+                    }
                     StardustPackageUtils.StardustOpCode.UPDATE_BITTEL_VERSION_RESPONSE -> {
                         handleBittelUpdateResponse(context, mPackage)
                     }
