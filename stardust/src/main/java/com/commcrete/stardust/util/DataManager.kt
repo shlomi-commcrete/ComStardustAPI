@@ -286,8 +286,9 @@ object DataManager : StardustAPI, PttInterface{
     /**
      * Starts a continuous-wave transmission on [carrier]'s xcvr.
      *
-     * The xcvr is carried in the control byte's delivery type, the same way
-     * text and PTT select it. No payload is sent.
+     * The xcvr is carried twice: in the control byte's delivery type, the same
+     * way text and PTT select it, and as a one-byte payload holding the xcvr
+     * index (RD1 → 0 … RD4 → 3).
      *
      * Non-blocking: the packet is queued on the SDK's default coroutine scope
      * and this returns immediately. Safe to call twice; each call sends a new
@@ -295,7 +296,12 @@ object DataManager : StardustAPI, PttInterface{
      */
     fun activateCW(context: Context, carrier: Carrier): CwCommandResult {
         requireContext(context)
-        val pkg = buildCwPackage(context, StardustPackageUtils.StardustOpCode.ACTIVATE_CW)
+        // The data byte is derived from deliveryType, not carrier.index, so it always
+        // agrees with the control byte (deliveryType falls back to RD1 for an out-of-range index).
+        // Same numbering as sosXCVR, the first data byte of UPDATE_SOS_DESTINATION (0x84) on
+        // Pv2.4.1_leases: by delivery type, not by preset position as app events number xcvrs.
+        val pkg = buildCwPackage(context, StardustPackageUtils.StardustOpCode.ACTIVATE_CW,
+            data = arrayOf(carrier.deliveryType.ordinal))
             ?: return CwCommandResult.NotConfigured
         pkg.stardustControlByte.stardustDeliveryType = carrier.deliveryType
         Scopes.getDefaultCoroutine().launch {
@@ -353,7 +359,8 @@ object DataManager : StardustAPI, PttInterface{
         _cwResponses.tryEmit(response)
     }
 
-    private fun buildCwPackage(context: Context, opCode: StardustPackageUtils.StardustOpCode): StardustPackage? {
+    private fun buildCwPackage(context: Context, opCode: StardustPackageUtils.StardustOpCode,
+                               data: Array<Int>? = null): StardustPackage? {
         val user = SharedPreferencesUtil.getAppUser(context) ?: return null
         val src = user.appId ?: return null
         val dst = user.bittelId ?: return null
@@ -361,7 +368,8 @@ object DataManager : StardustAPI, PttInterface{
             context = context,
             source = src,
             destenation = dst,
-            stardustOpCode = opCode)
+            stardustOpCode = opCode,
+            data = data)
         // getStardustPackage hands back the opcode enum's own control byte; copy it so
         // setting the delivery type here doesn't leak into later packages with this opcode.
         pkg.stardustControlByte = pkg.stardustControlByte.copy()
