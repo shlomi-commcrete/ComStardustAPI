@@ -50,6 +50,9 @@ import com.commcrete.stardust.audio.v2.flag.PttPipelineFeatureFlag
 import com.commcrete.stardust.audio.v2.framework.PttV2Wiring
 import com.commcrete.stardust.util.DataManager
 import com.commcrete.stardust.util.FileReceiver
+import com.commcrete.stardust.util.FileReceiverV2
+import com.commcrete.stardust.stardust.model.StardustFileStartParserV2
+import com.commcrete.stardust.stardust.model.V2HeaderData
 import com.commcrete.stardust.util.GroupsUtils
 import com.commcrete.stardust.util.RegisteredUserUtils
 import com.commcrete.stardust.util.SOSUtils
@@ -77,6 +80,8 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private val fileReceivers = ConcurrentHashMap<String, FileReceiver>()
     private val activeTransferByTransport = ConcurrentHashMap<String, String>()
+    private val fileReceiversV2 = ConcurrentHashMap<String, FileReceiverV2>()
+    private val activeTransferByTransportV2 = ConcurrentHashMap<String, String>()
     private val fileTransferCounter = AtomicLong(0)
     private val packageProcessingLock = Any()
     private val handlerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -155,9 +160,12 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
      * settles its outcome only once.
      */
     internal fun failInFlightFileReceivers() {
-        if (fileReceivers.isEmpty()) return
-        StardustLog.w(LogType.FILES, TAG, "device disconnected — failing ${fileReceivers.size} incoming file transfer(s) in flight")
+        val v1 = fileReceivers.size
+        val v2 = fileReceiversV2.size
+        if (v1 + v2 == 0) return
+        StardustLog.w(LogType.FILES, TAG, "device disconnected — failing $v1 V1 and $v2 V2 incoming file transfer(s) in flight")
         fileReceivers.values.forEach { it.failOnDisconnect() }
+        fileReceiversV2.values.forEach { it.failOnDisconnect() }
     }
 
     /**
@@ -184,6 +192,9 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             fileReceivers.values.forEach { it.dispose() }
             fileReceivers.clear()
             activeTransferByTransport.clear()
+            fileReceiversV2.values.forEach { it.dispose() }
+            fileReceiversV2.clear()
+            activeTransferByTransportV2.clear()
         }
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
@@ -600,9 +611,11 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
 
     private fun handleDeviceFileResponse(mPackage: StardustPackage) {
         val data = mPackage.data ?: return
-        val sig = listOf(83, 84, 82) // "STR"
+        val sig    = listOf(83, 84, 82)  // "STR"
+        val sigV2  = listOf(83, 84, 49)  // "ST1"
 
-        val parser = StardustFileStartParser()
+        val parser   = StardustFileStartParser()
+        val parserV2 = StardustFileStartParserV2()
         // transportKey is unique per (source, dest, delivery) – each sender gets its own slot,
         // so concurrent transfers from different users are fully independent.
         val transportKey = FileReceiver.getUniqueKey(mPackage)
@@ -650,12 +663,53 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             receiver.start()
         }
 
+        fun registerV2Receiver(hd: V2HeaderData) {
+            if (hd.copyLevel > 0) {
+                // Copy-header: route to the existing receiver if one is open.
+                val activeKey = activeTransferByTransportV2[transportKey] ?: return
+                fileReceiversV2[activeKey]?.addHeaderPacket(hd)
+                return
+            }
+            logRepeats(fileLogOnce.reset())
+            val startedAtMs = System.currentTimeMillis()
+            val transferKey = FileReceiverV2.transferId(
+                transportKey = transportKey,
+                hd = hd,
+                startedAtMs = startedAtMs,
+                sequence = fileTransferCounter.incrementAndGet(),
+            )
+            val receiver = FileReceiverV2(mPackage, transferKey, startedAtMs) {
+                synchronized(packageProcessingLock) {
+                    val activeKey = activeTransferByTransportV2[transportKey]
+                    if (activeKey == transferKey) {
+                        fileReceiversV2.remove(transferKey)
+                        activeTransferByTransportV2.remove(transportKey, transferKey)
+                    }
+                }
+            }
+            val previousKey = activeTransferByTransportV2.put(transportKey, transferKey)
+            if (previousKey != null && previousKey != transferKey) {
+                fileReceiversV2.remove(previousKey)?.dispose()
+            }
+            fileReceiversV2[transferKey] = receiver
+            receiver.addHeaderPacket(hd)
+        }
+
         when {
+            data.matchesSignatureAt(1, sigV2) -> {
+                parserV2.parseHeader(mPackage)?.let { registerV2Receiver(it) }
+            }
             data.matchesSignatureAt(1, sig) -> {
                 parser.parseFileStart(mPackage)?.let { registerReceiver(it) }
             }
             data.matchesSignatureAt(0, sig) -> {
                 parser.parseFileStart2(mPackage)?.let { registerReceiver(it) }
+            }
+            activeTransferByTransportV2.containsKey(transportKey) -> {
+                parserV2.parseDataPacket(mPackage)?.let { dp ->
+                    val activeKey = activeTransferByTransportV2[transportKey] ?: return@let
+                    fileReceiversV2[activeKey]?.addDataPacket(dp)
+                }
             }
             else -> {
                 StardustFileParser().parseFile(bittelPackage = mPackage)?.let { fileData ->

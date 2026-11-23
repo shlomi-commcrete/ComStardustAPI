@@ -34,7 +34,11 @@ import com.commcrete.stardust.room.StardustStorage
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
+import java.io.ByteArrayOutputStream
 import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
+import com.commcrete.pign.PigN
+import com.commcrete.stardust.util.FileUtils.FileTransferVersion
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -130,6 +134,12 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
      */
     private var parityIndices: Set<Int> = emptySet()
 
+    // V2-only send state — unused for V1 (default values are benign)
+    private var v2TotalSlots = 0        // N = K + P (all RS slots, header is slot 0)
+    private var v2ParityCount = 0       // P
+    private var v2PendingCopyLevel = 0  // copy level to inject before the next slot (0 = none)
+    private var v2HeaderWirePacket: IntArray? = null  // 63-int header wire packet (copy=0)
+
     /** Data / parity packages actually queued to the radio so far. */
     private var dataPackagesSent = 0
     private var sparePackagesSent = 0
@@ -213,6 +223,13 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
     }
 
     private fun sendNextPackage() {
+        // V2: a copy-header may be queued after the RS slot that was just confirmed.
+        if (data.version == FileTransferVersion.V2 && v2PendingCopyLevel > 0) {
+            sendV2HeaderCopy(v2PendingCopyLevel)
+            v2PendingCopyLevel = 0
+            resetSendTimer()
+            return
+        }
         // Every package has been queued and the last one's TxEnd (or interval) has now come:
         // that, not the moment the last package was queued, is when the send is over. Finishing
         // at queue time would settle the row before the last package had gone out.
@@ -220,7 +237,9 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             finishSending()
             return
         }
-        mutablePackagesMap[current]?.let { sendPackage(it) } ?: run {
+        mutablePackagesMap[current]?.let { pkg ->
+            if (data.version == FileTransferVersion.V2) sendPackageV2(pkg) else sendPackage(pkg)
+        } ?: run {
             pendingTicket = null
             pendingPackageIndex = null
         }
@@ -250,6 +269,13 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
      * block by block. With no parity, every package.
      */
     private fun isDelivered(): Boolean {
+        if (data.version == FileTransferVersion.V2) {
+            if (v2TotalSlots == 0) return false
+            val missing = HashSet<Int>()
+            if (!startConfirmed.get()) missing.add(0)
+            for (i in 1 until v2TotalSlots) { if (i !in confirmedIndices) missing.add(i) }
+            return reedSolomon?.canRecover(missing) ?: missing.isEmpty()
+        }
         if (!startConfirmed.get() || totalPackages == 0) return false
         val missing = (0 until totalPackages).filterNotTo(HashSet()) { it in confirmedIndices }
         return reedSolomon?.canRecover(missing) ?: missing.isEmpty()
@@ -343,7 +369,8 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         // host had already been showing as sending. No row is written, so TOO_LARGE is
         // never persisted — see its KDoc. Checked on the actual spare, not the resilience
         // setting: this is what would go on the wire.
-        if (numOfPackages > MAX_TOTAL_PACKAGES) {
+        // V2 doesn't know the slot count until after compression — checked inside the V2 branch.
+        if (data.version != FileTransferVersion.V2 && numOfPackages > MAX_TOTAL_PACKAGES) {
             StardustLog.w(LogType.FILES, LOG_TAG, "send refused: $numOfPackages packages exceeds $MAX_TOTAL_PACKAGES")
             failTransfer(FileReceiver.FileFailure.TOO_LARGE)
             return CompletableDeferred(false)
@@ -385,35 +412,75 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
             }
 
             val started = try {
-                var packages = createPackages(fileList)
-                if (preparationStopped()) return@async saved
-                // Nothing to send. Left to run, the timer walked past an empty map forever and
-                // the send never finished; failed here, the row says so.
-                if (packages.isEmpty()) {
-                    StardustLog.w(LogType.FILES, LOG_TAG, "file not sent: it is empty")
-                    failTransfer(FileReceiver.FileFailure.ERROR)
-                    return@async saved
-                }
-
-                val startSent = if (data.stardustAPIPackage.spare > 0) {
-                    // Reed-Solomon over every package of the file: seconds of work for an
-                    // image, and the likeliest place for a cancel to land.
-                    val dataWithSpare = createSparePackages(packages, data.stardustAPIPackage.spare)
-                    packages = dataWithSpare.first
+                if (data.version == FileTransferVersion.V2) {
+                    // ── V2 (ST1) path ──────────────────────────────────────────────────────
+                    val rawBytes = data.file.readBytes()
                     if (preparationStopped()) return@async saved
-                    createStartPackage(totalPackages = numOfPackages, spareData = dataWithSpare.second)
+                    val (compressed, encodingWireBits) = compressForV2(rawBytes, data.file.extension)
+                    val (dataChunks, padding) = splitIntoChunksV2(compressed)
+                    val headerVector = buildHeaderVectorV2(encodingWireBits, padding)
+                    val spare = data.stardustAPIPackage.spare
+                    val allSlots = createSparePackagesV2(headerVector, dataChunks, spare)
+                    v2TotalSlots = allSlots.size
+                    v2ParityCount = spare
+                    totalPackages = v2TotalSlots
+                    if (allSlots.size > MAX_TOTAL_PACKAGES) {
+                        StardustLog.w(LogType.FILES, LOG_TAG, "V2 send refused: ${allSlots.size} slots exceeds $MAX_TOTAL_PACKAGES")
+                        failTransfer(FileReceiver.FileFailure.TOO_LARGE)
+                        return@async saved
+                    }
+                    if (preparationStopped()) return@async saved
+                    StardustLog.i(LogType.FILES, LOG_TAG,
+                        "V2: ${dataChunks.size} data chunk(s), $spare parity, ${allSlots.size} total slots, encodingBits=$encodingWireBits")
+                    // Map keys 0..N-2 → RS slots 1..N-1 (slot 0 / header sent via createStartPackageV2).
+                    val pkgMap = mutableMapOf<Float, StardustFilePackage>()
+                    for (i in 1 until allSlots.size) {
+                        pkgMap[(i - 1).toFloat()] = StardustFilePackage(
+                            current = i - 1,
+                            data = allSlots[i],
+                            isLast = i == allSlots.size - 1
+                        )
+                    }
+                    val startSent = createStartPackageV2(headerVector)
+                    if (startSent) {
+                        mutablePackagesMap.clear()
+                        mutablePackagesMap.putAll(pkgMap)
+                        announcePreparationOver()
+                        resetSendTimer()
+                    }
+                    startSent
                 } else {
-                    createStartPackage(totalPackages = numOfPackages, spareData = 0)
-                }
+                    // ── V1 (STR) path ──────────────────────────────────────────────────────
+                    var packages = createPackages(fileList)
+                    if (preparationStopped()) return@async saved
+                    // Nothing to send. Left to run, the timer walked past an empty map forever and
+                    // the send never finished; failed here, the row says so.
+                    if (packages.isEmpty()) {
+                        StardustLog.w(LogType.FILES, LOG_TAG, "file not sent: it is empty")
+                        failTransfer(FileReceiver.FileFailure.ERROR)
+                        return@async saved
+                    }
 
-                if (startSent) {
-                    getRandomMisses(data.stardustAPIPackage.spare, numOfPackages)
-                    mutablePackagesMap.clear()
-                    mutablePackagesMap.putAll(packages)
-                    announcePreparationOver()
-                    resetSendTimer()
+                    val startSent = if (data.stardustAPIPackage.spare > 0) {
+                        // Reed-Solomon over every package of the file: seconds of work for an
+                        // image, and the likeliest place for a cancel to land.
+                        val dataWithSpare = createSparePackages(packages, data.stardustAPIPackage.spare)
+                        packages = dataWithSpare.first
+                        if (preparationStopped()) return@async saved
+                        createStartPackage(totalPackages = numOfPackages, spareData = dataWithSpare.second)
+                    } else {
+                        createStartPackage(totalPackages = numOfPackages, spareData = 0)
+                    }
+
+                    if (startSent) {
+                        getRandomMisses(data.stardustAPIPackage.spare, numOfPackages)
+                        mutablePackagesMap.clear()
+                        mutablePackagesMap.putAll(packages)
+                        announcePreparationOver()
+                        resetSendTimer()
+                    }
+                    startSent
                 }
-                startSent
             } catch (e: Exception) {
                 StardustLog.e(LOG_TAG, "Error preparing file send", e)
                 StardustLog.d(LogType.FILES, LOG_TAG, "Error preparing file send for ${data.file.name}")
@@ -758,9 +825,11 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
     private fun computeOriginalSize(): Int {
         val src = data.file
         val size = try {
-            when (data.fileType) {
-                FileType.Image -> src.length()
-                FileType.File, FileType.Contact -> GZIPInputStream(src.inputStream()).use { gzis ->
+            when {
+                // V2: the host passes the raw file; the SDK compresses internally.
+                data.version == FileTransferVersion.V2 -> src.length()
+                data.fileType == FileType.Image -> src.length()
+                else -> GZIPInputStream(src.inputStream()).use { gzis ->
                     val buffer = ByteArray(8 * 1024)
                     var total = 0L
                     while (true) {
@@ -805,6 +874,18 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
         }
 
         return "" // fallback, should never happen
+    }
+
+    private fun first48BytesUtf8(input: String): String {
+        val utf8 = input.toByteArray(Charsets.UTF_8)
+        if (utf8.size <= 48) return input
+        var end = 48
+        while (end > 0) {
+            val tryString = try { String(utf8.copyOf(end), Charsets.UTF_8) } catch (e: Exception) { null }
+            if (tryString != null) return tryString
+            end--
+        }
+        return ""
     }
 
     /**
@@ -912,6 +993,219 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         StardustLog.d(LogType.FILES, "FileUpload","Total packages created: ${bittelFileList.size}")
         return bittelFileList
+    }
+
+    // ─── V2 (ST1) send helpers ─────────────────────────────────────────────────
+
+    /**
+     * Compresses [raw] according to V2 rules and returns (compressed bytes, encodingWireBits).
+     *
+     * Wire encoding bits (category byte bits[7:5]):
+     *   0 = gzip or raw (IMAGE)
+     *   1 = PigN — payload is [method(1 byte)] + [PigN compressed bytes]
+     *       The method byte lets the receiver decompress without knowing the PigN version.
+     *       Stardust_Core rejects encoding > 1, so all PigN variants map to encoding 1.
+     */
+    private fun compressForV2(raw: ByteArray, ext: String): Pair<ByteArray, Int> {
+        if (data.fileType == FileType.Image) return Pair(raw, 0)
+        return if (data.usePign) {
+            try {
+                val packed = PigN.compress(raw, ext.ifEmpty { null })
+                val dataWithMethod = ByteArray(packed.data.size + 1)
+                dataWithMethod[0] = packed.method.toByte()
+                packed.data.copyInto(dataWithMethod, 1)
+                Pair(dataWithMethod, 1)
+            } catch (e: Exception) {
+                StardustLog.w(LogType.FILES, LOG_TAG, "PigN failed, falling back to gzip: ${e.javaClass.simpleName}")
+                Pair(gzipCompressBytes(raw), 0)
+            }
+        } else {
+            Pair(gzipCompressBytes(raw), 0)
+        }
+    }
+
+    private fun gzipCompressBytes(raw: ByteArray): ByteArray {
+        val baos = ByteArrayOutputStream()
+        GZIPOutputStream(baos).use { it.write(raw) }
+        return baos.toByteArray()
+    }
+
+    private fun splitIntoChunksV2(bytes: ByteArray): Pair<List<ByteArray>, Int> {
+        if (bytes.isEmpty()) return Pair(emptyList(), 0)
+        val chunks = mutableListOf<ByteArray>()
+        var offset = 0
+        while (offset < bytes.size) {
+            chunks.add(bytes.copyOfRange(offset, minOf(offset + FILE_CHUNK_SIZE_V2, bytes.size)))
+            offset += FILE_CHUNK_SIZE_V2
+        }
+        val padding = FILE_CHUNK_SIZE_V2 - chunks.last().size
+        if (padding > 0) chunks[chunks.lastIndex] = chunks.last().copyOf(FILE_CHUNK_SIZE_V2)
+        return Pair(chunks, padding)
+    }
+
+    private fun buildHeaderVectorV2(encodingWireBits: Int, padding: Int): ByteArray {
+        val hv = ByteArray(58)
+        val contentTypeBits = when (data.fileType) {
+            FileType.File    -> 0
+            FileType.Image   -> 1
+            FileType.Contact -> 2
+        }
+        hv[0] = ((encodingWireBits shl 5) or (contentTypeBits and 0x1F)).toByte()
+        hv[1] = padding.toByte()
+        val extBytes = data.file.extension.toByteArray(Charsets.UTF_8).copyOf(5)
+        for (i in 0 until 5) hv[2 + i] = extBytes[i]
+        val nameBytes = first48BytesUtf8(data.file.nameWithoutExtension).toByteArray(Charsets.UTF_8).copyOf(48)
+        for (i in 0 until 48) hv[7 + i] = nameBytes[i]
+        val sz = originalSize.coerceIn(0, 0xFFFFFF)
+        hv[55] = ((sz shr 16) and 0xFF).toByte()
+        hv[56] = ((sz shr 8) and 0xFF).toByte()
+        hv[57] = (sz and 0xFF).toByte()
+        return hv
+    }
+
+    /**
+     * Builds and queues the ST1 header wire packet (RS slot 0). Sets [v2HeaderWirePacket]
+     * so copy-headers can be sent later.
+     */
+    private fun createStartPackageV2(headerVector: ByteArray): Boolean {
+        val radio = getRadioToSend(
+            functionalityType = data.fileType.relatedFunctionalityType(),
+            carrier = data.stardustAPIPackage.carrier
+        ) ?: return false
+        val (appId, _) = requireLocalSrcDst() ?: return false
+        val wirePacket = IntArray(63)
+        wirePacket[0] = 62
+        wirePacket[1] = 0x53; wirePacket[2] = 0x54; wirePacket[3] = 0x31  // "ST1"
+        for (i in 0 until 58) wirePacket[4 + i] = headerVector[i].toInt() and 0xFF
+        wirePacket[62] = 0  // fresh header, copy=0
+        v2HeaderWirePacket = wirePacket
+        val msg = StardustPackageUtils.getStardustPackage(
+            source = appId,
+            destination = data.stardustAPIPackage.receiverId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+            data = wirePacket.toTypedArray()
+        )
+        msg.stardustControlByte.stardustDeliveryType = radio.deliveryType
+        msg.stardustControlByte.stardustPartType = StardustControlByte.StardustPartType.MESSAGE
+        pendingPackageIndex = START_PACKAGE_INDEX
+        registerTxTicket(radio)
+        DataManager.getClientConnection().addMessageToQueue(msg)
+        return true
+    }
+
+    /**
+     * RS-encodes [headerVector] (slot 0) + [dataChunks] (slots 1..K-1) with [spare] parity
+     * symbols. Returns all N = K + P slots; slot 0 == [headerVector] (systematic encoding).
+     */
+    private fun createSparePackagesV2(
+        headerVector: ByteArray,
+        dataChunks: List<ByteArray>,
+        spare: Int
+    ): List<ByteArray> {
+        val dataSlots = listOf(headerVector) + dataChunks
+        val reed = ReedSolomon(totalDataPackets = dataSlots.size, totalParityPackets = spare)
+        reedSolomon = reed
+        parityIndices = reed.parityIndices()  // 0-based codeword indices of parity slots
+        return reed.encode(dataSlots)
+    }
+
+    /**
+     * Builds and queues the 63-byte wire packet for one V2 RS data or parity slot.
+     * [pkg.current] is the 0-based map key; the 1-based RS index = [pkg.current] + 1.
+     * Sets [v2PendingCopyLevel] when this slot's index is a power of 3.
+     */
+    private fun sendPackageV2(pkg: StardustFilePackage) {
+        val rsIndex = pkg.current + 1
+        DataManager.getClientConnection().let { conn ->
+            val radio = getRadioToSend(
+                functionalityType = data.fileType.relatedFunctionalityType(),
+                carrier = data.stardustAPIPackage.carrier
+            ) ?: run {
+                packagesDropped++
+                if (logOnce.first("no-radio")) {
+                    StardustLog.w(LogType.FILES, "FileUpload", "no radio — dropped V2 slot $rsIndex (total: $packagesDropped)")
+                }
+                pendingTicket = null
+                pendingPackageIndex = null
+                recordProgress()
+                return
+            }
+            sendInterval = packetAirtimeMs(radio)
+            // Odd-indexed slots carry N; even-indexed slots carry P.
+            val meta = if (rsIndex % 2 == 1) v2TotalSlots else v2ParityCount
+            val copyLevel = powerOf3Level(rsIndex)
+            // This slot is the last wire packet only when it is the last RS slot AND no copy follows.
+            val isLastWirePacket = pkg.isLast && copyLevel == 0
+            val wirePacket = IntArray(63)
+            wirePacket[0] = 62
+            wirePacket[1] = (rsIndex shr 8) and 0xFF
+            wirePacket[2] = rsIndex and 0xFF
+            wirePacket[3] = (meta shr 8) and 0xFF
+            wirePacket[4] = meta and 0xFF
+            for (i in pkg.data.indices) wirePacket[5 + i] = pkg.data[i].toInt() and 0xFF
+            val msg = StardustPackageUtils.getStardustPackage(
+                source = data.stardustAPIPackage.senderId,
+                destination = data.stardustAPIPackage.receiverId,
+                stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+                data = wirePacket.toTypedArray()
+            )
+            msg.stardustControlByte.stardustDeliveryType = radio.deliveryType
+            msg.stardustControlByte.stardustPartType = if (isLastWirePacket) {
+                StardustControlByte.StardustPartType.LAST
+            } else {
+                StardustControlByte.StardustPartType.MESSAGE
+            }
+            packagesSent++
+            // parityIndices holds 0-based codeword indices; RS slot rsIndex = codeword index rsIndex.
+            if (rsIndex in parityIndices) sparePackagesSent++ else dataPackagesSent++
+            StardustLog.d(LogType.FILES, "FileUpload") { "V2 send slot $rsIndex/$v2TotalSlots" }
+            pendingPackageIndex = rsIndex
+            registerTxTicket(radio)
+            conn.addMessageToQueue(msg)
+            if (copyLevel > 0) v2PendingCopyLevel = copyLevel
+        }
+    }
+
+    /**
+     * Re-sends the header packet with [copyLevel] = k (the wire position was 3^k).
+     * Copy-headers are not RS slots, so [pendingPackageIndex] is left null — the timer
+     * fires, [confirmPendingPackage] is a no-op, and the next slot proceeds normally.
+     */
+    private fun sendV2HeaderCopy(copyLevel: Int) {
+        val wireBase = v2HeaderWirePacket ?: return
+        // The copy is the last wire packet when all RS slots have already been sent.
+        val isLastWirePacket = current.toInt() >= mutablePackagesMap.size
+        val radio = getRadioToSend(
+            functionalityType = data.fileType.relatedFunctionalityType(),
+            carrier = data.stardustAPIPackage.carrier
+        ) ?: run { packagesDropped++; return }
+        sendInterval = packetAirtimeMs(radio)
+        val (appId, _) = requireLocalSrcDst() ?: return
+        val copyPacket = wireBase.copyOf()
+        copyPacket[62] = copyLevel
+        val msg = StardustPackageUtils.getStardustPackage(
+            source = appId,
+            destination = data.stardustAPIPackage.receiverId,
+            stardustOpCode = StardustPackageUtils.StardustOpCode.SEND_FILE,
+            data = copyPacket.toTypedArray()
+        )
+        msg.stardustControlByte.stardustDeliveryType = radio.deliveryType
+        msg.stardustControlByte.stardustPartType = if (isLastWirePacket) {
+            StardustControlByte.StardustPartType.LAST
+        } else {
+            StardustControlByte.StardustPartType.MESSAGE
+        }
+        pendingPackageIndex = null
+        registerTxTicket(radio)
+        DataManager.getClientConnection().addMessageToQueue(msg)
+    }
+
+    /** Returns k if n == 3^k (k ≥ 1), else 0. */
+    private fun powerOf3Level(n: Int): Int {
+        if (n < 3) return 0
+        var p = 3; var k = 1
+        while (p <= n) { if (p == n) return k; p *= 3; k++ }
+        return 0
     }
 
     private fun sendPackage(stardustFilePackage: StardustFilePackage) {
@@ -1166,6 +1460,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
     companion object {
 
         private const val FILE_CHUNK_SIZE = 60
+        private const val FILE_CHUNK_SIZE_V2 = 58
 
         /** [pendingPackageIndex] for the start package, which has no codeword index. */
         private const val START_PACKAGE_INDEX = -1

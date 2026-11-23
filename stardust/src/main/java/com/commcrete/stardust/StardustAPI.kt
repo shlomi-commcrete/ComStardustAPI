@@ -239,6 +239,7 @@ interface StardustAPI {
     fun logout()
     fun setCallback(stardustAPICallbacks: StardustAPICallbacks)
     fun getCarriers (): List<Carrier>?
+    fun observeCarriers(): StateFlow<List<Carrier>>
 
     /**
      * How long [carrier] may stay silent mid-transmission or mid-reception before a TX or RX indicator

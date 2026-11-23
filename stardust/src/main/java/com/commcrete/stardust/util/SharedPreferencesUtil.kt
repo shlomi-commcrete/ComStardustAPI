@@ -147,6 +147,8 @@ object SharedPreferencesUtil {
 
     //Files
     private const val KEY_RESILIENCE = "key_resilience"
+    private const val KEY_FILE_SENDING_PROTOCOL = "key_file_sending_protocol"
+    private const val KEY_FILE_COMPRESSION_TYPE = "key_file_compression_type"
     //Audio Ai
     private const val KEY_DEFAULT_AUDIO_DECODE_TYPE = "audio_ai_decode_type"
     private const val KEY_DEFAULT_AUDIO_MODEL_TYPE = "audio_ai_model_type"
@@ -880,6 +882,24 @@ object SharedPreferencesUtil {
             else -> Resilience.Medium
         }
         return resilience
+    }
+
+    fun setFileSendingProtocol(protocol: FileSendingProtocol) {
+        getPrefs().edit { putString(KEY_FILE_SENDING_PROTOCOL, protocol.name) }
+    }
+
+    fun getFileSendingProtocol(): FileSendingProtocol {
+        val name = getPrefs().getString(KEY_FILE_SENDING_PROTOCOL, null)
+        return FileSendingProtocol.entries.find { it.name == name } ?: FileSendingProtocol.Default
+    }
+
+    fun setFileCompressionType(type: FileCompressionType) {
+        getPrefs().edit { putString(KEY_FILE_COMPRESSION_TYPE, type.name) }
+    }
+
+    fun getFileCompressionType(): FileCompressionType {
+        val name = getPrefs().getString(KEY_FILE_COMPRESSION_TYPE, null)
+        return FileCompressionType.entries.find { it.name == name } ?: FileCompressionType.Default
     }
 
     fun getCodecType(): RecorderUtils.CODE_TYPE {

@@ -16,6 +16,9 @@ import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonSerializationContext
 import com.google.gson.JsonSerializer
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.lang.reflect.Type
 import kotlin.collections.forEach
@@ -25,6 +28,9 @@ object CarriersUtils {
     private const val TAG = "CarriersUtils"
 
     var carrierList : MutableLiveData<List<Carrier>> = MutableLiveData()
+
+    private val _carriersFlow = MutableStateFlow<List<Carrier>>(emptyList())
+    val carriersFlow: StateFlow<List<Carrier>> = _carriersFlow.asStateFlow()
 
     private val carriersMap: MutableMap<Int, List<Carrier>> = mutableMapOf()
 
@@ -80,6 +86,7 @@ object CarriersUtils {
         Scopes.getMainCoroutine().launch {
             carrierList.value = currentCarrierData
         }
+        _carriersFlow.value = currentCarrierData
     }
 
     fun getCarriersByPreset(preset: Preset) : List<Carrier> {
@@ -110,6 +117,7 @@ object CarriersUtils {
         Scopes.getMainCoroutine().launch {
             mutableList?.let { carrierList.value = it }
         }
+        mutableList?.let { _carriersFlow.value = it }
         return carrierList.value
     }
 
@@ -142,6 +150,7 @@ object CarriersUtils {
     private fun updateCarrierList (mutableList : List<Carrier>) {
         setLocalCarriersByPreset((ConfigurationUtils.currentPreset.value?.value ?: 0), mutableList)
         carrierList.value = mutableList
+        _carriersFlow.value = mutableList
         // A new selection can cover (or uncover) the active preset's missing defaults. Off the
         // caller's thread: the check re-reads and parses the saved lists.
         Scopes.getDefaultCoroutine().launch { ConnectionManager.refreshConfigWarnings() }
@@ -207,6 +216,7 @@ object CarriersUtils {
         carriersMap.clear()
         resetLogOnce()
         carrierList.postValue(listOf())
+        _carriersFlow.value = emptyList()
     }
 }
 

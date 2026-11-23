@@ -1013,6 +1013,8 @@ object DataManager : StardustAPI, PttInterface {
         return CarriersUtils.setLocalCarrierList()?.filter { it.deliveryType != StardustDeliveryType.RD4 }
     }
 
+    override fun observeCarriers(): StateFlow<List<Carrier>> = CarriersUtils.carriersFlow
+
     override fun isCodecAvailable(codeType: RecorderUtils.CODE_TYPE): Boolean =
         CodecAvailability.isAvailable(codeType)
 

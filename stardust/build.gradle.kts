@@ -45,10 +45,10 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "Crypt", "\"$apiKey\"")
 
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
         if (enableRnnoise) {
-            ndk {
-                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-            }
             externalNativeBuild {
                 cmake {
                     cFlags += listOf("-O3", "-ffast-math")
@@ -58,12 +58,10 @@ android {
         }
     }
 
-    if (enableRnnoise) {
-        externalNativeBuild {
-            cmake {
-                path = file("src/main/cpp/CMakeLists.txt")
-                version = "3.22.1"
-            }
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
         }
     }
 

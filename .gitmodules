@@ -1,0 +1,3 @@
+[submodule "stardust/libs/PigN"]
+	path = stardust/libs/PigN
+	url = git@github.com:commcrete-ltd/PigN.git
