@@ -419,7 +419,7 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                     val (compressed, encodingWireBits) = compressForV2(rawBytes, data.file.extension)
                     val (dataChunks, padding) = splitIntoChunksV2(compressed)
                     val headerVector = buildHeaderVectorV2(encodingWireBits, padding)
-                    val spare = data.stardustAPIPackage.spare
+                    val spare = packageNumToAdd(dataChunks.size, SharedPreferencesUtil.getResilience().value)
                     val allSlots = createSparePackagesV2(headerVector, dataChunks, spare)
                     v2TotalSlots = allSlots.size
                     v2ParityCount = spare
@@ -1487,6 +1487,26 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
 
         fun calculateNumOfPackages(files: List<File>, spare: Int): Int {
             return files.sumOf { ceil(it.length().toDouble() / FILE_CHUNK_SIZE).toInt() } + spare
+        }
+
+        /**
+         * V2 total wire-slot count (header + data + parity) for a given compressed payload size.
+         * Used by the host to estimate transmission time before sending.
+         */
+        fun calculateTotalSlotsV2(compressedPayloadBytes: Long): Int {
+            if (compressedPayloadBytes <= 0) return 0
+            val dataChunks = ceil(compressedPayloadBytes.toDouble() / FILE_CHUNK_SIZE_V2).toInt()
+            val parity = packageNumToAdd(dataChunks, SharedPreferencesUtil.getResilience().value)
+            return 1 + dataChunks + parity  // header + data + parity
+        }
+
+        /** Whether [compressedPayloadBytes] fits on the wire under the current resilience setting. */
+        fun fitsOnWireV2(compressedPayloadBytes: Long): Boolean {
+            if (compressedPayloadBytes <= 0) return true
+            val dataChunks = ceil(compressedPayloadBytes.toDouble() / FILE_CHUNK_SIZE_V2).toLong()
+            if (dataChunks > MAX_TOTAL_PACKAGES) return false
+            val n = dataChunks.toInt()
+            return 1 + n + packageNumToAdd(n, SharedPreferencesUtil.getResilience().value) <= MAX_TOTAL_PACKAGES
         }
 
         /**
