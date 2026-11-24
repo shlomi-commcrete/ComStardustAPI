@@ -22,6 +22,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlin.math.ceil
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -181,10 +182,11 @@ class FileReceiverV2(
         }
 
         val n = totalSlots ?: run { resetGapTimer(); return }
-        val p = parityCount ?: 0
+        val pKnown = parityCount
+        val p = pKnown ?: estimatedParity(n)
 
         updateProgress()
-        if (canDecode(n, p)) tryDecode(n, p) else resetGapTimer()
+        if (canDecode(n, p)) tryDecode(n, p, pIsEstimated = pKnown == null) else resetGapTimer()
     }
 
     private fun canDecode(n: Int, p: Int): Boolean {
@@ -194,7 +196,7 @@ class FileReceiverV2(
         return ReedSolomon(totalDataPackets = k, totalParityPackets = p).canRecover(missing)
     }
 
-    private fun tryDecode(n: Int, p: Int) {
+    private fun tryDecode(n: Int, p: Int, pIsEstimated: Boolean = false) {
         gapTimer?.cancel()
         gapTimer = null
         val k = n - p
@@ -210,7 +212,7 @@ class FileReceiverV2(
             saveFile(fileBytes, hd)
         } catch (e: Exception) {
             StardustLog.e(TAG, "V2 decode/decompress failed", e)
-            updateFailure(FileFailure.ERROR)
+            if (pIsEstimated) resetGapTimer() else updateFailure(FileFailure.ERROR)
         }
     }
 
@@ -267,8 +269,9 @@ class FileReceiverV2(
     private fun checkData(failure: FileFailure) {
         if (isDisposed) return
         val n = totalSlots ?: run { updateFailure(failure); return }
-        val p = parityCount ?: 0
-        if (canDecode(n, p)) tryDecode(n, p) else updateFailure(failure)
+        val pKnown = parityCount
+        val p = pKnown ?: estimatedParity(n)
+        if (canDecode(n, p)) tryDecode(n, p, pIsEstimated = pKnown == null) else updateFailure(failure)
     }
 
     private fun updateProgress() {
@@ -450,6 +453,9 @@ class FileReceiverV2(
         private const val TAG = "FileReceiverV2"
         private const val GAP_TIMEOUT_MS = 30_000L
         private const val MAX_PENDING = 16
+
+        /** Used when P hasn't arrived yet: ceil(15% of N), minimum 2. */
+        fun estimatedParity(n: Int): Int = ceil(n * 0.15).toInt().coerceAtLeast(2)
 
         fun contentTypeToFileType(bits: Int): FileType = when (bits) {
             1 -> FileType.Image
