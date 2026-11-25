@@ -326,15 +326,46 @@ object ContactsFileParserUtil {
     private fun List<FullContactData>.toSharedContactSummary(): SharedContactSummary =
         SharedContactSummary(totalCount = size, contacts = this)
 
-    private fun parseCsvToExcelUsers(csvContent: String): List<FolderReader.ExcelUser> {
+    /**
+     * The rows of a contacts CSV a person made — saved from a spreadsheet program, so in whatever
+     * encoding and with whatever delimiter that program used (see [ContactsCsv]) — as the same rows
+     * the Excel reader returns, so login and "Load contacts" take either file the same way.
+     *
+     * Applies the Excel reader's own rules: values are trimmed, and a device row that carries only a
+     * Device ID is returned with it as its id. A row with neither id is left out, as there. The caller
+     * says the file is unreadable when nothing comes back.
+     */
+    fun parseUsersFromCsvBytes(bytes: ByteArray): List<FolderReader.ExcelUser> {
+        val text = ContactsCsv.decode(bytes)
+        val header = text.removePrefix(UTF8_BOM).split("\r\n", "\n", "\r").firstOrNull { it.isNotBlank() && !it.startsWith("#") }
+            ?: return emptyList()
+        val delimiter = ContactsCsv.detectDelimiter(header)
+        return parseCsvToExcelUsers(text, delimiter).mapNotNull { user ->
+            user.name = user.name.trim()
+            user.type = user.type.trim()
+            user.image = user.image.trim()
+            user.model = user.model.trim()
+            user.serial = user.serial.trim()
+            when {
+                user.id.isNotEmpty() -> user
+                user.deviceId.isNotEmpty() -> user.also {
+                    it.id = it.deviceId
+                    it.deviceId = ""
+                }
+                else -> null
+            }
+        }
+    }
+
+    private fun parseCsvToExcelUsers(csvContent: String, delimiter: Char = ','): List<FolderReader.ExcelUser> {
         val lines = csvContent
             .removePrefix(UTF8_BOM)
-            .split("\r\n", "\n")
+            .split("\r\n", "\n", "\r")
 
         val headerIndex = lines.indexOfFirst { it.isNotBlank() && !it.startsWith("#") }
         if (headerIndex == -1) return emptyList()
 
-        val headerMap = splitCsvLine(lines[headerIndex])
+        val headerMap = splitCsvLine(lines[headerIndex], delimiter)
             .mapIndexed { index, header -> decodeCsvField(header).trim().lowercase(Locale.getDefault()) to index }
             .toMap()
 
@@ -352,7 +383,7 @@ object ContactsFileParserUtil {
             val line = lines[i]
             if (line.isBlank() || line.startsWith("#")) continue
 
-            val fields = splitCsvLine(line)
+            val fields = splitCsvLine(line, delimiter)
             val user = FolderReader.ExcelUser(
                 _id = fields.value("id"),
                 _deviceId = fields.value("device_id"),
@@ -367,8 +398,11 @@ object ContactsFileParserUtil {
         return users
     }
 
-    /** Splits a single CSV line into raw fields, honoring double-quoted sections and `""` escapes. */
-    private fun splitCsvLine(line: String): List<String> {
+    /**
+     * Splits a single CSV line into raw fields on [delimiter], honoring double-quoted sections and `""`
+     * escapes. The delimiter is a comma for our own files; a spreadsheet program may use another.
+     */
+    private fun splitCsvLine(line: String, delimiter: Char = ','): List<String> {
         val fields = mutableListOf<String>()
         val current = StringBuilder()
         var inQuotes = false
@@ -385,7 +419,7 @@ object ContactsFileParserUtil {
                     else -> current.append(c)
                 }
                 c == '"' -> inQuotes = true
-                c == ',' -> {
+                c == delimiter -> {
                     fields.add(current.toString())
                     current.setLength(0)
                 }

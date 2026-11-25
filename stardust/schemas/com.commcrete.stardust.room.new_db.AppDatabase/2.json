@@ -1,0 +1,662 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "068bc5305415d073d202e086d832a1d4",
+    "entities": [
+      {
+        "tableName": "chats",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `image` TEXT, `type` TEXT NOT NULL, `created_at_ms` INTEGER, `last_updated_ms` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "image",
+            "columnName": "image",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastUpdatedAt",
+            "columnName": "last_updated_ms",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_chats_id",
+            "unique": true,
+            "columnNames": [
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chats_id` ON `${TABLE_NAME}` (`id`)"
+          },
+          {
+            "name": "index_chats_name",
+            "unique": true,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_chats_name` ON `${TABLE_NAME}` (`name`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "contacts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `image` TEXT, `type` TEXT NOT NULL, `created_at_ms` INTEGER, `last_updated_ms` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "image",
+            "columnName": "image",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "lastUpdatedAt",
+            "columnName": "last_updated_ms",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_contacts_id",
+            "unique": true,
+            "columnNames": [
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_contacts_id` ON `${TABLE_NAME}` (`id`)"
+          }
+        ],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "app_contact_user_ids",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`user_id` TEXT NOT NULL, `contact_id` INTEGER NOT NULL, PRIMARY KEY(`user_id`), FOREIGN KEY(`contact_id`) REFERENCES `contacts`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "userId",
+            "columnName": "user_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactId",
+            "columnName": "contact_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "user_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_app_contact_user_ids_contact_id",
+            "unique": true,
+            "columnNames": [
+              "contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_app_contact_user_ids_contact_id` ON `${TABLE_NAME}` (`contact_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "contacts",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "contact_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "app_contact_group_ids",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`group_id` TEXT NOT NULL, `contact_id` INTEGER NOT NULL, PRIMARY KEY(`group_id`), FOREIGN KEY(`contact_id`) REFERENCES `contacts`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "groupId",
+            "columnName": "group_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactId",
+            "columnName": "contact_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "group_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_app_contact_group_ids_contact_id",
+            "unique": true,
+            "columnNames": [
+              "contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_app_contact_group_ids_contact_id` ON `${TABLE_NAME}` (`contact_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "contacts",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "contact_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "app_contact_devices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`device_id` TEXT NOT NULL, `contact_id` INTEGER NOT NULL, `slot` INTEGER NOT NULL, `assigned_at` INTEGER NOT NULL, PRIMARY KEY(`device_id`), FOREIGN KEY(`contact_id`) REFERENCES `contacts`(`id`) ON UPDATE CASCADE ON DELETE CASCADE , FOREIGN KEY(`device_id`) REFERENCES `devices`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "deviceId",
+            "columnName": "device_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactId",
+            "columnName": "contact_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "slot",
+            "columnName": "slot",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "assignedAt",
+            "columnName": "assigned_at",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "device_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_app_contact_devices_contact_id_slot",
+            "unique": true,
+            "columnNames": [
+              "contact_id",
+              "slot"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_app_contact_devices_contact_id_slot` ON `${TABLE_NAME}` (`contact_id`, `slot`)"
+          },
+          {
+            "name": "index_app_contact_devices_contact_id",
+            "unique": false,
+            "columnNames": [
+              "contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_app_contact_devices_contact_id` ON `${TABLE_NAME}` (`contact_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "contacts",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "contact_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "devices",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "device_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "devices",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `model` TEXT, `serial` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "model",
+            "columnName": "model",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "serial",
+            "columnName": "serial",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "messages",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `chat_id` TEXT, `sender_id` TEXT NOT NULL, `receiver_id` TEXT NOT NULL, `extra_data` TEXT, `state` INTEGER, `type` TEXT NOT NULL, `epoch_time_ms` INTEGER NOT NULL, FOREIGN KEY(`chat_id`) REFERENCES `chats`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "chatId",
+            "columnName": "chat_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "senderID",
+            "columnName": "sender_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receiverID",
+            "columnName": "receiver_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extraData",
+            "columnName": "extra_data",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "type",
+            "columnName": "type",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "epochTimeMs",
+            "columnName": "epoch_time_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_messages_chat_id_epoch_time_ms_id",
+            "unique": false,
+            "columnNames": [
+              "chat_id",
+              "epoch_time_ms",
+              "id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_chat_id_epoch_time_ms_id` ON `${TABLE_NAME}` (`chat_id`, `epoch_time_ms`, `id`)"
+          },
+          {
+            "name": "index_messages_chat_id_state_epoch_time_ms",
+            "unique": false,
+            "columnNames": [
+              "chat_id",
+              "state",
+              "epoch_time_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_messages_chat_id_state_epoch_time_ms` ON `${TABLE_NAME}` (`chat_id`, `state`, `epoch_time_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "chats",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "chat_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "chat_participants",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`chat_id` TEXT NOT NULL, `contact_id` INTEGER NOT NULL, PRIMARY KEY(`chat_id`, `contact_id`), FOREIGN KEY(`chat_id`) REFERENCES `chats`(`id`) ON UPDATE CASCADE ON DELETE CASCADE , FOREIGN KEY(`contact_id`) REFERENCES `contacts`(`id`) ON UPDATE CASCADE ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "chatId",
+            "columnName": "chat_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contactId",
+            "columnName": "contact_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "chat_id",
+            "contact_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_chat_participants_chat_id",
+            "unique": false,
+            "columnNames": [
+              "chat_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_chat_participants_chat_id` ON `${TABLE_NAME}` (`chat_id`)"
+          },
+          {
+            "name": "index_chat_participants_contact_id",
+            "unique": false,
+            "columnNames": [
+              "contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_chat_participants_contact_id` ON `${TABLE_NAME}` (`contact_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "chats",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "chat_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          },
+          {
+            "table": "contacts",
+            "onDelete": "CASCADE",
+            "onUpdate": "CASCADE",
+            "columns": [
+              "contact_id"
+            ],
+            "referencedColumns": [
+              "id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "contact_identity_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `at_ms` INTEGER NOT NULL, `kind` TEXT NOT NULL, `id_kind` TEXT, `id_value` TEXT, `from_contact_id` INTEGER, `to_contact_id` INTEGER, `from_name` TEXT, `to_name` TEXT, `from_chat_id` TEXT, `to_chat_id` TEXT, `affected_rows` INTEGER, `source` TEXT NOT NULL, `batch_id` INTEGER)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atMs",
+            "columnName": "at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "idKind",
+            "columnName": "id_kind",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "idValue",
+            "columnName": "id_value",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fromContactId",
+            "columnName": "from_contact_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "toContactId",
+            "columnName": "to_contact_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fromName",
+            "columnName": "from_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "toName",
+            "columnName": "to_name",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "fromChatId",
+            "columnName": "from_chat_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "toChatId",
+            "columnName": "to_chat_id",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "affectedRows",
+            "columnName": "affected_rows",
+            "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "batchId",
+            "columnName": "batch_id",
+            "affinity": "INTEGER",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_contact_identity_log_id_value",
+            "unique": false,
+            "columnNames": [
+              "id_value"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_identity_log_id_value` ON `${TABLE_NAME}` (`id_value`)"
+          },
+          {
+            "name": "index_contact_identity_log_at_ms",
+            "unique": false,
+            "columnNames": [
+              "at_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_identity_log_at_ms` ON `${TABLE_NAME}` (`at_ms`)"
+          },
+          {
+            "name": "index_contact_identity_log_from_contact_id",
+            "unique": false,
+            "columnNames": [
+              "from_contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_identity_log_from_contact_id` ON `${TABLE_NAME}` (`from_contact_id`)"
+          },
+          {
+            "name": "index_contact_identity_log_to_contact_id",
+            "unique": false,
+            "columnNames": [
+              "to_contact_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_identity_log_to_contact_id` ON `${TABLE_NAME}` (`to_contact_id`)"
+          },
+          {
+            "name": "index_contact_identity_log_batch_id",
+            "unique": false,
+            "columnNames": [
+              "batch_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_contact_identity_log_batch_id` ON `${TABLE_NAME}` (`batch_id`)"
+          }
+        ],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '068bc5305415d073d202e086d832a1d4')"
+    ]
+  }
+}

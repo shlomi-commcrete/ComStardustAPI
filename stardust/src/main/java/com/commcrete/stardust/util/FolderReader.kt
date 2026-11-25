@@ -187,21 +187,29 @@ object FolderReader {
         }
     }
 
+    /**
+     * Reads the picked contacts file, whichever kind it is. The kind comes from the file's own bytes —
+     * a workbook is a zip or an OLE container ([ContactsCsv.looksLikeWorkbook]) — and not from its name or
+     * the mime type the picker gave it, since a CSV is often labelled as an opaque binary. Anything that
+     * is not a workbook is read as CSV, and a file that is neither yields no rows and so an error.
+     */
     private suspend fun processExcelFile(uri: Uri, onExcelFilesSelected: OnExcelFilesSelected) {
         val fileData = readFileFromContentUri(uri)
-        val success = fileData?.let { saveFileToInternalStorage("myFile.xlsx", it) }
-        val userList = success?.let { readExcelFile(it) }
+        val userList: List<ExcelUser>? = when {
+            fileData == null -> null
+            ContactsCsv.looksLikeWorkbook(fileData) ->
+                saveFileToInternalStorage("myFile.xlsx", fileData)?.let { readExcelFile(it) }
+            else -> ContactsFileParserUtil.parseUsersFromCsvBytes(fileData)
+        }
 
         withContext(Dispatchers.Main) {
             when {
-                fileData == null || success == null -> onExcelFilesSelected.onError()
+                fileData == null -> onExcelFilesSelected.onError()
                 userList.isNullOrEmpty() -> onExcelFilesSelected.onError()
                 else -> onExcelFilesSelected.onGetUsers(fileData, userList)
             }
         }
     }
-
-
 
     private fun getPngFilesFromFolder(folderPath: String): List<File> {
         val folder = File(folderPath)
