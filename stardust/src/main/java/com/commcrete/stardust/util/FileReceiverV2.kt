@@ -224,14 +224,16 @@ class FileReceiverV2(
     }
 
     private fun decompressV2(data: ByteArray, hd: V2HeaderData): ByteArray = when {
-        hd.contentTypeBits == 1 -> data  // IMAGE: raw, no compression
-        hd.encodingWireBits == 0 ->
-            GZIPInputStream(ByteArrayInputStream(data)).use { it.readBytes() }
+        // PigN is checked before the IMAGE case: images are PigN-packed too now.
         hd.encodingWireBits == 1 -> {
             // PigN: payload is [method(1)] + compressed bytes
             val method = data[0].toInt() and 0xFF
             PigN.decompress(data.copyOfRange(1, data.size), method)
         }
+        // IMAGE with encoding 0 is raw (senders that don't use PigN, or whose PigN call failed).
+        hd.contentTypeBits == 1 -> data
+        hd.encodingWireBits == 0 ->
+            GZIPInputStream(ByteArrayInputStream(data)).use { it.readBytes() }
         else -> data
     }
 

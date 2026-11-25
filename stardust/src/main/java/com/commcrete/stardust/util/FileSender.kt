@@ -1007,7 +1007,9 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
      *       Stardust_Core rejects encoding > 1, so all PigN variants map to encoding 1.
      */
     private fun compressForV2(raw: ByteArray, ext: String): Pair<ByteArray, Int> {
-        if (data.fileType == FileType.Image) return Pair(raw, 0)
+        // Images with encoding 0 mean "raw", never gzip — a receiver that predates PigN-for-images
+        // reads encoding 0 on an IMAGE as raw bytes. So every image fallback below stays raw.
+        val isImage = data.fileType == FileType.Image
         return if (data.usePign) {
             try {
                 val packed = PigN.compress(raw, ext.ifEmpty { null })
@@ -1016,9 +1018,11 @@ class FileSender(data: FileUtils.FileTransferData.Send) {
                 packed.data.copyInto(dataWithMethod, 1)
                 Pair(dataWithMethod, 1)
             } catch (e: Exception) {
-                StardustLog.w(LogType.FILES, LOG_TAG, "PigN failed, falling back to gzip: ${e.javaClass.simpleName}")
-                Pair(gzipCompressBytes(raw), 0)
+                StardustLog.w(LogType.FILES, LOG_TAG, "PigN failed, falling back to ${if (isImage) "raw" else "gzip"}: ${e.javaClass.simpleName}")
+                if (isImage) Pair(raw, 0) else Pair(gzipCompressBytes(raw), 0)
             }
+        } else if (isImage) {
+            Pair(raw, 0)
         } else {
             Pair(gzipCompressBytes(raw), 0)
         }

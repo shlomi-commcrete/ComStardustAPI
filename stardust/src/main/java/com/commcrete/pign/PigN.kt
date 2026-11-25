@@ -15,6 +15,8 @@ object PigN {
     const val METHOD_NONE   = 1
     const val METHOD_ZIP_V1 = 2
     const val METHOD_ZSTD   = 3
+    /** Lossless JPEG recompression; exists only in native builds made with STARDUST_JXL_PREFIX. */
+    const val METHOD_JPEG_JXL = 4
 
     const val OK          =  0
     const val ERR_ARG     = -1

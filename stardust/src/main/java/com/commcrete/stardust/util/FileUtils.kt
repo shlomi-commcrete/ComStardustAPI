@@ -602,8 +602,8 @@ object FileUtils {
             val version: FileTransferVersion = FileTransferVersion.V1,
             /**
              * V2 only: attempt PigN compression before splitting into packets. PigN picks the best
-             * method for the file type and falls back to gzip if it doesn't help. Ignored for V1
-             * and for IMAGE transfers (images are always sent raw in V2).
+             * method for the file type and falls back to gzip if it doesn't help (raw for IMAGE
+             * transfers, which are never gzipped). Applies to images too. Ignored for V1.
              */
             val usePign: Boolean = false,
         ) : FileTransferData(
