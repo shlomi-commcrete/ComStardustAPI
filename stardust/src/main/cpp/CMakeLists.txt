@@ -35,6 +35,13 @@ target_link_libraries(pign_jni PRIVATE pign ${log-lib})
 if(STARDUST_WITH_JXL)
     # libpign.a pulls in libjxl's C++ runtime: link with the C++ driver so libc++ comes along.
     set_target_properties(pign_jni PROPERTIES LINKER_LANGUAGE CXX)
+    # PigN's -ljxl -lhwy -lbrotli* reach pign_jni through libpign.a, but its link directory does not
+    # (target_link_directories is not transitive): without this the link fails with "unable to find library -ljxl".
+    target_link_directories(pign_jni PRIVATE ${JXL_ABI_DIR}/lib)
+    # The link line PigN hands over ends up with -lbrotlienc -lbrotlidec but without -lbrotlicommon (a
+    # Requires.private of both), leaving BrotliGetDictionary etc. undefined. Static archives resolve left to
+    # right, so it has to come after them: CMAKE_CXX_STANDARD_LIBRARIES goes at the very end of the link line.
+    set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} ${JXL_ABI_DIR}/lib/libbrotlicommon.a")
 endif()
 
 # ─── RNNoise (optional, only when sources are present) ───────────────────────
