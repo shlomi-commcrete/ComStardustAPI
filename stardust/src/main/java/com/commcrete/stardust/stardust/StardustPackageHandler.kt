@@ -76,12 +76,28 @@ private const val SOS_STOPPED_PAYLOAD_SIZE = 5
 
 private const val TAG = "StardustPackageHandler"
 
+/**
+ * A V2 start frame that repeats the header of a transfer opened less than this long ago is the same
+ * transfer arriving again, not a new one. The copies seen on a device were 13 ms apart; the window
+ * only has to cover one transmission's worth of repeats, and stays short so that sending the same
+ * file again a moment later is still a new transfer.
+ */
+private const val V2_DUPLICATE_START_WINDOW_MS = 5_000L
+
 internal class StardustPackageHandler(private var clientConnection: ClientConnection? = null) {
 
     private val fileReceivers = ConcurrentHashMap<String, FileReceiver>()
     private val activeTransferByTransport = ConcurrentHashMap<String, String>()
     private val fileReceiversV2 = ConcurrentHashMap<String, FileReceiverV2>()
     private val activeTransferByTransportV2 = ConcurrentHashMap<String, String>()
+
+    /**
+     * The 58-byte V2 header of each open transfer (as hex) → its transfer key and when it opened.
+     * Every copy of a transfer's start frame carries the same header, so this is what tells a repeat
+     * from a new file whatever transport key it arrives under; see [handleDeviceFileResponse].
+     * Guarded by [packageProcessingLock] with the two maps above.
+     */
+    private val openV2Starts = HashMap<String, Pair<String, Long>>()
     private val fileTransferCounter = AtomicLong(0)
     private val packageProcessingLock = Any()
     private val handlerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -195,6 +211,7 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
             fileReceiversV2.values.forEach { it.dispose() }
             fileReceiversV2.clear()
             activeTransferByTransportV2.clear()
+            openV2Starts.clear()
         }
         handler.removeCallbacks(runnable)
         handler.removeCallbacksAndMessages(null)
@@ -670,29 +687,54 @@ internal class StardustPackageHandler(private var clientConnection: ClientConnec
                 fileReceiversV2[activeKey]?.addHeaderPacket(hd)
                 return
             }
-            logRepeats(fileLogOnce.reset())
             val startedAtMs = System.currentTimeMillis()
-            val transferKey = FileReceiverV2.transferId(
-                transportKey = transportKey,
-                hd = hd,
-                startedAtMs = startedAtMs,
-                sequence = fileTransferCounter.incrementAndGet(),
-            )
-            val receiver = FileReceiverV2(mPackage, transferKey, startedAtMs) {
-                synchronized(packageProcessingLock) {
-                    val activeKey = activeTransferByTransportV2[transportKey]
-                    if (activeKey == transferKey) {
-                        fileReceiversV2.remove(transferKey)
-                        activeTransferByTransportV2.remove(transportKey, transferKey)
+            val headerKey = hd.headerVector.joinToString("") { "%02x".format(it) }
+            // Check and register as one step: copies of a start frame can be handled on different
+            // threads at the same moment, and each would otherwise open its own receiver — and so its
+            // own chat row — for the one file.
+            synchronized(packageProcessingLock) {
+                val openedBy = openV2Starts[headerKey]
+                    ?.takeIf { (key, openedAtMs) ->
+                        startedAtMs - openedAtMs < V2_DUPLICATE_START_WINDOW_MS && fileReceiversV2.containsKey(key)
+                    }
+                    ?.first
+                if (openedBy != null) {
+                    // Not dropped: this transport's data packets go to the receiver already open (it
+                    // keeps one slot per index, so a packet that arrives twice counts once). The
+                    // mapping goes with that receiver, see onComplete below.
+                    activeTransferByTransportV2[transportKey] = openedBy
+                    StardustLog.d(LogType.FILES, TAG) { "V2 start repeated for an open transfer; no second receiver" }
+                    return
+                }
+                logRepeats(fileLogOnce.reset())
+                val transferKey = FileReceiverV2.transferId(
+                    transportKey = transportKey,
+                    hd = hd,
+                    startedAtMs = startedAtMs,
+                    sequence = fileTransferCounter.incrementAndGet(),
+                )
+                val receiver = FileReceiverV2(mPackage, transferKey, startedAtMs) {
+                    synchronized(packageProcessingLock) {
+                        val activeKey = activeTransferByTransportV2[transportKey]
+                        if (activeKey == transferKey) {
+                            fileReceiversV2.remove(transferKey)
+                            activeTransferByTransportV2.remove(transportKey, transferKey)
+                        }
+                        // Transports that were pointed at this receiver by a repeated start: left
+                        // behind, each would keep routing that sender's packages to a receiver that
+                        // is gone and keep V1 packages from reaching the V1 path.
+                        activeTransferByTransportV2.values.removeAll { it == transferKey }
+                        openV2Starts.values.removeAll { it.first == transferKey }
                     }
                 }
+                val previousKey = activeTransferByTransportV2.put(transportKey, transferKey)
+                if (previousKey != null && previousKey != transferKey) {
+                    fileReceiversV2.remove(previousKey)?.dispose()
+                }
+                fileReceiversV2[transferKey] = receiver
+                openV2Starts[headerKey] = transferKey to startedAtMs
+                receiver.addHeaderPacket(hd)
             }
-            val previousKey = activeTransferByTransportV2.put(transportKey, transferKey)
-            if (previousKey != null && previousKey != transferKey) {
-                fileReceiversV2.remove(previousKey)?.dispose()
-            }
-            fileReceiversV2[transferKey] = receiver
-            receiver.addHeaderPacket(hd)
         }
 
         when {
