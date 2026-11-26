@@ -59,11 +59,14 @@ android {
         // PigN method 4 (JPEG_JXL): off unless -PstardustJxlPrefix=<dir> (or the same key in
         // ~/.gradle/gradle.properties) points at a per-ABI libjxl install; see src/main/cpp/CMakeLists.txt.
         val jxlPrefix = providers.gradleProperty("stardustJxlPrefix").orNull
+        // PigN finds libjxl through pkg-config. Optional: when unset, the one on PATH is used.
+        val pkgConfig = providers.gradleProperty("stardustPkgConfig").orNull
         if (!jxlPrefix.isNullOrBlank()) {
             externalNativeBuild {
                 cmake {
                     // c++_static: libjxl is C++, and the plugin has no shared libc++ to rely on.
                     arguments += listOf("-DSTARDUST_JXL_PREFIX=$jxlPrefix", "-DANDROID_STL=c++_static")
+                    if (!pkgConfig.isNullOrBlank()) arguments += "-DPKG_CONFIG_EXECUTABLE=$pkgConfig"
                 }
             }
         }

@@ -1,2 +1,9 @@
 jdk:
   - openjdk17
+before_install:
+  # PigN method 4 (JPEG_JXL, lossless JPEG recompression) needs libjxl built for every ABI, and a JitPack
+  # checkout has none. This builds it (and installs the NDK/CMake it needs, and pkg-config if missing) and
+  # writes stardustJxlPrefix to ~/.gradle/gradle.properties, which the Gradle build picks up. Without it
+  # the release would build fine but silently have no method 4, and a receiver without method 4 fails a
+  # JPEG that a sender with it recompressed: every radio must be built the same way.
+  - bash stardust/scripts/build_libjxl_android.sh --write-gradle-properties
